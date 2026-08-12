@@ -38,3 +38,6 @@ yarn-error.log*
 .idea
 .vscode/*
 !.vscode/extensions.json
+
+# TypeScript incremental build info
+*.tsbuildinfo
