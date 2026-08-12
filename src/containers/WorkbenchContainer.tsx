@@ -38,9 +38,10 @@ export function WorkbenchContainer() {
     selectedProjectId,
   );
 
+  // getHealth 成功路径必返回 ok=true（非 2xx 会 throw），故这里不再对 ok 做死分支判断，只显示 HTTP 状态。
   const healthLabel =
     health.data !== undefined
-      ? `后端健康：${health.data.status}（v${health.data.version}）`
+      ? `后端健康（HTTP ${String(health.data.status)}）`
       : health.isError
         ? '后端不可用'
         : '正在检查后端…';
@@ -53,7 +54,9 @@ export function WorkbenchContainer() {
       waitingInputCount={waitingInputCount}
       healthLabel={healthLabel}
       selectedTaskId={selectedSandboxId}
-      onSelectTask={(taskId) => setSelectedSandboxId(taskId)}
+      onSelectTask={(taskId) => {
+        setSelectedSandboxId(taskId);
+      }}
       terminalSlot={
         <TerminalContainer
           sessionId={sessionId}

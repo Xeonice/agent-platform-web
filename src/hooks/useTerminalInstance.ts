@@ -83,9 +83,15 @@ export function useTerminalInstance(): TerminalInstanceApi {
       }
     }
 
-    terminal.onData((d: string) => onInput(d));
+    terminal.onData((d: string) => {
+      onInput(d);
+    });
 
-    const batcher = new WriteBatcher({ write: (merged) => terminal.write(merged) });
+    const batcher = new WriteBatcher({
+      write: (merged) => {
+        terminal.write(merged);
+      },
+    });
     const managed: ManagedInstance = { terminal, fit, batcher, renderer, lastReportedSize: null };
     instances.current.set(sessionId, managed);
     doFit(managed, onResize);
@@ -123,7 +129,7 @@ function doFit(managed: ManagedInstance, onResize: (cols: number, rows: number) 
   managed.fit.fit();
   const { cols, rows } = managed.terminal;
   const last = managed.lastReportedSize;
-  if (last?.cols === cols && last?.rows === rows) return;
+  if (last !== null && last.cols === cols && last.rows === rows) return;
   managed.lastReportedSize = { cols, rows };
   onResize(cols, rows);
 }

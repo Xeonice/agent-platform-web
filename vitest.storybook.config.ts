@@ -8,6 +8,8 @@ import { storybookTest } from '@storybook/addon-vitest/vitest-plugin';
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  // 显式锁定 root 到仓库根，确保 storybookTest 的 relative(vitestRoot, id) 匹配稳定。
+  root: dirname,
   plugins: [storybookTest({ configDir: path.join(dirname, '.storybook') })],
   resolve: {
     alias: { '@': path.join(dirname, 'src') },
@@ -19,7 +21,7 @@ export default defineConfig({
       enabled: true,
       headless: true,
       provider: 'playwright',
-      name: 'chromium',
+      instances: [{ browser: 'chromium' }],
     },
   },
 });

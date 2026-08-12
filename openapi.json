@@ -1,72 +1,348 @@
 {
-  "openapi": "3.1.0",
-  "info": {
-    "title": "Agent Platform API (脚手架占位)",
-    "version": "0.0.0-placeholder",
-    "description": "TODO: 后端 NestJS dev server 就绪后，用 `OPENAPI_URL=http://localhost:3001/openapi.json pnpm generate:api` 覆盖本占位文件。当前仅含冒烟切片所需的 GET /api/health 与统一错误 envelope（shared/10 §6.8）。"
-  },
-  "servers": [{ "url": "/api" }],
+  "openapi": "3.0.0",
   "paths": {
-    "/health": {
+    "/api/sse": {
       "get": {
-        "operationId": "getHealth",
-        "summary": "健康检查（冒烟切片用；非最终契约）",
+        "operationId": "SseController_sse",
+        "parameters": [],
         "responses": {
           "200": {
-            "description": "服务健康",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/HealthResponse" }
-              }
-            }
-          },
-          "503": {
-            "description": "服务不可用",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+            "description": ""
+          }
+        },
+        "tags": [
+          "Sse"
+        ]
+      }
+    },
+    "/api/messages": {
+      "post": {
+        "operationId": "SseController_messages",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Sse"
+        ]
+      }
+    },
+    "/api/mcp": {
+      "post": {
+        "operationId": "StreamableHttpController_handlePostRequest",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "StreamableHttp"
+        ]
+      },
+      "get": {
+        "operationId": "StreamableHttpController_handleGetRequest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "StreamableHttp"
+        ]
+      },
+      "delete": {
+        "operationId": "StreamableHttpController_handleDeleteRequest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "StreamableHttp"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "HealthController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Liveness probe (passcode-exempt)",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/sandboxes": {
+      "post": {
+        "operationId": "SandboxController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSandboxDto"
               }
             }
           }
-        }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create a sandbox (Task)",
+        "tags": [
+          "sandbox"
+        ]
+      },
+      "get": {
+        "operationId": "SandboxController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SandboxResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List sandboxes, optionally filtered by projectId",
+        "tags": [
+          "sandbox"
+        ]
+      }
+    },
+    "/api/sandboxes/{id}": {
+      "get": {
+        "operationId": "SandboxController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a sandbox by id",
+        "tags": [
+          "sandbox"
+        ]
       }
     }
   },
+  "info": {
+    "title": "Agent Platform API",
+    "description": "",
+    "version": "0.0.1",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
   "components": {
     "schemas": {
-      "HealthResponse": {
+      "CreateSandboxDto": {
         "type": "object",
-        "required": ["status", "version", "schemaHash"],
         "properties": {
-          "status": { "type": "string", "enum": ["ok", "degraded"] },
-          "version": { "type": "string" },
-          "schemaHash": {
+          "projectId": {
             "type": "string",
-            "description": "canonical openapi.json 的 sha256，X-Schema-Hash 握手用（shared/14 §2.4）"
+            "minLength": 1
+          },
+          "runtime": {
+            "type": "string",
+            "minLength": 1
+          },
+          "image": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "initialPrompt": {
+            "type": "string"
+          },
+          "headless": {
+            "type": "boolean"
+          },
+          "timeoutMinutes": {
+            "oneOf": [
+              {
+                "type": "number",
+                "minimum": 30,
+                "maximum": 30
+              },
+              {
+                "type": "number",
+                "minimum": 60,
+                "maximum": 60
+              },
+              {
+                "type": "number",
+                "minimum": 120,
+                "maximum": 120
+              },
+              {
+                "type": "number",
+                "minimum": 240,
+                "maximum": 240
+              }
+            ]
           }
-        }
+        },
+        "required": [
+          "projectId",
+          "runtime"
+        ]
+      },
+      "SandboxResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "scheduling",
+              "preparing-workspace",
+              "creating",
+              "starting",
+              "running",
+              "idle",
+              "stopping",
+              "stopped",
+              "failed",
+              "destroying",
+              "destroyed"
+            ]
+          },
+          "headless": {
+            "type": "boolean"
+          },
+          "timeoutMinutes": {
+            "oneOf": [
+              {
+                "type": "number",
+                "minimum": 30,
+                "maximum": 30
+              },
+              {
+                "type": "number",
+                "minimum": 60,
+                "maximum": 60
+              },
+              {
+                "type": "number",
+                "minimum": 120,
+                "maximum": 120
+              },
+              {
+                "type": "number",
+                "minimum": 240,
+                "maximum": 240
+              }
+            ],
+            "nullable": true
+          },
+          "idleTimeoutSec": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          },
+          "waitingInput": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": false
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "runtime",
+          "status",
+          "headless",
+          "timeoutMinutes",
+          "idleTimeoutSec",
+          "waitingInput",
+          "version"
+        ]
       },
       "ErrorEnvelope": {
         "type": "object",
-        "description": "所有非 2xx 的唯一形状（shared/10 §6.8 / §7.5）",
-        "required": ["code", "message", "retryable"],
         "properties": {
-          "code": { "type": "string" },
-          "message": { "type": "string" },
-          "retryable": { "type": "boolean" },
-          "traceId": { "type": "string" },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "traceId": {
+            "type": "string"
+          },
           "details": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["field", "issue"],
-              "properties": {
-                "field": { "type": "string" },
-                "issue": { "type": "string" }
-              }
+              "additionalProperties": {}
             }
           }
-        }
+        },
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ]
       }
     }
   }

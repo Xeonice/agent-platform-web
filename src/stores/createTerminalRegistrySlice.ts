@@ -48,7 +48,7 @@ export const createTerminalRegistrySlice: StateCreator<
   bySandbox: new Map(),
   activeSessionOf: new Map(),
 
-  register: (entry): void =>
+  register: (entry): void => {
     set((s) => {
       const entries = new Map(s.entries);
       entries.set(entry.sessionId, entry);
@@ -58,9 +58,10 @@ export const createTerminalRegistrySlice: StateCreator<
         bySandbox.set(entry.sandboxId, [...list, entry.sessionId]);
       }
       return { entries, bySandbox };
-    }),
+    });
+  },
 
-  dispose: (sessionId): void =>
+  dispose: (sessionId): void => {
     set((s) => {
       const entry = s.entries.get(sessionId);
       if (!entry) return {};
@@ -75,39 +76,44 @@ export const createTerminalRegistrySlice: StateCreator<
         activeSessionOf.delete(entry.sandboxId);
       }
       return { entries, bySandbox, activeSessionOf };
-    }),
+    });
+  },
 
-  touch: (sessionId): void =>
+  touch: (sessionId): void => {
     set((s) => {
       const entry = s.entries.get(sessionId);
       if (!entry) return {};
       const entries = new Map(s.entries);
       entries.set(sessionId, { ...entry, lastActiveAt: Date.now() });
       return { entries };
-    }),
+    });
+  },
 
-  patchConnState: (sessionId, connState): void =>
+  patchConnState: (sessionId, connState): void => {
     set((s) => {
       const entry = s.entries.get(sessionId);
       if (!entry) return {};
       const entries = new Map(s.entries);
       entries.set(sessionId, { ...entry, connState });
       return { entries };
-    }),
+    });
+  },
 
-  patchRenderer: (sessionId, renderer): void =>
+  patchRenderer: (sessionId, renderer): void => {
     set((s) => {
       const entry = s.entries.get(sessionId);
       if (!entry) return {};
       const entries = new Map(s.entries);
       entries.set(sessionId, { ...entry, renderer });
       return { entries };
-    }),
+    });
+  },
 
-  setActiveSession: (sandboxId, sessionId): void =>
+  setActiveSession: (sandboxId, sessionId): void => {
     set((s) => {
       const activeSessionOf = new Map(s.activeSessionOf);
       activeSessionOf.set(sandboxId, sessionId);
       return { activeSessionOf };
-    }),
+    });
+  },
 });

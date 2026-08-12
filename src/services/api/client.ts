@@ -2,7 +2,11 @@
 import createClient from 'openapi-fetch';
 import type { paths } from '@/types/generated/openapi';
 
-/** 后端 REST 基址；仅此层读取（noPropertyAccessFromIndexSignature 要求 env 用下标访问）。 */
+/**
+ * 后端 REST 基址（origin，不含 /api）；仅此层读取（noPropertyAccessFromIndexSignature 要求 env 用下标访问）。
+ * 后端 NestJS `setGlobalPrefix('api')`，故生成的 openapi.json 路径键已自带 `/api` 前缀（如 `/api/health`），
+ * baseUrl 只放 origin，避免与路径里的前缀重复。
+ */
 const API_BASE_URL = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
 /**
@@ -10,7 +14,7 @@ const API_BASE_URL = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhos
  * 均来自生成的 openapi.d.ts（改后端契约 → 重新 generate:api → 这里立刻编译期报红）。
  */
 export const apiClient = createClient<paths>({
-  baseUrl: `${API_BASE_URL}/api`,
+  baseUrl: API_BASE_URL,
   // 惰性解析全局 fetch（调用时读取），使 MSW（测试/dev）在 client 创建之后打的补丁也能生效。
   fetch: (request) => fetch(request),
 });

@@ -4,6 +4,7 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import boundaries from 'eslint-plugin-boundaries';
 import storybook from 'eslint-plugin-storybook';
+import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
 // ——— 复用的 no-restricted-syntax selector（避免同名规则覆盖导致丢条目，07 §4.2 注意事项）———
@@ -34,16 +35,22 @@ const XTERM_IMPORT = {
   group: ['@xterm/*'],
   message: '@xterm/* 只能在 hooks/useTerminalInstance.ts 内 import（08 §2.1 唯一 import 点）',
 };
+// 同时覆盖裸桶导入（@/services、@/stores → index.ts）与子路径（@/services/**、@/stores/**）。
 const VIEW_FORBIDDEN_IMPORTS = [
   {
-    group: ['**/services/**'],
+    group: ['**/services', '**/services/**'],
     message: '视图层禁止依赖 service，经 hooks/container 注入（07 §3 规则 1）',
   },
   {
-    group: ['**/stores/**'],
+    group: ['**/stores', '**/stores/**'],
     message: '视图层禁止读写全局 store，由 container 传 props（15 §3.4）',
   },
 ];
+// hooks/ 不应反向依赖 views/（07 §4.2）——裸桶导入与子路径都拦。
+const HOOKS_NO_VIEWS = {
+  group: ['**/views', '**/views/**'],
+  message: 'hooks/ 不应依赖 views/（07 §4.2 单向依赖）',
+};
 
 export default tseslint.config(
   // ——— 全局忽略 ———
@@ -65,9 +72,9 @@ export default tseslint.config(
     ],
   },
 
-  // ——— 基线 ———
+  // ——— 基线：strictTypeChecked + stylisticTypeChecked（shared/14 §4 要求 strict 预设）———
   js.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
+  ...tseslint.configs.strictTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
 
   // ——— type-aware parser 设置（只对项目源码开 projectService）———
@@ -101,7 +108,19 @@ export default tseslint.config(
       '@typescript-eslint/no-non-null-assertion': 'error',
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
+      // 8.15+，不在预设里，须手动开：禁"缩小类型"的偷懒断言（14 §4）。
+      '@typescript-eslint/no-unsafe-type-assertion': 'error',
       'no-restricted-syntax': ['error', AS_UNKNOWN_AS],
+    },
+  },
+
+  // ——— React Hooks 规则（07 §4.3）：rules-of-hooks 硬门禁 + exhaustive-deps ———
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
     },
   },
 
@@ -110,6 +129,12 @@ export default tseslint.config(
     files: ['src/**/*.{ts,tsx}'],
     plugins: { boundaries },
     settings: {
+      // boundaries 经 eslint-module-utils 解析 import 目标 → 必须给 TS 路径别名（@/*）配 resolver，
+      // 否则 `@/hooks/*` 等无法解析为文件，element-types 判不出目标层、静默放行（P0-1 根因）。
+      'import/resolver': {
+        typescript: { alwaysTryTypes: true, project: './tsconfig.json' },
+        node: { extensions: ['.ts', '.tsx', '.js', '.jsx'] },
+      },
       'boundaries/include': ['src/**/*'],
       'boundaries/elements': [
         { type: 'app', pattern: 'src/app/**' },
@@ -185,6 +210,16 @@ export default tseslint.config(
         NO_WEBSOCKET,
       ],
       'no-restricted-imports': ['error', { patterns: [XTERM_IMPORT, ...VIEW_FORBIDDEN_IMPORTS] }],
+    },
+  },
+
+  // ——— hooks → views 反向依赖禁令（07 §4.2）。放 views 块之后覆盖 XTERM 块，故须把 XTERM_IMPORT 一并带上，
+  //     避免丢掉 @xterm 单一 import 点约束；useTerminalInstance.ts 例外（它是唯一 @xterm import 点）———
+  {
+    files: ['src/hooks/**/*.ts'],
+    ignores: ['src/hooks/useTerminalInstance.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [XTERM_IMPORT, HOOKS_NO_VIEWS] }],
     },
   },
 
