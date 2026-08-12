@@ -33,7 +33,11 @@ export class WriteBatcher {
     this.maxBytes = opts.maxBytes ?? DEFAULT_FLUSH_BYTES;
     // 默认 rAF（浏览器/jsdom 均有）；非浏览器环境由调用方注入 schedule/cancel。
     this.schedule = opts.schedule ?? ((cb) => requestAnimationFrame(cb));
-    this.cancel = opts.cancel ?? ((h) => cancelAnimationFrame(h));
+    this.cancel =
+      opts.cancel ??
+      ((h) => {
+        cancelAnimationFrame(h);
+      });
   }
 
   push(chunk: string): void {
@@ -44,7 +48,9 @@ export class WriteBatcher {
       this.flush();
       return;
     }
-    this.handle ??= this.schedule(() => this.flush());
+    this.handle ??= this.schedule(() => {
+      this.flush();
+    });
   }
 
   flush(): void {

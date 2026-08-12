@@ -48,36 +48,51 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
   selectedSandboxId: null,
   selectedProjectId: null,
   sidebarCollapsed: false,
-  setSelectedSandboxId: (id): void => set({ selectedSandboxId: id }),
-  setSelectedProjectId: (id): void => set({ selectedProjectId: id }),
-  toggleSidebar: (): void => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setSelectedSandboxId: (id): void => {
+    set({ selectedSandboxId: id });
+  },
+  setSelectedProjectId: (id): void => {
+    set({ selectedProjectId: id });
+  },
+  toggleSidebar: (): void => {
+    set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed }));
+  },
 
   taskListFolds: {},
-  toggleProjectFold: (projectId): void =>
+  toggleProjectFold: (projectId): void => {
     set((s) => ({
       taskListFolds: { ...s.taskListFolds, [projectId]: !(s.taskListFolds[projectId] ?? false) },
-    })),
+    }));
+  },
   // 深链/跨项目点击/指示器定位三条路径共用（15 §3.1.1 纪律 1）
-  expandProject: (projectId): void =>
+  expandProject: (projectId): void => {
     set((s) => ({
       selectedProjectId: projectId,
       taskListFolds: { ...s.taskListFolds, [projectId]: false },
-    })),
+    }));
+  },
 
   terminalFontSize: 14,
   lastUsedRuntime: null,
   lastUsedImage: null,
-  setTerminalFontSize: (size): void => set({ terminalFontSize: size }),
+  setTerminalFontSize: (size): void => {
+    set({ terminalFontSize: size });
+  },
 
   selectedProjectForMenu: null,
   currentModal: null,
-  setCurrentModal: (modal): void => set({ currentModal: modal }),
+  setCurrentModal: (modal): void => {
+    set({ currentModal: modal });
+  },
 
   wizardReturn: false,
   wizardData: null,
-  setWizardData: (data): void => set({ wizardData: data }),
+  setWizardData: (data): void => {
+    set({ wizardData: data });
+  },
 
   bannerDismissedToday: {},
-  dismissBannerToday: (bannerId, day): void =>
-    set((s) => ({ bannerDismissedToday: { ...s.bannerDismissedToday, [bannerId]: day } })),
+  dismissBannerToday: (bannerId, day): void => {
+    set((s) => ({ bannerDismissedToday: { ...s.bannerDismissedToday, [bannerId]: day } }));
+  },
 });

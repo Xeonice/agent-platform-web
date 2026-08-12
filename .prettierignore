@@ -7,3 +7,6 @@ test-results
 pnpm-lock.yaml
 src/types/generated
 public
+# 后端同步的契约基线：必须与 ../api/openapi.json 逐字节一致（漂移门禁），不受 prettier 改写
+openapi.json
+patches

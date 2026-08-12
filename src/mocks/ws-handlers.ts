@@ -8,7 +8,9 @@ const terminal = ws.link(`${WS_BASE}/terminal`);
 
 export const wsHandlers = [
   terminal.addEventListener('connection', ({ client }) => {
-    client.send(JSON.stringify({ type: 'session', socketSessionKey: `mock-${Date.now()}` }));
+    client.send(
+      JSON.stringify({ type: 'session', socketSessionKey: `mock-${String(Date.now())}` }),
+    );
     client.addEventListener('message', (event) => {
       const raw = typeof event.data === 'string' ? event.data : '';
       let frame: { type?: string; data?: string };

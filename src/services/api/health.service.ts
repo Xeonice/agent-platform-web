@@ -1,18 +1,21 @@
-// 冒烟切片：一条 typed openapi-fetch 调用（GET /api/health），走 msw mock。
+// 冒烟切片：一条 typed openapi-fetch 调用，对齐后端真实路径 `GET /api/health`（后端 setGlobalPrefix('api')）。
+// 路径字符串受生成的 paths 类型约束：写错路径（如漏 /api）即编译期报红——这就是"共用 interface"的落点。
 import { apiClient } from '@/services/api/client';
-import { toApiError } from '@/services/api/apiError';
-import type { components } from '@/types/generated/openapi';
+import { ApiErrorException, toApiError } from '@/services/api/apiError';
 
-export type HealthResponse = components['schemas']['HealthResponse'];
+export interface HealthStatus {
+  ok: boolean;
+  status: number;
+}
 
 /**
- * 拉取后端健康状态。演示：路径、响应 body 类型都来自生成类型；
+ * 拉取后端健康状态（liveness probe，无响应体 schema）。
  * 非 2xx 统一归一化为 ApiError（10 §6.8）。
  */
-export async function getHealth(): Promise<HealthResponse> {
-  const { data, error, response } = await apiClient.GET('/health');
-  if (error !== undefined || data === undefined) {
-    throw toApiError(error, response.status);
+export async function getHealth(): Promise<HealthStatus> {
+  const { error, response } = await apiClient.GET('/api/health');
+  if (!response.ok) {
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
   }
-  return data;
+  return { ok: true, status: response.status };
 }

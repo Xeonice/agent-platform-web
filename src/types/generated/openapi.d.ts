@@ -4,15 +4,98 @@
  */
 
 export interface paths {
-    "/health": {
+    "/api/sse": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** 健康检查（冒烟切片用；非最终契约） */
-        get: operations["getHealth"];
+        get: operations["SseController_sse"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["SseController_messages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["StreamableHttpController_handleGetRequest"];
+        put?: never;
+        post: operations["StreamableHttpController_handlePostRequest"];
+        delete: operations["StreamableHttpController_handleDeleteRequest"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Liveness probe (passcode-exempt) */
+        get: operations["HealthController_health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandboxes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List sandboxes, optionally filtered by projectId */
+        get: operations["SandboxController_list"];
+        put?: never;
+        /** Create a sandbox (Task) */
+        post: operations["SandboxController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandboxes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a sandbox by id */
+        get: operations["SandboxController_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -25,22 +108,34 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        HealthResponse: {
-            /** @enum {string} */
-            status: "ok" | "degraded";
-            version: string;
-            /** @description canonical openapi.json 的 sha256，X-Schema-Hash 握手用（shared/14 §2.4） */
-            schemaHash: string;
+        CreateSandboxDto: {
+            projectId: string;
+            runtime: string;
+            image?: string;
+            provider?: string;
+            initialPrompt?: string;
+            headless?: boolean;
+            timeoutMinutes?: number;
         };
-        /** @description 所有非 2xx 的唯一形状（shared/10 §6.8 / §7.5） */
+        SandboxResponseDto: {
+            id: string;
+            projectId: string;
+            runtime: string;
+            /** @enum {string} */
+            status: "pending" | "scheduling" | "preparing-workspace" | "creating" | "starting" | "running" | "idle" | "stopping" | "stopped" | "failed" | "destroying" | "destroyed";
+            headless: boolean;
+            timeoutMinutes: (number) | null;
+            idleTimeoutSec: number;
+            waitingInput: boolean;
+            version: number;
+        };
         ErrorEnvelope: {
             code: string;
             message: string;
             retryable: boolean;
             traceId?: string;
             details?: {
-                field: string;
-                issue: string;
+                [key: string]: unknown;
             }[];
         };
     };
@@ -52,7 +147,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    getHealth: {
+    SseController_sse: {
         parameters: {
             query?: never;
             header?: never;
@@ -61,22 +156,158 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 服务健康 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SseController_messages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    StreamableHttpController_handleGetRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    StreamableHttpController_handlePostRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    StreamableHttpController_handleDeleteRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HealthController_health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SandboxController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HealthResponse"];
+                    "application/json": components["schemas"]["SandboxResponseDto"][];
                 };
             };
-            /** @description 服务不可用 */
-            503: {
+        };
+    };
+    SandboxController_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSandboxDto"];
+            };
+        };
+        responses: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
+                    "application/json": components["schemas"]["SandboxResponseDto"];
+                };
+            };
+        };
+    };
+    SandboxController_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxResponseDto"];
                 };
             };
         };

@@ -41,7 +41,9 @@ export default function TerminalMount({ sessionId, wsUrl }: TerminalMountProps) 
       onInput: (d) => sendRef.current({ type: 'input', data: d }),
       onResize: () => undefined, // resize 帧在 send 具备 open 态后发；冒烟切片不驱动 resize
     });
-    return (): void => term.dispose(sessionId);
+    return (): void => {
+      term.dispose(sessionId);
+    };
   }, [term, sessionId]);
 
   return (

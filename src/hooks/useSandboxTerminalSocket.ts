@@ -60,7 +60,9 @@ export function useSandboxTerminalSocket(
             return;
           }
           clearTimer();
-          timerRef.current = setTimeout(() => socket.connect(), reconnectDelay(nextAttempt));
+          timerRef.current = setTimeout(() => {
+            socket.connect();
+          }, reconnectDelay(nextAttempt));
         }
       },
     });
