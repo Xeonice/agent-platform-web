@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 产品规定：全局暗色（P21 §3）。脚手架先给一套暗色 token；终端区纯黑由 --terminal-bg 控制。 */
+:root {
+  --background: 222 14% 11%;
+  --foreground: 0 0% 90%;
+  --muted: 222 12% 18%;
+  --muted-foreground: 0 0% 60%;
+  --border: 222 10% 24%;
+  --primary: 210 90% 56%;
+  --primary-foreground: 0 0% 100%;
+  --terminal-bg: #000000;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}

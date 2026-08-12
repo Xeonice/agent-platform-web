@@ -1,0 +1,73 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Agent Platform API (脚手架占位)",
+    "version": "0.0.0-placeholder",
+    "description": "TODO: 后端 NestJS dev server 就绪后，用 `OPENAPI_URL=http://localhost:3001/openapi.json pnpm generate:api` 覆盖本占位文件。当前仅含冒烟切片所需的 GET /api/health 与统一错误 envelope（shared/10 §6.8）。"
+  },
+  "servers": [{ "url": "/api" }],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "健康检查（冒烟切片用；非最终契约）",
+        "responses": {
+          "200": {
+            "description": "服务健康",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          },
+          "503": {
+            "description": "服务不可用",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "required": ["status", "version", "schemaHash"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ok", "degraded"] },
+          "version": { "type": "string" },
+          "schemaHash": {
+            "type": "string",
+            "description": "canonical openapi.json 的 sha256，X-Schema-Hash 握手用（shared/14 §2.4）"
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "description": "所有非 2xx 的唯一形状（shared/10 §6.8 / §7.5）",
+        "required": ["code", "message", "retryable"],
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "retryable": { "type": "boolean" },
+          "traceId": { "type": "string" },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["field", "issue"],
+              "properties": {
+                "field": { "type": "string" },
+                "issue": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
