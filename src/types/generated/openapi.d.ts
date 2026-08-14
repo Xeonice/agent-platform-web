@@ -98,7 +98,8 @@ export interface paths {
         get: operations["SandboxController_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Destroy a sandbox (optionally keeping its workspace) */
+        delete: operations["SandboxController_destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -128,6 +129,9 @@ export interface components {
             idleTimeoutSec: number;
             waitingInput: boolean;
             version: number;
+        };
+        DestroySandboxDto: {
+            keepVolume?: boolean;
         };
         ErrorEnvelope: {
             code: string;
@@ -309,6 +313,29 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SandboxResponseDto"];
                 };
+            };
+        };
+    };
+    SandboxController_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DestroySandboxDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

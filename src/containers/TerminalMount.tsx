@@ -7,27 +7,32 @@ import { useSandboxTerminalSocket } from '@/hooks/useSandboxTerminalSocket';
 import { TerminalPaneView } from '@/views/terminal/TerminalPane.view';
 import { ConnectionStatusView } from '@/views/terminal/ConnectionStatus.view';
 import type { TerminalServerFrame } from '@/types/ws-protocol';
+import type { TerminalSocketConfig } from '@/types/terminal';
 
 export interface TerminalMountProps {
   sessionId: string;
   sandboxId: string;
-  wsUrl: string;
+  socketConfig: TerminalSocketConfig;
 }
 
-export default function TerminalMount({ sessionId, wsUrl }: TerminalMountProps) {
+export default function TerminalMount({ sessionId, socketConfig }: TerminalMountProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const term = useTerminalInstance();
   const sendRef = useRef<(frame: { type: 'input'; data: string }) => boolean>(() => false);
 
   const handleFrame = useCallback(
     (frame: TerminalServerFrame): void => {
+      // data → 写屏；exit → 展示退出码（08 §8 第三类）；session/pong 由 ptySocket 内部处理。
       if (frame.type === 'data') term.write(sessionId, frame.data);
+      else if (frame.type === 'exit')
+        term.write(sessionId, `\r\n[进程已退出，code ${String(frame.code)}]\r\n`);
     },
     [term, sessionId],
   );
 
   const { connState, attempt, send } = useSandboxTerminalSocket({
-    url: wsUrl,
+    uri: socketConfig.uri,
+    query: socketConfig.query,
     onFrame: handleFrame,
   });
   sendRef.current = (frame): boolean => send(frame);

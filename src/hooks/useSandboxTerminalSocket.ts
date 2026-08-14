@@ -4,17 +4,19 @@ import {
   PtySocket,
   reconnectDelay,
   type ConnState,
-  type WebSocketCtor,
+  type SocketFactory,
 } from '@/services/ws/ptySocket';
 import type { TerminalClientFrame, TerminalServerFrame } from '@/types/ws-protocol';
 
 export interface UseSandboxTerminalSocketArgs {
-  url: string;
+  uri: string;
+  /** 基础 query（sandboxId/cols/rows/xSchemaHash）。须是稳定引用（来自 useTerminalSocketConfig 的 useMemo）。 */
+  query: Record<string, string>;
   /** Task 主状态；转 stopped/idle/failed 时终止重连循环（08 §8 要点 1）。 */
   sessionEnded?: boolean;
   onFrame: (frame: TerminalServerFrame) => void;
-  /** 测试注入 mock WebSocket 构造函数（避免 mock.module，12 §3.1.1）。 */
-  webSocketCtor?: WebSocketCtor;
+  /** 测试注入 mock socket 工厂（避免 mock.module，12 §3.1.1）。 */
+  socketFactory?: SocketFactory;
   maxReconnect?: number;
 }
 
@@ -35,7 +37,7 @@ export function useSandboxTerminalSocket(
 
   endedRef.current = args.sessionEnded ?? false;
 
-  const { url, onFrame, webSocketCtor, maxReconnect } = args;
+  const { uri, query, onFrame, socketFactory, maxReconnect } = args;
 
   const clearTimer = useCallback((): void => {
     if (timerRef.current !== null) {
@@ -46,8 +48,9 @@ export function useSandboxTerminalSocket(
 
   useEffect(() => {
     const socket = new PtySocket({
-      url,
-      webSocketCtor,
+      uri,
+      query,
+      socketFactory,
       maxReconnect,
       onFrame,
       onState: (state, nextAttempt) => {
@@ -74,7 +77,7 @@ export function useSandboxTerminalSocket(
       socket.close();
       socketRef.current = null;
     };
-  }, [url, onFrame, webSocketCtor, maxReconnect, clearTimer]);
+  }, [uri, query, onFrame, socketFactory, maxReconnect, clearTimer]);
 
   const send = useCallback(
     (frame: TerminalClientFrame): boolean => socketRef.current?.send(frame) ?? false,

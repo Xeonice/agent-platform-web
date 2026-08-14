@@ -247,6 +247,15 @@ export default tseslint.config(
     },
   },
 
+  // ——— 测试文件不受分层依赖方向约束（boundaries 管的是生产依赖方向，测试可跨层 wire mock/fixture）———
+  {
+    files: ['src/**/*.{test,spec}.{ts,tsx}'],
+    plugins: { boundaries },
+    rules: {
+      'boundaries/element-types': 'off',
+    },
+  },
+
   // ——— Storybook 插件推荐规则 ———
   ...storybook.configs['flat/recommended'],
 

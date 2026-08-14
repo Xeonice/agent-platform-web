@@ -1,8 +1,7 @@
 'use client';
-// 'use client' + next/dynamic 装配（08 §2.2）：把 xterm 实例化限制在 ssr:false 的独立 chunk，
-// 首屏不加载终端代码；无选中 Task 时渲染空态引导（08 §2.2）。
+// 'use client' + next/dynamic 装配（08 §2.2）：把 xterm 实例化限制在 ssr:false 的独立 chunk，首屏不加载终端代码。
 import dynamic from 'next/dynamic';
-import { TerminalPaneView } from '@/views/terminal/TerminalPane.view';
+import type { TerminalSocketConfig } from '@/types/terminal';
 
 const TerminalMount = dynamic(() => import('@/containers/TerminalMount'), {
   ssr: false,
@@ -14,14 +13,11 @@ const TerminalMount = dynamic(() => import('@/containers/TerminalMount'), {
 });
 
 export interface TerminalContainerProps {
-  sessionId: string | null;
-  sandboxId: string | null;
-  wsUrl: string;
+  sessionId: string;
+  sandboxId: string;
+  socketConfig: TerminalSocketConfig;
 }
 
-export function TerminalContainer({ sessionId, sandboxId, wsUrl }: TerminalContainerProps) {
-  if (sessionId === null || sandboxId === null) {
-    return <TerminalPaneView empty />;
-  }
-  return <TerminalMount sessionId={sessionId} sandboxId={sandboxId} wsUrl={wsUrl} />;
+export function TerminalContainer({ sessionId, sandboxId, socketConfig }: TerminalContainerProps) {
+  return <TerminalMount sessionId={sessionId} sandboxId={sandboxId} socketConfig={socketConfig} />;
 }
