@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useTerminalInstance } from '@/hooks/useTerminalInstance';
 import { useSandboxTerminalSocket } from '@/hooks/useSandboxTerminalSocket';
+import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { TerminalPaneView } from '@/views/terminal/TerminalPane.view';
 import { ConnectionStatusView } from '@/views/terminal/ConnectionStatus.view';
 import type { TerminalServerFrame } from '@/types/ws-protocol';
@@ -30,10 +31,15 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
     [term, sessionId],
   );
 
+  const { reportUnauthorized } = useReportUnauthorized();
+
+  // 非法帧的上报由 useSandboxTerminalSocket 内建经 lib/reportError 落到单一消费点（P1-#4）；
+  // 容器层禁止直接 import lib（boundaries），故这里只接 WS 未授权 → 弹解锁门。
   const { connState, attempt, send } = useSandboxTerminalSocket({
     uri: socketConfig.uri,
     query: socketConfig.query,
     onFrame: handleFrame,
+    onUnauthorized: reportUnauthorized,
   });
   sendRef.current = (frame): boolean => send(frame);
 

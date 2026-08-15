@@ -8,6 +8,9 @@ export const handlers = [
   // 返回空 JSON（openapi-fetch 默认按 json 解析，须是合法 JSON），body 内容不被读取。
   http.get(`${API_BASE}/api/health`, () => HttpResponse.json({}, { status: 200 })),
 
+  // 口令解锁（11 §3.1）：dev 无口令门，直接 204 成功（真实 cookie 由后端 set）。
+  http.post(`${API_BASE}/api/access/unlock`, () => new HttpResponse(null, { status: 204 })),
+
   // S1 建沙箱：回一个符合 SandboxResponseDto 形状的 201（dev 打通"新建沙箱→终端"链路）。
   http.post(`${API_BASE}/api/sandboxes`, () =>
     HttpResponse.json(

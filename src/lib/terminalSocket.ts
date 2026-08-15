@@ -9,7 +9,7 @@ export const TERMINAL_NAMESPACE = '/terminal';
 export type { TerminalSocketConfig };
 
 /** socket.io 用 http(s) origin（内部自行升级到 ws）；容忍传入 ws(s):// 并归一化。 */
-function normalizeOrigin(base: string): string {
+export function normalizeOrigin(base: string): string {
   return base
     .replace(/^ws:\/\//, 'http://')
     .replace(/^wss:\/\//, 'https://')

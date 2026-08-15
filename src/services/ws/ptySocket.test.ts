@@ -11,7 +11,7 @@ import type { TerminalClientFrame, TerminalServerFrame } from '@/types/ws-protoc
 class MockSocket implements SocketLike {
   private connectCb: (() => void) | null = null;
   private disconnectCb: (() => void) | null = null;
-  private connectErrorCb: (() => void) | null = null;
+  private connectErrorCb: ((err?: unknown) => void) | null = null;
   private frameCb: ((frame: unknown) => void) | null = null;
   readonly emitted: TerminalClientFrame[] = [];
   disconnected = false;
@@ -22,7 +22,7 @@ class MockSocket implements SocketLike {
   onDisconnect(cb: () => void): void {
     this.disconnectCb = cb;
   }
-  onConnectError(cb: () => void): void {
+  onConnectError(cb: (err?: unknown) => void): void {
     this.connectErrorCb = cb;
   }
   onFrame(cb: (frame: unknown) => void): void {
@@ -40,6 +40,9 @@ class MockSocket implements SocketLike {
   }
   triggerDisconnect(): void {
     this.disconnectCb?.();
+  }
+  triggerConnectError(err?: unknown): void {
+    this.connectErrorCb?.(err);
   }
   serverEmit(raw: unknown): void {
     this.frameCb?.(raw);
@@ -144,6 +147,40 @@ describe('PtySocket (08 §3, socket.io transport)', () => {
     expect(argsLog[1]?.query['socketSessionKey']).toBe('KEY-123');
     expect(argsLog[1]?.query['sandboxId']).toBe('s1');
     expect(argsLog[1]?.query['xSchemaHash']).toBe('sb-terminal-v1');
+  });
+
+  it('connect_error 含未授权文案 → 触发 onUnauthorized（口令门 11 §3.1）', () => {
+    const mock = new MockSocket();
+    const onUnauthorized = vi.fn();
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: {},
+      socketFactory: () => mock,
+      onFrame: () => undefined,
+      onState: () => undefined,
+      onUnauthorized,
+    });
+    socket.connect();
+    mock.triggerConnectError(new Error('unauthorized'));
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(socket.connState).toBe('reconnecting');
+  });
+
+  it('connect_error 为普通传输错误 → 不误判为未授权', () => {
+    const mock = new MockSocket();
+    const onUnauthorized = vi.fn();
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: {},
+      socketFactory: () => mock,
+      onFrame: () => undefined,
+      onState: () => undefined,
+      onUnauthorized,
+    });
+    socket.connect();
+    mock.triggerConnectError(new Error('websocket error'));
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(socket.connState).toBe('reconnecting');
   });
 
   it('exit 帧被转发给 onFrame', () => {

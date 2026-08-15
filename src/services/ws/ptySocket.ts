@@ -7,6 +7,7 @@ import {
   type TerminalClientFrame,
   type TerminalServerFrame,
 } from '@/types/ws-protocol';
+import { isUnauthorizedError } from '@/services/ws/socketAuth';
 import type { ConnState } from '@/types/terminal';
 
 export type { ConnState };
@@ -15,7 +16,8 @@ export type { ConnState };
 export interface SocketLike {
   onConnect(cb: () => void): void;
   onDisconnect(cb: () => void): void;
-  onConnectError(cb: () => void): void;
+  /** connect_error 回调；带回原始错误（用于判别未授权，08 §3.1 / 口令门 11 §3.1）。 */
+  onConnectError(cb: (err?: unknown) => void): void;
   onFrame(cb: (frame: unknown) => void): void;
   emitFrame(frame: TerminalClientFrame): void;
   disconnect(): void;
@@ -38,6 +40,8 @@ export interface PtySocketOptions {
   onState: (state: ConnState, attempt: number) => void;
   /** 契约校验失败回调（dev fail-fast / prod 上报，08 §3.1）。 */
   onInvalidFrame?: (raw: unknown) => void;
+  /** WS 握手被口令门拒绝（未授权）时回调，供上层弹解锁门（11 §3.1）。 */
+  onUnauthorized?: () => void;
   maxReconnect?: number;
 }
 
@@ -51,6 +55,8 @@ function defaultSocketFactory({ uri, query }: SocketFactoryArgs): SocketLike {
     query,
     reconnection: false,
     forceNew: true,
+    // 握手带上 HttpOnly `ap_session` cookie（口令门 11 §3.1）：跨源 WS 须显式带凭据。
+    withCredentials: true,
   });
   return {
     onConnect: (cb) => {
@@ -62,8 +68,8 @@ function defaultSocketFactory({ uri, query }: SocketFactoryArgs): SocketLike {
       });
     },
     onConnectError: (cb) => {
-      socket.on('connect_error', () => {
-        cb();
+      socket.on('connect_error', (err: unknown) => {
+        cb(err);
       });
     },
     onFrame: (cb) => {
@@ -116,7 +122,8 @@ export class PtySocket {
     socket.onFrame((frame) => {
       this.handleFrame(frame);
     });
-    socket.onConnectError(() => {
+    socket.onConnectError((err) => {
+      if (isUnauthorizedError(err)) this.opts.onUnauthorized?.();
       this.handleClose();
     });
     socket.onDisconnect(() => {
