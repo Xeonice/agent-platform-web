@@ -14,7 +14,7 @@ export interface CloneProgressProps {
   guidanceMessage?: string;
   /** 重试是否可能有效（PERMISSION 需凭证时 false）。 */
   canRetry?: boolean;
-  /** 需要凭证（S3，暂文案）。 */
+  /** 需要凭证（S3：权限类失败 → 就地引导配置 Git 凭证）。 */
   needsCredentials?: boolean;
   /** 动作进行中（retry/convert 请求）。 */
   busy?: boolean;
@@ -22,6 +22,8 @@ export interface CloneProgressProps {
   actionError?: string;
   onRetry?: () => void;
   onConvertToEmpty?: () => void;
+  /** 权限类失败：就地 [配置 Git 凭证] → 跳凭证页（F21-3 §10.2）。 */
+  onConfigureCredentials?: () => void;
   /** 完成后继续（打开项目）。 */
   onDone?: () => void;
   /** cloning/slow 期间的取消/返回路径（避免用户困在该组件里，P0-2）。 */
@@ -42,6 +44,7 @@ export function CloneProgressView({
   onConvertToEmpty,
   onDone,
   onCancel,
+  onConfigureCredentials,
 }: CloneProgressProps) {
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-5 p-6 text-center">
@@ -92,15 +95,17 @@ export function CloneProgressView({
           <p role="alert" className="text-sm text-red-400">
             {guidanceMessage ?? '克隆失败，请重试。'}
           </p>
-          {needsCredentials && (
-            <p className="text-xs text-muted-foreground">凭证管理将在后续版本提供。</p>
-          )}
           {actionError !== undefined && actionError !== '' && (
             <p role="alert" className="text-xs text-red-400">
               {actionError}
             </p>
           )}
           <div className="flex flex-wrap justify-center gap-2">
+            {needsCredentials && onConfigureCredentials !== undefined && (
+              <Button variant="outline" disabled={busy} onClick={onConfigureCredentials}>
+                配置 Git 凭证
+              </Button>
+            )}
             {canRetry && (
               <Button variant="outline" disabled={busy} onClick={onRetry}>
                 重试克隆

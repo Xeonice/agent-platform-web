@@ -209,6 +209,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List git credentials (masked). `kind` is required and must be `git`. */
+        get: operations["CredentialController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credentials/git": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Store a git credential (ssh-key / https-token); same-protocol = replace */
+        post: operations["CredentialController_store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credentials/git/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test a git credential via ls-remote (15s); inline (test-before-save) or stored; never returns refs */
+        post: operations["CredentialController_test"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credentials/git/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a git credential (wipes ciphertext, keeps audit metadata) */
+        delete: operations["CredentialController_revoke"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -261,6 +329,68 @@ export interface components {
         };
         DestroySandboxDto: {
             keepVolume?: boolean;
+        };
+        MaskedGitCredentialResponseDto: {
+            id: string;
+            /** @enum {string} */
+            kind: "git";
+            /** @enum {string} */
+            type: "ssh-key" | "https-token";
+            maskedIdentifier: string;
+            /** @enum {string} */
+            platform?: "github" | "gitlab" | "gitee" | "other";
+            allowedHosts: string[];
+            knownHosts?: {
+                host: string;
+                keyType: string;
+                fingerprint: string;
+                firstSeenAt: string;
+            }[];
+            lastUsedAt?: string | null;
+            createdAt: string;
+        };
+        CreateGitCredentialDto: {
+            /** @enum {string} */
+            type: "ssh-key" | "https-token";
+            secret: string;
+            /** @enum {string} */
+            platform?: "github" | "gitlab" | "gitee" | "other";
+            /** @default [] */
+            allowedHosts: string[];
+        };
+        StoreGitCredentialResponseDto: {
+            id: string;
+            maskedIdentifier: string;
+        };
+        InlineGitTestDto: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "inline";
+            /** @enum {string} */
+            type: "ssh-key" | "https-token";
+            secret: string;
+            /** @enum {string} */
+            platform?: "github" | "gitlab" | "gitee" | "other";
+            /** @default [] */
+            allowedHosts: string[];
+            repoUrl?: string;
+        };
+        StoredGitTestDto: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "stored";
+            credentialId: string;
+            repoUrl?: string;
+        };
+        GitTestResultResponseDto: {
+            ok: boolean;
+            /** @enum {string} */
+            errorCode?: "CLONE_FAILED_PERMISSION" | "CLONE_FAILED_NETWORK" | "TIMEOUT";
+            message?: string;
         };
         ErrorEnvelope: {
             code: string;
@@ -636,6 +766,92 @@ export interface operations {
                 "application/json": components["schemas"]["DestroySandboxDto"];
             };
         };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CredentialController_list: {
+        parameters: {
+            query: {
+                kind: "git";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaskedGitCredentialResponseDto"][];
+                };
+            };
+        };
+    };
+    CredentialController_store: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateGitCredentialDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoreGitCredentialResponseDto"];
+                };
+            };
+        };
+    };
+    CredentialController_test: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InlineGitTestDto"] | components["schemas"]["StoredGitTestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitTestResultResponseDto"];
+                };
+            };
+        };
+    };
+    CredentialController_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             204: {
                 headers: {

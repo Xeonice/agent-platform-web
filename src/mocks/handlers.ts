@@ -78,6 +78,38 @@ export const handlers = [
   ),
   http.delete(`${API_BASE}/api/projects/:id`, () => new HttpResponse(null, { status: 204 })),
 
+  // Git 凭证（F21-3 §8）：dev 打通「凭证页 → 配置 HTTPS Token → 测试 → 保存」链路。明文永不回读。
+  http.get(`${API_BASE}/api/credentials`, () =>
+    HttpResponse.json([
+      {
+        id: 'gc-demo',
+        kind: 'git',
+        type: 'https-token',
+        maskedIdentifier: 'ghp_…ab12',
+        platform: 'github',
+        allowedHosts: ['github.com'],
+        lastUsedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+      },
+    ]),
+  ),
+  http.post(`${API_BASE}/api/credentials/git`, async ({ request }) => {
+    const body: unknown = await request.json().catch(() => ({}));
+    const type =
+      typeof body === 'object' && body !== null && 'type' in body ? body.type : 'https-token';
+    const isSsh = type === 'ssh-key';
+    // 保存响应仅回 id + maskedIdentifier（StoreGitCredentialResponseDto，不回明文）。
+    return HttpResponse.json(
+      {
+        id: `gc-${String(Date.now())}`,
+        maskedIdentifier: isSsh ? 'SHA256:abc123def456' : 'ghp_…ab12',
+      },
+      { status: 201 },
+    );
+  }),
+  http.post(`${API_BASE}/api/credentials/git/test`, () => HttpResponse.json({ ok: true })),
+  http.delete(`${API_BASE}/api/credentials/git/:id`, () => new HttpResponse(null, { status: 204 })),
+
   // S1 建沙箱：回一个符合 SandboxResponseDto 形状的 201（dev 打通"新建沙箱→终端"链路）。
   http.post(`${API_BASE}/api/sandboxes`, () =>
     HttpResponse.json(
