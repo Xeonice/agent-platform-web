@@ -11,8 +11,13 @@ import {
   createSandboxStatusSlice,
   type SandboxStatusSlice,
 } from '@/stores/createSandboxStatusSlice';
+import { createProjectCloneSlice, type ProjectCloneSlice } from '@/stores/createProjectCloneSlice';
 
-export type AppState = UiSlice & TerminalRegistrySlice & AccessSlice & SandboxStatusSlice;
+export type AppState = UiSlice &
+  TerminalRegistrySlice &
+  AccessSlice &
+  SandboxStatusSlice &
+  ProjectCloneSlice;
 
 /** persist 落盘的字段形状（白名单产出）。用于把安全红线写成可回归的类型 + 快照。 */
 export interface PersistedState {
@@ -50,6 +55,7 @@ export const useAppStore = create<AppState>()(
       ...createTerminalRegistrySlice(...args),
       ...createAccessSlice(...args),
       ...createSandboxStatusSlice(...args),
+      ...createProjectCloneSlice(...args),
     }),
     {
       name: 'agent-platform-ui',

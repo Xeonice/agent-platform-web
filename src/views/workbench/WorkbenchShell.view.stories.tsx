@@ -6,8 +6,9 @@ const groups: ProjectGroup[] = [
   {
     projectId: 'p1',
     projectName: '项目 A',
-    cloneStatus: 'ok',
+    cloneStatus: 'ready',
     collapsed: false,
+    taskCount: 2,
     tasks: [
       {
         id: 't1',
@@ -29,9 +30,10 @@ const groups: ProjectGroup[] = [
   },
   {
     projectId: 'p2',
-    projectName: '项目 B（折叠）',
-    cloneStatus: 'ok',
+    projectName: '项目 B（克隆中）',
+    cloneStatus: 'cloning',
     collapsed: true,
+    taskCount: 0,
     tasks: [],
   },
 ];
@@ -58,7 +60,14 @@ export const MultiProject: Story = {
 export const EmptyGroup: Story = {
   args: {
     groups: [
-      { projectId: 'p3', projectName: '空项目', cloneStatus: 'ok', collapsed: false, tasks: [] },
+      {
+        projectId: 'p3',
+        projectName: '空项目',
+        cloneStatus: 'ready',
+        collapsed: false,
+        taskCount: 0,
+        tasks: [],
+      },
     ],
     waitingInputCount: 0,
     healthLabel: '正在检查后端…',

@@ -26,22 +26,29 @@ export function selectProjectTaskTree(
 
   const byActiveDesc = (a: Sandbox, b: Sandbox): number => b.lastActiveAt - a.lastActiveAt;
 
-  const groups: ProjectGroup[] = projects.map((project) => ({
-    projectId: project.id,
-    projectName: project.name,
-    cloneStatus: project.cloneStatus,
-    collapsed: folds[project.id] ?? false,
-    tasks: (tasksByProject.get(project.id) ?? []).slice().sort(byActiveDesc),
-  }));
+  const groups: ProjectGroup[] = projects.map((project) => {
+    const projectTasks = (tasksByProject.get(project.id) ?? []).slice().sort(byActiveDesc);
+    return {
+      projectId: project.id,
+      projectName: project.name,
+      cloneStatus: project.cloneStatus,
+      collapsed: folds[project.id] ?? false,
+      // 后端 taskCount 优先（sandbox 列表尚未接入时的权威计数），回退到已加载 tasks 数。
+      taskCount: project.taskCount ?? projectTasks.length,
+      tasks: projectTasks,
+    };
+  });
 
   const orphanTasks = tasksByProject.get(ORPHAN_GROUP_ID);
   if (orphanTasks && orphanTasks.length > 0) {
+    const sorted = orphanTasks.slice().sort(byActiveDesc);
     groups.push({
       projectId: ORPHAN_GROUP_ID,
       projectName: '未分组',
       cloneStatus: undefined,
       collapsed: folds[ORPHAN_GROUP_ID] ?? false,
-      tasks: orphanTasks.slice().sort(byActiveDesc),
+      taskCount: sorted.length,
+      tasks: sorted,
     });
   }
 
