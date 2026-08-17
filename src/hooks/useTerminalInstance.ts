@@ -1,6 +1,6 @@
 // **唯一 import `@xterm/*` 的文件**（08 §2.1）：Terminal 实例创建/挂载/addon/配置/fit/写入批处理/dispose。
 // ESLint no-restricted-imports 对其余目录禁 @xterm/*（eslint.config.js）。
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css'; // CSS 随 terminal chunk 注入（08 §2.3），不放全局 layout
@@ -119,7 +119,12 @@ export function useTerminalInstance(): TerminalInstanceApi {
     instances.current.delete(sessionId);
   }, []);
 
-  return { attach, write, fit, getRenderer, dispose };
+  // 返回值必须 useMemo 稳定引用：否则每次渲染都是新对象，下游 useCallback([term,...])
+  // 身份抖动 → useSandboxTerminalSocket 连接 effect 反复 close+重连（08 §7.4）。
+  return useMemo(
+    () => ({ attach, write, fit, getRenderer, dispose }),
+    [attach, write, fit, getRenderer, dispose],
+  );
 }
 
 /** 隐藏容器不 fit；相同尺寸不上报（08 §4.1 纪律 1/2）。 */

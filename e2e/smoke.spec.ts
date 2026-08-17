@@ -1,31 +1,38 @@
 import { test, expect } from '@playwright/test';
 
-// 骨架：用例组 A 的最小切片（12 §4.2）。REST 用 page.route，WS 用 routeWebSocket（不启 MSW，§4.1）。
-// 后端契约与页面交互落地后按 §4.2 用例组 A–G 扩充。
-test.describe('工作台冒烟（用例组 A 切片）', () => {
-  test('工作台骨架渲染 + 选中任务打开终端 + WS echo', async ({ page }) => {
-    // REST mock：GET /api/health
-    await page.route('**/api/health', (route) =>
-      route.fulfill({ json: { status: 'ok', version: 'e2e', schemaHash: 'e2e' } }),
+// S1 骨架（mock 边界集成，用例组 A 切片，12 §4.2）。
+// 终端传输层已改 socket.io：Playwright 的 routeWebSocket 拦不住 socket.io 握手，且不作假 echo——
+// 故此处只验证到"新建沙箱→终端挂载→连接态展示"的 UI 链路（socket.io 连不上真后端时会进 connecting/reconnecting）。
+// 真·浏览器→真后端 socket.io echo 的贯通，留待后端 daemon 起来后联调；帧收发/socketSessionKey 由 ptySocket 单测覆盖。
+test.describe('S1 建沙箱 + 终端骨架（mock 边界）', () => {
+  test('选 provider → 新建沙箱 → 终端挂载 + 连接态展示', async ({ page }) => {
+    await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+    await page.route('**/api/sandboxes', (route) =>
+      route.fulfill({
+        status: 201,
+        json: {
+          id: 'sb-e2e',
+          projectId: 'default',
+          runtime: 'shell',
+          status: 'running',
+          headless: false,
+          timeoutMinutes: 120,
+          idleTimeoutSec: 1800,
+          waitingInput: false,
+          version: 1,
+        },
+      }),
     );
-
-    // WS mock：/terminal echo（Playwright 原生 routeWebSocket，已 GA）
-    await page.routeWebSocket(/\/terminal/, (ws) => {
-      ws.send(JSON.stringify({ type: 'session', socketSessionKey: 'e2e-key' }));
-      ws.onMessage((message) => {
-        const text = typeof message === 'string' ? message : message.toString();
-        const frame = JSON.parse(text) as { type?: string; data?: string };
-        if (frame.type === 'input' && typeof frame.data === 'string') {
-          ws.send(JSON.stringify({ type: 'data', data: frame.data }));
-        }
-      });
-    });
 
     await page.goto('/');
     await expect(page.getByText('Agent 管理平台')).toBeVisible();
 
-    // 选中演示任务 → 终端容器出现
-    await page.getByRole('button', { name: /演示任务/ }).click();
+    // provider 选择：默认 aio，改选 boxlite 证明可选档
+    await page.getByRole('radio', { name: /boxlite/ }).check();
+    await page.getByRole('button', { name: '新建沙箱并打开终端' }).click();
+
+    // 终端容器挂载（xterm）+ 连接状态条出现（无真后端时为连接中/重连中）
     await expect(page.getByTestId('terminal-container')).toBeVisible();
+    await expect(page.getByRole('status')).toBeVisible();
   });
 });
