@@ -10,15 +10,16 @@ import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
 import { SandboxLifecycleContainer } from '@/containers/SandboxLifecycleContainer';
 import { SANDBOX_PROVIDERS, DEFAULT_SANDBOX_PROVIDER, type SandboxProvider } from '@/types/sandbox';
 
-// S1 范围：不做项目/runtime 选择。projectId/runtime 用占位默认（S2 接项目、S3 接 runtime）。
-const S1_DEFAULT_PROJECT_ID = 'default';
-const S1_DEFAULT_RUNTIME = 'shell';
+// S2：projectId 来自选中的真实项目（ready 态才会挂载本容器）；runtime 仍占位（S3 接 runtime）。
+const S2_DEFAULT_RUNTIME = 'shell';
 
 export interface SandboxTerminalContainerProps {
   wsBaseUrl: string;
+  /** 选中的真实项目（沙箱 /workspace 即该项目文件）。 */
+  projectId: string;
 }
 
-export function SandboxTerminalContainer({ wsBaseUrl }: SandboxTerminalContainerProps) {
+export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTerminalContainerProps) {
   const [provider, setProvider] = useState<SandboxProvider>(DEFAULT_SANDBOX_PROVIDER);
   const [sandboxId, setSandboxId] = useState<string | null>(null);
   const createSandbox = useCreateSandbox();
@@ -29,7 +30,7 @@ export function SandboxTerminalContainer({ wsBaseUrl }: SandboxTerminalContainer
 
   const handleCreate = (): void => {
     createSandbox.mutate(
-      { projectId: S1_DEFAULT_PROJECT_ID, runtime: S1_DEFAULT_RUNTIME, provider },
+      { projectId, runtime: S2_DEFAULT_RUNTIME, provider },
       {
         onSuccess: (sandbox) => {
           // 种子首值（通常 pending）；随后 /events 的 status_changed 推进到 running 才开终端。
@@ -69,7 +70,6 @@ export function SandboxTerminalContainer({ wsBaseUrl }: SandboxTerminalContainer
     <SandboxLifecycleContainer
       sessionId={`${sandboxId}:0`}
       sandboxId={sandboxId}
-      wsBaseUrl={wsBaseUrl}
       socketConfig={socketConfig}
       onRetry={handleRetry}
     />

@@ -1,9 +1,7 @@
 'use client';
-// 沙箱生命周期门（10 §7.4 / P20 §3.3）：订阅 /events 驱动 status，
+// 沙箱生命周期门（10 §7.4 / P20 §3.3）：读 /events 驱动的 status（订阅在 WorkbenchContainer 全局），
 // 据 status 在「启动中进度 → 终端 → 失败重试」间切换。终端只在 running 才开（不再 create 即开、干等重连）。
-import { useSandboxEventsSocket } from '@/hooks/useSandboxEventsSocket';
 import { useSandboxLifecycle } from '@/hooks/useSandboxLifecycle';
-import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { TerminalContainer } from '@/containers/TerminalContainer';
 import { SandboxStartupProgressView } from '@/views/sandbox/SandboxStartupProgress.view';
 import { Button } from '@/components/ui/button';
@@ -12,7 +10,6 @@ import type { TerminalSocketConfig } from '@/types/terminal';
 export interface SandboxLifecycleContainerProps {
   sessionId: string;
   sandboxId: string;
-  wsBaseUrl: string;
   socketConfig: TerminalSocketConfig;
   /** 失败/结束态的重试入口（回到新建面板）。 */
   onRetry: () => void;
@@ -21,14 +18,9 @@ export interface SandboxLifecycleContainerProps {
 export function SandboxLifecycleContainer({
   sessionId,
   sandboxId,
-  wsBaseUrl,
   socketConfig,
   onRetry,
 }: SandboxLifecycleContainerProps) {
-  const { reportUnauthorized } = useReportUnauthorized();
-  // 订阅 /events（未授权 → 解锁门）。副作用只在此 hook。
-  useSandboxEventsSocket({ base: wsBaseUrl, onUnauthorized: reportUnauthorized });
-
   const { decision, status, phases, activePhaseIndex, percent } = useSandboxLifecycle(sandboxId);
 
   if (decision === 'running') {

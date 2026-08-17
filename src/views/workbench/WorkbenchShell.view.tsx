@@ -1,4 +1,4 @@
-// 工作台骨架 view（P21-1）：顶栏 + 左侧任务树占位 + 右侧终端区。纯展示，props 驱动。
+// 工作台骨架 view（P21-1 / S2）：顶栏 + 左侧项目树（含 clone 徽标）+ 右侧内容区。纯展示，props 驱动。
 import type { ReactNode } from 'react';
 import type { ProjectGroup } from '@/types/domain';
 import { Button } from '@/components/ui/button';
@@ -9,8 +9,23 @@ export interface WorkbenchShellProps {
   healthLabel: string;
   terminalSlot: ReactNode;
   selectedTaskId?: string | null;
+  selectedProjectId?: string | null;
   onSelectTask?: (taskId: string) => void;
+  onSelectProject?: (projectId: string) => void;
   onNewProject?: () => void;
+}
+
+/** clone 徽标：cloning→克隆中(黄) / failed→克隆失败(红) / ready→无（就绪不打扰）。 */
+function CloneBadge({ cloneStatus }: { cloneStatus: ProjectGroup['cloneStatus'] }) {
+  if (cloneStatus === 'cloning') {
+    return (
+      <span className="rounded bg-yellow-500/15 px-1 text-[10px] text-yellow-300">克隆中</span>
+    );
+  }
+  if (cloneStatus === 'failed') {
+    return <span className="rounded bg-red-500/15 px-1 text-[10px] text-red-300">克隆失败</span>;
+  }
+  return null;
 }
 
 export function WorkbenchShellView({
@@ -19,7 +34,9 @@ export function WorkbenchShellView({
   healthLabel,
   terminalSlot,
   selectedTaskId = null,
+  selectedProjectId = null,
   onSelectTask,
+  onSelectProject,
   onNewProject,
 }: WorkbenchShellProps) {
   return (
@@ -40,9 +57,19 @@ export function WorkbenchShellView({
           <nav className="flex-1 overflow-auto p-2" aria-label="项目分组任务树">
             {groups.map((group) => (
               <section key={group.projectId} className="mb-2">
-                <h2 className="px-1 py-1 text-xs font-medium text-muted-foreground">
-                  {group.projectName} · {group.tasks.length}
-                </h2>
+                <button
+                  type="button"
+                  aria-current={selectedProjectId === group.projectId || undefined}
+                  className={
+                    'flex w-full items-center gap-2 rounded px-1 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted ' +
+                    (selectedProjectId === group.projectId ? 'bg-muted text-foreground' : '')
+                  }
+                  onClick={() => onSelectProject?.(group.projectId)}
+                >
+                  <span className="truncate">{group.projectName}</span>
+                  <span className="text-muted-foreground">· {group.taskCount}</span>
+                  <CloneBadge cloneStatus={group.cloneStatus} />
+                </button>
                 {!group.collapsed &&
                   (group.tasks.length === 0 ? (
                     <p className="px-1 py-1 text-xs text-muted-foreground">
@@ -54,7 +81,7 @@ export function WorkbenchShellView({
                         <li key={task.id}>
                           <button
                             type="button"
-                            aria-current={selectedTaskId === task.id}
+                            aria-current={selectedTaskId === task.id || undefined}
                             className={
                               'w-full rounded px-2 py-1 text-left text-sm hover:bg-muted ' +
                               (selectedTaskId === task.id ? 'bg-muted' : '')

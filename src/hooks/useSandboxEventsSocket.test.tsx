@@ -52,6 +52,7 @@ function makeFactory(): { factory: EventsSocketFactory; sockets: MockEventsSocke
 
 beforeEach(() => {
   useAppStore.getState().clearSandboxStatus('s1');
+  useAppStore.getState().clearCloneProgress('p1');
 });
 afterEach(() => {
   setErrorReporter(null);
@@ -92,6 +93,30 @@ describe('useSandboxEventsSocket', () => {
     });
 
     expect(reporter).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().sandboxStatuses['s1']).toBeUndefined();
+  });
+
+  it('project.clone_progress → 路由到项目 clone store（同一 /events 通道分发）', () => {
+    const { factory, sockets } = makeFactory();
+    renderHook(() =>
+      useSandboxEventsSocket({ base: 'ws://localhost:3001', socketFactory: factory }),
+    );
+
+    act(() => {
+      sockets[0]!.triggerConnect();
+      sockets[0]!.serverEmit({
+        event: 'project.clone_progress',
+        projectId: 'p1',
+        phase: 'cloning',
+        percent: 40,
+      });
+    });
+
+    expect(useAppStore.getState().projectClones['p1']).toMatchObject({
+      phase: 'cloning',
+      percent: 40,
+    });
+    // sandbox 状态表不受影响
     expect(useAppStore.getState().sandboxStatuses['s1']).toBeUndefined();
   });
 

@@ -36,10 +36,13 @@ export function useSandboxEventsSocket(
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const applySandboxEvent = useAppStore((s) => s.applySandboxEvent);
+  const applyProjectCloneEvent = useAppStore((s) => s.applyProjectCloneEvent);
 
   // latest-ref：回调/store action 引用抖动不重建连接（08 §7.4 / P0 同理）。
   const applyRef = useRef(applySandboxEvent);
   applyRef.current = applySandboxEvent;
+  const applyCloneRef = useRef(applyProjectCloneEvent);
+  applyCloneRef.current = applyProjectCloneEvent;
   const onUnauthorizedRef = useRef(onUnauthorized);
   onUnauthorizedRef.current = onUnauthorized;
 
@@ -62,7 +65,10 @@ export function useSandboxEventsSocket(
       socketFactory,
       maxReconnect,
       onEvent: (event) => {
+        // 单一 /events 通道分发到相关 slice：sandbox.* → 状态表，project.clone_progress → 克隆表。
+        // 各 action 对不相关变体自身 no-op（switch/default），彼此不干扰。
         applyRef.current(event);
+        applyCloneRef.current(event);
       },
       onInvalidFrame: (raw) => {
         reportError('丢弃非法 /events 帧（SandboxEvent zod 校验失败）', { raw });

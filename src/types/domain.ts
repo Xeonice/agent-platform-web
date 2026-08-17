@@ -8,7 +8,10 @@ export type SandboxStatus =
 export interface Project {
   id: string;
   name: string;
-  cloneStatus?: 'ok' | 'cloning' | 'failed';
+  /** 与后端 ProjectResponseDto.cloneStatus 同词汇：'ready' 就绪 / 'cloning' 克隆中 / 'failed' 失败。 */
+  cloneStatus?: 'ready' | 'cloning' | 'failed';
+  /** 展示用 Task 数，直传自后端 ProjectResponseDto.taskCount。 */
+  taskCount?: number;
 }
 
 export interface Sandbox {
@@ -27,5 +30,7 @@ export interface ProjectGroup {
   projectName: string;
   cloneStatus: Project['cloneStatus'];
   collapsed: boolean;
+  /** 展示用 Task 数：后端 taskCount 优先，回退到已加载 tasks 数。 */
+  taskCount: number;
   tasks: Sandbox[];
 }
