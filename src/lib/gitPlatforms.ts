@@ -24,6 +24,7 @@ export const GIT_PLATFORMS: Record<KnownGitPlatform, GitPlatformMeta> = {
   github: { value: 'github', label: 'GitHub', defaultHost: 'github.com' },
   gitlab: { value: 'gitlab', label: 'GitLab', defaultHost: 'gitlab.com' },
   gitee: { value: 'gitee', label: 'Gitee', defaultHost: 'gitee.com' },
+  gitea: { value: 'gitea', label: 'Gitea', defaultHost: 'gitea.com' },
 };
 
 /** 收窄守卫：platform 是否为注册表覆盖的具体 SaaS 平台（非 'other'）。 */

@@ -9,8 +9,8 @@ import { platformToHost } from '@/lib/gitCredential';
 import type { GitPlatform } from '@/types/gitCredential';
 
 // openapi 生成的 GitPlatform 枚举全集（新增平台时此常量会随生成物变化，配合 Record 强制覆盖）。
-const ALL_PLATFORMS: GitPlatform[] = ['github', 'gitlab', 'gitee', 'other'];
-const KNOWN_PLATFORMS: KnownGitPlatform[] = ['github', 'gitlab', 'gitee'];
+const ALL_PLATFORMS: GitPlatform[] = ['github', 'gitlab', 'gitee', 'gitea', 'other'];
+const KNOWN_PLATFORMS: KnownGitPlatform[] = ['github', 'gitlab', 'gitee', 'gitea'];
 
 describe('GIT_PLATFORMS（SaaS 平台注册表——单一来源）', () => {
   it('覆盖所有非 other 平台（TS Record 已强制，这里加一条运行时断言兜底）', () => {
@@ -36,6 +36,11 @@ describe('GIT_PLATFORMS（SaaS 平台注册表——单一来源）', () => {
       label: 'GitLab',
       defaultHost: 'gitlab.com',
     });
+    expect(GIT_PLATFORMS.gitea).toEqual({
+      value: 'gitea',
+      label: 'Gitea',
+      defaultHost: 'gitea.com',
+    });
     expect(GIT_PLATFORMS.gitee).toEqual({
       value: 'gitee',
       label: 'Gitee',
@@ -49,16 +54,18 @@ describe('isKnownGitPlatform', () => {
     expect(isKnownGitPlatform('github')).toBe(true);
     expect(isKnownGitPlatform('gitlab')).toBe(true);
     expect(isKnownGitPlatform('gitee')).toBe(true);
+    expect(isKnownGitPlatform('gitea')).toBe(true);
     expect(isKnownGitPlatform('other')).toBe(false);
   });
 });
 
 describe('GIT_PLATFORM_OPTIONS（表单选项——从注册表派生 + 末尾 other）', () => {
-  it('SaaS 三家来自注册表，末尾追加 other（自建）', () => {
+  it('SaaS 平台来自注册表，末尾追加 other（自建）', () => {
     expect(GIT_PLATFORM_OPTIONS).toEqual([
       { value: 'github', label: 'GitHub' },
       { value: 'gitlab', label: 'GitLab' },
       { value: 'gitee', label: 'Gitee' },
+      { value: 'gitea', label: 'Gitea' },
       { value: 'other', label: '其他（自建）' },
     ]);
   });

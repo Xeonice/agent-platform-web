@@ -338,7 +338,7 @@ export interface components {
             type: "ssh-key" | "https-token";
             maskedIdentifier: string;
             /** @enum {string} */
-            platform?: "github" | "gitlab" | "gitee" | "other";
+            platform?: "github" | "gitlab" | "gitee" | "gitea" | "other";
             allowedHosts: string[];
             knownHosts?: {
                 host: string;
@@ -354,7 +354,7 @@ export interface components {
             type: "ssh-key" | "https-token";
             secret: string;
             /** @enum {string} */
-            platform?: "github" | "gitlab" | "gitee" | "other";
+            platform?: "github" | "gitlab" | "gitee" | "gitea" | "other";
             /** @default [] */
             allowedHosts: string[];
         };
@@ -372,7 +372,7 @@ export interface components {
             type: "ssh-key" | "https-token";
             secret: string;
             /** @enum {string} */
-            platform?: "github" | "gitlab" | "gitee" | "other";
+            platform?: "github" | "gitlab" | "gitee" | "gitea" | "other";
             /** @default [] */
             allowedHosts: string[];
             repoUrl?: string;
