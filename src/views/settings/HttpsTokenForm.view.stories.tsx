@@ -8,6 +8,12 @@ const meta: Meta<typeof HttpsTokenFormView> = {
   component: HttpsTokenFormView,
   parameters: { layout: 'centered' },
   args: {
+    platformOptions: [
+      { value: 'github', label: 'GitHub' },
+      { value: 'gitlab', label: 'GitLab' },
+      { value: 'gitee', label: 'Gitee' },
+      { value: 'other', label: '其他（自建）' },
+    ],
     platform: 'github',
     onPlatformChange: noop,
     token: '',

@@ -29,6 +29,7 @@ export function GitCredentialsContainer() {
     if (m.activeForm === 'https') {
       return (
         <HttpsTokenFormView
+          platformOptions={m.platformOptions}
           platform={m.platform}
           onPlatformChange={m.setPlatform}
           token={m.token}

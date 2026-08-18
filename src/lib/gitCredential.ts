@@ -1,19 +1,14 @@
 // Git 凭证的纯派生（可单测）：平台→host 推导、passphrase 预校验、测试连接错误码人话映射、host 校验。
 // UI 决策集中于此，view 只吃结果（07 §6）。零副作用、零网络。
 import type { GitPlatform } from '@/types/gitCredential';
+import { GIT_PLATFORMS, isKnownGitPlatform } from '@/lib/gitPlatforms';
 
-/** 选来源 → 自动推导 host；'other'（自建）返回 null 交由用户手填（F21-3 §10.2）。 */
+/**
+ * 选来源 → 自动推导 host；'other'（自建）返回 null 交由用户手填（F21-3 §10.2）。
+ * host 取自 `GIT_PLATFORMS` 注册表（单一来源），加平台只改那一处。
+ */
 export function platformToHost(platform: GitPlatform): string | null {
-  switch (platform) {
-    case 'github':
-      return 'github.com';
-    case 'gitlab':
-      return 'gitlab.com';
-    case 'gitee':
-      return 'gitee.com';
-    case 'other':
-      return null;
-  }
+  return isKnownGitPlatform(platform) ? GIT_PLATFORMS[platform].defaultHost : null;
 }
 
 /** 选型引导文案（P21-3 §10.2）：SaaS→Token，自建→SSH。 */

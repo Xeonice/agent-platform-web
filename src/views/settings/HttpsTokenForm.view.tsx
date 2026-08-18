@@ -2,19 +2,15 @@
 // Gitee→gitee.com 自动推导 host；其他手填）+ host 白名单（可加多个，≥1）+ scope 提示 + 粘贴 →
 // [测试连接] → [保存]（body 带 allowedHosts）；展示仅尾号 + host 白名单（明文）。
 // 受控：token 值由容器局部 state 持有（提交即清空，绝不进 store，15 §3.5）；本视图纯展示、零副作用、零 lib。
+// 平台选项不在此硬编码：由容器/hook 从 lib 的 `GIT_PLATFORMS` 注册表派生后经 platformOptions 传入（单一来源）。
 import { Button } from '@/components/ui/button';
 import { AllowedHostsEditorView } from '@/views/settings/AllowedHostsEditor.view';
 import { TestConnectionResultView } from '@/views/settings/TestConnectionResult.view';
 import type { GitPlatform } from '@/types/gitCredential';
 
-const PLATFORM_OPTIONS: { value: GitPlatform; label: string }[] = [
-  { value: 'github', label: 'GitHub' },
-  { value: 'gitlab', label: 'GitLab' },
-  { value: 'gitee', label: 'Gitee' },
-  { value: 'other', label: '其他（自建）' },
-];
-
 export interface HttpsTokenFormProps {
+  /** 选来源选项（容器/hook 从 lib `GIT_PLATFORMS` 注册表派生传入，view 不硬编码平台列表）。 */
+  platformOptions: { value: GitPlatform; label: string }[];
   platform: GitPlatform;
   onPlatformChange: (platform: GitPlatform) => void;
   /** Token 明文（受控，容器持有）。 */
@@ -35,6 +31,7 @@ export interface HttpsTokenFormProps {
 }
 
 export function HttpsTokenFormView({
+  platformOptions,
   platform,
   onPlatformChange,
   token,
@@ -63,7 +60,7 @@ export function HttpsTokenFormView({
       <fieldset className="flex flex-col gap-2" disabled={submitting}>
         <legend className="mb-1 text-xs text-muted-foreground">来源（自动推导 host）</legend>
         <div className="flex flex-wrap gap-3">
-          {PLATFORM_OPTIONS.map((opt) => (
+          {platformOptions.map((opt) => (
             <label key={opt.value} className="flex items-center gap-1.5 text-sm">
               <input
                 type="radio"

@@ -21,6 +21,7 @@ import {
   GIT_CREDENTIAL_GUIDANCE,
   HTTPS_TOKEN_SCOPE_HINT,
 } from '@/lib/gitCredential';
+import { GIT_PLATFORM_OPTIONS, type GitPlatformOption } from '@/lib/gitPlatforms';
 import { ApiErrorException } from '@/services/api/apiError';
 import type {
   GitCredentialCardModel,
@@ -58,6 +59,8 @@ export interface GitCredentialManager {
   submitSsh: () => void;
 
   // —— HTTPS 表单 ——
+  /** 选来源选项（从 lib `GIT_PLATFORMS` 注册表派生，透传给视图，view 不硬编码平台列表）。 */
+  platformOptions: GitPlatformOption[];
   platform: GitPlatform;
   setPlatform: (platform: GitPlatform) => void;
   token: string;
@@ -361,6 +364,7 @@ export function useGitCredentialManager(): GitCredentialManager {
       sshKey.trim() === '' || sshKeyHasPassphrase(sshKey) || !looksLikePrivateKey(sshKey),
     submitSsh,
 
+    platformOptions: GIT_PLATFORM_OPTIONS,
     platform,
     setPlatform: handlePlatformChange,
     token,
