@@ -4,6 +4,7 @@ import { useState, useEffect, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from 'sonner';
+import { PendingCloneReturnGuard } from '@/containers/PendingCloneReturnGuard';
 
 const IS_DEV = process.env.NODE_ENV === 'development';
 
@@ -29,6 +30,7 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <PendingCloneReturnGuard />
       {children}
       <Toaster richColors position="top-right" />
       {IS_DEV ? <ReactQueryDevtools initialIsOpen={false} /> : null}

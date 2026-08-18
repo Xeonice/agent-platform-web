@@ -37,6 +37,27 @@ describe('persist partialize 白名单（15 §3.5 安全红线）', () => {
     expect(persisted).not.toHaveProperty('entries');
   });
 
+  it('pendingProjectCreate（Git 凭证回程载体）绝不进 persist（F21-3 §10.2 / 15 §3.1.1）', () => {
+    useAppStore.getState().setPendingProjectCreate({
+      projectId: 'p-secret',
+      name: 'acme',
+      source: 'git',
+      url: 'https://github.com/acme/private-internal-repo.git',
+    });
+    const persisted = partializeAppState(useAppStore.getState());
+    expect(persisted).not.toHaveProperty('pendingProjectCreate');
+    // 回程 url 可能含内部仓库路径，不得随白名单落盘。
+    expect(JSON.stringify(persisted)).not.toContain('private-internal-repo');
+  });
+
+  it('凭证明文字段（secret/token/privateKey/passphrase）任何情况下都不出现在白名单快照', () => {
+    const persisted = partializeAppState(useAppStore.getState());
+    const snapshot = JSON.stringify(persisted).toLowerCase();
+    for (const forbidden of ['secret', 'token', 'privatekey', 'passphrase', 'allowedhosts']) {
+      expect(snapshot).not.toContain(forbidden);
+    }
+  });
+
   it('白名单类型即契约：PersistedState 键集合固定', () => {
     const keys: (keyof PersistedState)[] = [
       'selectedSandboxId',

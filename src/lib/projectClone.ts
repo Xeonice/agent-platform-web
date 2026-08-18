@@ -43,7 +43,7 @@ export interface CloneFailureGuidance {
   message: string;
   /** 重试是否可能有效（PERMISSION 需凭证，重试无用）。 */
   canRetry: boolean;
-  /** 需要凭证（S3 接入，暂文案）。 */
+  /** 需要凭证（S3：就地引导跳凭证页配置后回程重试克隆）。 */
   needsCredentials: boolean;
 }
 
@@ -52,7 +52,7 @@ export function cloneFailureGuidance(errorCode: string | undefined): CloneFailur
   switch (errorCode) {
     case 'CLONE_FAILED_PERMISSION':
       return {
-        message: '没有访问该仓库的权限。需要配置访问凭证后重试（凭证管理将在后续版本提供）。',
+        message: '没有访问该仓库的权限。请配置 Git 访问凭证后重试克隆。',
         canRetry: false,
         needsCredentials: true,
       };

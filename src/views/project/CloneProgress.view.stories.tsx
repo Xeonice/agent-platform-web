@@ -7,7 +7,13 @@ const meta: Meta<typeof CloneProgressView> = {
   title: 'Project/CloneProgress',
   component: CloneProgressView,
   parameters: { layout: 'fullscreen' },
-  args: { projectName: 'acme/web', onRetry: noop, onConvertToEmpty: noop, onDone: noop },
+  args: {
+    projectName: 'acme/web',
+    onRetry: noop,
+    onConvertToEmpty: noop,
+    onDone: noop,
+    onConfigureCredentials: noop,
+  },
 };
 export default meta;
 
@@ -33,7 +39,7 @@ export const FailedPermission: Story = {
   args: {
     phase: 'failed',
     percent: null,
-    guidanceMessage: '没有访问该仓库的权限。需要配置访问凭证后重试（凭证管理将在后续版本提供）。',
+    guidanceMessage: '没有访问该仓库的权限。请配置 Git 访问凭证后重试克隆。',
     canRetry: false,
     needsCredentials: true,
   },
