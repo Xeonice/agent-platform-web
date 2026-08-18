@@ -54,30 +54,27 @@ export function isAllowedHostsValid(hosts: string[]): boolean {
 }
 
 /**
- * 测试连接 / 保存的错误码 → 人话（P22 §1 映射；未知码走通用）。**绝不展示任何 ref 名**。
- * `TIMEOUT_LOCAL` 为前端 15s 兜底超时（非后端返回，P21-3 §10.3）。
+ * 测试连接错误码 → 人话。**绝不展示任何 ref 名**。仅两个真实来源，其余一律走 default 通用文案：
+ *  - `CLONE_FAILED_PERMISSION | CLONE_FAILED_NETWORK | TIMEOUT`：POST /api/credentials/git/test 的 200
+ *    响应体 `GitTestResultResponseDto.errorCode`（生成物枚举背书，见 GitTestErrorCodeSchema）。后端把
+ *    host 不在白名单 / 解密失败均归一为 `CLONE_FAILED_PERMISSION`（credential-application.service
+ *    #testGitCredential），故这里不单列 host/解密码。
+ *  - `TIMEOUT_LOCAL`：前端 15s 兜底超时（非后端返回，P21-3 §10.3）。
+ *
+ * 其余异常无契约背书、生成物未声明：inline 私钥带 passphrase / 空白名单 → 后端 400，stored 不存在或已
+ * 吊销 → 404，均为 Nest 默认异常体，前端 toApiError 归一为 code:'UNKNOWN' → 落 default。旧实现里的
+ * AUTH_FAILED / UNAUTHORIZED / HOST_NOT_ALLOWED / SSH_KEY_PASSPHRASE_UNSUPPORTED / HOST_KEY_MISMATCH /
+ * REPO_NOT_FOUND / 裸 PERMISSION / 裸 NETWORK 在后端源码中均无产出点，已删除（避免臆造错误码）。
  */
 export function gitTestErrorMessage(errorCode: string | undefined): string {
   switch (errorCode) {
-    case 'AUTH_FAILED':
-    case 'PERMISSION':
-    case 'UNAUTHORIZED':
     case 'CLONE_FAILED_PERMISSION':
-      return '认证失败：凭证无效或没有该仓库的访问权限，请检查凭证。';
-    case 'HOST_NOT_ALLOWED':
-      return '目标主机不在 host 白名单内，凭证不会被使用；请把该主机加入白名单。';
-    case 'SSH_KEY_PASSPHRASE_UNSUPPORTED':
-      return '带 passphrase 的私钥当前不支持，请改用无口令的密钥。';
-    case 'HOST_KEY_MISMATCH':
-      return '主机指纹与已记录的不一致，可能存在中间人风险，已中止连接。';
-    case 'NETWORK':
+      return '认证失败：凭证无效、没有该仓库访问权限，或目标 host 不在白名单内，请检查凭证与 host 白名单。';
     case 'CLONE_FAILED_NETWORK':
       return '网络错误，请检查网络后重试。';
     case 'TIMEOUT':
     case 'TIMEOUT_LOCAL':
       return '测试连接超时（15 秒），仓库较大或网络较慢，请稍后重试。';
-    case 'REPO_NOT_FOUND':
-      return '找不到目标仓库，请检查仓库地址。';
     default:
       return '连接失败，请检查凭证与仓库地址后重试。';
   }

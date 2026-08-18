@@ -82,7 +82,6 @@ export interface GitCredentialManager {
 
 interface ActiveForm {
   kind: 'ssh' | 'https';
-  replaceId: string | null;
 }
 
 function errorMessageOf(error: unknown, fallback: string): string {
@@ -159,16 +158,22 @@ export function useGitCredentialManager(): GitCredentialManager {
   };
 
   const openSshForm = (): void => {
-    setActiveForm({ kind: 'ssh', replaceId: null });
+    // 私钥永不回显，无论新增还是"更换"都从空表单起（save 侧 SSH 的 allowedHosts 恒为 []，无 host 上下文可留）。
+    setActiveForm({ kind: 'ssh' });
     setSshKey('');
     setFormTestResult(null);
   };
-  const openHttpsForm = (): void => {
-    setActiveForm({ kind: 'https', replaceId: null });
+  // 打开 HTTPS 表单；source 非空 = "更换"既有 token → 预填其 platform/allowedHosts（token 明文不回显，需重填），
+  // 避免默认跳回 GitHub 态而静默覆盖内网多 host 白名单（F21-3 §10.2 修）。
+  const fillHttpsForm = (source: MaskedGitCredential | null): void => {
+    setActiveForm({ kind: 'https' });
     setToken('');
-    setPlatform('github');
-    setAllowedHosts(['github.com']);
+    setPlatform(source?.platform ?? 'github');
+    setAllowedHosts(source ? [...source.allowedHosts] : ['github.com']);
     setFormTestResult(null);
+  };
+  const openHttpsForm = (): void => {
+    fillHttpsForm(null);
   };
 
   const handlePlatformChange = (next: GitPlatform): void => {
@@ -299,7 +304,7 @@ export function useGitCredentialManager(): GitCredentialManager {
 
   const replace = (credential: MaskedGitCredential): void => {
     if (credential.type === 'ssh-key') openSshForm();
-    else openHttpsForm();
+    else fillHttpsForm(credential); // 预填被替换 token 的 platform/allowedHosts，只轮换 token 时不丢白名单
   };
 
   const retryClone = (): void => {
