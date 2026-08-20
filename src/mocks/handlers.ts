@@ -110,6 +110,102 @@ export const handlers = [
   http.post(`${API_BASE}/api/credentials/git/test`, () => HttpResponse.json({ ok: true })),
   http.delete(`${API_BASE}/api/credentials/git/:id`, () => new HttpResponse(null, { status: 204 })),
 
+  // Runtime 凭证聚合（F21-3 §4，GET /api/runtimes）：Codex（device-code，帐号授权生效、剩 6 天预警）+
+  // Claude Code（setup-token，未配置）。dev/Storybook 打通「凭证页 runtime 分区 → 重授权/切模式/吊销」链路。
+  http.get(`${API_BASE}/api/runtimes`, () =>
+    HttpResponse.json([
+      {
+        id: 'codex',
+        displayName: 'Codex',
+        vendor: 'OpenAI',
+        authMethods: ['oauth-device', 'api-key'],
+        credentialStatus: 'expiring',
+        maskedIdentifier: 'a***@gmail.com',
+        expiresAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+        activeAuthMethod: 'account',
+        // 逐模式明细：帐号授权已配置（剩 6 天预警）；API Key 未配置 → 不在数组里。
+        credentials: [
+          {
+            credentialId: 'rc-codex-account',
+            mode: 'account',
+            maskedIdentifier: 'a***@gmail.com',
+            status: 'expiring',
+            expiresAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+            lastUsedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          },
+        ],
+      },
+      {
+        id: 'claude-code',
+        displayName: 'Claude Code',
+        vendor: 'Anthropic',
+        authMethods: ['setup-token', 'api-key'],
+        credentialStatus: 'none',
+        credentials: [],
+      },
+    ]),
+  ),
+  http.get(`${API_BASE}/api/runtimes/:rt/credentials/status`, ({ params }) =>
+    HttpResponse.json({
+      id: String(params['rt']),
+      displayName: 'Codex',
+      vendor: 'OpenAI',
+      authMethods: ['oauth-device', 'api-key'],
+      credentialStatus: 'active',
+      maskedIdentifier: 'a***@gmail.com',
+      activeAuthMethod: 'account',
+      credentials: [
+        {
+          credentialId: 'rc-codex-account',
+          mode: 'account',
+          maskedIdentifier: 'a***@gmail.com',
+          status: 'ok',
+        },
+      ],
+    }),
+  ),
+  // device-code / setup-token 发起挑战（method 决定 kind）。
+  http.post(`${API_BASE}/api/runtimes/:rt/auth/begin`, async ({ request }) => {
+    const body: unknown = await request.json().catch(() => ({}));
+    const method =
+      typeof body === 'object' && body !== null && 'method' in body ? body.method : 'oauth-device';
+    if (method === 'setup-token') {
+      return HttpResponse.json({
+        challengeRef: 'chal-setup',
+        method: 'setup-token',
+        kind: 'paste-prompt',
+        verificationUrl: 'https://claude.ai/setup-token',
+        instructions: '在浏览器完成授权后，复制授权码粘贴回来。',
+      });
+    }
+    return HttpResponse.json({
+      challengeRef: 'chal-device',
+      method: 'oauth-device',
+      kind: 'device-code',
+      userCode: 'WDJB-MJHT',
+      verificationUrl: 'https://openai.com/device',
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      instructions: '在验证页面输入设备码完成授权。',
+    });
+  }),
+  // 轮询：dev 直接回 success（掩码帐号）。
+  http.get(`${API_BASE}/api/runtimes/:rt/auth/status`, () =>
+    HttpResponse.json({ status: 'success', maskedIdentifier: 'a***@gmail.com' }),
+  ),
+  http.post(`${API_BASE}/api/runtimes/:rt/auth/complete`, () =>
+    HttpResponse.json({ maskedIdentifier: 'a***@gmail.com' }),
+  ),
+  http.post(`${API_BASE}/api/runtimes/:rt/credentials/secret`, () =>
+    HttpResponse.json({ maskedIdentifier: 'sk-...ab12' }),
+  ),
+  http.put(`${API_BASE}/api/runtimes/:rt/auth-mode`, ({ params }) =>
+    HttpResponse.json({ runtimeId: String(params['rt']), activeAuthMethod: 'api-key' }),
+  ),
+  http.delete(
+    `${API_BASE}/api/runtimes/:rt/credentials/:credentialId`,
+    () => new HttpResponse(null, { status: 204 }),
+  ),
+
   // S1 建沙箱：回一个符合 SandboxResponseDto 形状的 201（dev 打通"新建沙箱→终端"链路）。
   http.post(`${API_BASE}/api/sandboxes`, () =>
     HttpResponse.json(

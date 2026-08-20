@@ -58,6 +58,15 @@ describe('persist partialize 白名单（15 §3.5 安全红线）', () => {
     }
   });
 
+  it('Runtime 鉴权明文（授权 code / api-key / pastedText）绝不进白名单（S4 安全红线，15 §3.5）', () => {
+    // 这些值只在 AuthGateContainer 局部 useState，从不写入 store；partialize 白名单快照据此回归。
+    const persisted = partializeAppState(useAppStore.getState());
+    const snapshot = JSON.stringify(persisted).toLowerCase();
+    for (const forbidden of ['code', 'apikey', 'api-key', 'pastedtext', 'challengeref']) {
+      expect(snapshot).not.toContain(forbidden);
+    }
+  });
+
   it('白名单类型即契约：PersistedState 键集合固定', () => {
     const keys: (keyof PersistedState)[] = [
       'selectedSandboxId',

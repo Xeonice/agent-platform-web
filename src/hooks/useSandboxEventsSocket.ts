@@ -15,6 +15,8 @@ export interface UseSandboxEventsSocketArgs {
   enabled?: boolean;
   /** WS 未授权 → 弹解锁门（接 useReportUnauthorized().reportUnauthorized）。 */
   onUnauthorized?: () => void;
+  /** runtime-auth.status_changed → patch runtime 凭证 Query（15 §2.3，接 useRuntimeAuthSync）。 */
+  onRuntimeAuthChanged?: (runtime: string) => void;
   /** 测试注入 mock 工厂（避免 mock.module，12 §3.1.1）。 */
   socketFactory?: EventsSocketFactory;
   maxReconnect?: number;
@@ -28,7 +30,14 @@ export interface UseSandboxEventsSocketApi {
 export function useSandboxEventsSocket(
   args: UseSandboxEventsSocketArgs,
 ): UseSandboxEventsSocketApi {
-  const { base, enabled = true, onUnauthorized, socketFactory, maxReconnect } = args;
+  const {
+    base,
+    enabled = true,
+    onUnauthorized,
+    onRuntimeAuthChanged,
+    socketFactory,
+    maxReconnect,
+  } = args;
 
   const [connState, setConnState] = useState<ConnState>('idle');
   const [attempt, setAttempt] = useState(0);
@@ -45,6 +54,8 @@ export function useSandboxEventsSocket(
   applyCloneRef.current = applyProjectCloneEvent;
   const onUnauthorizedRef = useRef(onUnauthorized);
   onUnauthorizedRef.current = onUnauthorized;
+  const onRuntimeAuthChangedRef = useRef(onRuntimeAuthChanged);
+  onRuntimeAuthChangedRef.current = onRuntimeAuthChanged;
 
   const uri = buildEventsSocketUri(base);
 
@@ -69,6 +80,9 @@ export function useSandboxEventsSocket(
         // 各 action 对不相关变体自身 no-op（switch/default），彼此不干扰。
         applyRef.current(event);
         applyCloneRef.current(event);
+        if (event.event === 'runtime-auth.status_changed') {
+          onRuntimeAuthChangedRef.current?.(event.runtime);
+        }
       },
       onInvalidFrame: (raw) => {
         reportError('丢弃非法 /events 帧（SandboxEvent zod 校验失败）', { raw });

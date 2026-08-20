@@ -277,6 +277,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runtimes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List runtimes with aggregated credential status (no N+1) */
+        get: operations["RuntimeController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/{rt}/credentials/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Single-runtime credential status (never returns plaintext) */
+        get: operations["RuntimeController_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/{rt}/auth/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start an interactive login in the auth helper (no sandbox) */
+        post: operations["RuntimeController_beginAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/{rt}/auth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Poll a device-code login (pending/success/expired/error) */
+        get: operations["RuntimeController_pollStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/{rt}/auth/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit the pasted setup-token code (written to helper stdin) */
+        post: operations["RuntimeController_completeAuth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/{rt}/credentials/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Store an api-key directly (short-circuit, no helper/pty) */
+        post: operations["RuntimeController_submitSecret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/{rt}/auth-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Switch the effective mode (account|api-key); 409 if unconfigured */
+        put: operations["RuntimeController_setAuthMode"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/{rt}/credentials/{credentialId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a runtime credential (restarts bound live sandboxes) */
+        delete: operations["RuntimeController_revoke"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -391,6 +527,70 @@ export interface components {
             /** @enum {string} */
             errorCode?: "CLONE_FAILED_PERMISSION" | "CLONE_FAILED_NETWORK" | "TIMEOUT";
             message?: string;
+        };
+        RuntimeResponseDto: {
+            id: string;
+            displayName: string;
+            vendor: string;
+            authMethods: (("oauth-device" | "setup-token") | "api-key")[];
+            /** @enum {string} */
+            credentialStatus: "none" | "active" | "expiring" | "expired";
+            maskedIdentifier?: string;
+            expiresAt?: string;
+            /** @enum {string} */
+            activeAuthMethod?: "account" | "api-key";
+            credentials: {
+                credentialId: string;
+                /** @enum {string} */
+                mode: "account" | "api-key";
+                maskedIdentifier: string;
+                /** @enum {string} */
+                status: "ok" | "expiring" | "expired";
+                expiresAt?: string;
+                lastUsedAt?: string;
+            }[];
+        };
+        BeginAuthDto: {
+            /** @enum {string} */
+            method: "oauth-device" | "setup-token";
+        };
+        AuthChallengeResponseDto: {
+            challengeRef: string;
+            /** @enum {string} */
+            method: "oauth-device" | "setup-token" | "api-key" | "access-token-paste";
+            /** @enum {string} */
+            kind: "url" | "device-code" | "paste-prompt";
+            verificationUrl?: string;
+            userCode?: string;
+            expiresAt?: string;
+            instructions: string;
+        };
+        AuthStatusResultResponseDto: {
+            /** @enum {string} */
+            status: "pending" | "success" | "expired" | "error";
+            maskedIdentifier?: string;
+        };
+        CompleteAuthDto: {
+            challengeRef: string;
+            pastedText?: string;
+            cancel?: boolean;
+        };
+        MaskedCredentialResultResponseDto: {
+            maskedIdentifier: string;
+        };
+        SubmitSecretDto: {
+            /** @enum {string} */
+            method: "api-key";
+            secret: string;
+        };
+        SetAuthModeDto: {
+            /** @enum {string} */
+            method: "account" | "api-key";
+        };
+        RuntimeSettingsResponseDto: {
+            runtimeId: string;
+            /** @enum {string} */
+            activeAuthMethod: "account" | "api-key";
         };
         ErrorEnvelope: {
             code: string;
@@ -848,6 +1048,189 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RuntimeController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeResponseDto"][];
+                };
+            };
+        };
+    };
+    RuntimeController_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rt: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeResponseDto"];
+                };
+            };
+        };
+    };
+    RuntimeController_beginAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rt: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BeginAuthDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthChallengeResponseDto"];
+                };
+            };
+        };
+    };
+    RuntimeController_pollStatus: {
+        parameters: {
+            query: {
+                challengeRef: string;
+            };
+            header?: never;
+            path: {
+                rt: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatusResultResponseDto"];
+                };
+            };
+        };
+    };
+    RuntimeController_completeAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rt: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteAuthDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaskedCredentialResultResponseDto"];
+                };
+            };
+        };
+    };
+    RuntimeController_submitSecret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rt: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitSecretDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaskedCredentialResultResponseDto"];
+                };
+            };
+        };
+    };
+    RuntimeController_setAuthMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rt: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAuthModeDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeSettingsResponseDto"];
+                };
+            };
+        };
+    };
+    RuntimeController_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rt: string;
+                credentialId: string;
             };
             cookie?: never;
         };
