@@ -1,5 +1,6 @@
 // MSW REST handlers（供 Storybook / 单测 / dev 复用，12 §2.2）。
 import { http, HttpResponse } from 'msw';
+import type { SandboxProviderCapabilities } from '@/types/sandbox';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
@@ -19,6 +20,19 @@ function projectDto(overrides: {
     cloneErrorCode: null,
     taskCount: overrides.taskCount ?? 0,
     createdAt: new Date().toISOString(),
+  };
+}
+
+/** 生成一份 provider 能力位（默认全能力开启，按需覆盖）——形状即生成物 ProviderResponseDto.capabilities。 */
+function providerCapabilities(overrides: Partial<SandboxProviderCapabilities>) {
+  return {
+    spawnTty: true,
+    volumeMount: true,
+    updateResources: true,
+    pauseResume: true,
+    snapshot: true,
+    watchEvents: true,
+    ...overrides,
   };
 }
 
@@ -204,6 +218,20 @@ export const handlers = [
   http.delete(
     `${API_BASE}/api/runtimes/:rt/credentials/:credentialId`,
     () => new HttpResponse(null, { status: 204 }),
+  ),
+
+  // provider registry（GET /api/providers → ProviderResponseDto[]）：后端开放 registry 的只读投影，
+  // 前端「运行档位」单选由它驱动；默认档由数组项的 isDefault 标记（无顶层字段）。
+  // dev 里给 aio（全能，默认）+ boxlite（轻量，无快照/暂停）；第三方 provider 只要出现在这份响应里，UI 自动多一项。
+  http.get(`${API_BASE}/api/providers`, () =>
+    HttpResponse.json([
+      { name: 'aio', capabilities: providerCapabilities({}), isDefault: true },
+      {
+        name: 'boxlite',
+        capabilities: providerCapabilities({ pauseResume: false, snapshot: false }),
+        isDefault: false,
+      },
+    ]),
   ),
 
   // S1 建沙箱：回一个符合 SandboxResponseDto 形状的 201（dev 打通"新建沙箱→终端"链路）。

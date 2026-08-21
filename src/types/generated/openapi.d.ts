@@ -209,6 +209,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List registered sandbox providers with their capabilities */
+        get: operations["ProviderController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/credentials": {
         parameters: {
             query?: never;
@@ -450,6 +467,13 @@ export interface components {
             initialPrompt?: string;
             headless?: boolean;
             timeoutMinutes?: number;
+            require?: {
+                spawnTty?: boolean;
+                volumeMount?: boolean;
+                updateResources?: boolean;
+                pauseResume?: boolean;
+                snapshot?: boolean;
+            };
         };
         SandboxResponseDto: {
             id: string;
@@ -465,6 +489,18 @@ export interface components {
         };
         DestroySandboxDto: {
             keepVolume?: boolean;
+        };
+        ProviderResponseDto: {
+            name: string;
+            capabilities: {
+                spawnTty: boolean;
+                volumeMount: boolean;
+                updateResources: boolean;
+                pauseResume: boolean;
+                snapshot: boolean;
+                watchEvents: boolean;
+            };
+            isDefault: boolean;
         };
         MaskedGitCredentialResponseDto: {
             id: string;
@@ -972,6 +1008,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ProviderController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderResponseDto"][];
+                };
             };
         };
     };
