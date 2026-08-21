@@ -7,6 +7,7 @@ import { useHealth } from '@/hooks/useHealth';
 import { useProjects, projectKeys } from '@/hooks/useProjects';
 import { useProjectTaskTree } from '@/hooks/useProjectTaskTree';
 import { useSandboxEventsSocket } from '@/hooks/useSandboxEventsSocket';
+import { useRuntimeAuthSync } from '@/hooks/useRuntimeAuthSync';
 import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { useAppStore } from '@/stores';
 import { WorkbenchShellView } from '@/views/workbench/WorkbenchShell.view';
@@ -32,7 +33,13 @@ export function WorkbenchContainer() {
   const queryClient = useQueryClient();
 
   // 全局 /events 订阅：项目 clone 进度在建沙箱之前就要收，故挂在工作台顶层（未授权 → 解锁门）。
-  useSandboxEventsSocket({ base: WS_BASE_URL, onUnauthorized: reportUnauthorized });
+  // runtime-auth.status_changed → patch runtime 凭证 Query（横幅/卡片同源刷新，15 §2.3）。
+  const syncRuntimeAuth = useRuntimeAuthSync();
+  useSandboxEventsSocket({
+    base: WS_BASE_URL,
+    onUnauthorized: reportUnauthorized,
+    onRuntimeAuthChanged: syncRuntimeAuth,
+  });
 
   // 建流程内确认就绪的项目（clone done / 转空），绕过列表 staleTime 的短暂过期读。
   const [readyProjectId, setReadyProjectId] = useState<string | null>(null);
