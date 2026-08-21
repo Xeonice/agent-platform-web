@@ -129,4 +129,124 @@ describe('A · device-code', () => {
     }
     expect(result.current.secondsLeft).toBeGreaterThan(0);
   });
+
+  // 轮询间隔（与 hook 内 POLL_INTERVAL_MS 对齐，仅用于推进 fake timers；非生产硬编码）。
+  const POLL_INTERVAL_MS = 3_000;
+
+  function deviceBeginHandler(withExpiry: boolean) {
+    return http.post(`${API_BASE}/api/runtimes/:rt/auth/begin`, () =>
+      HttpResponse.json({
+        challengeRef: 'chal-device',
+        method: 'oauth-device',
+        kind: 'device-code',
+        userCode: 'WDJB-MJHT',
+        verificationUrl: 'https://x/device',
+        ...(withExpiry ? { expiresAt: new Date(Date.now() + 900_000).toISOString() } : {}),
+        instructions: '',
+      }),
+    );
+  }
+
+  it('poll status==="error"（后端终态）→ 停止轮询、转 error（给再次登录入口）', async () => {
+    vi.useFakeTimers();
+    try {
+      let statusCalls = 0;
+      server.use(
+        deviceBeginHandler(true),
+        http.get(`${API_BASE}/api/runtimes/:rt/auth/status`, () => {
+          statusCalls += 1;
+          return HttpResponse.json({ status: 'error' });
+        }),
+      );
+      const { result } = renderHook(() =>
+        useRuntimeAuthFlow({ runtimeId: 'codex', method: 'oauth-device' }),
+      );
+      await act(async () => {
+        result.current.begin();
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.state.phase).toBe('polling');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      });
+      // 终态 error 不再当瞬时网络抖动留在 polling，而是转失败态。
+      const state = result.current.state;
+      expect(state.phase).toBe('error');
+      if (state.branch === 'device-code' && state.phase === 'error') {
+        expect(state.message).not.toBe('');
+      }
+
+      const callsAfterFail = statusCalls;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
+      });
+      // 已停止轮询：不再有新的 status 请求。
+      expect(statusCalls).toBe(callsAfterFail);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('expiresAt 缺失 → 10min 硬上限兜底强制转 expired（不无限轮询假死）', async () => {
+    vi.useFakeTimers();
+    try {
+      server.use(
+        deviceBeginHandler(false), // 后端漏发 expiresAt
+        http.get(`${API_BASE}/api/runtimes/:rt/auth/status`, () =>
+          HttpResponse.json({ status: 'pending' }),
+        ),
+      );
+      const { result } = renderHook(() =>
+        useRuntimeAuthFlow({ runtimeId: 'codex', method: 'oauth-device' }),
+      );
+      await act(async () => {
+        result.current.begin();
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.state.phase).toBe('polling');
+      // 缺 expiresAt：倒计时短路（secondsLeft=0），但不因此误终止——仍在轮询。
+      expect(result.current.secondsLeft).toBe(0);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      });
+      expect(result.current.state.phase).toBe('polling');
+
+      // 越过 10min 硬上限 → 强制 expired（与 expiresAt 无关的兜底）。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10 * 60_000);
+      });
+      expect(result.current.state.phase).toBe('expired');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('poll status==="expired"（正常过期路径）→ expired，不回归', async () => {
+    vi.useFakeTimers();
+    try {
+      server.use(
+        deviceBeginHandler(true),
+        http.get(`${API_BASE}/api/runtimes/:rt/auth/status`, () =>
+          HttpResponse.json({ status: 'expired' }),
+        ),
+      );
+      const { result } = renderHook(() =>
+        useRuntimeAuthFlow({ runtimeId: 'codex', method: 'oauth-device' }),
+      );
+      await act(async () => {
+        result.current.begin();
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.state.phase).toBe('polling');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      });
+      expect(result.current.state.phase).toBe('expired');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -56,6 +56,19 @@ export function AuthGateContainer({
     initialMethod !== undefined ? tabOfMethod(initialMethod) : (tabs[0]?.key ?? 'account'),
   );
 
+  // 帐号授权 Tab 但 methods 未含任何帐号授权方式：这是调用方喂了不一致 methods（配错鉴权方式的隐患）。
+  // 显式开发态断言，而非静默回退到硬编码 'oauth-device'（P2）。
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    selectedTab !== 'api-key' &&
+    accountMethod === null
+  ) {
+    console.error(
+      `AuthGateContainer: 选中「帐号授权」但 methods 未含帐号授权方式（oauth-device/setup-token），` +
+        `静默回退到 oauth-device 会配错鉴权方式。methods=${JSON.stringify(methods)}`,
+    );
+  }
+
   const currentMethod: RuntimeAuthMethod =
     selectedTab === 'api-key' ? 'api-key' : (accountMethod ?? 'oauth-device');
 
@@ -123,9 +136,16 @@ function AuthBranchSlot({ runtimeId, method, onSuccess }: AuthBranchSlotProps) {
 
   if (state.branch === 'setup-token') {
     if (state.phase === 'awaiting-paste') {
+      const verificationUrl = state.challenge.verificationUrl;
+      if (verificationUrl === undefined || verificationUrl === '') {
+        // 契约层空值：后端漏发验证链接 → 显式提示而非空白链接（P2）。
+        return (
+          <RetryNotice message="授权信息缺失（验证链接为空），请重试。" onRetry={flow.begin} />
+        );
+      }
       return (
         <SetupTokenAuthView
-          verificationUrl={state.challenge.verificationUrl ?? ''}
+          verificationUrl={verificationUrl}
           instructions={state.challenge.instructions}
           code={pasteCode}
           onCodeChange={setPasteCode}
@@ -146,16 +166,31 @@ function AuthBranchSlot({ runtimeId, method, onSuccess }: AuthBranchSlotProps) {
 
   // —— device-code ——
   if (state.phase === 'polling' || state.phase === 'expired') {
+    const { userCode, verificationUrl } = state.challenge;
+    if (
+      userCode === undefined ||
+      userCode === '' ||
+      verificationUrl === undefined ||
+      verificationUrl === ''
+    ) {
+      // 契约层空值：后端漏发设备码/验证链接 → 显式提示而非空白设备码/空链接（P2）。
+      return (
+        <RetryNotice
+          message="设备授权信息缺失（设备码或验证链接为空），请重试。"
+          onRetry={flow.begin}
+        />
+      );
+    }
     return (
       <DeviceCodeAuthView
-        userCode={state.challenge.userCode ?? ''}
-        verificationUrl={state.challenge.verificationUrl ?? ''}
+        userCode={userCode}
+        verificationUrl={verificationUrl}
         secondsLeft={flow.secondsLeft}
         polling={state.phase === 'polling'}
         pollError={state.phase === 'polling' && state.pollError}
         expired={state.phase === 'expired'}
         onCopy={() => {
-          void navigator.clipboard.writeText(state.challenge.userCode ?? '');
+          void navigator.clipboard.writeText(userCode);
         }}
         onRefetchChallenge={flow.refetchChallenge}
       />

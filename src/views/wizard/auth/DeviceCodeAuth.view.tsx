@@ -1,5 +1,5 @@
 // A · device-code（Codex，07 §6.2）：大字号 userCode + [复制] + [打开验证链接] + 15:00 倒计时
-//（剩 5min 转黄、归零转红 + [重新获取]）+「等待授权中…」轮询态 + [后台继续]。纯展示、props 驱动、零副作用。
+//（剩 5min 转黄、归零转红 + [重新获取]）+「等待授权中…」轮询态。纯展示、props 驱动、零副作用。
 import { Button } from '@/components/ui/button';
 
 export interface DeviceCodeAuthProps {
@@ -15,7 +15,6 @@ export interface DeviceCodeAuthProps {
   expired: boolean;
   onCopy?: () => void;
   onRefetchChallenge: () => void;
-  onBackground?: () => void;
 }
 
 const WARN_THRESHOLD_SEC = 5 * 60;
@@ -35,7 +34,6 @@ export function DeviceCodeAuthView({
   expired,
   onCopy,
   onRefetchChallenge,
-  onBackground,
 }: DeviceCodeAuthProps) {
   const countdownColor = expired
     ? 'text-red-400'
@@ -98,14 +96,6 @@ export function DeviceCodeAuthView({
             等待授权中…
           </p>
         )
-      )}
-
-      {onBackground !== undefined && !expired && (
-        <div>
-          <Button type="button" variant="ghost" size="sm" onClick={onBackground}>
-            后台继续
-          </Button>
-        </div>
       )}
     </div>
   );

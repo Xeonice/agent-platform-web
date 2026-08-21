@@ -18,7 +18,8 @@ export interface RuntimeCredentialCardProps {
   onReauth: (method: RuntimeAuthMethod) => void;
   onAddKey: () => void;
   onRevoke: (mode: RuntimeAuthMode) => void;
-  busy?: boolean;
+  /** 某模式行是否正被操作（精确 scope，只禁那一行；缺省=永不忙）。 */
+  rowBusy?: (mode: RuntimeAuthMode) => boolean;
 }
 
 const STATUS_LABEL: Record<RuntimeCredentialCardModel['status'], string> = {
@@ -36,7 +37,7 @@ export function RuntimeCredentialCardView({
   onReauth,
   onAddKey,
   onRevoke,
-  busy = false,
+  rowBusy,
 }: RuntimeCredentialCardProps) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
@@ -53,7 +54,7 @@ export function RuntimeCredentialCardView({
           <AuthMethodRadioRowView
             key={row.mode}
             row={row}
-            busy={busy}
+            busy={rowBusy?.(row.mode) ?? false}
             onSwitch={() => {
               onSwitch(row.mode);
             }}

@@ -20,7 +20,8 @@ export interface RuntimeCredentialsSectionProps {
   onReauth: (runtimeId: string, method: RuntimeAuthMethod) => void;
   onAddKey: (runtimeId: string) => void;
   onRevoke: (runtimeId: string, mode: RuntimeAuthMode) => void;
-  busy?: boolean;
+  /** 某 runtime 某模式行是否正被操作（精确 scope，只禁正在操作的那一行；缺省=永不忙）。 */
+  isRowBusy?: (runtimeId: string, mode: RuntimeAuthMode) => boolean;
 }
 
 export function RuntimeCredentialsSectionView({
@@ -34,7 +35,7 @@ export function RuntimeCredentialsSectionView({
   onReauth,
   onAddKey,
   onRevoke,
-  busy = false,
+  isRowBusy,
 }: RuntimeCredentialsSectionProps) {
   return (
     <section className="flex flex-col gap-4">
@@ -65,7 +66,7 @@ export function RuntimeCredentialsSectionView({
             <RuntimeCredentialCardView
               key={model.runtimeId}
               model={model}
-              busy={busy}
+              rowBusy={(mode) => isRowBusy?.(model.runtimeId, mode) ?? false}
               expandedSlot={panelFor(model.runtimeId)}
               onSwitch={(mode) => {
                 onSwitch(model.runtimeId, mode);

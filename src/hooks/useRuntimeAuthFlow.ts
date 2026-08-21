@@ -21,6 +21,13 @@ import type { RuntimeAuthMethod } from '@/types/runtimeCredential';
 /** device-code 轮询间隔（3–5s 区间取值；防过度轮询，12 §4.2 用例组 B）。 */
 const POLL_INTERVAL_MS = 3_000;
 
+/**
+ * device-code 轮询硬性上限（10min）：与 challenge.expiresAt 无关的兜底。
+ * expiresAt 在 openapi AuthChallengeResponseDto 里**非 required**，后端漏发时倒计时/过期 effect 都短路，
+ * 终止不能只依赖这一个可选字段——超过本上限强制转 expired，杜绝无限轮询假死（P1-a）。
+ */
+const MAX_POLL_DURATION_MS = 10 * 60 * 1_000;
+
 /** 配置成功结果（掩码帐号）：complete/secret 必回掩码，device-code 轮询成功可能省略 → 掩码可选。 */
 export interface AuthSuccess {
   maskedIdentifier?: string;
@@ -179,21 +186,32 @@ export function useRuntimeAuthFlow({
           } else if (res.status === 'expired') {
             dispatch({ type: 'POLL_EXPIRED' });
           } else if (res.status === 'error') {
-            dispatch({ type: 'POLL_NETWORK_ERROR' });
+            // 后端终态 error（device 登录被拒 / helper 崩）：停止轮询、转失败态、给「再次登录」入口。
+            // 区别于下方 catch 的**瞬时网络请求异常**（fetch 抛错）——那种才留在 polling 重试（P1-a）。
+            dispatch({
+              type: 'POLL_FAILED',
+              message: '授权失败：登录被拒绝或授权助手异常，请再次登录。',
+            });
           } else {
             dispatch({ type: 'POLL_PENDING' });
           }
         })
         .catch(() => {
           if (cancelled) return;
-          // 网络错误只标记，不消耗设备码倒计时（P22 §2）。
+          // 网络请求异常（瞬时）只标记，不消耗设备码倒计时、不终止轮询（P22 §2）。
           dispatch({ type: 'POLL_NETWORK_ERROR' });
         });
     };
     const timer = setInterval(poll, POLL_INTERVAL_MS);
+    // 硬性兜底：与 expiresAt（非 required）无关的强制上限，防后端漏发 expiresAt → 无限轮询假死（P1-a）。
+    const hardStop = setTimeout(() => {
+      if (cancelled) return;
+      dispatch({ type: 'POLL_EXPIRED' });
+    }, MAX_POLL_DURATION_MS);
     return (): void => {
       cancelled = true;
       clearInterval(timer);
+      clearTimeout(hardStop);
     };
   }, [isPolling, challengeRef, runtimeId, succeed]);
 

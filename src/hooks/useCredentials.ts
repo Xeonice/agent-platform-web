@@ -80,6 +80,13 @@ export interface CredentialsRuntimeManager {
   confirmRevoke: () => void;
   cancelRevoke: () => void;
   revoking: boolean;
+
+  /**
+   * 某 runtime 某模式行是否正被操作（切模式 / 吊销进行中）。
+   * 精确 scope 到「正在操作的那一行」——切模式/吊销是单飞的，pendingSwitch/pendingRevoke 在 mutation 结束前
+   * 一直持有目标 {runtimeId, mode}，据此只禁那一行，不再全局禁掉所有卡片所有行（P2）。
+   */
+  isRowBusy: (runtimeId: string, mode: RuntimeAuthMode) => boolean;
 }
 
 function errorMessageOf(error: unknown, fallback: string): string {
@@ -223,6 +230,32 @@ export function useCredentials(): CredentialsRuntimeManager {
     setPendingRevoke(null);
   }, []);
 
+  const switching = setAuthModeMutation.isPending;
+  const revoking = revokeMutation.isPending;
+
+  const isRowBusy = useCallback(
+    (runtimeId: string, mode: RuntimeAuthMode): boolean => {
+      if (
+        switching &&
+        pendingSwitch !== null &&
+        pendingSwitch.runtimeId === runtimeId &&
+        pendingSwitch.mode === mode
+      ) {
+        return true;
+      }
+      if (
+        revoking &&
+        pendingRevoke !== null &&
+        pendingRevoke.runtimeId === runtimeId &&
+        pendingRevoke.mode === mode
+      ) {
+        return true;
+      }
+      return false;
+    },
+    [switching, pendingSwitch, revoking, pendingRevoke],
+  );
+
   return {
     loading: runtimes.isPending,
     cards,
@@ -237,11 +270,12 @@ export function useCredentials(): CredentialsRuntimeManager {
     pendingSwitch,
     confirmSwitch,
     cancelSwitch,
-    switching: setAuthModeMutation.isPending,
+    switching,
     requestRevoke,
     pendingRevoke,
     confirmRevoke,
     cancelRevoke,
-    revoking: revokeMutation.isPending,
+    revoking,
+    isRowBusy,
   };
 }

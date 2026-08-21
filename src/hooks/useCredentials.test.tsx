@@ -3,9 +3,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
+import { server } from '@/mocks/node';
 import { useCredentials } from '@/hooks/useCredentials';
 import { runtimeKeys, runtimeAuthKeys } from '@/hooks/useRuntimes';
+
+const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
 function makeWrapper(): {
   client: QueryClient;
@@ -65,5 +69,37 @@ describe('useCredentials', () => {
     expect(pending?.warnActiveMode).toBe(true);
     expect(pending?.warningText).toContain('无法追回');
     expect(pending?.credentialId).toBe('rc-codex-account');
+  });
+
+  it('④ isRowBusy 精确 scope（P2）：吊销进行中只禁那一行，不禁同卡其他行/其他卡', async () => {
+    const { wrapper } = makeWrapper();
+    // 吊销 DELETE 挂起不 resolve，令 revoking 保持 true 以观测 scope。
+    server.use(
+      http.delete(`${API_BASE}/api/runtimes/:rt/credentials/:credentialId`, async () => {
+        await new Promise(() => undefined);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const { result } = renderHook(() => useCredentials(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.cards.length).toBeGreaterThan(0);
+    });
+    // 空闲：任何行都不忙。
+    expect(result.current.isRowBusy('codex', 'account')).toBe(false);
+
+    act(() => {
+      result.current.requestRevoke('codex', 'account');
+    });
+    act(() => {
+      result.current.confirmRevoke();
+    });
+    await waitFor(() => {
+      expect(result.current.revoking).toBe(true);
+    });
+
+    // 只有正在吊销的 codex/account 那一行忙；同卡另一行、别的卡都不忙（不再全局禁）。
+    expect(result.current.isRowBusy('codex', 'account')).toBe(true);
+    expect(result.current.isRowBusy('codex', 'api-key')).toBe(false);
+    expect(result.current.isRowBusy('claude-code', 'account')).toBe(false);
   });
 });

@@ -70,6 +70,29 @@ describe('A · device-code：idle→pending→success/expired', () => {
     expect(s).toEqual({ ...start, pollError: true });
   });
 
+  it('POLL_FAILED（后端终态 error）→ 停止轮询、转 error（区别于瞬时 POLL_NETWORK_ERROR）', () => {
+    const start: AuthFlowState = {
+      branch: 'device-code',
+      phase: 'polling',
+      challenge: deviceChallenge,
+      pollError: false,
+    };
+    const s = authFlowReducer(start, { type: 'POLL_FAILED', message: '授权失败' });
+    expect(s).toEqual({ branch: 'device-code', phase: 'error', message: '授权失败' });
+    // error 非 polling：可 [再次登录] 重走 begin
+    const s2 = authFlowReducer(s, { type: 'BEGIN_START' });
+    expect(s2.phase).toBe('starting');
+  });
+
+  it('POLL_FAILED 在非 polling 态原样返回（不越迁）', () => {
+    const expired: AuthFlowState = {
+      branch: 'device-code',
+      phase: 'expired',
+      challenge: deviceChallenge,
+    };
+    expect(authFlowReducer(expired, { type: 'POLL_FAILED', message: 'x' })).toEqual(expired);
+  });
+
   it('BEGIN_ERROR → error', () => {
     const s = authFlowReducer(initialAuthFlowState('device-code'), {
       type: 'BEGIN_ERROR',

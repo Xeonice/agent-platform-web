@@ -6,11 +6,29 @@ import type { AuthChallenge, RuntimeAuthMethod } from '@/types/runtimeCredential
 /** 三分支判别键（= 鉴权方式归类；device-code=oauth-device，setup-token，api-key）。 */
 export type AuthBranch = 'device-code' | 'setup-token' | 'api-key';
 
-/** 方式 → 分支。 */
+/**
+ * 方式 → 分支。
+ * 入参仅接受 begin【方法】三值集（RuntimeAuthMethod = authMethods[number]）；**不要**把 challenge.method
+ * 直接喂进来——后者是四值集（含 access-token-paste，openapi AuthChallengeResponseDto.method），
+ * 未知值会被静默归类到 api-key 分支、配错鉴权方式（P2 契约漂移）。故对未知值显式 console.error 报错，
+ * 而非静默兜底。
+ */
 export function branchOfMethod(method: RuntimeAuthMethod): AuthBranch {
-  if (method === 'oauth-device') return 'device-code';
-  if (method === 'setup-token') return 'setup-token';
-  return 'api-key';
+  switch (method) {
+    case 'oauth-device':
+      return 'device-code';
+    case 'setup-token':
+      return 'setup-token';
+    case 'api-key':
+      return 'api-key';
+    default:
+      // 运行时不应到达（类型上 method 已收窄为 never）；到此说明调用方喂了 begin 三值集之外的值。
+      console.error(
+        `branchOfMethod: 未知鉴权方式「${String(method)}」——只接受 begin 三值集（oauth-device/setup-token/api-key），` +
+          `不要把 challenge.method（四值，含 access-token-paste）直接喂入。`,
+      );
+      return 'api-key';
+  }
 }
 
 /** 三分支统一状态（discriminated union on branch + phase）。 */
@@ -46,6 +64,7 @@ export type AuthFlowAction =
   | { type: 'BEGIN_ERROR'; message: string }
   | { type: 'POLL_PENDING' }
   | { type: 'POLL_NETWORK_ERROR' }
+  | { type: 'POLL_FAILED'; message: string }
   | { type: 'POLL_EXPIRED' }
   | { type: 'PASTE_SUBMIT_START' }
   | { type: 'PASTE_SUBMIT_ERROR'; message: string }
@@ -100,9 +119,14 @@ function deviceReducer(
       if (state.phase !== 'polling') return state;
       return { ...state, pollError: false };
     case 'POLL_NETWORK_ERROR':
-      // 连续网络错误只标记 pollError（不消耗设备码倒计时，P22 §2），仍停在 polling。
+      // 连续网络错误只标记 pollError（不消耗设备码倒计时，P22 §2），仍停在 polling（瞬时可重试）。
       if (state.phase !== 'polling') return state;
       return { ...state, pollError: true };
+    case 'POLL_FAILED':
+      // 后端 status==='error' 是**终态**（device 登录被拒 / helper 崩），非网络抖动：停止轮询、转失败态，
+      // 由面板给「再次登录」入口（P1-a）。区别于 POLL_NETWORK_ERROR（瞬时、留在 polling）。
+      if (state.phase !== 'polling') return state;
+      return { branch: 'device-code', phase: 'error', message: action.message };
     case 'POLL_EXPIRED':
       if (state.phase !== 'polling') return state;
       return { branch: 'device-code', phase: 'expired', challenge: state.challenge };

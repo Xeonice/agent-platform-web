@@ -16,7 +16,6 @@ const meta: Meta<typeof DeviceCodeAuthView> = {
     expired: false,
     onCopy: noop,
     onRefetchChallenge: noop,
-    onBackground: noop,
   },
 };
 export default meta;

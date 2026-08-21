@@ -48,7 +48,7 @@ export function CredentialsContainer() {
         search={m.search}
         onSearch={m.setSearch}
         panelFor={panelFor}
-        busy={m.switching || m.revoking}
+        isRowBusy={m.isRowBusy}
         onSwitch={(runtimeId, mode) => {
           m.switchMode(runtimeId, mode);
         }}
