@@ -24,3 +24,11 @@ export type SandboxProviderCapabilities = SandboxProviderDto['capabilities'];
 export type SandboxCapabilityRequire = NonNullable<
   components['schemas']['CreateSandboxDto']['require']
 >;
+
+/**
+ * 任务指令（`CreateSandboxDto.initialPrompt`）长度上限：**8000 字符**
+ * （SYNC WITH shared/10 §7.3 「≤8000 字符」与 13 §2.1.1 的 CHECK；P21-2 §6 要求就地计数）。
+ *
+ * 放 types/ 是为了 view（不能 import lib）与 container 共用同一个常量——view 层不得再写死一份。
+ */
+export const INITIAL_PROMPT_MAX_LENGTH = 8000;
