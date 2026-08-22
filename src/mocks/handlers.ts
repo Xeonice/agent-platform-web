@@ -234,9 +234,40 @@ export const handlers = [
     ]),
   ),
 
-  // S1 建沙箱：回一个符合 SandboxResponseDto 形状的 201（dev 打通"新建沙箱→终端"链路）。
-  http.post(`${API_BASE}/api/sandboxes`, () =>
-    HttpResponse.json(
+  // 单个沙箱（刷新恢复的唯一来源）：任务名 + 失败原因（failureCode/failureMessage 仅 failed 时出现）。
+  http.get(`${API_BASE}/api/sandboxes/:id`, ({ params }) =>
+    HttpResponse.json({
+      id: String(params['id']),
+      projectId: 'default',
+      runtime: 'shell',
+      name: 'dev 恢复的任务',
+      status: 'running',
+      headless: false,
+      timeoutMinutes: 120,
+      idleTimeoutSec: 1800,
+      waitingInput: false,
+      version: 1,
+    }),
+  ),
+
+  // 建沙箱（发起 Task）：回一个符合 SandboxResponseDto 形状的 201。
+  // `name` = **后端派生的默认任务名**（10 §7.3 / P21-1 §9：首行前 20 码点 + 省略号；无指令则时间戳名）——
+  // 这里在 mock 里同样由"服务端"算，前端拿到什么用什么，绝不自己再派生一份（TASK-LAUNCH-DECISIONS T-1）。
+  // ⚠️ mock 也**不回显** initialPrompt（DTO 刻意不含该字段）。
+  http.post(`${API_BASE}/api/sandboxes`, async ({ request }) => {
+    const body: unknown = await request.json().catch(() => ({}));
+    const prompt =
+      typeof body === 'object' && body !== null && 'initialPrompt' in body
+        ? String(body.initialPrompt)
+        : '';
+    const firstLine = prompt.split('\n')[0] ?? '';
+    const derivedName =
+      firstLine === ''
+        ? `Shell · ${new Date().toLocaleString('zh-CN')}`
+        : Array.from(firstLine).length > 20
+          ? `${Array.from(firstLine).slice(0, 20).join('')}…`
+          : firstLine;
+    return HttpResponse.json(
       {
         id: `mock-${String(Date.now())}`,
         projectId: 'default',
@@ -247,8 +278,9 @@ export const handlers = [
         idleTimeoutSec: 1800,
         waitingInput: false,
         version: 1,
+        name: derivedName,
       },
       { status: 201 },
-    ),
-  ),
+    );
+  }),
 ];

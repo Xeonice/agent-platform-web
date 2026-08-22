@@ -67,6 +67,15 @@ describe('persist partialize 白名单（15 §3.5 安全红线）', () => {
     }
   });
 
+  it('S5 任务指令红线：白名单快照里不含任何 prompt / 向导暂存类键（Task 发起入口）', () => {
+    // 即便 store 上确实存在承载指令的字段（wizardData），partialize 也绝不把它带上盘。
+    useAppStore.getState().setWizardData({ initialPrompt: '迁移 acme-billing 内部系统的方案' });
+    const snapshot = JSON.stringify(partializeAppState(useAppStore.getState())).toLowerCase();
+    for (const forbidden of ['prompt', 'initialprompt', 'wizarddata', 'acme-billing']) {
+      expect(snapshot).not.toContain(forbidden);
+    }
+  });
+
   it('白名单类型即契约：PersistedState 键集合固定', () => {
     const keys: (keyof PersistedState)[] = [
       'selectedSandboxId',

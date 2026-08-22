@@ -479,6 +479,7 @@ export interface components {
             id: string;
             projectId: string;
             runtime: string;
+            name: string;
             /** @enum {string} */
             status: "pending" | "scheduling" | "preparing-workspace" | "creating" | "starting" | "running" | "idle" | "stopping" | "stopped" | "failed" | "destroying" | "destroyed";
             headless: boolean;
@@ -486,6 +487,8 @@ export interface components {
             idleTimeoutSec: number;
             waitingInput: boolean;
             version: number;
+            failureCode?: string;
+            failureMessage?: string;
         };
         DestroySandboxDto: {
             keepVolume?: boolean;

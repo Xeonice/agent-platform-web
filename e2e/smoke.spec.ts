@@ -88,7 +88,7 @@ test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => 
 
     // 改选 boxlite 证明可选档
     await page.getByRole('radio', { name: /boxlite/ }).check();
-    await page.getByRole('button', { name: '新建沙箱并打开终端' }).click();
+    await page.getByRole('button', { name: '发起任务并打开终端' }).click();
 
     // 终端容器挂载（xterm）+ 连接状态条出现（无真后端时为连接中/重连中）
     await expect(page.getByTestId('terminal-container')).toBeVisible();

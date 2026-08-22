@@ -43,6 +43,8 @@ const meta: Meta<typeof NewSandboxPanelView> = {
     onRetryProviders: noop,
     creating: false,
     loadingProviders: false,
+    initialPrompt: '',
+    onInitialPromptChange: noop,
   },
 };
 export default meta;
@@ -77,4 +79,25 @@ export const EmptyRegistry: Story = { args: { providers: [], provider: '' } };
 export const Creating: Story = { args: { provider: 'aio', creating: true } };
 export const CreateError: Story = {
   args: { provider: 'aio', errorMessage: '创建失败：镜像拉取超时' },
+};
+
+// —— 任务指令（S5：Task 发起入口）——
+/** 填了指令：agent 启动时即执行（不必等用户打开终端）。 */
+export const WithInitialPrompt: Story = {
+  args: { provider: 'aio', initialPrompt: '分析这个仓库的架构并输出摘要' },
+};
+/** 8000 上限：超限就地红字计数 + 禁用发起（P21-2 §6）。 */
+export const InitialPromptTooLong: Story = {
+  args: { provider: 'aio', initialPrompt: 'x'.repeat(8001) },
+};
+/**
+ * 「零副作用」的 409 能力静态校验拒绝：请求在落库前被拒，**没有任务被创建** ⇒
+ * 就地提示改选，界面上不出现任何"重试/重新创建"入口（对照 CreateError 那条已落库的失败）。
+ */
+export const CapabilityRejected: Story = {
+  args: {
+    provider: 'boxlite',
+    rejectionMessage:
+      '无法用当前配置创建：provider boxlite 不支持 snapshot。请改选运行档位或调整能力要求后再试（本次请求未创建任何任务）。',
+  },
 };
