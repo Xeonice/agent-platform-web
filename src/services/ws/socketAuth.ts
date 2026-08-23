@@ -1,5 +1,10 @@
 // socket.io 通道共享的握手失败识别（/terminal、/events、/tasks 三条通道复用，07 §3 规则 5 / 口令门 11 §3.1）。
 //
+// **三条通道现在都直接读码**（`readSocketErrorCode`），而不是只问一句"是不是未授权"。
+// 后者曾是 /terminal 与 /events 的做法，代价是：除 UNAUTHORIZED 之外的每一个握手拒绝
+// —— 首当其冲是 `SCHEMA_MISMATCH` —— 都被**静默吞掉**，界面上只剩一句"连接超时"。
+// 认得出码却不往上说，和认不出没有区别。人话与"值不值得重连"见 lib/handshakeErrorCopy.ts。
+//
 // 后端拒绝握手的方式是 middleware `next(new Error('<CODE>: …'))`，客户端收到 `connect_error`：
 //  · **首选** `err.data.code` —— socket.io 会把 `Error.data` 原样带到客户端，是结构化、不用猜的那条；
 //  · 其次 message 的开头码（`UNAUTHORIZED: …` / `SCHEMA_MISMATCH: expected sb-tasks-v1, got …`）；
@@ -53,7 +58,7 @@ export function readSocketErrorCode(err: unknown): string | undefined {
   return AUTH_PROSE.test(message) ? 'UNAUTHORIZED' : undefined;
 }
 
-/** 握手被口令门拒绝（未授权）⇒ 上层弹解锁门。 */
-export function isUnauthorizedError(err: unknown): boolean {
-  return readSocketErrorCode(err) === 'UNAUTHORIZED';
-}
+// ⚠️ 这里**刻意没有** `isUnauthorizedError(err): boolean` 那种便利谓词。
+// 它把"认出来的码"压成了一个 bool，于是调用点在结构上就没有机会处理别的码 ——
+// /terminal 与 /events 正是这样把 `SCHEMA_MISMATCH` 静默吞了整整两个切片。
+// 调用点请一律 `const code = readSocketErrorCode(err)` 后自行分叉。

@@ -49,12 +49,27 @@ describe('useProjects', () => {
 });
 
 describe('describeCreateProjectError', () => {
-  it('409 → 名称重复友好提示', () => {
+  it('ALREADY_EXISTS → 名称重复友好提示', () => {
     const err = new ApiErrorException(
       { code: 'ALREADY_EXISTS', message: 'duplicate', retryable: false },
       409,
     );
     expect(describeCreateProjectError(err)).toBe('项目名已存在，请换一个名称。');
+  });
+
+  /**
+   * 判据读**信封里的码**，不读 HTTP 状态码 —— 与 `retryable` / `sideEffectFree` 同源纪律。
+   *
+   * 旧写法 `httpStatus === 409` 拿状态码当 `ALREADY_EXISTS` 的代理。后端哪天在这个端点上
+   * 多返回一种 409（并发冲突、配额冲突……），用户就会被告知"项目名已存在"，而名字根本没重 ——
+   * 一句**确凿的假话**，还把人推去改一个没问题的输入。把判据改回状态码，这条当场红。
+   */
+  it('同是 409 但码不是 ALREADY_EXISTS → 透出后端那句话，绝不硬说"名称重复"', () => {
+    const err = new ApiErrorException(
+      { code: 'CONFLICT', message: '该项目正在被另一处修改，请稍后再试。', retryable: true },
+      409,
+    );
+    expect(describeCreateProjectError(err)).toBe('该项目正在被另一处修改，请稍后再试。');
   });
 
   it('其余 4xx → 用后端信封文案', () => {

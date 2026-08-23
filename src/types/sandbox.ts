@@ -14,6 +14,15 @@ export type SandboxProvider = string;
 export type SandboxProviderDto = components['schemas']['ProviderResponseDto'];
 
 /**
+ * 沙箱响应形状（POST /api/sandboxes 与 GET /api/sandboxes/:id 同形）。
+ *
+ * 落在 types/ 而不是只在 service 里的原因：**mocks/ 也要用它**（boundaries 只允许 mock → type），
+ * 而 12 §3.4 要求替身的形状从生成类型派生并用显式返回类型咬住。同一个别名两边共用 ⇒
+ * 后端给 DTO 加必填字段时，生产代码与替身**同时**报红（`provider` 就是这么漏进 mock 的）。
+ */
+export type SandboxDto = components['schemas']['SandboxResponseDto'];
+
+/**
  * 逐 provider 能力位（**7 位全 required**）：驱动按能力显隐，今天只消费 spawnTty。
  *
  * `headlessTask` 一位同时管住作业面与文件面（04 §2.6）——两者必然同进同退，
@@ -34,6 +43,12 @@ export type SandboxCapabilityRequire = NonNullable<
 /**
  * 任务指令（`CreateSandboxDto.initialPrompt`）长度上限：**8000 字符**
  * （SYNC WITH shared/10 §7.3 「≤8000 字符」与 13 §2.1.1 的 CHECK；P21-2 §6 要求就地计数）。
+ *
+ * ⏳ 契约里现在**已经有** `maxLength: 8000` 了（后端 B 轮补的），但 `openapi-typescript`
+ * 会把 `maxLength` 这类**值约束**拍平——生成物里它仍然只是 `string`（14 §10.5 ③，
+ * 与 `TASK_TIMEOUT_OPTIONS` 那四档闭集丢成 `number` 是同一回事）。
+ * 所以这份常量还是只能前端自留一份，**代价照旧要说清楚**：后端把上限改成别的值时，
+ * 这里不会有任何编译错误，界面只是静默地按旧上限计数。
  *
  * 放 types/ 是为了 view（不能 import lib）与 container 共用同一个常量——view 层不得再写死一份。
  */

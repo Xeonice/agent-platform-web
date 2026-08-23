@@ -141,6 +141,54 @@ describe('useSandboxEventsSocket', () => {
     expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 
+  it('SCHEMA_MISMATCH → 不弹解锁门、经 reportError 说出来、并把码透出（本通道无 UI，但不许静默）', () => {
+    const { factory, sockets } = makeFactory();
+    const onUnauthorized = vi.fn();
+    const reporter = vi.fn();
+    setErrorReporter(reporter);
+    const { result } = renderHook(() =>
+      useSandboxEventsSocket({
+        base: 'ws://localhost:3001',
+        socketFactory: factory,
+        onUnauthorized,
+      }),
+    );
+
+    act(() => {
+      sockets[0]!.triggerConnectError(
+        Object.assign(new Error('SCHEMA_MISMATCH: …'), { data: { code: 'SCHEMA_MISMATCH' } }),
+      );
+    });
+
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(result.current.handshakeErrorCode).toBe('SCHEMA_MISMATCH');
+    expect(reporter).toHaveBeenCalledWith(
+      expect.stringContaining('握手被拒'),
+      expect.objectContaining({ code: 'SCHEMA_MISMATCH' }),
+    );
+  });
+
+  it('⚠️ 协议漂移下 /events **仍然不停手**（本通道刻意与另外两条不同，理由见 hook 头注释）', () => {
+    vi.useFakeTimers();
+    const { factory, sockets } = makeFactory();
+    renderHook(() =>
+      useSandboxEventsSocket({ base: 'ws://localhost:3001', socketFactory: factory }),
+    );
+
+    act(() => {
+      sockets[0]!.triggerConnectError(
+        Object.assign(new Error('SCHEMA_MISMATCH: …'), { data: { code: 'SCHEMA_MISMATCH' } }),
+      );
+    });
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    // 停手会让整个工作台的实时投影永久死掉，代价远大于每 30s 敲一次门。
+    expect(sockets.length).toBeGreaterThan(1);
+    vi.useRealTimers();
+  });
+
   it('enabled:false → 不建立连接', () => {
     const { factory, sockets } = makeFactory();
     renderHook(() =>

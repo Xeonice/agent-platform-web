@@ -245,3 +245,51 @@ export const Truncated: Story = {
 export const ScrolledUp: Story = {
   args: { running: true, following: false, deadlineSlot: deadline('还剩 1 小时 2 分') },
 };
+
+// —— 列表虚拟化（F4）——
+
+/** 一条长流：5000 条正文（环形上限的量级）。窗口由 hooks/useVirtualList 算，story 里直接给。 */
+const LONG_STREAM: TaskStreamItem[] = Array.from({ length: 5000 }, (_, i) => ({
+  id: `seq:${String(i + 1)}`,
+  seq: i + 1,
+  kind: 'message' as const,
+  timestamp: TS,
+  text: `[${String(i + 1).padStart(4, '0')}] 分析 src/app/page.tsx …`,
+}));
+
+/**
+ * **跟随底部**（生产上的常态）：窗口锚定末尾，顶部占位把前面 4960 条的高度还给滚动容器 ——
+ * 于是滚动条长度仍然对应"5000 条"，而 DOM 里只有几十个节点。
+ * 对照 `Streaming`：条目少到一屏放得下时，窗口就是全部，行为与虚拟化前完全一致。
+ */
+export const VirtualizedTail: Story = {
+  args: {
+    items: LONG_STREAM,
+    running: true,
+    deadlineSlot: deadline('还剩 3 小时 12 分'),
+    virtual: { start: 4960, end: 5000, topPx: 4960 * 20, bottomPx: 0 },
+  },
+};
+
+/** 用户翻到中间：两端各有占位，窗口跟着 scrollTop 走。 */
+export const VirtualizedMiddle: Story = {
+  args: {
+    items: LONG_STREAM,
+    following: false,
+    running: true,
+    deadlineSlot: deadline('还剩 3 小时 12 分'),
+    virtual: { start: 2000, end: 2040, topPx: 2000 * 20, bottomPx: 2960 * 20 },
+  },
+};
+
+/**
+ * 虚拟化与**环形上限**共存：上限丢掉的那些条目由「前 N 条已省略」说明（它在滚动容器**之外**，
+ * 不会被窗口滚没），窗口只负责已持有的这 5000 条里当前该渲染的一小段。两件事不能互相冒充。
+ */
+export const VirtualizedTruncated: Story = {
+  args: {
+    items: LONG_STREAM,
+    droppedCount: 12000,
+    virtual: { start: 4960, end: 5000, topPx: 4960 * 20, bottomPx: 0 },
+  },
+};

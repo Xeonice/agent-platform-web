@@ -12,12 +12,19 @@
 // 逐条 `role="alert"` 会让 20 条错误变成 20 次抢播，读屏被刷屏——那不是"更无障碍"，是更吵。
 // 真正需要抢播的只有**一次性的破坏性确认**（终止任务），它单独 role="alert"。
 //
-// 性能口径（S6 review ⑤）：
+// 性能口径（S6 review ⑤ + 本轮 F4）：
 //   · 倒计时**不在本组件里算**——每秒 tick 若穿过这里，就是拿 `items.map` 全量重建换一个"分"字。
 //     容器把它做成叶子组件从 `deadlineSlot` 传进来，tick 只重渲那一个叶子。
 //   · 本组件与单条目都套了 `memo`：容器因别的原因重渲时，输出列表整体跳过。
-import { memo, type ReactNode, type Ref } from 'react';
-import type { TaskStreamItem, TaskToolCall } from '@/types/taskStream';
+//   · **列表窗口化**：只渲染 `virtual` 给的那一段，两端用 `aria-hidden` 的占位撑高
+//     （实测 5000 条 = 10006 个 DOM 节点，再来一条事件重渲 34ms）。窗口怎么算见 hooks/useVirtualList。
+//
+// ⚠️ 窗口化带来的一个**必须**处理的后果：窗口外的条目会被卸载，`<details>` 的展开态是 DOM 状态，
+// 卸载即丢。所以折叠态被提到**本组件**的 state 里（不是每行自己的 DOM 态）——
+// 行卸载再挂回来，展开的仍然是展开的。这也是它没被下放到容器的原因：纯 UI 披露态，
+// 与任何副作用/服务端状态无关。
+import { memo, useCallback, useState, type ReactNode, type Ref } from 'react';
+import type { TaskStreamItem, TaskToolCall, VirtualWindow } from '@/types/taskStream';
 import type { ConnState } from '@/types/terminal';
 import { Button } from '@/components/ui/button';
 
@@ -73,6 +80,12 @@ export interface TaskOutputPaneProps {
   /** false = 用户已往上翻，此时给「回到底部」入口。 */
   following?: boolean;
   onJumpToBottom?: () => void;
+
+  /**
+   * 渲染窗口（hooks/useVirtualList 提供）。**缺省 = 全量渲染**——
+   * story 与小列表不必接线，行为与窗口化前完全一致。
+   */
+  virtual?: VirtualWindow;
 }
 
 const KIND_CLASS: Record<TaskStreamItem['kind'], string> = {
@@ -93,20 +106,44 @@ function toolStatusLabel(tool: TaskToolCall): string {
   return tool.exitCode === undefined ? outcome : `${outcome}（退出码 ${String(tool.exitCode)}）`;
 }
 
+/** 行的公共标记：`data-vrow` 是 useVirtualList 量高度的锚点（值 = 条目 key）。 */
+interface TaskStreamRowProps {
+  item: TaskStreamItem;
+  /** 折叠块是否展开（态住在列表组件里，行卸载不丢）。 */
+  expanded: boolean;
+  onToggleTool: (id: string, open: boolean) => void;
+}
+
 /**
- * 单条目。`memo` 的收益在"追加一条新输出"这条路上：已有的几千条条目**引用没变** ⇒ 整段跳过重渲。
+ * 单条目。`memo` 的收益在"追加一条新输出"这条路上：已有的条目**引用没变** ⇒ 整段跳过重渲。
+ * （窗口化之后同时渲染的行只有几十个，但 memo 仍然让"展开某一行"不波及其它行。）
+ *
+ * ⚠️ 每个 `<li>` 都带 `data-vrow`：没有它 useVirtualList 量不到真实行高，
+ * 只能一律按估计值排版 —— 展开一个十几行的工具块就会让滚动条长度与位置一起错。
  */
-const TaskStreamRow = memo(function TaskStreamRow({ item }: { item: TaskStreamItem }) {
+const TaskStreamRow = memo(function TaskStreamRow({
+  item,
+  expanded,
+  onToggleTool,
+}: TaskStreamRowProps) {
   if (item.kind === 'tool' && item.tool !== undefined) {
     const tool = item.tool;
     return (
       <li
+        data-vrow={item.id}
         data-kind="tool"
         data-seq={item.seq}
         data-tool-id={tool.callId}
         data-tool-failed={tool.failed === true ? 'true' : 'false'}
+        className="pb-1"
       >
-        <details className="rounded border border-border/60">
+        <details
+          className="rounded border border-border/60"
+          open={expanded}
+          onToggle={(e) => {
+            onToggleTool(item.id, e.currentTarget.open);
+          }}
+        >
           <summary
             className={
               tool.failed === true
@@ -152,10 +189,11 @@ const TaskStreamRow = memo(function TaskStreamRow({ item }: { item: TaskStreamIt
 
   return (
     <li
+      data-vrow={item.id}
       data-kind={item.kind}
       data-seq={item.seq}
       data-code={item.code}
-      className={KIND_CLASS[item.kind]}
+      className={`${KIND_CLASS[item.kind]} pb-1`}
     >
       <pre className="overflow-x-auto whitespace-pre">{item.text}</pre>
       {item.kind === 'error' && item.detail !== undefined && item.detail !== '' && (
@@ -302,7 +340,30 @@ function TaskOutputPaneViewImpl({
   onScroll,
   following = true,
   onJumpToBottom,
+  virtual,
 }: TaskOutputPaneProps) {
+  /**
+   * 展开着的工具折叠块。**必须住在这一层**：窗口化会卸载窗口外的行，
+   * `<details open>` 是 DOM 态、卸载即丢 —— 用户展开一个工具块、又往下看了几百行输出，
+   * 回头翻上去发现它自己合上了，这在长任务面板里是天天发生的事。
+   */
+  const [expandedTools, setExpandedTools] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const handleToggleTool = useCallback((id: string, open: boolean): void => {
+    setExpandedTools((prev) => {
+      if (prev.has(id) === open) return prev; // 无变化不换引用，别把整列表的 memo 打穿
+      const next = new Set(prev);
+      if (open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  // 缺省窗口 = 全量（story / 未接线的调用点行为不变）。
+  const start = virtual?.start ?? 0;
+  const end = virtual?.end ?? items.length;
+  const topPx = virtual?.topPx ?? 0;
+  const bottomPx = virtual?.bottomPx ?? 0;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="task-output-pane">
       <ConnectionNote
@@ -377,10 +438,30 @@ function TaskOutputPaneViewImpl({
           </p>
         ) : (
           // 整段一个活区（role="log" 隐含 aria-live=polite）：逐条 alert 会把读屏刷屏。
-          <ul role="log" aria-label="任务输出" className="flex flex-col gap-1">
-            {items.map((item) => (
-              <TaskStreamRow key={item.id} item={item} />
+          //
+          // ⚠️ 行间距用每行的 `pb-1` 而**不是** `gap-1`：占位高度是按量到的 `offsetHeight` 累加的，
+          // 而 flex gap 不计入 offsetHeight ⇒ 用 gap 会让滚动条比真实内容短，越往下偏得越多。
+          <ul role="log" aria-label="任务输出" className="flex flex-col">
+            {/* 两端占位：把窗口外条目的高度"还"给滚动容器，于是 scrollHeight 仍是完整列表的高度。
+                aria-hidden ⇒ 它们不进活区、读屏不会念出一段空白。 */}
+            {topPx > 0 && (
+              <li aria-hidden="true" data-testid="virtual-top-spacer" style={{ height: topPx }} />
+            )}
+            {items.slice(start, end).map((item) => (
+              <TaskStreamRow
+                key={item.id}
+                item={item}
+                expanded={expandedTools.has(item.id)}
+                onToggleTool={handleToggleTool}
+              />
             ))}
+            {bottomPx > 0 && (
+              <li
+                aria-hidden="true"
+                data-testid="virtual-bottom-spacer"
+                style={{ height: bottomPx }}
+              />
+            )}
           </ul>
         )}
       </div>

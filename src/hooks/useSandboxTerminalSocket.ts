@@ -7,6 +7,7 @@ import {
   type SocketFactory,
 } from '@/services/ws/ptySocket';
 import { reportError } from '@/lib/reportError';
+import { describeHandshakeErrorCode, isRetryableHandshakeError } from '@/lib/handshakeErrorCopy';
 import type { TerminalClientFrame, TerminalServerFrame } from '@/types/ws-protocol';
 
 /** 浅比较两个 string map（P2：把连接稳定性从"调用方君子协定"收回 hook 自身）。 */
@@ -43,6 +44,13 @@ export interface UseSandboxTerminalSocketArgs {
 export interface UseSandboxTerminalSocketApi {
   connState: ConnState;
   attempt: number;
+  /**
+   * 握手被拒的人话（非未授权那一类，如 `SCHEMA_MISMATCH`）；`undefined` = 没有这类问题。
+   *
+   * 非空时连接条应**代替**「连接超时 + 手动重连」呈现它：协议漂移下那个按钮永远按不通，
+   * 把它摆在那里等于让用户反复确认一件已经确定的事。
+   */
+  handshakeErrorMessage?: string;
   send: (frame: TerminalClientFrame) => boolean;
   /**
    * 用户显式要求再连一次（退避耗尽、`connState==='closed'` 后的唯一出路，08 §11.6 的 `[手动重连]`）。
@@ -59,9 +67,13 @@ export function useSandboxTerminalSocket(
 ): UseSandboxTerminalSocketApi {
   const [connState, setConnState] = useState<ConnState>('idle');
   const [attempt, setAttempt] = useState(0);
+  /** 最近一次非未授权的握手拒绝码；null = 没遇到过（连上即清）。 */
+  const [handshakeErrorCode, setHandshakeErrorCode] = useState<string | null>(null);
   const socketRef = useRef<PtySocket | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const endedRef = useRef<boolean>(args.sessionEnded ?? false);
+  /** 确定性握手失败（重试无意义）——挡住退避循环，与 sessionEnded 同一条"别再连了"的路。 */
+  const fatalHandshakeRef = useRef(false);
 
   endedRef.current = args.sessionEnded ?? false;
 
@@ -109,14 +121,27 @@ export function useSandboxTerminalSocket(
         onInvalidFrameRef.current?.(raw);
       },
       onUnauthorized: () => {
+        // 未授权是**可自愈**的：解锁拿到 cookie 后下一次重连就过 ⇒ 退避循环照常继续。
         onUnauthorizedRef.current?.();
+      },
+      onHandshakeError: (code) => {
+        setHandshakeErrorCode(code);
+        // 确定性失败（今天只有 SCHEMA_MISMATCH）：重连多少次都是同一个结果 ⇒ 当场停手，
+        // 由连接条给出真正的出路（刷新页面）。未知码按可重连处理，见 lib/handshakeErrorCopy。
+        if (!isRetryableHandshakeError(code)) fatalHandshakeRef.current = true;
+        reportError('WS 握手被拒（非未授权）', { code });
       },
       onState: (state, nextAttempt) => {
         setConnState(state);
         setAttempt(nextAttempt);
+        // 连上了就说明上一次的握手问题已经不成立（后端回滚/重新部署都可能修好它）。
+        if (state === 'open') {
+          fatalHandshakeRef.current = false;
+          setHandshakeErrorCode(null);
+        }
         if (state === 'reconnecting') {
-          // 会话已终结则停止循环（08 §8 要点 1）；否则退避后重连。
-          if (endedRef.current || nextAttempt > (maxReconnect ?? 8)) {
+          // 会话已终结 / 确定性握手失败则停止循环（08 §8 要点 1）；否则退避后重连。
+          if (endedRef.current || fatalHandshakeRef.current || nextAttempt > (maxReconnect ?? 8)) {
             socket.close();
             return;
           }
@@ -146,11 +171,27 @@ export function useSandboxTerminalSocket(
   const reconnect = useCallback((): void => {
     // 会话已终结时重连没有意义（08 §8 要点 1：那条路走的是 [重启]，不是重连）。
     if (endedRef.current) return;
+    // 协议漂移同理：手点一次也还是同一个失败。连接条在这种态下压根不渲染重连按钮，
+    // 这里兜住键盘等旁路触发——给一个必定失败的动作，比不给更伤。
+    if (fatalHandshakeRef.current) return;
     // 可能还压着一个已排期的退避重连：先撤掉，免得手动这次和它撞成两条连接。
     clearTimer();
     // PtySocket#reconnect 会清零退避预算并带回 socketSessionKey（重连窗口没过就接回原 pty）。
     socketRef.current?.reconnect();
   }, [clearTimer]);
 
-  return { connState, attempt, send, reconnect };
+  const handshakeErrorMessage =
+    handshakeErrorCode === null
+      ? undefined
+      : (describeHandshakeErrorCode(handshakeErrorCode)?.message ??
+        // 后端加了前端还不认识的新码：如实说出码本身，胜过一句"未知错误"。
+        `连接被拒绝（${handshakeErrorCode}）。`);
+
+  return {
+    connState,
+    attempt,
+    ...(handshakeErrorMessage === undefined ? {} : { handshakeErrorMessage }),
+    send,
+    reconnect,
+  };
 }

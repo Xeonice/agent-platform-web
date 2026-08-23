@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { partializeAppState, useAppStore, type PersistedState } from '@/stores';
 
-// 安全红线回归（15 §3.5）：断言 partialize 白名单只输出 9 个字段，
+// 安全红线回归（15 §3.5）：断言 partialize 白名单只输出 10 个字段，
 // 且 initialPrompt / 任何瞬时敏感字段绝不落盘。
 //
-// S6 起白名单从 8 项变 9 项（新增 `selectedTaskId`）：与 `selectedSandboxId` 同型的不透明选中指向，
-// 用于无头 Task 的刷新恢复。红线本身没动——指令/输出/凭证仍然一个都不落盘（下方用例逐条钉死）。
+// 8 → 9（S6 `selectedTaskId`，与 selectedSandboxId 同型的不透明选中指向）
+//   → 10（`selectedSandboxTerminalAt`，一个**时刻**，不含任何内容）。
+// 红线本身没动——指令/输出/凭证仍然一个都不落盘（下方用例逐条钉死）。
 describe('persist partialize 白名单（15 §3.5 安全红线）', () => {
-  it('只输出白名单 9 字段', () => {
+  it('只输出白名单 10 字段', () => {
     const persisted = partializeAppState(useAppStore.getState());
     expect(Object.keys(persisted).sort()).toEqual(
       [
@@ -16,6 +17,7 @@ describe('persist partialize 白名单（15 §3.5 安全红线）', () => {
         'lastUsedRuntime',
         'selectedProjectId',
         'selectedSandboxId',
+        'selectedSandboxTerminalAt',
         'selectedTaskId',
         'sidebarCollapsed',
         'taskListFolds',

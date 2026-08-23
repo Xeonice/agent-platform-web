@@ -4,6 +4,7 @@
 import type { TerminalSocketConfig } from '@/types/terminal';
 
 export const WS_SCHEMA_HASH = 'sb-terminal-v1';
+
 export const TERMINAL_NAMESPACE = '/terminal';
 
 export type { TerminalSocketConfig };

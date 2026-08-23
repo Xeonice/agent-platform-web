@@ -17,6 +17,12 @@ const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:30
 const SANDBOX = 'sb-1';
 const RUNTIME = 'codex';
 
+/**
+ * jsdom 里一行的渲染预算：useVirtualList 量不到布局 ⇒ 视口退回兜底 480px、行高退回估计 20px，
+ * 加上 400px overscan ⇒ 一屏最多 (480+400)/20 = 44 行。取 60 留足余量，同时仍然远小于几千条。
+ */
+const VIRTUAL_ROW_BUDGET = 60;
+
 // ——— 可控 /tasks socket（模块级稳定引用，避免连接 effect 反复重建）———
 class MockTaskSocket implements TaskSocketLike {
   private connectCb: (() => void) | null = null;
@@ -580,6 +586,34 @@ describe('HeadlessTaskContainer · 终态', () => {
     expect(outcome.textContent).not.toContain('undefined');
   });
 
+  /**
+   * B2 `UNKNOWN_RUNTIME` 打到界面上的那一条（决策的端到端看守）。
+   *
+   * 可达场景（后端用例写死的）：任务行熬过平台重启，而注册该 adapter 的 out-of-tree 模块
+   * 没有再加载 ⇒ 任务落 failed + 本码。**此刻 DTO 上没有任何自由文本**，
+   * "让后端那句话透出来"这个选项在这条路上并不存在——所以前端必须自己有一句话。
+   */
+  it('UNKNOWN_RUNTIME 终态 ⇒ 给出人话与正确的下一步，而不是"暂未收录"', async () => {
+    mockRun();
+    renderContainer();
+    await launch();
+    emitExit('failed', undefined, {
+      errorCode: 'UNKNOWN_RUNTIME',
+      finishedAt: '2026-08-22T01:00:00Z',
+    });
+
+    const outcome = await screen.findByTestId('task-outcome');
+    expect(outcome.textContent).toContain('注册表');
+    expect(outcome.textContent).not.toContain('暂未收录');
+    // 后端把它标成 retryable:false ⇒ 界面不能反过来劝用户"重跑一次"。
+    expect(outcome.textContent).toMatch(/只会再失败/);
+    // 码只作诊断小字，不裸抛进正文（P22 §1）。
+    await waitFor(() => {
+      expect(outcome.getAttribute('data-code')).toBe('UNKNOWN_RUNTIME');
+    });
+    expect(within(outcome).getByText(/诊断码：UNKNOWN_RUNTIME/)).toBeInTheDocument();
+  });
+
   it('exitCode 为 0 且 succeeded ⇒ 成功调性 + 产物列表可下载', async () => {
     mockRun();
     renderContainer();
@@ -1038,7 +1072,12 @@ describe('HeadlessTaskContainer · 倒计时的重渲成本', () => {
         });
       }
     });
-    expect(screen.getByTestId('task-output-pane').querySelectorAll('li')).toHaveLength(n);
+    // 窗口化之后同时渲染的行数只跟**视口**有关、与条目总数无关（F4）。
+    const rows = screen.getByTestId('task-output-pane').querySelectorAll('li[data-vrow]');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.length).toBeLessThanOrEqual(Math.min(n, VIRTUAL_ROW_BUDGET));
+    // 跟随态锚定末尾 ⇒ 最后一条一定在窗口里（"新输出必须看得见"没有被窗口化弄丢）。
+    expect(screen.getByTestId('task-output-pane')).toHaveTextContent(`line ${String(n)} `);
 
     // ⚠️ 计时必须用**真实**时钟：假定时器把 Date / performance / hrtime 全接管了，
     // 用它们量出来的只会是"我们让假时钟走了多少毫秒"（恒等于 20000）。
@@ -1304,5 +1343,197 @@ describe('HeadlessTaskContainer · 事件流断开后的「重新连接」', () 
 
     expect(screen.queryByText(/事件流已断开/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '重新连接' })).not.toBeInTheDocument();
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// F4 输出列表虚拟化。
+//
+// 实测账（S6 之后量的）：20000 条正文帧纯 reducer 274ms（`[...items]` 每帧 O(n) ⇒ 总体 O(n²)）；
+// 5000 条时 DOM **10006 个节点**，再来一条事件重渲 **34ms**。`MAX_STREAM_ITEMS = 5000` 只保证不 OOM。
+//
+// 本组用例的分工：
+//  ① 虚拟化**确实生效**（退回全量渲染就红）——这是变异证明的那一条；
+//  ②③④ 虚拟化**没改坏**既有的四件事：自动跟随、「回到底部」、折叠块展开态、错误高亮 / 各种提示条。
+// ————————————————————————————————————————————————————————————————
+describe('HeadlessTaskContainer · 输出列表虚拟化（F4）', () => {
+  /** jsdom 没有布局：给滚动容器安上可读写的几何属性（与「跟随底部」那组同一手法）。 */
+  function instrumentScroll(): { setTop: (v: number) => void; scrollTop: () => number } {
+    const el = screen.getByTestId('task-output-scroll');
+    let scrollTop = 0;
+    Object.defineProperty(el, 'scrollHeight', { configurable: true, value: 100_000 });
+    Object.defineProperty(el, 'clientHeight', { configurable: true, value: 400 });
+    Object.defineProperty(el, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+    });
+    return { setTop: (v) => (scrollTop = v), scrollTop: () => scrollTop };
+  }
+
+  function renderedRows(): HTMLElement[] {
+    return Array.from(
+      screen.getByTestId('task-output-pane').querySelectorAll<HTMLElement>('li[data-vrow]'),
+    );
+  }
+
+  /** 一次性灌 n 条正文（单个 act ⇒ 一次提交，接近真实的批量回放）。 */
+  function floodMessages(n: number, from = 1): void {
+    act(() => {
+      const socket = latestSocket();
+      for (let i = from; i < from + n; i += 1) {
+        socket.serverEmit({
+          type: 'event',
+          taskId: 'task-1',
+          seq: i,
+          event: {
+            type: 'agent-message',
+            timestamp: '2026-08-22T00:00:00.000Z',
+            data: { text: `line ${String(i)} ${'x'.repeat(40)}` },
+          },
+        });
+      }
+    });
+  }
+
+  it('① 3000 条输出只渲染一屏的行，且占位把完整高度还给滚动容器（退回全量渲染即红）', async () => {
+    mockRun();
+    renderContainer();
+    await launch();
+    floodMessages(3000);
+
+    const rows = renderedRows();
+    // 判据一：DOM 行数与条目总数**解耦**。没有窗口化时这里就是 3000。
+    expect(rows.length).toBeLessThanOrEqual(VIRTUAL_ROW_BUDGET);
+    expect(rows.length).toBeGreaterThan(0);
+
+    // 判据二：省下来的高度必须**还回去**，否则滚动条会缩成一小截、拖到底也看不到 3000 条那么多内容。
+    const spacer = screen.getByTestId('virtual-top-spacer');
+    const spacerPx = Number.parseFloat(spacer.style.height);
+    expect(spacerPx).toBeGreaterThan(3000 * 20 * 0.8);
+
+    // 判据三：占位不进无障碍活区，读屏不会念出一段空白。
+    expect(spacer).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByRole('log', { name: '任务输出' })).toBeInTheDocument();
+  });
+
+  it('②a 跟随态下窗口锚定**末尾**：最新一条一定在 DOM 里，很早的那些不在', async () => {
+    mockRun();
+    renderContainer();
+    await launch();
+    instrumentScroll();
+    floodMessages(1000);
+
+    const pane = screen.getByTestId('task-output-pane');
+    expect(pane).toHaveTextContent('line 1000 ');
+    // 早期条目已被移出窗口（这正是"省"下来的那部分）。
+    expect(pane).not.toHaveTextContent('line 1 x');
+  });
+
+  it('②b 新输出到达仍然自动滚进视口（跑 4 小时的任务不能让新输出落在视口外）', async () => {
+    mockRun();
+    renderContainer();
+    await launch();
+    const scroll = instrumentScroll();
+    floodMessages(500);
+
+    // useFollowOutput 照旧把 scrollTop 顶到 scrollHeight —— 占位让 scrollHeight 仍是完整高度。
+    expect(scroll.scrollTop()).toBe(100_000);
+    expect(screen.getByTestId('task-output-pane')).toHaveTextContent('line 500 ');
+  });
+
+  it('③ 用户上翻 ⇒ 停止跟随、窗口改按 scrollTop 算，「回到底部」把两者一起复位', async () => {
+    mockRun();
+    renderContainer();
+    await launch();
+    const scroll = instrumentScroll();
+    floodMessages(1000);
+
+    // 翻到最顶上。
+    scroll.setTop(0);
+    fireEvent.scroll(screen.getByTestId('task-output-scroll'));
+
+    const pane = screen.getByTestId('task-output-pane');
+    // 窗口跟着滚动位置走：现在看得见开头，看不见末尾。
+    expect(pane).toHaveTextContent('line 1 x');
+    expect(pane).not.toHaveTextContent('line 1000 ');
+    // 顶部占位归零、底部占位承接剩下的高度（否则往下拖就没内容了）。
+    expect(screen.queryByTestId('virtual-top-spacer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('virtual-bottom-spacer')).toBeInTheDocument();
+
+    const back = await screen.findByRole('button', { name: /回到底部/ });
+    fireEvent.click(back);
+
+    expect(scroll.scrollTop()).toBe(100_000);
+    expect(screen.queryByRole('button', { name: /回到底部/ })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('task-output-pane')).toHaveTextContent('line 1000 ');
+    });
+  });
+
+  it('④ 工具折叠块的展开态**跨窗口存活**：滚出去再滚回来，它还是展开的', async () => {
+    mockRun();
+    renderContainer();
+    await launch();
+    const scroll = instrumentScroll();
+
+    // 第 1 条就是一次工具调用，随后灌一大堆正文把它挤出窗口。
+    emitEvent(1, 'tool-call', {
+      id: 'c1',
+      name: 'read_file',
+      status: 'started',
+      input: { path: 'src/app/page.tsx' },
+    });
+    const details = screen
+      .getByTestId('task-output-pane')
+      .querySelector<HTMLDetailsElement>('li[data-kind="tool"] details');
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+
+    // 用户展开它（<details> 的展开是 DOM 态；窗口化会卸载这一行——这就是本用例要盯的那件事）。
+    act(() => {
+      if (details !== null) {
+        details.open = true;
+        fireEvent(details, new Event('toggle', { bubbles: false }));
+      }
+    });
+    expect(screen.getByText('入参')).toBeInTheDocument();
+
+    floodMessages(1000, 2);
+    // 已经被移出窗口（证明这确实是一次真正的卸载，而不是"恰好还在 DOM 里"的假绿）。
+    expect(screen.getByTestId('task-output-pane').querySelector('li[data-kind="tool"]')).toBeNull();
+
+    // 翻回顶部让它重新挂载。
+    scroll.setTop(0);
+    fireEvent.scroll(screen.getByTestId('task-output-scroll'));
+
+    const remounted = screen
+      .getByTestId('task-output-pane')
+      .querySelector<HTMLDetailsElement>('li[data-kind="tool"] details');
+    expect(remounted).not.toBeNull();
+    expect(remounted?.open).toBe(true);
+    expect(screen.getByText('入参')).toBeInTheDocument();
+  });
+
+  it('⑤ 错误高亮与 seq 告警不受窗口化影响（前者随窗口渲染，后者本来就在列表之外）', async () => {
+    mockRun();
+    renderContainer();
+    await launch();
+    instrumentScroll();
+
+    floodMessages(300);
+    // 制造一个 seq 缺口，并让最后一条是错误项（跟随态 ⇒ 它一定在窗口里）。
+    emitEvent(400, 'error', { message: '运行时报了一个错' });
+
+    const pane = screen.getByTestId('task-output-pane');
+    const errorRow = pane.querySelector<HTMLElement>('li[data-kind="error"]');
+    expect(errorRow).not.toBeNull();
+    expect(errorRow?.className).toContain('text-red-400');
+
+    // 告警条是滚动容器的**兄弟**，不在被窗口化的 <ul> 里 ⇒ 永远不会被"滚没了"。
+    const anomaly = screen.getByText(/事件序号出现缺口/);
+    expect(screen.getByTestId('task-output-scroll').contains(anomaly)).toBe(false);
   });
 });

@@ -2,7 +2,12 @@
 // **未授权与协议漂移必须分得开**。把 X-Schema-Hash 不匹配显示成"需要解锁"，
 // 用户会去解锁一个解不了的问题；反过来把真未授权判成未知原因，解锁门就不弹了。
 import { describe, it, expect } from 'vitest';
-import { isUnauthorizedError, readSocketErrorCode } from '@/services/ws/socketAuth';
+import { readSocketErrorCode } from '@/services/ws/socketAuth';
+
+/** 调用点统一的分叉写法：认出码之后自己判，而不是问一个只会回 bool 的谓词。 */
+function isUnauthorized(err: unknown): boolean {
+  return readSocketErrorCode(err) === 'UNAUTHORIZED';
+}
 
 /** 后端 middleware 的形状：`next(err)` 前把码挂在 `err.data` 上，message 也以码开头。 */
 function handshakeError(code: string, message: string): Error {
@@ -46,11 +51,11 @@ describe('readSocketErrorCode · 三级优先级', () => {
    */
   it('⚠️ "ERROR: unauthorized" 这种偶然大写前缀不许吃掉散文兜底', () => {
     expect(readSocketErrorCode(new Error('ERROR: unauthorized'))).toBe('UNAUTHORIZED');
-    expect(isUnauthorizedError(new Error('ERROR: unauthorized'))).toBe(true);
+    expect(isUnauthorized(new Error('ERROR: unauthorized'))).toBe(true);
   });
 });
 
-describe('isUnauthorizedError · 只认未授权那一个码', () => {
+describe('未授权 vs 其它码 · 只有一个码该弹解锁门', () => {
   it.each([
     [
       'UNAUTHORIZED 结构化',
@@ -65,7 +70,7 @@ describe('isUnauthorizedError · 只认未授权那一个码', () => {
     ['老散文', new Error('unauthorized'), true],
     ['传输层抖动', new Error('websocket error'), false],
   ])('%s ⇒ %s', (_name, err, expected) => {
-    expect(isUnauthorizedError(err)).toBe(expected);
+    expect(isUnauthorized(err)).toBe(expected);
   });
 
   it('后端钉住的那条：SCHEMA_MISMATCH 文案不含任何未授权特征词', () => {
@@ -73,6 +78,8 @@ describe('isUnauthorizedError · 只认未授权那一个码', () => {
     // 这里从前端这一侧再确认一次两边的约定确实对得上。
     const message = 'SCHEMA_MISMATCH: expected sb-tasks-v1, got sb-tasks-v0';
     expect(/unauthor|forbidden|passcode|401|403/i.test(message)).toBe(false);
-    expect(isUnauthorizedError(new Error(message))).toBe(false);
+    expect(isUnauthorized(new Error(message))).toBe(false);
+    // 而且它必须仍然**被认出来**——认不出就等于又一次静默吞掉（这才是三条通道要共用码的理由）。
+    expect(readSocketErrorCode(new Error(message))).toBe('SCHEMA_MISMATCH');
   });
 });

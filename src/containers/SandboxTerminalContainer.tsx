@@ -10,23 +10,32 @@
 //  · 默认任务名由后端从指令派生（`SandboxDto.name`），前端直接用、不派生第二份；
 //  · 失败原因两条通道：WS `status_changed.errorCode`（即时）+ DTO `failureCode`（刷新恢复，
 //    经持久化的 selectedSandboxId → useSandboxRestore 拉回来）。
-// provider 档位为**服务端 registry 驱动**（GET /api/providers）：列表项、默认选中、能力位全部来自后端，
-// 第三方注册的 provider 无需改前端代码即可出现在选项里。
+// provider 档位与 runtime **都是服务端 registry 驱动**（GET /api/providers、GET /api/runtimes）：
+// 列表项与能力位全部来自后端，第三方注册的 provider / runtime 无需改前端代码即可出现在选项里。
+// 默认选中只有 provider 一侧有（DTO 里的 `isDefault`，服务端**明说**的默认档）；runtime 一侧
+// **必选、不预选**（04 §8：平台没有「默认 runtime」概念）——详见下面 `runtime` 处的注释。
+//
+// ⚠️ runtime 这一半是补上来的（14 §10）：S2 时期这里写着 `const S2_DEFAULT_RUNTIME = 'shell'`，
+// 而后端注册表里只有 codex / claude-code ⇒ 从这个入口建的沙箱**必然**死在 `unknown runtime 'shell'`。
+// 类型层拦不住（契约是 `runtime: z.string().min(1)`，开放集**故意**不收窄），
+// 正确的防线只有"注册表驱动 UI + 前端不出现任何字面量默认值"这一条 —— 就是本文件现在的形状。
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useProviders } from '@/hooks/useProviders';
+import { useRuntimes } from '@/hooks/useRuntimes';
 import { useCreateSandbox, useCreateSandboxErrorView } from '@/hooks/useCreateSandbox';
 import { useSandboxRestore } from '@/hooks/useSandboxRestore';
 import { useTerminalSocketConfig } from '@/hooks/useTerminalSocketConfig';
 import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { useAppStore } from '@/stores';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
+import { AuthGateContainer } from '@/containers/AuthGateContainer';
+import { invalidateRuntimeAuth } from '@/hooks/useRuntimeAuthMutations';
 import { SandboxLifecycleContainer } from '@/containers/SandboxLifecycleContainer';
 import { HeadlessTaskContainer } from '@/containers/HeadlessTaskContainer';
 import type { SandboxProvider } from '@/types/sandbox';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
-
-// S2：projectId 来自选中的真实项目（ready 态才会挂载本容器）；runtime 仍占位（S3 接 runtime）。
-const S2_DEFAULT_RUNTIME = 'shell';
 
 /** 已创建的任务：id + **后端派生的**默认任务名（前端不再自己从 prompt 派生一份，T-1）。 */
 interface CreatedTask {
@@ -47,12 +56,15 @@ export interface SandboxTerminalContainerProps {
 export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTerminalContainerProps) {
   // null = 用户尚未手选 → 跟随服务端默认档（前端无默认常量，registry 换默认档即刻生效）。
   const [pickedProvider, setPickedProvider] = useState<SandboxProvider | null>(null);
+  // runtime 一侧：null = **用户还没选**（平台没有默认 runtime 概念，既不预选也不猜）。
+  const [pickedRuntime, setPickedRuntime] = useState<string | null>(null);
   const [task, setTask] = useState<CreatedTask | null>(null);
   // ⚠️ 安全红线（15 §3.5）：任务指令**只在本容器的局部 state**，绝不写进 store / persist ——
   // 它可能含仓库路径、内部系统名、业务上下文。提交即清空；后端也**不回显**（10 §7.3），
   // 因此刷新后拿不回来是**有意的**（默认任务名改由后端派生的 name 承接）。
   const [initialPrompt, setInitialPrompt] = useState('');
   const providers = useProviders();
+  const runtimes = useRuntimes();
   const createSandbox = useCreateSandbox();
   const createErrorView = useCreateSandboxErrorView(createSandbox.error);
   const { reportRestError } = useReportUnauthorized();
@@ -81,9 +93,51 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
   const selectedProvider = providerList.find((p) => p.name === provider);
   const ttyUnsupported = selectedProvider !== undefined && !selectedProvider.capabilities.spawnTty;
 
+  const runtimeList = runtimes.data ?? [];
+  /**
+   * **平台没有「默认 runtime」这个概念**（04 §8：`CreateSandbox.runtime` 必填，后端没有任何
+   * 回退逻辑）⇒ 前端也不预选。`''` = 用户还没选，按钮禁着，view 就地提示"请选择"。
+   *
+   * ⚠️ 上一版拿"注册表返回顺序的**第一项**"当默认，并把它叫作"服务端默认"。它不是：
+   * registry 的顺序只是**注册顺序**，没有任何一方声明过它表达默认。拿它替用户做一个必填
+   * 选择，等于替他挑了一个 agent CLI（codex 还是 claude-code 是完全不同的东西），
+   * 而他可能根本没看过那个列表——第三方模块换个加载次序，默认值就悄悄换了人。
+   *
+   * 与 provider 一侧的对照恰好说明分界：`ProviderResponseDto` **有** `isDefault`，那是服务端
+   * **明说**的默认档，跟着走是对的；runtime 侧没有这个字段，**也不会有**——后端裁决：
+   * 造一个只能是"注册表第一项"，那是把同一份顺序耦合搬到服务端、再盖上契约的章。
+   * 所以正确形状是「必选、不预选」，而不是换个地方猜。
+   */
+  const runtime = pickedRuntime ?? '';
+
+  /**
+   * 鉴权拦截层（P20 §5.1 三分支判定）。**判据是 `GET /api/runtimes` 下发的
+   * `credentialStatus`**,前端不自己维护凭证状态。
+   *
+   *   ① active / expiring  → 不出闸门,给一句正面确认"将以 x 身份运行";
+   *   ② none               → 无编号拦截面板 + 一次性语义文案,配置完才能发起;
+   *   ③ expired            → 同②的面板,但先说清"已过期",走的是同一条重授权流。
+   *
+   * ⚠️ 这一层此前**从未接线**。`AuthGateContainer` 的注释写着"向导拦截面板与凭证页
+   * 卡片内嵌共用",它甚至备好了两个**只给向导用**的 prop(`showOneTimeNotice` /
+   * `onOpenCredentials`)——而生产代码里零调用方,只有 storybook 在传。于是链路是:
+   * 前端不看 credentialStatus → 直接建沙箱 → 后端注入时发现没凭证 → 记一条
+   * `NO_CREDENTIAL` 的 WARN 然后让 agent 裸跑 → 用户在终端里撞见 CLI 自己的登录菜单,
+   * 而平台从头到尾没提示过一句。`expiring` 不拦是有意的:它仍然能用,属于黄色预警态
+   * (P21 §2.2),拦下来等于把"还有一周到期"当成"现在不能用"。
+   */
+  const selectedRuntimeDto = runtimeList.find((r) => r.id === runtime);
+  const credentialStatus = selectedRuntimeDto?.credentialStatus;
+  const authBlocked = credentialStatus === 'none' || credentialStatus === 'expired';
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
   const handleCreate = (): void => {
-    // 无可选档位 / 该档位不支持终端时不发请求（按钮已禁用，这里兜住键盘等旁路触发）。
-    if (provider === '' || ttyUnsupported) return;
+    // 无可选档位 / 无可选 runtime / 该档位不支持终端时不发请求（按钮已禁用，这里兜住键盘等旁路触发）。
+    // 与上面三条同理:按钮已禁用,这里兜住键盘等旁路触发。今天按钮是原生
+    // `<button disabled>`(挡得住一切激活路径),但同函数里其余三条都兜了,少这一条
+    // 只是等着某天换成自定义控件时变成真口子。
+    if (provider === '' || runtime === '' || ttyUnsupported || authBlocked) return;
     const prompt = initialPrompt.trim();
     if (Array.from(prompt).length > INITIAL_PROMPT_MAX_LENGTH) return; // 视图已禁用，这里兜旁路触发
     // **提交即清空**（安全红线）：值只在这一刻进入请求体，之后前端不再持有。
@@ -91,7 +145,8 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
     createSandbox.mutate(
       {
         projectId,
-        runtime: S2_DEFAULT_RUNTIME,
+        // 取自 GET /api/runtimes 的真实注册键（用户可改选）——前端不再有任何 runtime 字面量。
+        runtime,
         provider,
         // 空指令不发字段（后端可选）；非空则随创建请求提交，agent 启动时即执行（T-2）。
         ...(prompt === '' ? {} : { initialPrompt: prompt }),
@@ -132,6 +187,14 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
   if (sandboxId === null || socketConfig === null) {
     return (
       <NewSandboxPanelView
+        runtimes={runtimeList}
+        runtime={runtime}
+        onSelectRuntime={setPickedRuntime}
+        loadingRuntimes={runtimes.isPending}
+        runtimesErrorMessage={runtimes.isError ? runtimes.error.message || '请求失败' : undefined}
+        onRetryRuntimes={() => {
+          void runtimes.refetch();
+        }}
         providers={providerList}
         provider={provider}
         onSelectProvider={setPickedProvider}
@@ -144,15 +207,43 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
         onRetryProviders={() => {
           void providers.refetch();
         }}
+        authGateSlot={
+          authBlocked && selectedRuntimeDto !== undefined ? (
+            <AuthGateContainer
+              runtimeId={selectedRuntimeDto.id}
+              runtimeName={selectedRuntimeDto.displayName}
+              methods={selectedRuntimeDto.authMethods}
+              // 一次性语义文案只在"从未配置"那支出现;已过期是**再来一次**,那句
+              //「只需配置一次」在这里是假话(P20 §5.1 分支③走同一面板但说法不同)。
+              showOneTimeNotice={credentialStatus === 'none'}
+              onOpenCredentials={() => {
+                router.push('/settings/credentials');
+              }}
+              // 配置成功 ⇒ 让 runtimes 列表重取,`credentialStatus` 翻成 active 后
+              // 闸门自行消失、发起按钮解禁。不在本层记任何凭证态(单一来源在服务端)。
+              onSuccess={() => {
+                invalidateRuntimeAuth(queryClient);
+              }}
+            />
+          ) : undefined
+        }
+        runtimeIdentityNotice={
+          credentialStatus === 'active' || credentialStatus === 'expiring'
+            ? `将以 ${selectedRuntimeDto?.maskedIdentifier ?? '已配置凭证'} 身份运行${
+                credentialStatus === 'expiring' ? '（凭证即将到期，建议尽快重新授权）' : ''
+              }`
+            : undefined
+        }
         createDisabledReason={
           ttyUnsupported
             ? `provider「${provider}」不支持终端（spawnTty=false），请改选其它运行档位。`
             : undefined
         }
         // 两条**互斥**的错误呈现路径（P22 §1 / 04 §5）：
-        //  · rejection = 409 能力静态校验，请求在落库前被拒（零副作用，没有 sandbox id、
-        //    列表不留 failed 记录）⇒ 就地提示改选，绝不走"创建失败可重试"；
-        //  · errorMessage = 其余创建期失败，人话 + 建议。
+        //  · rejection = 后端显式标了 `sideEffectFree` 的门口拒绝，请求在落库前被拒（没有
+        //    sandbox id、列表不留 failed 记录）⇒ 就地提示改配置，绝不走"创建失败可重试"。
+        //    ⚠️ 判据不是 HTTP 码：这六条拒绝散在 400/404/409 上，反推必漏（见 lib 里的注释）；
+        //  · errorMessage = 其余创建期失败（含后端**漏标**时的保守回落），人话 + 建议。
         rejectionMessage={createErrorView.rejection}
         errorMessage={
           createErrorView.failure === undefined
