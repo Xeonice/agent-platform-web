@@ -356,3 +356,189 @@ describe('useSandboxTerminalSocket · 退避耗尽与手动重连', () => {
     expect(sockets).toHaveLength(built);
   });
 });
+
+// ————————————————————————————————————————————————————————————————
+// 握手被拒的**两类**：可自愈的未授权 vs 确定性的协议漂移（F3）。
+//
+// 以前 /terminal 只问 `isUnauthorizedError`，于是 SCHEMA_MISMATCH 被静默吞掉 ⇒
+// 退避 8 次后停在「连接超时，已停止自动重连」加一个**永远按不通**的「手动重连」。
+// 界面上说的每一句话都是错的：原因不是超时，出路也不是重连。
+// ————————————————————————————————————————————————————————————————
+describe('useSandboxTerminalSocket · 握手码分流（F3）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 后端 middleware 的形状：`next(err)` 前把码挂在 `err.data` 上，message 也以码开头。 */
+  function handshakeError(code: string, message = `${code}: …`): Error {
+    return Object.assign(new Error(message), { data: { code } });
+  }
+
+  it('SCHEMA_MISMATCH ⇒ 给出人话，且**不弹解锁门**（弹了也解不了）', () => {
+    const onUnauthorized = vi.fn();
+    const { factory, sockets } = makeFactory();
+    const { result } = renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+        onUnauthorized,
+      }),
+    );
+
+    act(() => {
+      sockets[0]?.triggerConnectError(handshakeError('SCHEMA_MISMATCH'));
+    });
+
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(result.current.handshakeErrorMessage).toMatch(/刷新页面/);
+    // 文案里不许出现任何"解锁/口令"的字眼——那是另一类失败的出路。
+    expect(result.current.handshakeErrorMessage ?? '').not.toMatch(/解锁|口令/);
+  });
+
+  it('SCHEMA_MISMATCH ⇒ **当场停手**，不再排期重连（重试是把同一次失败重复 N 遍）', () => {
+    vi.useFakeTimers();
+    const { factory, sockets } = makeFactory();
+    renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+        maxReconnect: 8,
+      }),
+    );
+    act(() => {
+      sockets[0]?.triggerConnectError(handshakeError('SCHEMA_MISMATCH'));
+    });
+    const built = sockets.length;
+
+    act(() => {
+      vi.advanceTimersByTime(120_000);
+    });
+
+    expect(sockets).toHaveLength(built);
+  });
+
+  it('SCHEMA_MISMATCH 下「手动重连」是 no-op（不给一个必定失败的动作）', () => {
+    const { factory, sockets } = makeFactory();
+    const { result } = renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+      }),
+    );
+    act(() => {
+      sockets[0]?.triggerConnectError(handshakeError('SCHEMA_MISMATCH'));
+    });
+    const built = sockets.length;
+
+    act(() => {
+      result.current.reconnect();
+    });
+
+    expect(sockets).toHaveLength(built);
+  });
+
+  it('UNAUTHORIZED 是**另一类**：弹解锁门、不出协议漂移文案、退避照常继续', () => {
+    vi.useFakeTimers();
+    const onUnauthorized = vi.fn();
+    const { factory, sockets } = makeFactory();
+    const { result } = renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+        onUnauthorized,
+        maxReconnect: 8,
+      }),
+    );
+
+    act(() => {
+      sockets[0]?.triggerConnectError(handshakeError('UNAUTHORIZED', 'UNAUTHORIZED: passcode'));
+    });
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(result.current.handshakeErrorMessage).toBeUndefined();
+
+    // 可自愈 ⇒ 退避循环必须继续（解锁拿到 cookie 后下一次握手就过）。
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    expect(sockets.length).toBeGreaterThan(1);
+  });
+
+  it('后端加的新码：如实透出码本身并**继续重连**（未知不等于致命）', () => {
+    vi.useFakeTimers();
+    const { factory, sockets } = makeFactory();
+    const { result } = renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+      }),
+    );
+
+    act(() => {
+      sockets[0]?.triggerConnectError(handshakeError('TENANT_SUSPENDED'));
+    });
+
+    expect(result.current.handshakeErrorMessage).toContain('TENANT_SUSPENDED');
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    expect(sockets.length).toBeGreaterThan(1);
+  });
+
+  it('传输层抖动（websocket error）不被当成握手被拒：不出文案、不停手', () => {
+    vi.useFakeTimers();
+    const { factory, sockets } = makeFactory();
+    const { result } = renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+      }),
+    );
+
+    act(() => {
+      sockets[0]?.triggerConnectError(new Error('websocket error'));
+    });
+
+    expect(result.current.handshakeErrorMessage).toBeUndefined();
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    expect(sockets.length).toBeGreaterThan(1);
+  });
+
+  it('后端修好后连上 ⇒ 文案消失（别把红条永远留在屏幕上）', () => {
+    const { factory, sockets } = makeFactory();
+    const { result } = renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+      }),
+    );
+    act(() => {
+      sockets[0]?.triggerConnectError(handshakeError('SCHEMA_MISMATCH'));
+    });
+    expect(result.current.handshakeErrorMessage).toBeDefined();
+
+    // 停手之后唯一的复活路径是重新挂载（刷新页面）——这里直接让当前 socket 连上，
+    // 断言"连上即清"这条不变量成立。
+    act(() => {
+      sockets.at(-1)?.triggerConnect();
+    });
+
+    expect(result.current.handshakeErrorMessage).toBeUndefined();
+  });
+});

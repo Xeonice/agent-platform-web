@@ -7,7 +7,7 @@ import {
   type TerminalClientFrame,
   type TerminalServerFrame,
 } from '@/types/ws-protocol';
-import { isUnauthorizedError } from '@/services/ws/socketAuth';
+import { readSocketErrorCode } from '@/services/ws/socketAuth';
 import type { ConnState } from '@/types/terminal';
 
 export type { ConnState };
@@ -42,6 +42,14 @@ export interface PtySocketOptions {
   onInvalidFrame?: (raw: unknown) => void;
   /** WS 握手被口令门拒绝（未授权）时回调，供上层弹解锁门（11 §3.1）。 */
   onUnauthorized?: () => void;
+  /**
+   * 握手被拒、但原因**不是**未授权（如 `SCHEMA_MISMATCH`）。
+   *
+   * ⚠️ 这条口子补的是一个真缺口：以前本类只问 `isUnauthorizedError`，于是协议漂移这类拒绝
+   * **一个字都不往上说** —— 终端退避 8 次后停在「连接超时，已停止自动重连」加一个
+   * 永远按不通的「手动重连」。与 /tasks 通道同名回调同义，三条通道自此一套做法。
+   */
+  onHandshakeError?: (code: string) => void;
   maxReconnect?: number;
 }
 
@@ -138,7 +146,10 @@ export class PtySocket {
       this.handleFrame(frame);
     });
     socket.onConnectError((err) => {
-      if (isUnauthorizedError(err)) this.opts.onUnauthorized?.();
+      const code = readSocketErrorCode(err);
+      // 未授权 → 弹解锁门；别的码（版本漂移等）→ 通道级错误。**绝不混为一谈**（socketAuth.ts 头注释）。
+      if (code === 'UNAUTHORIZED') this.opts.onUnauthorized?.();
+      else if (code !== undefined) this.opts.onHandshakeError?.(code);
       this.handleClose();
     });
     socket.onDisconnect(() => {

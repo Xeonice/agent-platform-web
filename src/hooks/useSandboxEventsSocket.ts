@@ -45,6 +45,15 @@ export interface UseSandboxEventsSocketArgs {
 export interface UseSandboxEventsSocketApi {
   connState: ConnState;
   attempt: number;
+  /**
+   * 最近一次**非未授权**的握手拒绝码（如 `SCHEMA_MISMATCH`）；`undefined` = 没遇到过。
+   *
+   * ⚠️ 这条通道**刻意不给 UI**（文件头 ③：它没有可以承载按钮的界面），也**刻意不停手**
+   * （文件头 ①②）。但"不给 UI"不等于"不说话"：以前这类拒绝在 /events 上是彻底静默的，
+   * 表现为整个工作台永远停在启动中而没有任何解释。现在至少经 `reportError` 落到单一上报点，
+   * 并把码透出来供上层需要时消费——不占用界面，也不再假装什么都没发生。
+   */
+  handshakeErrorCode?: string;
 }
 
 export function useSandboxEventsSocket(
@@ -54,6 +63,7 @@ export function useSandboxEventsSocket(
 
   const [connState, setConnState] = useState<ConnState>('idle');
   const [attempt, setAttempt] = useState(0);
+  const [handshakeErrorCode, setHandshakeErrorCode] = useState<string | null>(null);
   const socketRef = useRef<EventsSocket | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -102,9 +112,16 @@ export function useSandboxEventsSocket(
       onUnauthorized: () => {
         onUnauthorizedRef.current?.();
       },
+      onHandshakeError: (code) => {
+        // 不改重连策略（本通道永不停手，理由见文件头）；只保证这件事**被说出来**。
+        setHandshakeErrorCode(code);
+        reportError('/events 握手被拒（非未授权）', { code });
+      },
       onState: (state, nextAttempt) => {
         setConnState(state);
         setAttempt(nextAttempt);
+        // 连上了 = 上一次的握手问题已不成立（后端回滚/重新部署都可能修好它）。
+        if (state === 'open') setHandshakeErrorCode(null);
         if (state === 'reconnecting') {
           // **没有次数上限**（文件头 ①②③）：只退避、不停手。delay 由 reconnectDelay 封顶在 30s，
           // 所以"无限重试"的实际形态是每 30s 敲一次门，而不是一个忙循环。
@@ -126,5 +143,9 @@ export function useSandboxEventsSocket(
     // 回调走 latest-ref，不入 deps（P0 同理）。
   }, [uri, enabled, socketFactory, clearTimer]);
 
-  return { connState, attempt };
+  return {
+    connState,
+    attempt,
+    ...(handshakeErrorCode === null ? {} : { handshakeErrorCode }),
+  };
 }

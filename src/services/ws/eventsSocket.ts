@@ -4,7 +4,7 @@
 // 若后端 socket.io 事件名与 `event` 不同，仅需改本文件 defaultEventsSocketFactory 一处。
 import { io } from 'socket.io-client';
 import { SandboxEventSchema, type SandboxEvent } from '@/types/ws-protocol';
-import { isUnauthorizedError } from '@/services/ws/socketAuth';
+import { readSocketErrorCode } from '@/services/ws/socketAuth';
 import type { ConnState } from '@/types/terminal';
 
 export type { ConnState };
@@ -34,6 +34,14 @@ export interface EventsSocketOptions {
   onInvalidFrame?: (raw: unknown) => void;
   /** WS 握手被口令门拒绝（未授权）时回调（11 §3.1）。 */
   onUnauthorized?: () => void;
+  /**
+   * 握手被拒、但原因**不是**未授权（如 `SCHEMA_MISMATCH`）。
+   *
+   * ⚠️ 在这条通道上不说话的代价最大：/events **永不停手**（见 useSandboxEventsSocket 头注释），
+   * 所以一次协议漂移的表现是"整个工作台永远停在启动中，每 30 秒静默失败一次"——
+   * 没有任何一处会说出原因。回调本身不改重连策略（那个决定归 hook），只保证话被说出来。
+   */
+  onHandshakeError?: (code: string) => void;
   // ⚠️ 这里**刻意没有** maxReconnect：/events 不设重试次数上限（理由见 useSandboxEventsSocket 头注释）。
   // 旧版本有过一个从不被本类读取的同名字段，只是把"到底谁在管上限"这件事说糊涂了，已删。
 }
@@ -117,7 +125,9 @@ export class EventsSocket {
       this.handleEvent(raw);
     });
     socket.onConnectError((err) => {
-      if (isUnauthorizedError(err)) this.opts.onUnauthorized?.();
+      const code = readSocketErrorCode(err);
+      if (code === 'UNAUTHORIZED') this.opts.onUnauthorized?.();
+      else if (code !== undefined) this.opts.onHandshakeError?.(code);
       this.handleClose();
     });
     socket.onDisconnect(() => {

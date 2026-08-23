@@ -92,6 +92,46 @@ describe('EventsSocket (/events 通道 10 §7.4)', () => {
     expect(socket.connState).toBe('reconnecting');
   });
 
+  it('SCHEMA_MISMATCH → onHandshakeError，不弹解锁门（/events 上静默的代价最大）', () => {
+    // 这条通道**永不停手**（useSandboxEventsSocket 头注释）⇒ 一次协议漂移的旧表现是
+    // "整个工作台永远停在启动中，每 30 秒静默失败一次"，界面上一个字的解释都没有。
+    const mock = new MockEventsSocket();
+    const onUnauthorized = vi.fn();
+    const onHandshakeError = vi.fn();
+    const socket = new EventsSocket({
+      uri: 'http://x/events',
+      socketFactory: () => mock,
+      onEvent: () => undefined,
+      onState: () => undefined,
+      onUnauthorized,
+      onHandshakeError,
+    });
+    socket.connect();
+    mock.triggerConnectError(
+      Object.assign(new Error('SCHEMA_MISMATCH: …'), { data: { code: 'SCHEMA_MISMATCH' } }),
+    );
+    expect(onHandshakeError).toHaveBeenCalledWith('SCHEMA_MISMATCH');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('普通传输错误既不算未授权也不算握手被拒（抖动不该被归因）', () => {
+    const mock = new MockEventsSocket();
+    const onUnauthorized = vi.fn();
+    const onHandshakeError = vi.fn();
+    const socket = new EventsSocket({
+      uri: 'http://x/events',
+      socketFactory: () => mock,
+      onEvent: () => undefined,
+      onState: () => undefined,
+      onUnauthorized,
+      onHandshakeError,
+    });
+    socket.connect();
+    mock.triggerConnectError(new Error('websocket error'));
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(onHandshakeError).not.toHaveBeenCalled();
+  });
+
   it('普通传输错误不误判为未授权', () => {
     const mock = new MockEventsSocket();
     const onUnauthorized = vi.fn();

@@ -166,6 +166,50 @@ describe('PtySocket (08 §3, socket.io transport)', () => {
     expect(socket.connState).toBe('reconnecting');
   });
 
+  it('connect_error 带 SCHEMA_MISMATCH → 走 onHandshakeError，**绝不**弹解锁门', () => {
+    // 三条通道共用同一条纪律：认得出码就必须往上说，且未授权与协议漂移不许混为一谈。
+    // 以前本类只问 `isUnauthorizedError`，这个码在 /terminal 上是彻底静默的。
+    const mock = new MockSocket();
+    const onUnauthorized = vi.fn();
+    const onHandshakeError = vi.fn();
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: {},
+      socketFactory: () => mock,
+      onFrame: () => undefined,
+      onState: () => undefined,
+      onUnauthorized,
+      onHandshakeError,
+    });
+    socket.connect();
+    mock.triggerConnectError(
+      Object.assign(new Error('SCHEMA_MISMATCH: expected sb-terminal-v1, got v0'), {
+        data: { code: 'SCHEMA_MISMATCH' },
+      }),
+    );
+    expect(onHandshakeError).toHaveBeenCalledWith('SCHEMA_MISMATCH');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('未授权只走 onUnauthorized（不重复喂给 onHandshakeError）', () => {
+    const mock = new MockSocket();
+    const onUnauthorized = vi.fn();
+    const onHandshakeError = vi.fn();
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: {},
+      socketFactory: () => mock,
+      onFrame: () => undefined,
+      onState: () => undefined,
+      onUnauthorized,
+      onHandshakeError,
+    });
+    socket.connect();
+    mock.triggerConnectError(new Error('unauthorized'));
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(onHandshakeError).not.toHaveBeenCalled();
+  });
+
   it('connect_error 为普通传输错误 → 不误判为未授权', () => {
     const mock = new MockSocket();
     const onUnauthorized = vi.fn();
