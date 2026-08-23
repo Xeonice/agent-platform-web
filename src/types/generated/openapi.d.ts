@@ -601,7 +601,7 @@ export interface components {
                 modifiedAt: string;
             }[];
             /** @enum {string} */
-            errorCode?: "TASK_FAILED" | "TASK_KILLED" | "TASK_TIMED_OUT" | "SANDBOX_GONE" | "RESUME_FAILED" | "IMAGE_PULL_FAILED" | "RESOURCE_EXHAUSTED" | "NOT_FOUND" | "ALREADY_EXISTS" | "TIMEOUT" | "PERMISSION_DENIED" | "INVALID_STATE" | "PROVIDER_UNAVAILABLE" | "UNSUPPORTED_CAPABILITY" | "INTERNAL";
+            errorCode?: "TASK_FAILED" | "TASK_KILLED" | "TASK_TIMED_OUT" | "SANDBOX_GONE" | "RESUME_FAILED" | "UNKNOWN_RUNTIME" | "IMAGE_PULL_FAILED" | "RESOURCE_EXHAUSTED" | "NOT_FOUND" | "ALREADY_EXISTS" | "TIMEOUT" | "PERMISSION_DENIED" | "INVALID_STATE" | "PROVIDER_UNAVAILABLE" | "UNSUPPORTED_CAPABILITY" | "INTERNAL";
             startedAt: string;
             finishedAt?: string;
         };
@@ -748,6 +748,7 @@ export interface components {
             code: string;
             message: string;
             retryable: boolean;
+            sideEffectFree?: boolean;
             traceId?: string;
             details?: {
                 [key: string]: unknown;

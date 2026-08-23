@@ -137,6 +137,10 @@ describe('describeTaskErrorCode · 码 → 人话', () => {
     TASK_TIMED_OUT: 'copy',
     SANDBOX_GONE: 'copy',
     RESUME_FAILED: 'copy',
+    // B2 新增。**决策：copy，不是放行后端 message** —— 因为在它真正会出现的那条路上，
+    // "放行 message"这个选项根本不存在：`describeTaskOutcome` 手上只有码
+    // （`AgentTaskResponseDto` 没有自由文本字段）。完整论证见生产侧词表的条目注释。
+    UNKNOWN_RUNTIME: 'copy',
     IMAGE_PULL_FAILED: 'copy',
     RESOURCE_EXHAUSTED: 'copy',
     TIMEOUT: 'copy',
@@ -160,6 +164,39 @@ describe('describeTaskErrorCode · 码 → 人话', () => {
         expect(copy, `${code} 决策是放行后端 message，词表却收录了它`).toBeUndefined();
       }
     }
+  });
+
+  /**
+   * B2 `UNKNOWN_RUNTIME` 的**行为**用例（决策表只钉住"做过决策"，这里钉住"决策带来的事实"）。
+   *
+   * 它可达的那条路是后端用例写死的场景：任务行熬过平台重启，而注册该 adapter 的
+   * out-of-tree 模块没有再加载 ⇒ 任务落 failed + 本码。前端此刻**只有码**。
+   */
+  describe('UNKNOWN_RUNTIME（B2）· 任务终态', () => {
+    const outcome = describeTaskOutcome({
+      exit: { status: 'failed' },
+      errorCode: 'UNKNOWN_RUNTIME',
+    });
+
+    it('不落进"平台暂未收录的原因"兜底——那正是后端刚修掉的那种归因退化', () => {
+      expect(outcome.advice).not.toContain('暂未收录');
+      expect(outcome.advice).toContain('注册表');
+    });
+
+    it('明说"重跑同一个 runtime 没用"（后端标了 retryable:false，界面不能反着劝）', () => {
+      expect(outcome.advice).toMatch(/只会再失败|无法继续/);
+      expect(outcome.advice).toMatch(/装回|改用/);
+    });
+
+    it('码仍作诊断小字透出，且不裸抛进正文（P22 §1）', () => {
+      expect(outcome.diagnosticCode).toBe('UNKNOWN_RUNTIME');
+      expect(outcome.advice).not.toContain('UNKNOWN_RUNTIME');
+    });
+
+    it('退出码缺席时两句话并存（本码不吃掉"没有退出码"的解释）', () => {
+      expect(outcome.exitCodeMissing).toBe(true);
+      expect(outcome.advice).toContain('没有拿到退出码');
+    });
   });
 
   it('词表里没有闭集之外的死条目（TASK_TIMEOUT / AUTH_REQUIRED 那一类）', () => {

@@ -25,6 +25,12 @@ export type { TaskOutcomeCopy } from '@/types/taskStream';
  * 'codex', not 'claude-code'"），收录了反而把那句话盖掉。未收录 ⇒ 返回 `undefined`，
  * **兜底交给各调用点自己的语境**（发起失败 / 终止失败 / 任务结束是三件事）。
  *
+ * ⚠️ 「放行后端 message」这个选项**并非处处都存在**——这是给下一个人的提醒：
+ * 本表的两个消费者里，只有 `useTaskErrorMessage`（REST 错误信封）手上有 message；
+ * `describeTaskOutcome` 拿到的**只有码**（`AgentTaskResponseDto` 里根本没有自由文本字段）。
+ * 所以对一个**会以任务终态出现**的码选"不收录"，等于选了那句"平台暂未收录的原因"兜底——
+ * 见下面 `UNKNOWN_RUNTIME` 的决策注释。
+ *
  * 已删掉的三条死条目（S6 集成审查）：`AUTH_REQUIRED` / `AUTH_EXPIRED` / `INSTALL_FAILED`。
  * 前两个后端全仓零产出（`auth-required` **事件**另有自己的内联文案，走的不是这张表）；
  * `INSTALL_FAILED` 是真码但长在**沙箱**那条线上，文案早就在 `lib/sandboxErrorCopy.ts` 里。
@@ -41,6 +47,26 @@ const TASK_ERROR_COPY = {
     '任务运行期间沙箱消失了（被停止/删除，或容器自己退出），本轮无法继续。确认沙箱在运行后重跑。',
   RESUME_FAILED:
     '平台重启后没能重新接上这个任务，已按失败落库（它不会再有新输出了）。上方是中断前已收到的部分；可以用本轮会话接着聊，或重新发起一轮。',
+  /**
+   * B2 新增码（后端不再把它复用成 `INSTALL_FAILED`）。**收录**，理由三条：
+   *
+   * ① **它真的会以任务终态出现，而那条路上没有后端 message 可放行。**
+   *    后端自己的用例把这个场景写死了：任务行熬过了平台重启，而注册该 adapter 的
+   *    out-of-tree 模块没有再加载 ⇒ `runtimes.get(task.runtime)` 抛错，任务落 `failed` +
+   *    本码。此时前端手上**只有码**（DTO 无自由文本字段），"不收录"＝用户看到的是
+   *    "任务以一个平台暂未收录的原因结束"——而这恰恰是后端刚刚修掉的那件事
+   *    （它不再让一个自己精确知道的事实退化成 INSTALL_FAILED / INTERNAL），前端不该在上一层重演。
+   * ② **码本身就说清了发生什么**：这个 runtime 不在注册表里。后端 message 唯一多出来的
+   *    具体信息是 runtime id，而它本来就显示在界面上（沙箱 DTO 上带着）——
+   *    与 `INVALID_STATE` 那四个"message 里才有关键对象"的情况不同。
+   * ③ **用户据此能行动，而且行动方向与默认直觉相反**：后端把它标成 `retryable: false`，
+   *    重跑同一个 runtime 必然再失败一次。这正是需要一句话说清楚的场合。
+   *
+   * ⚠️ 创建入口那条 400 走的是**另一张表**（`lib/sandboxErrorCopy.ts`），那边有后端 message
+   * 可放行，故不在此处收录范围内——两条路各自的语境不同，别合并。
+   */
+  UNKNOWN_RUNTIME:
+    '这个任务的 runtime 已不在平台的注册表里，本轮无法继续（常见于随第三方模块注册的 runtime：平台重启后该模块没有再加载）。重跑同一个 runtime 只会再失败一次——请装回该模块，或改用注册表里仍有的 runtime 重新发起。',
   // —— provider 契约错误里"码本身就说清了"的那些 ——
   IMAGE_PULL_FAILED: '镜像拉取失败，任务未能开始。确认镜像名与镜像仓库凭证后重试。',
   RESOURCE_EXHAUSTED: '资源暂时不足，任务未能完成。释放部分任务后重试。',
