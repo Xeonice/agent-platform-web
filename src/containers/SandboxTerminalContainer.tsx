@@ -21,6 +21,7 @@ import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { useAppStore } from '@/stores';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
 import { SandboxLifecycleContainer } from '@/containers/SandboxLifecycleContainer';
+import { HeadlessTaskContainer } from '@/containers/HeadlessTaskContainer';
 import type { SandboxProvider } from '@/types/sandbox';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
 
@@ -31,6 +32,10 @@ const S2_DEFAULT_RUNTIME = 'shell';
 interface CreatedTask {
   id: string;
   name?: string;
+  /** 沙箱的 runtime（S6 无头任务 POST 路径里的 `:rt`）。 */
+  runtime?: string;
+  /** 沙箱实际落在哪个 provider 档位上（S6 能力位判定）。 */
+  provider?: string;
 }
 
 export interface SandboxTerminalContainerProps {
@@ -61,6 +66,8 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
   const restored = useSandboxRestore(restoreId);
   const sandboxId = task?.id ?? (restored.notFound ? null : restoreId);
   const taskName = task?.name ?? restored.name;
+  // 无头任务打给沙箱自己的 runtime（本会话取创建响应，刷新后取 DTO）。
+  const sandboxRuntime = task?.runtime ?? restored.runtime;
   const socketConfig = useTerminalSocketConfig(wsBaseUrl, sandboxId);
 
   const providerList = providers.data ?? [];
@@ -97,7 +104,13 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
             failureMessage: sandbox.failureMessage,
           });
           // 任务名直接用后端返回的 name（从 prompt 派生，规则 P21-1 §9）——前端不派生第二份。
-          setTask({ id: sandbox.id, name: sandbox.name });
+          // provider 优先用后端回的（权威），回落到本次选中的档位（openapi 同步前生成类型还没这个字段）。
+          setTask({
+            id: sandbox.id,
+            name: sandbox.name,
+            runtime: sandbox.runtime,
+            provider: provider === '' ? undefined : provider,
+          });
           // 落进 persist 白名单里的选中位 ⇒ 刷新后能靠 DTO 把任务名与失败原因取回来。
           setSelectedSandboxId(sandbox.id);
         },
@@ -152,6 +165,16 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
     );
   }
 
+  // S6 能力位（headlessTask）判定：`SandboxResponseDto.provider` 已由后端补上 ⇒
+  // **刷新后也能精确判定**，不再有"未知不置灰"的退化路径。
+  // 仍可能为 null 的唯一情形：registry 还没加载完 / 该档位已从 registry 卸载。
+  const sandboxProvider = task?.provider ?? restored.provider;
+  const headlessProvider =
+    sandboxProvider === undefined
+      ? undefined
+      : providerList.find((p) => p.name === sandboxProvider);
+  const headlessTaskSupported = headlessProvider?.capabilities.headlessTask ?? null;
+
   // sessionId 是前端标签身份（≠ 后端下发的 socketSessionKey，08 §11.1）；S1 单标签固定 :0。
   // 交给生命周期门：startup 展示进度、running 才开终端、failed 可重试。
   return (
@@ -161,6 +184,17 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
       socketConfig={socketConfig}
       onRetry={handleRetry}
       taskName={taskName}
+      headlessSlot={
+        sandboxRuntime === undefined ? undefined : (
+          <HeadlessTaskContainer
+            sandboxId={sandboxId}
+            runtime={sandboxRuntime}
+            wsBaseUrl={wsBaseUrl}
+            headlessTaskSupported={headlessTaskSupported}
+            providerName={sandboxProvider}
+          />
+        )
+      }
     />
   );
 }

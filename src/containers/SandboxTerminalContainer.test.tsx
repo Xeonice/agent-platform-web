@@ -22,6 +22,7 @@ function caps(overrides: Partial<SandboxProviderCapabilities> = {}): SandboxProv
     pauseResume: true,
     snapshot: true,
     watchEvents: true,
+    headlessTask: false,
     ...overrides,
   };
 }

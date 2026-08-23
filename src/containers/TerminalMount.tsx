@@ -35,7 +35,7 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
 
   // 非法帧的上报由 useSandboxTerminalSocket 内建经 lib/reportError 落到单一消费点（P1-#4）；
   // 容器层禁止直接 import lib（boundaries），故这里只接 WS 未授权 → 弹解锁门。
-  const { connState, attempt, send } = useSandboxTerminalSocket({
+  const { connState, attempt, send, reconnect } = useSandboxTerminalSocket({
     uri: socketConfig.uri,
     query: socketConfig.query,
     onFrame: handleFrame,
@@ -59,7 +59,11 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
 
   return (
     <div className="flex h-full flex-col">
-      <ConnectionStatusView connState={connState} attempt={attempt} />
+      {/*
+        退避耗尽后必须给一条出路：ptySocket 现在真的会撞到上限并停手（STABLE_CONNECTION_MS），
+        而终端上的"停手"＝用户正盯着的 shell 被判死。接线在这里，那个「手动重连」才不是死按钮。
+      */}
+      <ConnectionStatusView connState={connState} attempt={attempt} onManualReconnect={reconnect} />
       <div className="min-h-0 flex-1">
         <TerminalPaneView ref={containerRef} />
       </div>

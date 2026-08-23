@@ -29,6 +29,7 @@ describe('provider.service（开放 registry 只读投影）', () => {
               pauseResume: false,
               snapshot: false,
               watchEvents: true,
+              headlessTask: false,
             },
             isDefault: true,
           },

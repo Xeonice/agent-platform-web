@@ -1,6 +1,7 @@
 // MSW REST handlers（供 Storybook / 单测 / dev 复用，12 §2.2）。
 import { http, HttpResponse } from 'msw';
 import type { SandboxProviderCapabilities } from '@/types/sandbox';
+import type { AgentTaskDto } from '@/types/task';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
@@ -32,6 +33,29 @@ function providerCapabilities(overrides: Partial<SandboxProviderCapabilities>) {
     pauseResume: true,
     snapshot: true,
     watchEvents: true,
+    headlessTask: false,
+    ...overrides,
+  };
+}
+
+/**
+ * 生成一份 AgentTaskDto（S6 无头 Task）。
+ *
+ * ⚠️ 返回值**必须**标注成 `AgentTaskDto`：不标注时它只是个对象字面量，
+ * 后端给 DTO 加一个必填字段 → 生成类型更新 → 真实代码报红，而 mock 会**静默**少一个字段，
+ * dev/MSW 里看着一切正常。标注之后，缺字段在 tsc 阶段就红。
+ */
+function agentTaskDto(overrides: Partial<AgentTaskDto>): AgentTaskDto {
+  return {
+    id: 'task-dev-1',
+    sandboxId: 'sb-dev',
+    runtime: 'codex',
+    status: 'running',
+    // 有它前端才算得出「还剩多久」（只有 startedAt 只能显示"已经跑了多久"）。
+    timeoutMinutes: 120,
+    lastSeq: 0,
+    artifacts: [],
+    startedAt: new Date(Date.now() - 60_000).toISOString(),
     ...overrides,
   };
 }
@@ -223,9 +247,11 @@ export const handlers = [
   // provider registry（GET /api/providers → ProviderResponseDto[]）：后端开放 registry 的只读投影，
   // 前端「运行档位」单选由它驱动；默认档由数组项的 isDefault 标记（无顶层字段）。
   // dev 里给 aio（全能，默认）+ boxlite（轻量，无快照/暂停）；第三方 provider 只要出现在这份响应里，UI 自动多一项。
+  // S6：aio 打开 headlessTask（dev 能走通无头链路），boxlite 保持 false ——
+  // 这样"档位不支持无头任务 → 入口置灰 + 原因"那条路径在 dev 里也看得见。
   http.get(`${API_BASE}/api/providers`, () =>
     HttpResponse.json([
-      { name: 'aio', capabilities: providerCapabilities({}), isDefault: true },
+      { name: 'aio', capabilities: providerCapabilities({ headlessTask: true }), isDefault: true },
       {
         name: 'boxlite',
         capabilities: providerCapabilities({ pauseResume: false, snapshot: false }),
@@ -283,4 +309,68 @@ export const handlers = [
       { status: 201 },
     );
   }),
+
+  // ————————————————————————————————————————————————————————————————
+  // S6 无头 Task。openapi 已同步 ⇒ 形状以**生成类型**为准（agentTaskDto 的返回值已咬合 DTO）；
+  // 本组只是 dev fixture，用来在没有真后端时把界面跑通。
+  // 注意：输出流走 /tasks socket.io，MSW 不拦截 ⇒ dev 里输出面板需要真后端才有内容。
+  // ————————————————————————————————————————————————————————————————
+
+  // 发起：202 + **整个 AgentTaskDto**（不是 { taskId }）。**不回显 prompt**——与 initialPrompt 同一纪律。
+  http.post(`${API_BASE}/api/sandboxes/:id/runtimes/:rt/tasks`, ({ params }) =>
+    HttpResponse.json(
+      agentTaskDto({
+        id: `task-${String(Date.now())}`,
+        sandboxId: String(params['id']),
+        runtime: String(params['rt']),
+        status: 'running',
+      }),
+      { status: 202 },
+    ),
+  ),
+
+  // 任务列表（**刷新恢复的权威来源**，startedAt 倒序）。dev 给一个已完成的任务：
+  // 退出码 0 + 两份产物 + sessionRef（据此可点「接着聊」）。
+  http.get(`${API_BASE}/api/sandboxes/:id/tasks`, ({ params }) =>
+    HttpResponse.json([
+      agentTaskDto({
+        id: 'task-dev-1',
+        sandboxId: String(params['id']),
+        status: 'succeeded',
+        exitCode: 0,
+        sessionRef: 'sess-dev-0001',
+        finishedAt: new Date().toISOString(),
+        artifacts: [
+          { name: 'summary.md', size: 2048, modifiedAt: new Date().toISOString() },
+          { name: 'patch.diff', size: 131072, modifiedAt: new Date().toISOString() },
+        ],
+      }),
+    ]),
+  ),
+
+  // 单条详情（前端当前不用它，列表已是权威来源；保留以便联调时直接打）。
+  http.get(`${API_BASE}/api/sandboxes/:id/tasks/:taskId`, ({ params }) =>
+    HttpResponse.json(
+      agentTaskDto({ id: String(params['taskId']), sandboxId: String(params['id']) }),
+    ),
+  ),
+
+  // 终止（两阶段强杀）：202 只表示受理，终态由 /tasks 的 exit 帧宣告。
+  http.post(`${API_BASE}/api/sandboxes/:id/tasks/:taskId/cancel`, ({ params }) =>
+    HttpResponse.json(
+      agentTaskDto({
+        id: String(params['taskId']),
+        sandboxId: String(params['id']),
+        status: 'running',
+      }),
+      { status: 202 },
+    ),
+  ),
+
+  // 产物下载：二进制流（dev 给一段纯文本，够验证"取 Blob → 存盘"这条路）。
+  http.get(`${API_BASE}/api/sandboxes/:id/tasks/:taskId/artifacts/:name`, ({ params }) =>
+    HttpResponse.text(`# ${String(params['name'])}\n\ndev mock artifact\n`, {
+      headers: { 'content-type': 'application/octet-stream' },
+    }),
+  ),
 ];

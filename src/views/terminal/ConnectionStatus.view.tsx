@@ -4,7 +4,14 @@ import type { ConnState } from '@/types/terminal';
 export interface ConnectionStatusProps {
   connState: ConnState;
   attempt?: number;
-  onManualReconnect?: () => void;
+  /**
+   * 退避耗尽（`connState==='closed'`）后的唯一出路。
+   *
+   * ⚠️ **必填，刻意的**。此前它是可选的、而 TerminalMount 一直没接线 ⇒ 界面上那个「手动重连」
+   * 是个死按钮（点了没反应，比没有按钮更糟）。改必填后，"渲染了终端连接条却没给出路"这件事
+   * 由 tsc 在编译期挡住，而不是靠人记得接线——view 层没有别的手段能防住它。
+   */
+  onManualReconnect: () => void;
 }
 
 export function ConnectionStatusView({
@@ -32,8 +39,14 @@ export function ConnectionStatusView({
         role="alert"
         className="flex items-center gap-2 bg-red-500/15 px-3 py-1.5 text-xs text-red-300"
       >
-        <span>连接超时</span>
-        <button type="button" className="underline" onClick={onManualReconnect}>
+        <span>连接超时，已停止自动重连。</span>
+        <button
+          type="button"
+          className="underline"
+          onClick={() => {
+            onManualReconnect();
+          }}
+        >
           手动重连
         </button>
       </div>

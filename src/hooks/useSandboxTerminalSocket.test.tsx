@@ -232,3 +232,127 @@ describe('useSandboxTerminalSocket 连接稳定性（P0 回归钉）', () => {
     expect(calls).toHaveLength(2);
   });
 });
+
+// ————————————————————————————————————————————————————————————————
+// 退避耗尽 → 停手 → 「手动重连」（S6 收尾 ②，08 §11.6 的终点态）。
+// 终端上的"停手"意味着用户正盯着的 shell 被判死：可以停，但必须把决定权交回用户。
+// ————————————————————————————————————————————————————————————————
+describe('useSandboxTerminalSocket · 退避耗尽与手动重连', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 一轮"连上即掉"。抖动型故障：老写法下退避会被 onConnect 清零、永远撞不到上限。 */
+  function flap(socket: MockSocket | undefined): void {
+    act(() => {
+      socket?.triggerConnect();
+    });
+    act(() => {
+      socket?.triggerDisconnect();
+    });
+  }
+
+  it('抖动到上限 ⇒ 停止自动重连并进入 closed（不再无限重建 pty）', () => {
+    vi.useFakeTimers();
+    const { factory, sockets } = makeFactory();
+    const { result } = renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+        maxReconnect: 3,
+      }),
+    );
+
+    for (let i = 0; i < 4; i += 1) {
+      flap(sockets.at(-1));
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+    }
+
+    expect(result.current.connState).toBe('closed');
+    const built = sockets.length;
+    // 停手之后不再自己起新连接。
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    expect(sockets).toHaveLength(built);
+  });
+
+  it('用户点「手动重连」⇒ 真的再建一条连接，且退避计数归零', () => {
+    vi.useFakeTimers();
+    const { factory, sockets } = makeFactory();
+    const { result } = renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+        maxReconnect: 2,
+      }),
+    );
+
+    for (let i = 0; i < 3; i += 1) {
+      flap(sockets.at(-1));
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+    }
+    expect(result.current.connState).toBe('closed');
+    const built = sockets.length;
+
+    act(() => {
+      result.current.reconnect();
+    });
+
+    expect(sockets.length).toBe(built + 1);
+    expect(result.current.connState).toBe('connecting');
+    expect(result.current.attempt).toBe(0);
+  });
+
+  it('手动重连带回 socketSessionKey ⇒ 接回原来那个 shell 而不是开新 pty（08 §11.6）', () => {
+    const { factory, sockets, calls } = makeFactory();
+    const { result } = renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+      }),
+    );
+
+    act(() => {
+      sockets[0]!.triggerConnect();
+      sockets[0]!.serverEmit({ type: 'session', socketSessionKey: 'KEY-9' });
+    });
+
+    act(() => {
+      result.current.reconnect();
+    });
+
+    expect(calls[1]?.query['socketSessionKey']).toBe('KEY-9');
+    expect(calls[1]?.query['sandboxId']).toBe('s1');
+  });
+
+  it('会话已终结时手动重连是 no-op（那条路走 [重启]，不是重连，08 §8 要点 1）', () => {
+    const { factory, sockets } = makeFactory();
+    const { result } = renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: vi.fn(),
+        sessionEnded: true,
+      }),
+    );
+    const built = sockets.length;
+
+    act(() => {
+      result.current.reconnect();
+    });
+
+    expect(sockets).toHaveLength(built);
+  });
+});
