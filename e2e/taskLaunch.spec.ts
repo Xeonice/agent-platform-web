@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { SandboxProviderCapabilities } from '../src/types/sandbox';
+import type { RuntimeDto } from '../src/types/runtimeCredential';
 
 // S5 Task 发起链路（mock 边界，12 §4.2 用例组 C 切片）：
 //   ① 任务指令随 POST /api/sandboxes 提交；
@@ -26,6 +27,22 @@ function providerCaps(
     ...overrides,
   };
 }
+
+/**
+ * runtime 由服务端 registry 驱动（GET /api/runtimes）。**必须 mock**：平台没有「默认
+ * runtime」的概念（04 §8），不选就发不出去——不 mock 的话面板停在「后端未注册任何
+ * runtime」，按钮一直 disabled，测试只会超时在一次点击上，看不出真正的原因。
+ */
+const RUNTIMES: RuntimeDto[] = [
+  {
+    id: 'codex',
+    displayName: 'Codex',
+    vendor: 'OpenAI',
+    authMethods: ['api-key'],
+    credentialStatus: 'none',
+    credentials: [],
+  },
+];
 
 const PROMPT = '分析 /srv/internal-repo 的架构并输出摘要';
 
@@ -54,6 +71,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
         json: [{ name: 'aio', capabilities: providerCaps(), isDefault: true }],
       }),
     );
+    await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
 
     let sentPrompt: string | undefined;
     await page.route('**/api/sandboxes', async (route) => {
@@ -67,7 +85,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
         json: {
           id: 'sb-e2e-launch',
           projectId: 'proj-e2e',
-          runtime: 'shell',
+          runtime: 'codex',
           // `creating` = 技术上"建实例/拉镜像"，展示上应点亮**第 2 格「拉取镜像」**。
           status: 'creating',
           headless: false,
@@ -85,6 +103,8 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
 
     await expect(page.getByRole('radio', { name: /^aio/ })).toBeChecked();
+    // provider 有 isDefault 会预选；runtime **不预选**，必须显式点一下。
+    await page.getByRole('radio', { name: /^codex/ }).check();
     await page.getByLabel('任务指令（可选）').fill(PROMPT);
     await page.getByRole('button', { name: '发起任务并打开终端' }).click();
 
@@ -135,6 +155,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
         json: [{ name: 'aio', capabilities: providerCaps(), isDefault: true }],
       }),
     );
+    await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
     await page.route('**/api/sandboxes', (route) =>
       route.fulfill({
         status: 409,
@@ -152,6 +173,8 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     await page.goto('/');
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
     await expect(page.getByRole('radio', { name: /^aio/ })).toBeChecked();
+    // provider 有 isDefault 会预选；runtime **不预选**，必须显式点一下。
+    await page.getByRole('radio', { name: /^codex/ }).check();
     await page.getByRole('button', { name: '发起任务并打开终端' }).click();
 
     // 就地提示（仍在新建面板），且不出现失败卡的"重新创建/换镜像"入口。
@@ -184,13 +207,14 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
         json: [{ name: 'aio', capabilities: providerCaps(), isDefault: true }],
       }),
     );
+    await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
     await page.route('**/api/sandboxes', (route) =>
       route.fulfill({
         status: 201,
         json: {
           id: 'sb-e2e-refresh',
           projectId: 'proj-e2e',
-          runtime: 'shell',
+          runtime: 'codex',
           name: '会失败的任务',
           status: 'starting',
           headless: false,
@@ -208,7 +232,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
         json: {
           id: 'sb-e2e-refresh',
           projectId: 'proj-e2e',
-          runtime: 'shell',
+          runtime: 'codex',
           name: '会失败的任务',
           status: 'failed',
           headless: false,
@@ -225,6 +249,8 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     await page.goto('/');
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
     await expect(page.getByRole('radio', { name: /^aio/ })).toBeChecked();
+    // provider 有 isDefault 会预选；runtime **不预选**，必须显式点一下。
+    await page.getByRole('radio', { name: /^codex/ }).check();
     await page.getByRole('button', { name: '发起任务并打开终端' }).click();
     await expect(page.getByText('正在启动：会失败的任务')).toBeVisible();
 
