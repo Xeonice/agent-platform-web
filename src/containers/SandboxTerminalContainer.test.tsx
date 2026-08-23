@@ -8,6 +8,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { server } from '@/mocks/node';
+
+// next/navigation：本容器用 router.push 把鉴权闸门的 [管理所有凭证] 送去凭证页。
+// 用 vi.hoisted 持有 spy,用例里能断言"点了确实跳"。
+const nav = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: nav.push }),
+}));
 import { SandboxTerminalContainer } from '@/containers/SandboxTerminalContainer';
 import { useAppStore } from '@/stores';
 import type { SandboxResponse } from '@/services/api/sandbox.service';
@@ -37,13 +44,21 @@ function caps(overrides: Partial<SandboxProviderCapabilities> = {}): SandboxProv
   };
 }
 
-/** GET /api/runtimes fixture（形状咬 RuntimeDto，缺必填字段编译期就红）。 */
+/**
+ * GET /api/runtimes fixture（形状咬 RuntimeDto，缺必填字段编译期就红）。
+ *
+ * ⚠️ `credentialStatus` 默认取 **active**——即"这个 runtime 已经配好凭证"的常态。
+ * 此前默认是 `'none'`,那时前端根本不读这一位,填什么都无所谓;现在它承重了
+ * (P20 §5.1 拦截层按它三分支判定),默认就必须是**发起链路走得通**的那个值,
+ * 否则这份替身会让每一条无关用例都被闸门拦住。未配置/已过期由闸门用例显式覆盖。
+ */
 function runtimeDto(overrides: Partial<RuntimeDto> & Pick<RuntimeDto, 'id'>): RuntimeDto {
   return {
     displayName: overrides.id,
     vendor: 'ACME',
     authMethods: ['api-key'],
-    credentialStatus: 'none',
+    credentialStatus: 'active',
+    maskedIdentifier: 'a***@example.com',
     credentials: [],
     ...overrides,
   };
@@ -866,5 +881,92 @@ describe('SandboxTerminalContainer · runtime 注册表驱动（14 §10）', () 
     // 无头面板挂起来了 = 容器确实拿到了**沙箱自己的** runtime（它为 undefined 时整块不渲染）。
     // 面板里的 POST 路径 `:rt` 就取这个值，所以这一步同时证明了无头链路不会再拿到一个凭空的 runtime。
     expect(await screen.findByLabelText('任务指令')).toBeInTheDocument();
+  });
+});
+
+describe('SandboxTerminalContainer · 鉴权拦截层（P20 §5.1 三分支）', () => {
+  // 这一层此前**从未接线**:`AuthGateContainer` 备好了两个只给向导用的 prop
+  //（showOneTimeNotice / onOpenCredentials）,而生产代码零调用方。于是真实链路是
+  // 前端不看 credentialStatus → 直接建沙箱 → 后端注入时发现没凭证 → 记一条
+  // NO_CREDENTIAL 的 WARN 让 agent 裸跑 → 用户在终端里撞见 CLI 自己的登录菜单。
+  // 下面四条按 §5.1 的三分支逐一钉死。
+  beforeEach(() => {
+    nav.push.mockClear();
+  });
+
+  it('② 无生效凭证（none）→ 出拦截面板、禁用发起，且**一个创建请求都不发**', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex', credentialStatus: 'none' })]);
+    let posted = 0;
+    server.use(
+      http.post(`${API_BASE}/api/sandboxes`, () => {
+        posted += 1;
+        return HttpResponse.json({}, { status: 500 });
+      }),
+    );
+    renderContainer();
+    await chooseRuntime('codex');
+
+    expect(await screen.findByTestId('auth-gate')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
+    // 判据不止"按钮禁着":这条链路的原始故障就是**请求发出去了**,后端只能事后 WARN。
+    expect(posted).toBe(0);
+    // 分支②才说"只需配置一次"——这是一次性语义,已过期那支说这句话是假的。
+    expect(screen.getByText(/只需配置一次/)).toBeInTheDocument();
+  });
+
+  it('③ 凭证已过期（expired）→ 同样拦住，但**不说**「只需配置一次」', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex', credentialStatus: 'expired' })]);
+    renderContainer();
+    await chooseRuntime('codex');
+
+    expect(await screen.findByTestId('auth-gate')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
+    expect(screen.queryByText(/只需配置一次/)).not.toBeInTheDocument();
+  });
+
+  it('① 有生效凭证（active）→ 不出闸门，给正面确认「将以 … 身份运行」，发起可用', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([
+      runtimeDto({ id: 'codex', credentialStatus: 'active', maskedIdentifier: 'a***@gm' }),
+    ]);
+    renderContainer();
+    await chooseRuntime('codex');
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
+    });
+    expect(screen.queryByTestId('auth-gate')).not.toBeInTheDocument();
+    expect(screen.getByTestId('runtime-identity')).toHaveTextContent('将以 a***@gm 身份运行');
+  });
+
+  it('⚠️ expiring（快到期）**不拦**——它仍然能用，拦下来等于把预警当成故障', async () => {
+    // P21 §2.2 把 <7 天定为**黄色预警态**,不是失效态。这条用例挡住"图省事把
+    // 三分支写成 status !== 'active' 就拦"那种改法——那会在凭证到期前一周
+    // 突然把所有人的发起入口锁死。
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([
+      runtimeDto({ id: 'codex', credentialStatus: 'expiring', maskedIdentifier: 'a***@gm' }),
+    ]);
+    renderContainer();
+    await chooseRuntime('codex');
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
+    });
+    expect(screen.queryByTestId('auth-gate')).not.toBeInTheDocument();
+    expect(screen.getByTestId('runtime-identity')).toHaveTextContent(/即将到期/);
+  });
+
+  it('闸门页脚 [管理所有凭证] → 跳凭证页（此前该 prop 只有 storybook 在传）', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex', credentialStatus: 'none' })]);
+    renderContainer();
+    await chooseRuntime('codex');
+
+    await screen.findByTestId('auth-gate');
+    fireEvent.click(screen.getByRole('button', { name: /管理所有凭证/ }));
+    expect(nav.push).toHaveBeenCalledWith('/settings/credentials');
   });
 });

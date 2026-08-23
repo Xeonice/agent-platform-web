@@ -46,6 +46,24 @@ export function WorkbenchShellView({
         <span className="text-xs text-muted-foreground" data-testid="health-label">
           {healthLabel}
         </span>
+        {/*
+         * 顶栏设置入口（P20 §8.2「工作台 → 凭证/镜像/系统：顶栏 ⚙️ 设置菜单」）。
+         *
+         * ⚠️ 在此之前 `/settings/credentials` **没有任何常规入口**——全仓只有两处
+         * `router.push` 能到它,且都是 **Git 克隆失败**的错误路径。于是"我想去配一下
+         * runtime 凭证"这件最普通的事,在界面上无路可走,只能手敲 URL。
+         *
+         * 规格里那是个**三子页菜单**（凭证/镜像/系统）。这里先只给凭证一条直链:
+         * 镜像管理与系统状态两个子页尚未实现,先摆一个只有一项的菜单是把空壳做进 UI。
+         * ⏳ 那两页落地时,这里换成菜单。
+         */}
+        <a
+          href="/settings/credentials"
+          data-testid="nav-settings-credentials"
+          className="ml-auto rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          ⚙️ 凭证管理
+        </a>
       </header>
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-72 flex-col border-r border-border">

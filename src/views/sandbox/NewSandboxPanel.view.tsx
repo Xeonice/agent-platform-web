@@ -8,6 +8,7 @@
 //
 // ⚠️ 安全红线（15 §3.5）：任务指令的值由 **container 的局部 state** 持有并经 props 传入，
 // 视图不得把它写进任何 store / storage；container 提交即清空。
+import type { ReactNode } from 'react';
 import type { RuntimeDto } from '@/types/runtimeCredential';
 import type { SandboxProvider, SandboxProviderDto } from '@/types/sandbox';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
@@ -49,6 +50,19 @@ export interface NewSandboxPanelProps {
   onRetryProviders: () => void;
   /** 非空 → 禁用创建并展示原因（如所选 provider 不支持终端，capabilities.spawnTty === false）。 */
   createDisabledReason?: string;
+
+  // —— 鉴权拦截（P20 §5.1 三分支）——
+  /**
+   * 分支②/③的**无编号拦截面板**。由 container 注入（视图不认识 AuthGateContainer,
+   * 也不判凭证状态——那是 container 读 `GET /api/runtimes` 的 `credentialStatus` 决定的）。
+   *
+   * ⚠️ 它在场即**发起被拦住**:没有可注入的凭证却让人点发起,后端只能记一条
+   * `NO_CREDENTIAL` 的 WARN、让 agent 裸跑,用户在终端里看见 CLI 自己的登录菜单,
+   * 而平台从头到尾没提示过一句。这正是本轮修掉的那条链路。
+   */
+  authGateSlot?: ReactNode;
+  /** 分支①：已有生效凭证时的正面确认——"将以 a***@gm 身份运行"（P20 §5.1）。 */
+  runtimeIdentityNotice?: string;
   /** 一般创建失败文案（已落库、可重试那一类）。 */
   errorMessage?: string;
   /**
@@ -84,6 +98,8 @@ export function NewSandboxPanelView({
   providersErrorMessage,
   onRetryProviders,
   createDisabledReason,
+  authGateSlot,
+  runtimeIdentityNotice,
   errorMessage,
   rejectionMessage,
   initialPrompt,
@@ -115,6 +131,8 @@ export function NewSandboxPanelView({
     noRuntimes ||
     runtime === '' ||
     promptTooLong ||
+    // 分支②/③：该 runtime 没有可注入的凭证 ⇒ 先过闸门,再谈发起。
+    authGateSlot !== undefined ||
     createDisabledReason !== undefined;
 
   return (
@@ -196,6 +214,18 @@ export function NewSandboxPanelView({
           </p>
         )}
       </fieldset>
+
+      {runtimeIdentityNotice !== undefined && (
+        <p data-testid="runtime-identity" className="text-xs text-muted-foreground">
+          {runtimeIdentityNotice}
+        </p>
+      )}
+
+      {authGateSlot !== undefined && (
+        <div data-testid="auth-gate" className="w-full max-w-md text-left">
+          {authGateSlot}
+        </div>
+      )}
 
       <fieldset className="flex flex-col gap-2" disabled={creating}>
         <legend className="mb-1 text-xs text-muted-foreground">运行档位 (provider)</legend>

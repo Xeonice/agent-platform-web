@@ -20,6 +20,8 @@
 // 类型层拦不住（契约是 `runtime: z.string().min(1)`，开放集**故意**不收窄），
 // 正确的防线只有"注册表驱动 UI + 前端不出现任何字面量默认值"这一条 —— 就是本文件现在的形状。
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useProviders } from '@/hooks/useProviders';
 import { useRuntimes } from '@/hooks/useRuntimes';
 import { useCreateSandbox, useCreateSandboxErrorView } from '@/hooks/useCreateSandbox';
@@ -28,6 +30,8 @@ import { useTerminalSocketConfig } from '@/hooks/useTerminalSocketConfig';
 import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { useAppStore } from '@/stores';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
+import { AuthGateContainer } from '@/containers/AuthGateContainer';
+import { invalidateRuntimeAuth } from '@/hooks/useRuntimeAuthMutations';
 import { SandboxLifecycleContainer } from '@/containers/SandboxLifecycleContainer';
 import { HeadlessTaskContainer } from '@/containers/HeadlessTaskContainer';
 import type { SandboxProvider } from '@/types/sandbox';
@@ -106,6 +110,28 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
    */
   const runtime = pickedRuntime ?? '';
 
+  /**
+   * 鉴权拦截层（P20 §5.1 三分支判定）。**判据是 `GET /api/runtimes` 下发的
+   * `credentialStatus`**,前端不自己维护凭证状态。
+   *
+   *   ① active / expiring  → 不出闸门,给一句正面确认"将以 x 身份运行";
+   *   ② none               → 无编号拦截面板 + 一次性语义文案,配置完才能发起;
+   *   ③ expired            → 同②的面板,但先说清"已过期",走的是同一条重授权流。
+   *
+   * ⚠️ 这一层此前**从未接线**。`AuthGateContainer` 的注释写着"向导拦截面板与凭证页
+   * 卡片内嵌共用",它甚至备好了两个**只给向导用**的 prop(`showOneTimeNotice` /
+   * `onOpenCredentials`)——而生产代码里零调用方,只有 storybook 在传。于是链路是:
+   * 前端不看 credentialStatus → 直接建沙箱 → 后端注入时发现没凭证 → 记一条
+   * `NO_CREDENTIAL` 的 WARN 然后让 agent 裸跑 → 用户在终端里撞见 CLI 自己的登录菜单,
+   * 而平台从头到尾没提示过一句。`expiring` 不拦是有意的:它仍然能用,属于黄色预警态
+   * (P21 §2.2),拦下来等于把"还有一周到期"当成"现在不能用"。
+   */
+  const selectedRuntimeDto = runtimeList.find((r) => r.id === runtime);
+  const credentialStatus = selectedRuntimeDto?.credentialStatus;
+  const authBlocked = credentialStatus === 'none' || credentialStatus === 'expired';
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
   const handleCreate = (): void => {
     // 无可选档位 / 无可选 runtime / 该档位不支持终端时不发请求（按钮已禁用，这里兜住键盘等旁路触发）。
     if (provider === '' || runtime === '' || ttyUnsupported) return;
@@ -178,6 +204,33 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
         onRetryProviders={() => {
           void providers.refetch();
         }}
+        authGateSlot={
+          authBlocked && selectedRuntimeDto !== undefined ? (
+            <AuthGateContainer
+              runtimeId={selectedRuntimeDto.id}
+              runtimeName={selectedRuntimeDto.displayName}
+              methods={selectedRuntimeDto.authMethods}
+              // 一次性语义文案只在"从未配置"那支出现;已过期是**再来一次**,那句
+              //「只需配置一次」在这里是假话(P20 §5.1 分支③走同一面板但说法不同)。
+              showOneTimeNotice={credentialStatus === 'none'}
+              onOpenCredentials={() => {
+                router.push('/settings/credentials');
+              }}
+              // 配置成功 ⇒ 让 runtimes 列表重取,`credentialStatus` 翻成 active 后
+              // 闸门自行消失、发起按钮解禁。不在本层记任何凭证态(单一来源在服务端)。
+              onSuccess={() => {
+                invalidateRuntimeAuth(queryClient);
+              }}
+            />
+          ) : undefined
+        }
+        runtimeIdentityNotice={
+          credentialStatus === 'active' || credentialStatus === 'expiring'
+            ? `将以 ${selectedRuntimeDto?.maskedIdentifier ?? '已配置凭证'} 身份运行${
+                credentialStatus === 'expiring' ? '（凭证即将到期，建议尽快重新授权）' : ''
+              }`
+            : undefined
+        }
         createDisabledReason={
           ttyUnsupported
             ? `provider「${provider}」不支持终端（spawnTty=false），请改选其它运行档位。`
