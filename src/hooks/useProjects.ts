@@ -22,12 +22,17 @@ export const projectKeys = {
 
 /**
  * 新建项目错误 → 表单友好文案（container 不便 import service，故收敛在 hook 层）。
- * 409（名称重复 ALREADY_EXISTS）给明确提示；其余 4xx 用后端信封；网络错误给通用文案。
+ * 名称重复（`ALREADY_EXISTS`）给明确提示；其余 4xx 用后端信封；网络错误给通用文案。
+ *
+ * ⚠️ 判据读**信封里的码**，不读 HTTP 状态码。这条与 `lib/sandboxErrorCopy` 的
+ * `sideEffectFree` / 契约里的 `retryable` 同源：语义由后端在信封里声明，前端不从状态码反推。
+ * 旧写法 `httpStatus === 409` 拿状态码当 `ALREADY_EXISTS` 的代理——后端哪天在这个端点上
+ * 多返回一种 409（并发冲突、配额冲突……），用户就会被告知"项目名已存在"，而名字根本没重。
  */
 export function describeCreateProjectError(error: unknown): string | undefined {
   if (error === null || error === undefined) return undefined;
   if (error instanceof ApiErrorException) {
-    if (error.httpStatus === 409) return '项目名已存在，请换一个名称。';
+    if (error.envelope.code === 'ALREADY_EXISTS') return '项目名已存在，请换一个名称。';
     return error.envelope.message !== '' ? error.envelope.message : '创建失败，请稍后重试。';
   }
   return '网络错误，请稍后重试。';

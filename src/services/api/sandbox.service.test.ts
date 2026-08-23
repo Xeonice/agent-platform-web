@@ -10,10 +10,15 @@ const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:30
 
 describe('sandbox.service (S1 建沙箱)', () => {
   it('POST /api/sandboxes 返回被生成类型约束的 SandboxResponseDto', async () => {
-    const sb = await createSandbox({ projectId: 'default', runtime: 'shell', provider: 'aio' });
+    // ⚠️ runtime 取后端注册表里**真实存在**的键（12 §3.4）：这里曾是 `'shell'`——一个后端从未
+    // 注册过的值，而当时的替身也照单全收 ⇒ 这条用例把一次注定失败的创建"验证"成了成功。
+    const sb = await createSandbox({ projectId: 'default', runtime: 'codex', provider: 'aio' });
     expect(typeof sb.id).toBe('string');
     expect(sb.status).toBe('running');
     expect(sb.projectId).toBe('default');
+    // 开放集的两个键原样回带（替身不许把用户选的 runtime/provider "纠正"成自己认识的那个）。
+    expect(sb.runtime).toBe('codex');
+    expect(sb.provider).toBe('aio');
     // status 受生成的 12 值 enum 约束（编译期已保证），运行期再校验取值合法
     expect([
       'pending',
@@ -41,7 +46,7 @@ describe('sandbox.service (S1 建沙箱)', () => {
       ),
     );
     await expect(
-      createSandbox({ projectId: 'default', runtime: 'shell', provider: 'boxlite' }),
+      createSandbox({ projectId: 'default', runtime: 'codex', provider: 'boxlite' }),
     ).rejects.toBeInstanceOf(ApiErrorException);
   });
 });

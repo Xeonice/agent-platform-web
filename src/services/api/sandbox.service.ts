@@ -2,6 +2,7 @@
 import { apiClient } from '@/services/api/client';
 import { ApiErrorException, toApiError } from '@/services/api/apiError';
 import type { components } from '@/types/generated/openapi';
+import type { SandboxDto } from '@/types/sandbox';
 
 export type CreateSandboxInput = components['schemas']['CreateSandboxDto'];
 /**
@@ -12,8 +13,10 @@ export type CreateSandboxInput = components['schemas']['CreateSandboxDto'];
  *  · `failureMessage?` —— **纯自由文本细节**，排障用。⚠️ 码已与文本拆成两列，
  *    **不要从 message 里 parse 码**；人话一律按 failureCode 查 P22 §1。
  * DTO 带这两个字段 ⇒ **刷新后仍能恢复失败原因**（WS 帧错过了就没了，这条才是救命稻草）。
+ *
+ * 别名住在 `types/sandbox.ts`（`SandboxDto`），因为 mocks/ 也要用同一个形状而 boundaries 只让它 import type。
  */
-export type SandboxResponse = components['schemas']['SandboxResponseDto'];
+export type SandboxResponse = SandboxDto;
 
 /** POST /api/sandboxes → 201 SandboxResponseDto（含 id + 默认任务名）。 */
 export async function createSandbox(input: CreateSandboxInput): Promise<SandboxResponse> {

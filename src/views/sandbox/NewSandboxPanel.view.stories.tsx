@@ -1,8 +1,30 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
+import type { RuntimeDto } from '@/types/runtimeCredential';
 import type { SandboxProviderCapabilities, SandboxProviderDto } from '@/types/sandbox';
 
 const noop = (): void => undefined;
+
+/**
+ * Story fixture：runtime 名单同样只存在于 story/测试里。
+ * **取值必须是后端注册表里真实存在的键**（12 §3.4）——`codex` / `claude-code` 出自
+ * `api/packages/modules/runtime/src/infrastructure/adapters/{codex,claude-code}`。
+ */
+function runtimeDto(overrides: Partial<RuntimeDto> & Pick<RuntimeDto, 'id'>): RuntimeDto {
+  return {
+    displayName: overrides.id,
+    vendor: 'ACME',
+    authMethods: ['api-key'],
+    credentialStatus: 'none',
+    credentials: [],
+    ...overrides,
+  };
+}
+
+const RUNTIMES: RuntimeDto[] = [
+  runtimeDto({ id: 'codex', displayName: 'Codex', vendor: 'OpenAI' }),
+  runtimeDto({ id: 'claude-code', displayName: 'Claude Code', vendor: 'Anthropic' }),
+];
 
 // Story fixture：provider 名单只存在于 story/测试里（生产代码不再持有闭集，registry 由服务端下发）。
 function caps(overrides: Partial<SandboxProviderCapabilities> = {}): SandboxProviderCapabilities {
@@ -38,6 +60,11 @@ const meta: Meta<typeof NewSandboxPanelView> = {
   component: NewSandboxPanelView,
   parameters: { layout: 'fullscreen' },
   args: {
+    runtimes: RUNTIMES,
+    runtime: 'codex',
+    onSelectRuntime: noop,
+    loadingRuntimes: false,
+    onRetryRuntimes: noop,
     providers: PROVIDERS,
     onSelectProvider: noop,
     onCreate: noop,
@@ -54,6 +81,27 @@ type Story = StoryObj<typeof NewSandboxPanelView>;
 
 export const DefaultAio: Story = { args: { provider: 'aio' } };
 export const BoxliteSelected: Story = { args: { provider: 'boxlite' } };
+/** 改选 registry 里的另一个 runtime（前端从未枚举过这两个键，它们来自 GET /api/runtimes）。 */
+export const ClaudeCodeRuntime: Story = { args: { provider: 'aio', runtime: 'claude-code' } };
+/**
+ * 后端注册表里多一个第三方 runtime → 列表自动多一项（与 provider 同一条扩展性判据，14 §10.3 ①）。
+ */
+export const ThirdPartyRuntime: Story = {
+  args: {
+    runtimes: [...RUNTIMES, runtimeDto({ id: 'acme-agent', displayName: 'Acme Agent' })],
+    runtime: 'acme-agent',
+    provider: 'aio',
+  },
+};
+export const LoadingRuntimes: Story = {
+  args: { runtimes: [], runtime: '', loadingRuntimes: true, provider: 'aio' },
+};
+export const RuntimesLoadFailed: Story = {
+  args: { runtimes: [], runtime: '', runtimesErrorMessage: 'registry 不可用', provider: 'aio' },
+};
+export const EmptyRuntimeRegistry: Story = {
+  args: { runtimes: [], runtime: '', provider: 'aio' },
+};
 /** 服务端 registry 里多一个第三方 provider → 列表自动多一项（本次扩展性修复的判据）。 */
 export const ThirdPartyProvider: Story = {
   args: { providers: PROVIDERS_WITH_THIRD_PARTY, provider: 'acme' },
@@ -87,18 +135,38 @@ export const CreateError: Story = {
 export const WithInitialPrompt: Story = {
   args: { provider: 'aio', initialPrompt: '分析这个仓库的架构并输出摘要' },
 };
+/**
+ * **首屏**：runtime 必选、不预选（04 §8：平台没有「默认 runtime」概念）⇒ 一个都没选中、
+ * 按钮禁着、就地给一句待办提示。对照 provider 一侧仍按服务端 `isDefault` 预选。
+ * 注意这句提示**不是** role="alert"：它是"你还有一步没做"，不是故障。
+ */
+export const RuntimeUnchosen: Story = {
+  args: { runtime: '', provider: 'aio' },
+};
+
 /** 8000 上限：超限就地红字计数 + 禁用发起（P21-2 §6）。 */
 export const InitialPromptTooLong: Story = {
   args: { provider: 'aio', initialPrompt: 'x'.repeat(8001) },
 };
 /**
- * 「零副作用」的 409 能力静态校验拒绝：请求在落库前被拒，**没有任务被创建** ⇒
- * 就地提示改选，界面上不出现任何"重试/重新创建"入口（对照 CreateError 那条已落库的失败）。
+ * 「零副作用」的门口拒绝（后端在信封里标 `sideEffectFree`）：请求在落库前被拒，
+ * **没有任务被创建** ⇒ 就地提示改配置，界面上不出现任何"重试/重新创建"入口
+ *（对照 CreateError 那条已落库的失败）。
+ *
+ * 两条各一：能力静态校验（409）与非法镜像引用（400）。措辞对两者都成立 ——
+ * 这正是尾句从"改选运行档位或调整能力要求"泛化成"调整配置"的原因。
  */
-export const CapabilityRejected: Story = {
+export const ZeroSideEffectRejected: Story = {
   args: {
     provider: 'boxlite',
     rejectionMessage:
-      '无法用当前配置创建：provider boxlite 不支持 snapshot。请改选运行档位或调整能力要求后再试（本次请求未创建任何任务）。',
+      '无法用当前配置创建：provider boxlite 不支持 snapshot。请调整配置后再试（本次请求未创建任何任务）。',
+  },
+};
+export const ZeroSideEffectRejectedImageRef: Story = {
+  args: {
+    provider: 'aio',
+    rejectionMessage:
+      "无法用当前配置创建：invalid image reference 'acme/img:v1 '。请调整配置后再试（本次请求未创建任何任务）。",
   },
 };

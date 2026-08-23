@@ -109,7 +109,9 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     expect(dump).not.toContain('initialPrompt');
   });
 
-  test('409 能力静态校验（零副作用）→ 就地提示改选，不出"重新创建"失败卡', async ({ page }) => {
+  test('门口拒绝（后端标 sideEffectFree）→ 就地提示改配置，不出"重新创建"失败卡', async ({
+    page,
+  }) => {
     await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
     await page.route('**/api/projects', (route) =>
       route.fulfill({
@@ -140,6 +142,9 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           code: 'UNSUPPORTED_CAPABILITY',
           message: 'provider aio 不支持 snapshot',
           retryable: false,
+          // ⚠️ 前端判据读的就是这个字段（不是 409）。去掉它 ⇒ 保守读法把这次拒绝
+          // 渲染成失败卡，下面的 `未创建任何任务` 断言当场红 —— 这正是它该有的样子。
+          sideEffectFree: true,
         },
       }),
     );

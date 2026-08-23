@@ -280,6 +280,17 @@ export function useRefetchTaskList(sandboxId: string): () => void {
  * 优先级：收录过的码 → 后端 message → 调用点兜底。第二档很要紧：
  * `INVALID_STATE` 这类码后端的句子比任何模板都具体（"sandbox X was provisioned for
  * runtime 'codex', not 'claude-code'"），词表**刻意不收录**它们，就是为了让这句话透出来。
+ *
+ * ⚠️ **已知缺陷，待产品口径**（记在这里是因为下一个人多半从这里进来）：`fallback` 分了语境，
+ * 但**词表没分**——三条路共用 `lib/taskOutcome.ts` 那张**任务终态**表。于是：
+ *   · `UNKNOWN_RUNTIME` 走到**发起**路径（后端 `assertRunnable` 在门口就拒）时，用户看到的是
+ *     终态表那句"…**本轮无法继续**…重跑同一个 runtime 只会再失败一次"——而**根本没有"本轮"**，
+ *     那次发起什么都没创建；
+ *   · **终止**路径上，"零副作用"的正确读法是"这次终止**没生效**，任务大概率还在跑"，
+ *     不是"什么都没创建"。
+ * ⛔ 因此**不要**把 `lib/sandboxErrorCopy` 的 `isZeroSideEffectRejection` /
+ * `zeroSideEffectRejectionMessage` 顺手接到这里：那对函数的措辞是**创建语境**专属的，
+ * 它的 `context` 参数是必填闭集，接过来要先为新语境写一句自己的话（漏写会 tsc 红）。
  */
 export function useTaskErrorMessage(error: Error | null, fallback: string): string | undefined {
   return useMemo(() => {

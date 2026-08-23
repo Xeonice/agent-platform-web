@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import type { SandboxProviderCapabilities } from '../src/types/sandbox';
+import type { SandboxDto, SandboxProviderCapabilities } from '../src/types/sandbox';
+import type { RuntimeDto } from '../src/types/runtimeCredential';
 
 /** provider 能力位 fixture（默认全开，按需覆盖）。 */
 function providerCaps(
@@ -16,6 +17,38 @@ function providerCaps(
     ...overrides,
   };
 }
+
+/** runtime 注册表 fixture：id 取自后端 `{codex,claude-code}.adapter.ts` 的 `readonly id`。 */
+function runtimeDto(overrides: Partial<RuntimeDto> & Pick<RuntimeDto, 'id'>): RuntimeDto {
+  return {
+    displayName: overrides.id,
+    vendor: 'ACME',
+    authMethods: ['api-key'],
+    credentialStatus: 'none',
+    credentials: [],
+    ...overrides,
+  };
+}
+
+const RUNTIMES: RuntimeDto[] = [
+  runtimeDto({ id: 'codex', displayName: 'Codex', vendor: 'OpenAI' }),
+  runtimeDto({ id: 'claude-code', displayName: 'Claude Code', vendor: 'Anthropic' }),
+  runtimeDto({ id: 'acme-agent', displayName: 'Acme Agent' }),
+];
+
+const SANDBOX: SandboxDto = {
+  id: 'sb-e2e',
+  projectId: 'proj-e2e',
+  runtime: 'claude-code',
+  provider: 'boxlite',
+  name: 'E2E 冒烟任务',
+  status: 'running',
+  headless: false,
+  timeoutMinutes: 120,
+  idleTimeoutSec: 1800,
+  waitingInput: false,
+  version: 1,
+};
 
 // S2 骨架（mock 边界集成，用例组 A 切片，12 §4.2）。
 // S2 把工作台主区改为项目树优先：一进工作台不再直接显示新建沙箱面板，需先选中一个 cloneStatus==='ready'
@@ -59,21 +92,13 @@ test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => 
       }),
     );
 
+    // runtime 同样由服务端 registry 驱动（GET /api/runtimes）：值取后端两个内置 adapter 的真实 id
+    // （12 §3.4：替身的值不能凭空），并额外带一个第三方 runtime 验证"前端零改动即多一项"。
+    await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
+
     await page.route('**/api/sandboxes', (route) =>
-      route.fulfill({
-        status: 201,
-        json: {
-          id: 'sb-e2e',
-          projectId: 'proj-e2e',
-          runtime: 'shell',
-          status: 'running',
-          headless: false,
-          timeoutMinutes: 120,
-          idleTimeoutSec: 1800,
-          waitingInput: false,
-          version: 1,
-        },
-      }),
+      // 显式标注 SandboxDto：DTO 加必填字段时这里编译期红，而不是替身静默少一个字段。
+      route.fulfill({ status: 201, json: SANDBOX }),
     );
 
     await page.goto('/');
@@ -86,6 +111,13 @@ test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => 
     // 且第三方 provider（acme）无需改前端代码即出现在选项里。
     await expect(page.getByRole('radio', { name: /^aio/ })).toBeChecked();
     await expect(page.getByRole('radio', { name: /acme/ })).toBeVisible();
+
+    // runtime 一侧**不同判据**：平台没有「默认 runtime」概念（04 §8）⇒ 必选、不预选。
+    // 一个都不该被选中，按钮此刻禁着；第三方 runtime 仍然无需改前端代码即出现在选项里。
+    await expect(page.getByRole('radio', { name: /^codex/ })).not.toBeChecked();
+    await expect(page.getByRole('radio', { name: /acme-agent/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
+    await page.getByRole('radio', { name: /claude-code/ }).check();
 
     // 改选 boxlite 证明可选档
     await page.getByRole('radio', { name: /boxlite/ }).check();
