@@ -24,7 +24,13 @@ function runtimeDto(overrides: Partial<RuntimeDto> & Pick<RuntimeDto, 'id'>): Ru
     displayName: overrides.id,
     vendor: 'ACME',
     authMethods: ['api-key'],
-    credentialStatus: 'none',
+    // ⚠️ 取 **active**（已配好凭证的常态），不是 'none'。
+    // 鉴权拦截层（P20 §5.1）按这一位三分支判定：`none`/`expired` 会出闸门并**禁用
+    // 发起按钮**。此前这里填 'none' 无所谓——那时前端根本不读这一位；现在它承重，
+    // 替身就必须是"发起链路走得通"的那个值，否则每一条无关用例都被闸门拦住。
+    // 凭证状态本身的用例在 `runtimeCredentials.spec.ts`，那里才该覆盖 none/expired。
+    credentialStatus: 'active',
+    maskedIdentifier: 'a***@example.com',
     credentials: [],
     ...overrides,
   };
