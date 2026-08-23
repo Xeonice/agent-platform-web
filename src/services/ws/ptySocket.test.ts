@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   PtySocket,
   reconnectDelay,
@@ -197,6 +197,169 @@ describe('PtySocket (08 §3, socket.io transport)', () => {
     mock.triggerConnect();
     mock.serverEmit({ type: 'exit', code: 137 });
     expect(frames).toContainEqual({ type: 'exit', code: 137 });
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// 抖动型重连（S6 收尾 ②）：与 taskSocket 同一条 STABLE_CONNECTION_MS 纪律。
+// 老写法把 attempt 清零挂在 onConnect 上 ⇒ "连上即掉"时退避恒定在几百毫秒、
+// 永远撞不到上限 ⇒ 终端一边每秒重建 pty，一边永远显示"正在重连…（第 1 次）"。
+// ————————————————————————————————————————————————————————————————
+describe('PtySocket · 抖动型重连', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function makeFlapping(): { socket: PtySocket; flap: () => void; mock: () => MockSocket } {
+    let current = new MockSocket();
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: { sandboxId: 's1' },
+      socketFactory: () => {
+        current = new MockSocket();
+        return current;
+      },
+      onFrame: () => undefined,
+      onState: () => undefined,
+    });
+    socket.connect();
+    return {
+      socket,
+      flap: () => {
+        current.triggerConnect();
+        current.triggerDisconnect();
+      },
+      mock: () => current,
+    };
+  }
+
+  it('连上即掉 ⇒ 退避计数持续增长（不被 onConnect 清零）', () => {
+    vi.useFakeTimers();
+    const { socket, flap } = makeFlapping();
+
+    flap();
+    flap();
+    flap();
+
+    // 老写法恒为 1。
+    expect(socket.reconnectAttempts).toBe(3);
+  });
+
+  it('抖动够多轮后越过 maxReconnect ⇒ 上层收得了手（否则那条"连接超时"永远到不了）', () => {
+    vi.useFakeTimers();
+    const { socket, flap } = makeFlapping();
+    for (let i = 0; i < 12; i += 1) flap();
+    expect(socket.reconnectAttempts).toBeGreaterThan(8);
+  });
+
+  it('**站得住**的连接掉线 ⇒ 退避清零（正常网络抖动不会被当成故障累加）', () => {
+    vi.useFakeTimers();
+    const { socket, flap, mock } = makeFlapping();
+
+    flap();
+    flap();
+    expect(socket.reconnectAttempts).toBe(2);
+
+    mock().triggerConnect();
+    vi.advanceTimersByTime(30_000); // 这条连接活了 30 秒 —— 算连成了
+    mock().triggerDisconnect();
+
+    expect(socket.reconnectAttempts).toBe(1);
+  });
+
+  it('从未连上过（一直握手失败）⇒ 照旧累加，行为不变', () => {
+    const mock = new MockSocket();
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: {},
+      socketFactory: () => mock,
+      onFrame: () => undefined,
+      onState: () => undefined,
+    });
+    socket.connect();
+    mock.triggerConnectError(new Error('websocket error'));
+    mock.triggerConnectError(new Error('websocket error'));
+    expect(socket.reconnectAttempts).toBe(2);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// 手动重连（08 §11.6 的终点态 [手动重连]）：退避耗尽后把决定权交回用户。
+// ————————————————————————————————————————————————————————————————
+describe('PtySocket · 手动重连', () => {
+  it('清零退避预算后重连 ⇒ 一次点击换来完整的一轮预算，而不是一次尝试', () => {
+    const sockets: MockSocket[] = [];
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: {},
+      socketFactory: () => {
+        const m = new MockSocket();
+        sockets.push(m);
+        return m;
+      },
+      onFrame: () => undefined,
+      onState: () => undefined,
+    });
+    socket.connect();
+    for (let i = 0; i < 9; i += 1)
+      sockets.at(-1)?.triggerConnectError(new Error('websocket error'));
+    expect(socket.reconnectAttempts).toBe(9);
+    socket.close();
+    expect(socket.connState).toBe('closed');
+
+    socket.reconnect();
+
+    expect(socket.reconnectAttempts).toBe(0);
+    expect(socket.connState).toBe('connecting');
+    expect(sockets).toHaveLength(2); // close 之后又真的建了一条
+  });
+
+  it('⚠️ 手动重连**照旧带回 socketSessionKey**（重连窗口没过就接回原来那个 shell，08 §11.6）', () => {
+    const argsLog: SocketFactoryArgs[] = [];
+    let mock = new MockSocket();
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: { sandboxId: 's1', xSchemaHash: 'sb-terminal-v1' },
+      socketFactory: (args) => {
+        argsLog.push(args);
+        mock = new MockSocket();
+        return mock;
+      },
+      onFrame: () => undefined,
+      onState: () => undefined,
+    });
+    socket.connect();
+    mock.triggerConnect();
+    mock.serverEmit({ type: 'session', socketSessionKey: 'KEY-123' });
+    socket.close(); // 退避耗尽，上层收手
+
+    socket.reconnect();
+
+    expect(argsLog[1]?.query['socketSessionKey']).toBe('KEY-123');
+    expect(argsLog[1]?.query['sandboxId']).toBe('s1');
+  });
+
+  it('手动重连后掉线 ⇒ 重新进入重连态（不是一次性的死连接）', () => {
+    let mock = new MockSocket();
+    const states: string[] = [];
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: {},
+      socketFactory: () => {
+        mock = new MockSocket();
+        return mock;
+      },
+      onFrame: () => undefined,
+      onState: (s) => states.push(s),
+    });
+    socket.connect();
+    socket.close();
+
+    socket.reconnect();
+    mock.triggerDisconnect();
+
+    expect(states.at(-1)).toBe('reconnecting');
+    expect(socket.reconnectAttempts).toBe(1);
   });
 });
 

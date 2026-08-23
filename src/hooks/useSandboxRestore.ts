@@ -18,6 +18,10 @@ export const sandboxKeys = {
 export interface SandboxRestore {
   /** 后端派生的默认任务名（前端不派生）。 */
   name?: string;
+  /** 沙箱的 runtime（S6：无头任务 POST 路径里的 `:rt` 取它，前端不另造选择器）。 */
+  runtime?: string;
+  /** 沙箱实际跑在哪个 provider 档位上（S6：据此精确判定 headlessTask 能力位）。 */
+  provider?: string;
   /** 该 id 在后端已不存在（404）：调用方回到新建入口。 */
   notFound: boolean;
   isPending: boolean;
@@ -57,6 +61,8 @@ export function useSandboxRestore(sandboxId: string | null): SandboxRestore {
 
   return {
     ...(data?.name === undefined ? {} : { name: data.name }),
+    ...(data?.runtime === undefined ? {} : { runtime: data.runtime }),
+    ...(data?.provider === undefined ? {} : { provider: data.provider }),
     notFound,
     isPending: sandboxId !== null && query.isPending,
   };

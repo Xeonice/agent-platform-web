@@ -25,9 +25,23 @@ export interface UiSlice {
   // —— 选中上下文（persist）——
   selectedSandboxId: string | null;
   selectedProjectId: string | null;
+  /**
+   * 当前跟踪的无头 Task id（S6）。**与 selectedSandboxId 完全同一性质**：不透明 id、非机密、
+   * 唯一作用是刷新后知道"该重新订阅哪条流"（凭 taskId + fromSeq 恢复，而不是重新拉全量）。
+   *
+   * 为什么值得进 persist 白名单（安全红线文件里加一项必须给得出理由）：
+   * `GET /api/sandboxes/:id/tasks` **已经存在**且是刷新恢复的权威来源，但它只回一份列表，
+   * 回答不了"用户上次盯着的是**哪一个**"。没有这一位，同一沙箱下有多个任务时刷新只能靠
+   * 「回落到仍在跑的那个」猜——用户盯着 A 的输出，刷新后被换成 B，或者一个已结束的任务
+   * 干脆回不去。所以 persist 的是**用户的选择**，不是服务端数据的副本（后者永远从列表取）。
+   * 列表校验兜住了它变陈旧的情况（见 hooks/useAgentTask 的 reconcileTaskId）。
+   * ⚠️ 只存 id：指令（prompt）与任何输出**绝不进 store**（15 §3.5 安全红线）。
+   */
+  selectedTaskId: string | null;
   sidebarCollapsed: boolean;
   setSelectedSandboxId: (id: string | null) => void;
   setSelectedProjectId: (id: string | null) => void;
+  setSelectedTaskId: (id: string | null) => void;
   toggleSidebar: () => void;
 
   // —— 任务树（persist）——
@@ -63,12 +77,16 @@ export interface UiSlice {
 export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
   selectedSandboxId: null,
   selectedProjectId: null,
+  selectedTaskId: null,
   sidebarCollapsed: false,
   setSelectedSandboxId: (id): void => {
     set({ selectedSandboxId: id });
   },
   setSelectedProjectId: (id): void => {
     set({ selectedProjectId: id });
+  },
+  setSelectedTaskId: (id): void => {
+    set({ selectedTaskId: id });
   },
   toggleSidebar: (): void => {
     set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed }));

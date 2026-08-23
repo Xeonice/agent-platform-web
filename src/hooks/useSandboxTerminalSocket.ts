@@ -44,6 +44,14 @@ export interface UseSandboxTerminalSocketApi {
   connState: ConnState;
   attempt: number;
   send: (frame: TerminalClientFrame) => boolean;
+  /**
+   * 用户显式要求再连一次（退避耗尽、`connState==='closed'` 后的唯一出路，08 §11.6 的 `[手动重连]`）。
+   *
+   * 之所以必须有：退避现在**真的会**撞到上限并停手（见 ptySocket 的 STABLE_CONNECTION_MS），
+   * 而终端上的"停手"意味着用户正盯着的 shell 被判死。停手可以，但必须把决定权交回用户，
+   * 不能静默停在一条"连接超时"的红条上。
+   */
+  reconnect: () => void;
 }
 
 export function useSandboxTerminalSocket(
@@ -135,5 +143,14 @@ export function useSandboxTerminalSocket(
     [],
   );
 
-  return { connState, attempt, send };
+  const reconnect = useCallback((): void => {
+    // 会话已终结时重连没有意义（08 §8 要点 1：那条路走的是 [重启]，不是重连）。
+    if (endedRef.current) return;
+    // 可能还压着一个已排期的退避重连：先撤掉，免得手动这次和它撞成两条连接。
+    clearTimer();
+    // PtySocket#reconnect 会清零退避预算并带回 socketSessionKey（重连窗口没过就接回原 pty）。
+    socketRef.current?.reconnect();
+  }, [clearTimer]);
+
+  return { connState, attempt, send, reconnect };
 }

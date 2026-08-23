@@ -13,7 +13,13 @@ export type SandboxProvider = string;
 /** GET /api/providers 数组项：name + 能力位 + 是否默认档（**默认档在每项上，无顶层字段**）。 */
 export type SandboxProviderDto = components['schemas']['ProviderResponseDto'];
 
-/** 逐 provider 能力位（6 位全 required）：驱动按能力显隐，今天只消费 spawnTty。 */
+/**
+ * 逐 provider 能力位（**7 位全 required**）：驱动按能力显隐，今天只消费 spawnTty。
+ *
+ * `headlessTask` 一位同时管住作业面与文件面（04 §2.6）——两者必然同进同退，
+ * 「能跑任务但取不回产物」不是可交付的一半。契约已定，两个内置 provider 目前都声明
+ * `false`；实现落在 S6 切片，届时 UI 才有「这个档位能不能跑无头任务」的判据。
+ */
 export type SandboxProviderCapabilities = SandboxProviderDto['capabilities'];
 
 /**

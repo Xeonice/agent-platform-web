@@ -47,6 +47,17 @@ export interface PtySocketOptions {
 
 const MAX_RECONNECT_DEFAULT = 8;
 
+/**
+ * 一条连接活满多久才算"站得住"（成功），从而把退避计数清零。
+ *
+ * ⚠️ 与 taskSocket 的同名常量是**同一件事**（S6 review ④），三个通道统一：把清零挂在
+ * `onConnect` 上，**抖动型故障**（连上即掉）会让 attempt 永远停在 0/1 ⇒ 退避恒定在几百毫秒、
+ * 也永远撞不到 `maxReconnect` 上限。在终端这条线上后果更重：每重建一条 socket 就是后端
+ * 一次 pty attach + 一次全屏重绘，而"连接超时 → 手动重连"那个终点态永远到不了 ⇒
+ * 界面会一直显示"正在重连…（第 1 次）"，看上去像在努力，实际是在原地空转。
+ */
+const STABLE_CONNECTION_MS = 10_000;
+
 /** 把真实 socket.io Socket 适配为 SocketLike（services 层，唯一 socket.io 触点，07 §3 规则 5）。 */
 function defaultSocketFactory({ uri, query }: SocketFactoryArgs): SocketLike {
   // reconnection:false —— 重连由 useSandboxTerminalSocket 依会话终止条件驱动（08 §8），每次 connect 用最新 query（带回 key）。
@@ -91,6 +102,8 @@ export class PtySocket {
   private state: ConnState = 'idle';
   private attempt = 0;
   private closedByUser = false;
+  /** 本次连接 open 的时刻；null = 当前没有已建立的连接。 */
+  private connectedAt: number | null = null;
   // 后端随开会话首帧下发的重连凭据（08 §3）；仅存内存/不进 persist；重连时并入 query 回带（08 §11.6）。
   private socketSessionKey: string | null = null;
   private readonly opts: Required<Pick<PtySocketOptions, 'maxReconnect' | 'socketFactory'>> &
@@ -116,7 +129,9 @@ export class PtySocket {
     const socket = this.opts.socketFactory({ uri: this.opts.uri, query: this.buildQuery() });
     this.socket = socket;
     socket.onConnect(() => {
-      this.attempt = 0;
+      // **不在这里清零 attempt**：连上不等于连成了。清零挪到 handleClose，
+      // 只有活过 STABLE_CONNECTION_MS 的连接才作数（见该常量注释）。
+      this.connectedAt = Date.now();
       this.setState('open');
     });
     socket.onFrame((frame) => {
@@ -140,9 +155,25 @@ export class PtySocket {
 
   close(): void {
     this.closedByUser = true;
+    this.connectedAt = null;
     this.setState('closed');
     this.socket?.disconnect();
     this.socket = null;
+  }
+
+  /**
+   * 用户点「手动重连」：**清零退避预算**后重连（08 §11.6 的终点态 `[手动重连]`）。
+   *
+   * 为什么必须清零：退避耗尽后 attempt 已越过上限，直接 `connect()` 一旦失败，
+   * 上层的 `nextAttempt > maxReconnect` 立刻又把它关掉 ⇒ 一次点击只换来**一次**尝试，
+   * 用户得连点。清零＝把完整的一轮退避预算交回给这次显式的人为决定。
+   *
+   * ⚠️ **不清 `socketSessionKey`**：它才是"接回原来那个 shell"的凭据（08 §11.6）。
+   * 重连窗口没过就接回现场，过了则后端开新 pty —— 这个分叉由后端判，前端不替它决定。
+   */
+  reconnect(): void {
+    this.attempt = 0;
+    this.connect();
   }
 
   get connState(): ConnState {
@@ -160,6 +191,13 @@ export class PtySocket {
 
   private handleClose(): void {
     if (this.closedByUser) return;
+    const connectedAt = this.connectedAt;
+    this.connectedAt = null;
+    // 只有**站得住**的连接才把退避清零；连上即掉时 attempt 继续累加 ⇒ 退避真的会增长，
+    // 也终于撞得到 maxReconnect 上限而停下来（停下来之后 UI 给「手动重连」，见 ConnectionStatus.view）。
+    if (connectedAt !== null && Date.now() - connectedAt >= STABLE_CONNECTION_MS) {
+      this.attempt = 0;
+    }
     // 重连调度交由 hook 层依会话终止条件决定（08 §3.1/§8）。
     this.setState('reconnecting');
   }

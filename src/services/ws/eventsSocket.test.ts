@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { EventsSocket, type EventsSocketLike } from '@/services/ws/eventsSocket';
 import type { SandboxEvent } from '@/types/ws-protocol';
 
@@ -138,5 +138,68 @@ describe('EventsSocket (/events 通道 10 §7.4)', () => {
     expect(mock.disconnected).toBe(true);
     mock.triggerDisconnect(); // 用户已 close，不应再进 reconnecting
     expect(states.filter((s) => s === 'reconnecting')).toHaveLength(0);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// 抖动型重连（S6 收尾 ②）：三个通道共用的 STABLE_CONNECTION_MS 纪律。
+// /events 是全局单连接，"连上即掉"时若退避恒定在几百毫秒，就是每秒往后端装配一次订阅。
+// ————————————————————————————————————————————————————————————————
+describe('EventsSocket · 抖动型重连', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function makeFlapping(): {
+    socket: EventsSocket;
+    flap: () => void;
+    mock: () => MockEventsSocket;
+  } {
+    let current = new MockEventsSocket();
+    const socket = new EventsSocket({
+      uri: 'http://x/events',
+      socketFactory: () => {
+        current = new MockEventsSocket();
+        return current;
+      },
+      onEvent: () => undefined,
+      onState: () => undefined,
+    });
+    socket.connect();
+    return {
+      socket,
+      flap: () => {
+        current.triggerConnect();
+        current.triggerDisconnect();
+      },
+      mock: () => current,
+    };
+  }
+
+  it('连上即掉 ⇒ 退避计数持续增长（不被 onConnect 清零）', () => {
+    vi.useFakeTimers();
+    const { socket, flap } = makeFlapping();
+
+    flap();
+    flap();
+    flap();
+
+    // 老写法恒为 1 ⇒ 退避永远是几百毫秒。
+    expect(socket.reconnectAttempts).toBe(3);
+  });
+
+  it('**站得住**的连接掉线 ⇒ 退避清零（正常网络抖动不被当成故障累加）', () => {
+    vi.useFakeTimers();
+    const { socket, flap, mock } = makeFlapping();
+
+    flap();
+    flap();
+    expect(socket.reconnectAttempts).toBe(2);
+
+    mock().triggerConnect();
+    vi.advanceTimersByTime(30_000);
+    mock().triggerDisconnect();
+
+    expect(socket.reconnectAttempts).toBe(1);
   });
 });

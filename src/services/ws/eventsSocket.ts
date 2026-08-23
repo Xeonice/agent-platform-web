@@ -34,10 +34,19 @@ export interface EventsSocketOptions {
   onInvalidFrame?: (raw: unknown) => void;
   /** WS 握手被口令门拒绝（未授权）时回调（11 §3.1）。 */
   onUnauthorized?: () => void;
-  maxReconnect?: number;
+  // ⚠️ 这里**刻意没有** maxReconnect：/events 不设重试次数上限（理由见 useSandboxEventsSocket 头注释）。
+  // 旧版本有过一个从不被本类读取的同名字段，只是把"到底谁在管上限"这件事说糊涂了，已删。
 }
 
-const MAX_RECONNECT_DEFAULT = 8;
+/**
+ * 一条连接活满多久才算"站得住"（成功），从而把退避计数清零。
+ *
+ * 与 taskSocket / ptySocket 的同名常量是**同一件事**（S6 review ④）：把清零挂在 `onConnect` 上，
+ * **抖动型故障**（连上即掉）会让 attempt 永远停在 0/1 ⇒ 退避恒定在几百毫秒，前端就成了一台
+ * 每秒重建一条 socket 的机器。/events 是全局单连接、每次重连都会触发一次后端订阅装配，
+ * 空转的代价直接打在后端上。
+ */
+const STABLE_CONNECTION_MS = 10_000;
 
 /** 把真实 socket.io Socket 适配为 EventsSocketLike（services 层，唯一 socket.io 触点，07 §3 规则 5）。 */
 function defaultEventsSocketFactory({ uri }: EventsSocketFactoryArgs): EventsSocketLike {
@@ -82,14 +91,14 @@ export class EventsSocket {
   private state: ConnState = 'idle';
   private attempt = 0;
   private closedByUser = false;
-  private readonly opts: Required<Pick<EventsSocketOptions, 'maxReconnect' | 'socketFactory'>> &
-    EventsSocketOptions;
+  /** 本次连接 open 的时刻；null = 当前没有已建立的连接。 */
+  private connectedAt: number | null = null;
+  private readonly opts: Required<Pick<EventsSocketOptions, 'socketFactory'>> & EventsSocketOptions;
 
   constructor(opts: EventsSocketOptions) {
     this.opts = {
       ...opts,
       socketFactory: opts.socketFactory ?? defaultEventsSocketFactory,
-      maxReconnect: opts.maxReconnect ?? MAX_RECONNECT_DEFAULT,
     };
   }
 
@@ -99,7 +108,9 @@ export class EventsSocket {
     const socket = this.opts.socketFactory({ uri: this.opts.uri });
     this.socket = socket;
     socket.onConnect(() => {
-      this.attempt = 0;
+      // **不在这里清零 attempt**：连上不等于连成了。清零挪到 handleClose，
+      // 只有活过 STABLE_CONNECTION_MS 的连接才作数（见该常量注释）。
+      this.connectedAt = Date.now();
       this.setState('open');
     });
     socket.onEvent((raw) => {
@@ -116,6 +127,7 @@ export class EventsSocket {
 
   close(): void {
     this.closedByUser = true;
+    this.connectedAt = null;
     this.setState('closed');
     this.socket?.disconnect();
     this.socket = null;
@@ -131,6 +143,13 @@ export class EventsSocket {
 
   private handleClose(): void {
     if (this.closedByUser) return;
+    const connectedAt = this.connectedAt;
+    this.connectedAt = null;
+    // 只有**站得住**的连接才把退避清零；连上即掉时 attempt 继续累加 ⇒ 退避真的会增长到 30s 封顶，
+    // 而不是每秒重建一条 socket。
+    if (connectedAt !== null && Date.now() - connectedAt >= STABLE_CONNECTION_MS) {
+      this.attempt = 0;
+    }
     this.setState('reconnecting');
   }
 

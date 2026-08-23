@@ -209,6 +209,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sandboxes/{id}/runtimes/{rt}/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start a headless agent Task in a sandbox */
+        post: operations["AgentTaskController_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandboxes/{id}/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the headless Tasks of a sandbox, newest first */
+        get: operations["AgentTaskController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandboxes/{id}/tasks/{taskId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a headless Task by id */
+        get: operations["AgentTaskController_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandboxes/{id}/tasks/{taskId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask a running headless Task to stop (SIGTERM → 5s → SIGKILL) */
+        post: operations["AgentTaskController_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandboxes/{id}/tasks/{taskId}/artifacts/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download one artifact a headless Task produced */
+        get: operations["AgentTaskController_artifact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers": {
         parameters: {
             query?: never;
@@ -479,6 +564,7 @@ export interface components {
             id: string;
             projectId: string;
             runtime: string;
+            provider: string;
             name: string;
             /** @enum {string} */
             status: "pending" | "scheduling" | "preparing-workspace" | "creating" | "starting" | "running" | "idle" | "stopping" | "stopped" | "failed" | "destroying" | "destroyed";
@@ -493,6 +579,32 @@ export interface components {
         DestroySandboxDto: {
             keepVolume?: boolean;
         };
+        RunAgentTaskDto: {
+            prompt: string;
+            timeoutMinutes?: number;
+            resumeFrom?: string;
+            extraArgs?: "--verbose"[];
+        };
+        AgentTaskResponseDto: {
+            id: string;
+            sandboxId: string;
+            runtime: string;
+            /** @enum {string} */
+            status: "running" | "succeeded" | "failed" | "killed" | "timed_out";
+            exitCode?: number;
+            sessionRef?: string;
+            timeoutMinutes: number;
+            lastSeq: number;
+            artifacts: {
+                name: string;
+                size: number;
+                modifiedAt: string;
+            }[];
+            /** @enum {string} */
+            errorCode?: "TASK_FAILED" | "TASK_KILLED" | "TASK_TIMED_OUT" | "SANDBOX_GONE" | "RESUME_FAILED" | "IMAGE_PULL_FAILED" | "RESOURCE_EXHAUSTED" | "NOT_FOUND" | "ALREADY_EXISTS" | "TIMEOUT" | "PERMISSION_DENIED" | "INVALID_STATE" | "PROVIDER_UNAVAILABLE" | "UNSUPPORTED_CAPABILITY" | "INTERNAL";
+            startedAt: string;
+            finishedAt?: string;
+        };
         ProviderResponseDto: {
             name: string;
             capabilities: {
@@ -502,6 +614,7 @@ export interface components {
                 pauseResume: boolean;
                 snapshot: boolean;
                 watchEvents: boolean;
+                headlessTask: boolean;
             };
             isDefault: boolean;
         };
@@ -1008,6 +1121,121 @@ export interface operations {
         responses: {
             204: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AgentTaskController_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                rt: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunAgentTaskDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskResponseDto"];
+                };
+            };
+        };
+    };
+    AgentTaskController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskResponseDto"][];
+                };
+            };
+        };
+    };
+    AgentTaskController_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskResponseDto"];
+                };
+            };
+        };
+    };
+    AgentTaskController_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTaskResponseDto"];
+                };
+            };
+        };
+    };
+    AgentTaskController_artifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                taskId: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Raw artifact bytes (application/octet-stream) */
+            200: {
+                headers: {
+                    /** @description Total bytes, present only when the platform could measure the file without guessing (a finished Task whose file plane reported a size). A client MUST treat its absence as normal and stream without a progress indicator. */
+                    "content-length"?: number;
                     [name: string]: unknown;
                 };
                 content?: never;

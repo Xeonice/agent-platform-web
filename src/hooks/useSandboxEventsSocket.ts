@@ -1,5 +1,25 @@
 // /events 订阅（副作用归 hook 层，07 §3）：连 /events → 每帧投递到 sandbox 状态 store。
-// 复用 ptySocket 的退避重连纪律（reconnection:false + hook 依 reconnectDelay 调度 + 卸载终止）。
+// 复用 ptySocket 的退避重连纪律（reconnection:false + hook 依 reconnectDelay 调度 + 卸载终止），
+// 并且与 ptySocket / taskSocket 共享同一条 STABLE_CONNECTION_MS 纪律：连上即掉不清零退避
+// ⇒ 抖动时退避真的会增长到 30s 封顶，而不是每秒重建一条 socket。
+//
+// ⚠️ 但**重试次数上限这条，/events 刻意与另外两个通道不同：它不停手**（S6 收尾 ②）。
+// 三条理由，都不是"图省事"：
+//  ① **停手在这里是最坏的选项**。/events 是全站唯一的实时投影源：沙箱状态、克隆进度、
+//     runtime 凭证变更全走它。它一停，沙箱就永远停在「启动中…」、克隆进度条永远不动，
+//     而用户看不到任何解释 —— 那正是"静默停在那里"的最严重版本。
+//  ② **停手在这里也没有换来任何东西**。终端"停手"是一个**破坏性决定**：`socketSessionKey`
+//     的重连窗口会在停手期间过期，pty 现场就永久没了，所以必须把决定权交回用户（08 §11.6）。
+//     /events **没有任何会过期的东西**：无会话凭据、无窗口，任何时刻重连都完整恢复投影。
+//     既然停手不保护什么，它就只剩下代价。
+//  ③ **它没有可以承载按钮的界面**。这条通道 headless 挂在 WorkbenchContainer 上，
+//     connState 一个字都不渲染。给它做「重新连接」＝凭空造一个全局横幅，为一个用户
+//     根本感知不到的通道新增一个 UI 概念 —— 那比它要修的问题更大。
+// 于是正确形状是「永不停手 + 退避封顶 30s」：后端回来的那一刻整个工作台自愈，零用户动作。
+// 代价是后端长时间不可用时每 30s 一次握手 —— 这也正是 socket.io 自带重连的默认口径
+// （`reconnectionAttempts: Infinity` + 封顶延迟）；我们关掉它只是为了自己掌握 query 与订阅重发，
+// 从来不是为了改重试次数策略。`useAccessGate` 那句"WS 自身在退避循环中，cookie 就位后下次
+// 重连即通过"也正是靠这条才对全局 /events 成立。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EventsSocket, type EventsSocketFactory } from '@/services/ws/eventsSocket';
 import { reconnectDelay } from '@/services/ws/ptySocket';
@@ -19,7 +39,7 @@ export interface UseSandboxEventsSocketArgs {
   onRuntimeAuthChanged?: (runtime: string) => void;
   /** 测试注入 mock 工厂（避免 mock.module，12 §3.1.1）。 */
   socketFactory?: EventsSocketFactory;
-  maxReconnect?: number;
+  // ⚠️ **刻意没有** maxReconnect：本通道不设重试次数上限（理由见文件头注释）。
 }
 
 export interface UseSandboxEventsSocketApi {
@@ -30,14 +50,7 @@ export interface UseSandboxEventsSocketApi {
 export function useSandboxEventsSocket(
   args: UseSandboxEventsSocketArgs,
 ): UseSandboxEventsSocketApi {
-  const {
-    base,
-    enabled = true,
-    onUnauthorized,
-    onRuntimeAuthChanged,
-    socketFactory,
-    maxReconnect,
-  } = args;
+  const { base, enabled = true, onUnauthorized, onRuntimeAuthChanged, socketFactory } = args;
 
   const [connState, setConnState] = useState<ConnState>('idle');
   const [attempt, setAttempt] = useState(0);
@@ -74,7 +87,6 @@ export function useSandboxEventsSocket(
     const socket = new EventsSocket({
       uri,
       socketFactory,
-      maxReconnect,
       onEvent: (event) => {
         // 单一 /events 通道分发到相关 slice：sandbox.* → 状态表，project.clone_progress → 克隆表。
         // 各 action 对不相关变体自身 no-op（switch/default），彼此不干扰。
@@ -94,10 +106,8 @@ export function useSandboxEventsSocket(
         setConnState(state);
         setAttempt(nextAttempt);
         if (state === 'reconnecting') {
-          if (nextAttempt > (maxReconnect ?? 8)) {
-            socket.close();
-            return;
-          }
+          // **没有次数上限**（文件头 ①②③）：只退避、不停手。delay 由 reconnectDelay 封顶在 30s，
+          // 所以"无限重试"的实际形态是每 30s 敲一次门，而不是一个忙循环。
           clearTimer();
           timerRef.current = setTimeout(() => {
             socket.connect();
@@ -114,7 +124,7 @@ export function useSandboxEventsSocket(
       socketRef.current = null;
     };
     // 回调走 latest-ref，不入 deps（P0 同理）。
-  }, [uri, enabled, socketFactory, maxReconnect, clearTimer]);
+  }, [uri, enabled, socketFactory, clearTimer]);
 
   return { connState, attempt };
 }

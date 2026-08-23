@@ -12,6 +12,7 @@ function providerCaps(
     pauseResume: true,
     snapshot: true,
     watchEvents: true,
+    headlessTask: false,
     ...overrides,
   };
 }
