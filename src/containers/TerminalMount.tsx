@@ -9,6 +9,7 @@ import { TerminalPaneView } from '@/views/terminal/TerminalPane.view';
 import { ConnectionStatusView } from '@/views/terminal/ConnectionStatus.view';
 import type { TerminalClientFrame, TerminalServerFrame } from '@/types/ws-protocol';
 import type { TerminalSocketConfig } from '@/types/terminal';
+import { TERMINAL_EXIT_ATTACH_FAILED } from '@/types/terminal';
 
 export interface TerminalMountProps {
   sessionId: string;
@@ -34,13 +35,19 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
       if (frame.type === 'data') term.write(sessionId, frame.data);
       else if (frame.type === 'exit') {
         term.write(sessionId, `\r\n[进程已退出，code ${String(frame.code)}]\r\n`);
-        // `-1` 是后端"退出码未知"的既有约定,今天有两个来源：进程真的没给码,
-        // 以及**根本没附着上**（实例已不存在）。后者重连必然还是同一个结果,
-        // 所以出路是"重新发起任务"而不是"再连一次"。
+        // ⚠️ 两个码语义不同,不能合并成一句话：
+        //  · `-2`（TERMINAL_EXIT_ATTACH_FAILED）= 平台**没能附着上**，实例多半已不在
+        //    ⇒ 重连不会有结果，出路是重新发起任务；
+        //  · `-1` = 进程真的退出了但退出码未知（被信号杀死，例如 OOM）⇒ 任务跑过、
+        //    可能有日志，说"实例不在了"是假话。
+        // 第一版把两者都当 `-1` 处理，于是一个被 OOM kill 的 agent 会被告知
+        // "实例可能已不存在"——后端已改用独立哨兵码，前端跟上。
         setEndedMessage(
-          frame.code === -1
-            ? '终端会话已结束——这个任务的实例可能已不存在。重连不会有结果，请重新发起任务。'
-            : `终端会话已结束（退出码 ${String(frame.code)}）。`,
+          frame.code === TERMINAL_EXIT_ATTACH_FAILED
+            ? '终端会话已结束——没能连上这个任务的实例（多半已不存在）。重连不会有结果，请重新发起任务。'
+            : frame.code === -1
+              ? '终端会话已结束（进程被信号终止，退出码未知）。'
+              : `终端会话已结束（退出码 ${String(frame.code)}）。`,
         );
       }
     },

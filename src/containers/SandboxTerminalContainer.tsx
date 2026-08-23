@@ -134,7 +134,10 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
 
   const handleCreate = (): void => {
     // 无可选档位 / 无可选 runtime / 该档位不支持终端时不发请求（按钮已禁用，这里兜住键盘等旁路触发）。
-    if (provider === '' || runtime === '' || ttyUnsupported) return;
+    // 与上面三条同理:按钮已禁用,这里兜住键盘等旁路触发。今天按钮是原生
+    // `<button disabled>`(挡得住一切激活路径),但同函数里其余三条都兜了,少这一条
+    // 只是等着某天换成自定义控件时变成真口子。
+    if (provider === '' || runtime === '' || ttyUnsupported || authBlocked) return;
     const prompt = initialPrompt.trim();
     if (Array.from(prompt).length > INITIAL_PROMPT_MAX_LENGTH) return; // 视图已禁用，这里兜旁路触发
     // **提交即清空**（安全红线）：值只在这一刻进入请求体，之后前端不再持有。

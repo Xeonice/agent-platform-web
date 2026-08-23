@@ -62,6 +62,15 @@ export function useSandboxRestore(sandboxId: string | null): SandboxRestore {
   // 会连带把戳置回 null(换选中不该继承旧时钟),若每次渲染重算,戳一没了 `staleTerminal`
   // 就翻回 false、query 立刻被重新 enable,那次本该省掉的请求照样发出去。语义上它本来
   // 也是个冷启动时刻的判断——"我这次打开页面,存着的这条选中还算数吗"。
+  // ⚠️ **依赖一个时序前提**:惰性初值只在组件真正首次挂载时算一次,而 zustand persist
+  // 的 rehydrate 即便用同步 localStorage 也是走 `.then()` 落地的 —— 页面刚起时 store
+  // 会先短暂停在默认值(戳为 null)。若本 hook 在那几个 microtask 之内就完成首次渲染,
+  // `staleTerminal` 会被永久锁成 false,整个 TTL 保护静默失效。
+  //
+  // 今天不触发,是因为 `SandboxTerminalContainer` 只在 `selectedProject !== null` 时
+  // 才挂载,而它依赖 `useProjects()` 的网络请求 —— 网络 I/O 天然比那几个 microtask
+  // 慢得多。但这是**别处的实现细节**在替这里兜底:哪天有人为了首屏更快把这个容器改成
+  // 不等项目列表就挂载,保护会无声失效,且没有任何测试会红。
   const [staleTerminal] = useState(() => {
     const at = useAppStore.getState().selectedSandboxTerminalAt;
     return at !== null && Date.now() - at > TERMINAL_RESTORE_TTL_MS;
