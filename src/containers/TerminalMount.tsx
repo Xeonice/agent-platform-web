@@ -7,7 +7,7 @@ import { useSandboxTerminalSocket } from '@/hooks/useSandboxTerminalSocket';
 import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { TerminalPaneView } from '@/views/terminal/TerminalPane.view';
 import { ConnectionStatusView } from '@/views/terminal/ConnectionStatus.view';
-import type { TerminalServerFrame } from '@/types/ws-protocol';
+import type { TerminalClientFrame, TerminalServerFrame } from '@/types/ws-protocol';
 import type { TerminalSocketConfig } from '@/types/terminal';
 
 export interface TerminalMountProps {
@@ -19,7 +19,7 @@ export interface TerminalMountProps {
 export default function TerminalMount({ sessionId, socketConfig }: TerminalMountProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const term = useTerminalInstance();
-  const sendRef = useRef<(frame: { type: 'input'; data: string }) => boolean>(() => false);
+  const sendRef = useRef<(frame: TerminalClientFrame) => boolean>(() => false);
 
   const handleFrame = useCallback(
     (frame: TerminalServerFrame): void => {
@@ -50,12 +50,33 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
       sessionId,
       container,
       onInput: (d) => sendRef.current({ type: 'input', data: d }),
-      onResize: () => undefined, // resize 帧在 send 具备 open 态后发；冒烟切片不驱动 resize
+      onResize: (cols, rows) => sendRef.current({ type: 'resize', cols, rows }),
     });
+
+    // 容器尺寸变化 → 重新 fit → 上报。窗口缩放、侧栏折叠、无头面板展开都会走这里。
+    const ro = new ResizeObserver(() => {
+      term.fit(sessionId);
+    });
+    ro.observe(container);
+
     return (): void => {
+      ro.disconnect();
       term.dispose(sessionId);
     };
   }, [term, sessionId]);
+
+  /**
+   * socket 一 open 就把真实尺寸补报一次。
+   *
+   * ⚠️ 这一步不能省:连接 query 里的 `cols/rows` 是**写死的 80x24**(见
+   * `lib/terminalSocket`),真实尺寸本来就该靠 resize 帧补。但 attach 那次上报往往
+   * 发生在 socket open 之前 —— `send` 未 open 即丢弃 —— 而尺寸此后没再变过,
+   * 去重逻辑就判定"和上次一样"不再重发。于是 PTY 永远停在 80x24,而 xterm 按真实
+   * 尺寸渲染:tmux 用绝对定位画状态栏,行号全错,屏幕上就是一串重复的状态栏。
+   */
+  useEffect(() => {
+    if (connState === 'open') term.resync(sessionId);
+  }, [connState, term, sessionId]);
 
   return (
     <div className="flex h-full flex-col">
