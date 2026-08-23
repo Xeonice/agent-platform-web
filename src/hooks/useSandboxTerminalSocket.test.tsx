@@ -542,3 +542,56 @@ describe('useSandboxTerminalSocket · 握手码分流（F3）', () => {
     expect(result.current.handshakeErrorMessage).toBeUndefined();
   });
 });
+
+describe('会话结束 = 停止重连（本轮新增）', () => {
+  // 真踩到的一次：用户刷新后终端"无限重连"。复现出来的服务端行为是
+  //   connect → 1ms 后 disconnect，**一个帧都不发**
+  // ——与网络抖动完全无法区分，于是前端只能按抖动重试：烧完 9 次退避约 2 分钟才停，
+  // 而那个「手动重连」每按一次又把退避预算清零，再来一轮。
+  //
+  // 两半都得修：后端失败时**说一声**（发 `exit`），前端**听得见**（endedRef 接线）。
+  // 这一组钉的是前端那半。
+  it('⚠️ 未接 sessionEnded 时会一直重连 —— 这是修之前的行为，用它当对照', () => {
+    vi.useFakeTimers();
+    const { factory, sockets } = makeFactory();
+    renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: () => undefined,
+      }),
+    );
+    act(() => {
+      sockets[0]!.triggerConnect();
+      sockets[0]!.triggerDisconnect();
+    });
+    // 断开即安排了下一次重连（定时器在跑）——没有任何东西告诉它"别连了"。
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    vi.useRealTimers();
+  });
+
+  it('sessionEnded=true → 断开后不再安排重连（退避循环当场停）', () => {
+    vi.useFakeTimers();
+    const { factory, sockets } = makeFactory();
+    renderHook(() =>
+      useSandboxTerminalSocket({
+        uri: URI,
+        query: QUERY,
+        socketFactory: factory,
+        onFrame: () => undefined,
+        sessionEnded: true,
+      }),
+    );
+    act(() => {
+      sockets[0]!.triggerConnect();
+      sockets[0]!.triggerDisconnect();
+    });
+    // 判据是**没有排下一次**：不是"少连了几次"，而是这条循环彻底不再自我延续。
+    expect(vi.getTimerCount()).toBe(0);
+    expect(sockets[0]!.disconnected).toBe(true);
+    // 而且不该有第二个 socket 被造出来。
+    expect(sockets).toHaveLength(1);
+    vi.useRealTimers();
+  });
+});

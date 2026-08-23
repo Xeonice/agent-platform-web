@@ -1,7 +1,7 @@
 'use client';
 // 真正实例化 xterm 的子层（08 §2.2）：仅由 TerminalContainer 经 next/dynamic({ssr:false}) 懒加载。
 // xterm.css 由 useTerminalInstance（唯一 @xterm/* import 点）随 terminal chunk 注入（08 §2.3）。
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTerminalInstance } from '@/hooks/useTerminalInstance';
 import { useSandboxTerminalSocket } from '@/hooks/useSandboxTerminalSocket';
 import { useReportUnauthorized } from '@/hooks/useAccessGate';
@@ -21,12 +21,28 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
   const term = useTerminalInstance();
   const sendRef = useRef<(frame: TerminalClientFrame) => boolean>(() => false);
 
+  /**
+   * 会话已结束（收到 `exit`）。**必须接线**：`useSandboxTerminalSocket` 的 `endedRef`
+   * 读的就是这一位,而此前这里从来没传过 ⇒ 它恒为 false ⇒ 即使 shell 正常退出、
+   * 或后端根本附着不上,前端也照样一轮轮退避重连。
+   */
+  const [endedMessage, setEndedMessage] = useState<string | null>(null);
+
   const handleFrame = useCallback(
     (frame: TerminalServerFrame): void => {
       // data → 写屏；exit → 展示退出码（08 §8 第三类）；session/pong 由 ptySocket 内部处理。
       if (frame.type === 'data') term.write(sessionId, frame.data);
-      else if (frame.type === 'exit')
+      else if (frame.type === 'exit') {
         term.write(sessionId, `\r\n[进程已退出，code ${String(frame.code)}]\r\n`);
+        // `-1` 是后端"退出码未知"的既有约定,今天有两个来源：进程真的没给码,
+        // 以及**根本没附着上**（实例已不存在）。后者重连必然还是同一个结果,
+        // 所以出路是"重新发起任务"而不是"再连一次"。
+        setEndedMessage(
+          frame.code === -1
+            ? '终端会话已结束——这个任务的实例可能已不存在。重连不会有结果，请重新发起任务。'
+            : `终端会话已结束（退出码 ${String(frame.code)}）。`,
+        );
+      }
     },
     [term, sessionId],
   );
@@ -40,6 +56,7 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
     query: socketConfig.query,
     onFrame: handleFrame,
     onUnauthorized: reportUnauthorized,
+    sessionEnded: endedMessage !== null,
   });
   sendRef.current = (frame): boolean => send(frame);
 
@@ -91,6 +108,7 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
         attempt={attempt}
         onManualReconnect={reconnect}
         handshakeErrorMessage={handshakeErrorMessage}
+        {...(endedMessage === null ? {} : { sessionEndedMessage: endedMessage })}
       />
       <div className="min-h-0 flex-1">
         <TerminalPaneView ref={containerRef} />
