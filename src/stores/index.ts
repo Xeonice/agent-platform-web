@@ -25,6 +25,8 @@ export interface PersistedState {
   selectedProjectId: string | null;
   /** S6 新增第 9 项：无头 Task 的刷新恢复指向（不透明 id，理由见 createUiSlice 的字段注释）。 */
   selectedTaskId: string | null;
+  /** 第 10 项:选中沙箱进入终态的时刻(见 createUiSlice 的字段注释)。数字,不是内容。 */
+  selectedSandboxTerminalAt: number | null;
   sidebarCollapsed: boolean;
   taskListFolds: Record<string, boolean>;
   bannerDismissedToday: Record<string, string>;
@@ -37,7 +39,10 @@ export interface PersistedState {
  * persist 白名单（15 §3.5）：列举要存的，而不是排除不存的——新增字段默认不落盘。
  * 安全红线：wizardData.initialPrompt / pendingProjectCreate / 任何凭证 / terminal registry 绝不进此表。
  *
- * ⚠️ S6 把白名单从 8 项扩到 9 项（新增 `selectedTaskId`）。这**不是**放宽红线：
+ * ⚠️ 白名单 8 → 9（S6 `selectedTaskId`）→ 10（`selectedSandboxTerminalAt`）。都**不是**放宽红线：
+ * 第 10 项是一个**时刻**,不含任何内容——它存在是因为"这条失败发生在多久以前"这件事
+ * 后端 DTO 答不上来(没有时间戳),而没有它,几小时前的一条失败会在冷启动时伪装成
+ * 用户刚才那次操作的结果。理由与红线的关系同下:
  * 红线管的是"指令 / 明文凭证 / 内部路径"这类内容，而 `selectedTaskId` 与既有的
  * `selectedSandboxId` 同型——不透明 id、非机密、纯选中指向。加它的理由是刷新恢复
  * （凭 taskId 重新 subscribe 带 fromSeq）在当前接缝下没有第二个来源。
@@ -48,6 +53,7 @@ export function partializeAppState(state: AppState): PersistedState {
     selectedSandboxId: state.selectedSandboxId,
     selectedProjectId: state.selectedProjectId,
     selectedTaskId: state.selectedTaskId,
+    selectedSandboxTerminalAt: state.selectedSandboxTerminalAt,
     sidebarCollapsed: state.sidebarCollapsed,
     taskListFolds: state.taskListFolds,
     bannerDismissedToday: state.bannerDismissedToday,
