@@ -122,6 +122,24 @@ export interface TaskOutcomeCopy {
   diagnosticCode?: string;
 }
 
+/**
+ * 输出列表的**渲染窗口**（hooks/useVirtualList 产出 → view 消费）。
+ *
+ * 放 types/ 的原因与本文件其余类型相同：view 层不能 import hooks/lib，而它正是 view 的 props 形状。
+ * 语义：只渲染 `[start, end)`，两端各用一个 `aria-hidden` 的占位撑出 `topPx` / `bottomPx` ——
+ * 于是滚动容器的 `scrollHeight` 仍等于**完整**列表的高度，跟随底部与「回到底部」都不必知道虚拟化存在。
+ */
+export interface VirtualWindow {
+  /** 窗口起点（含）。 */
+  start: number;
+  /** 窗口终点（**不含**）。 */
+  end: number;
+  /** 窗口之前所有条目的合计高度。 */
+  topPx: number;
+  /** 窗口之后所有条目的合计高度。 */
+  bottomPx: number;
+}
+
 /** 产物列表的展示形状（体积已格式化 —— view 不能 import lib，故格式化在 hook 层完成）。 */
 export interface TaskArtifactView {
   name: string;

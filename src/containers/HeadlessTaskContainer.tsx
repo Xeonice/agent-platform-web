@@ -32,6 +32,7 @@ import {
 import { useTaskOutcomeView } from '@/hooks/useTaskOutcomeView';
 import { useTaskDeadline } from '@/hooks/useTaskDeadline';
 import { useFollowOutput } from '@/hooks/useFollowOutput';
+import { useVirtualList } from '@/hooks/useVirtualList';
 import { useReturnFocus } from '@/hooks/useReturnFocus';
 import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { useAppStore } from '@/stores';
@@ -186,6 +187,27 @@ export function HeadlessTaskContainer({
   });
   const artifactDownload = useTaskArtifactDownload(sandboxId, taskId);
   const follow = useFollowOutput(stream.items.length);
+  /**
+   * 列表窗口化（F4）。跟随态下窗口锚定末尾、脱离后按 scrollTop 算 —— 两条既有行为
+   * （near-bottom 自动跟随 / 「回到底部」）因此不必知道虚拟化存在，见 hooks/useVirtualList 头注释。
+   */
+  const itemKeys = useMemo(() => stream.items.map((i) => i.id), [stream.items]);
+  const virtual = useVirtualList({
+    keys: itemKeys,
+    scrollRef: follow.scrollRef,
+    pinToEnd: follow.following,
+  });
+  /**
+   * 一个滚动事件要喂两个消费者：跟随判定（是否贴底）与窗口重算。
+   * 必须 `useCallback` —— 内联箭头函数每次渲染换引用，会把输出面板的 `memo` 打穿，
+   * 那正好抵消掉窗口化省下来的东西。
+   */
+  const followOnScroll = follow.onScroll;
+  const virtualOnScroll = virtual.onScroll;
+  const handleScroll = useCallback((): void => {
+    followOnScroll();
+    virtualOnScroll();
+  }, [followOnScroll, virtualOnScroll]);
 
   /**
    * 终止态同样按 taskId 收口。`cancel.variables` 就是 mutate 时传进去的 taskId：
@@ -331,9 +353,10 @@ export function HeadlessTaskContainer({
         cancelErrorMessage={cancelErrorMessage}
         cancelButtonRef={cancelButtonRef}
         scrollRef={follow.scrollRef}
-        onScroll={follow.onScroll}
+        onScroll={handleScroll}
         following={follow.following}
         onJumpToBottom={follow.jumpToBottom}
+        virtual={virtual.range}
       />
       {outcome.copy !== null && (
         <TaskOutcomeView
