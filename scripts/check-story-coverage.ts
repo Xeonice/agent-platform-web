@@ -28,14 +28,11 @@ const missing: string[] = [];
 for (const view of viewFiles) {
   const dir = dirname(view);
   const base = basename(view, '.view.tsx');
-  // story 收在 `__stories__/` 子目录（07A R-4：34 个 story 贴在 33 个 view 旁边，
-  // 两边互相淹没——`ls src/views/settings/` 出来 24 个文件一半是 story）。
-  // 同目录那条是**迁移兼容**，全部搬完后删掉。
-  const candidates = [
-    join(dir, '__stories__', `${base}.view.stories.tsx`),
-    join(dir, `${base}.view.stories.tsx`),
-  ];
-  if (!candidates.some((c) => existsSync(c))) missing.push(view);
+  // story 一律收在 `__stories__/`（07A R-4）：34 个 story 贴在 33 个 view 旁边时
+  // 两边互相淹没——`ls src/views/settings/` 出来 24 个文件一半是 story，
+  // 于是"Storybook 好像不存在"（它一直都在，只是看不见）。
+  const story = join(dir, '__stories__', `${base}.view.stories.tsx`);
+  if (!existsSync(story)) missing.push(view);
 }
 
 if (missing.length > 0) {

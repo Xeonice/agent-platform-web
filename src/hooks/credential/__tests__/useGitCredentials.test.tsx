@@ -6,7 +6,10 @@ import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { server } from '@/mocks/node';
 import { useGitCredentials, gitCredentialKeys } from '@/hooks/credential/useGitCredentials';
-import { useSaveGitCredential, useRevokeGitCredential } from '@/hooks/credential/useGitCredentialMutations';
+import {
+  useSaveGitCredential,
+  useRevokeGitCredential,
+} from '@/hooks/credential/useGitCredentialMutations';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
