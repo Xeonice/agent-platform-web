@@ -29,6 +29,15 @@ export interface UseSandboxTerminalSocketArgs {
   uri: string;
   /** 基础 query（sandboxId/cols/rows/xSchemaHash）。须是稳定引用（来自 useTerminalSocketConfig 的 useMemo）。 */
   query: Record<string, string>;
+  /**
+   * 是否允许建连。默认 true。
+   *
+   * ★ 存在的理由只有一个：**PTY 的初始尺寸必须在建连时就是对的**。
+   * query 里的 `cols/rows` 决定容器里 PTY 的出生尺寸，而 agent CLI 一启动就按那个尺寸
+   * 画欢迎横幅——终端协议没有"回流"，已经吐出的字节不会因为后来的 resize 重排。
+   * 所以调用方要先把 xterm 挂好、fit 出真实尺寸，再放行连接（见 TerminalMount）。
+   */
+  enabled?: boolean;
   /** Task 主状态；转 stopped/idle/failed 时终止重连循环（08 §8 要点 1）。 */
   sessionEnded?: boolean;
   onFrame: (frame: TerminalServerFrame) => void;
@@ -77,7 +86,16 @@ export function useSandboxTerminalSocket(
 
   endedRef.current = args.sessionEnded ?? false;
 
-  const { uri, query, onFrame, onInvalidFrame, onUnauthorized, socketFactory, maxReconnect } = args;
+  const {
+    uri,
+    query,
+    enabled = true,
+    onFrame,
+    onInvalidFrame,
+    onUnauthorized,
+    socketFactory,
+    maxReconnect,
+  } = args;
 
   // latest-ref 模式：onFrame/onInvalidFrame/onUnauthorized 每次渲染可能是新引用（父层 useCallback deps 抖动），
   // 存进 ref、不进 effect deps，避免连接 effect 反复 close+重连自我拆除（08 §7.4 / P0）。
@@ -106,6 +124,7 @@ export function useSandboxTerminalSocket(
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     const socket = new PtySocket({
       uri,
       query: stableQuery,
@@ -161,7 +180,7 @@ export function useSandboxTerminalSocket(
       socketRef.current = null;
     };
     // 回调全部走 latest-ref，不入 deps；query 走 stableQuery 浅比较归一化（P0/P2）。
-  }, [uri, stableQuery, socketFactory, maxReconnect, clearTimer]);
+  }, [enabled, uri, stableQuery, socketFactory, maxReconnect, clearTimer]);
 
   const send = useCallback(
     (frame: TerminalClientFrame): boolean => socketRef.current?.send(frame) ?? false,

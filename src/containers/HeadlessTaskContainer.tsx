@@ -14,6 +14,9 @@
 //    两个概念分开——见下面 `running` / `awaitingOutcome` 处的注释。
 //  · **指令只在局部 state**（安全红线 15 §3.5）：提交即清空，绝不进 store / persist。
 //  · **能力位显隐**：provider `capabilities.headlessTask === false` ⇒ 入口置灰 + 原因。
+//  · **建完任务之后是详情，不是发起表单**（F21-2 §N.3）：分叉判据是"这个沙箱有没有任务"，
+//    不是"沙箱 running 与否"。发起表单必须被 [新任务] 显式打开 —— 但那个入口**一个都不能少**，
+//    否则一个沙箱多个任务这条能力就从界面上消失了。
 //
 // ⚠️ 本容器所有"跨任务会残留"的派生态一律**钉在 taskId 上**，而不是靠 useEffect 去复位：
 // 二次确认、终止失败的报错都属于此类。复位型写法依赖时序（上一轮任务自己跑完时确认条已卸载，
@@ -37,6 +40,7 @@ import { useReturnFocus } from '@/hooks/useReturnFocus';
 import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { useAppStore } from '@/stores';
 import { HeadlessTaskLauncherView } from '@/views/task/HeadlessTaskLauncher.view';
+import { HeadlessTaskDetailView } from '@/views/task/HeadlessTaskDetail.view';
 import { TaskOutputPaneView, type TaskCancelPhase } from '@/views/task/TaskOutputPane.view';
 import { TaskOutcomeView } from '@/views/task/TaskOutcome.view';
 import {
@@ -127,6 +131,17 @@ export function HeadlessTaskContainer({
   const [confirmingTaskId, setConfirmingTaskId] = useState<string | null>(null);
   // 用户点了「发起全新任务」后，不希望列表把最近那个任务又顶回来 ⇒ 本次会话内压制自动回落。
   const [dismissedTaskId, setDismissedTaskId] = useState<string | null>(null);
+  /**
+   * 发起表单是不是**被打开着**（F21-2 §N.3）。
+   *
+   * ⚠️ 这一位是本轮的核心改动。此前没有它：只要沙箱 running，面板主体就是
+   * `HeadlessTaskLauncher`（指令 textarea + 发起按钮），**与这个沙箱有没有任务无关** ——
+   * 于是建完任务之后，界面主体仍然是"再发起一个"的入口，用户看不到自己刚建的那个任务。
+   *
+   * 现在分叉的判据是"这个沙箱有没有任务"，而发起表单必须**被显式打开**（[新任务]）。
+   * 它是本地 UI 态、不进 store：换沙箱重挂即归零，本来就该是一次性的。
+   */
+  const [composing, setComposing] = useState(false);
 
   // persist 的选中位只是**快路径**；权威是下面的列表。
   const persistedTaskId = useAppStore((s) => s.selectedTaskId);
@@ -244,6 +259,8 @@ export function HeadlessTaskContainer({
         onSuccess: (created) => {
           setPersistedTaskId(created.id);
           setDismissedTaskId(null);
+          // 发起成功 ⇒ 收起表单，主体转到这条任务的输出面板。
+          setComposing(false);
           // 续接引用已被这次请求消费掉，避免下一轮无意中又接同一个会话。
           setResumeFrom(undefined);
           // 新任务还不在缓存的列表里 ⇒ 立刻重取一次（这是列表作为权威来源的代价，很划算）。
@@ -282,6 +299,7 @@ export function HeadlessTaskContainer({
     setResumeFrom(sessionRef);
     setDismissedTaskId(taskId);
     setPersistedTaskId(null);
+    setComposing(true);
     run.reset();
   };
 
@@ -290,7 +308,28 @@ export function HeadlessTaskContainer({
     setResumeFrom(undefined);
     setDismissedTaskId(taskId);
     setPersistedTaskId(null);
+    setComposing(true);
     run.reset();
+  };
+
+  /** 详情/引导态的 [新任务]：打开发起表单（**同一沙箱内的下一个任务**，不是新建沙箱）。 */
+  const handleOpenComposer = (): void => {
+    setResumeFrom(undefined);
+    setComposing(true);
+    run.reset();
+  };
+
+  /** 收起发起表单，回到详情/引导态（表单是被打开的，就必须有退路）。 */
+  const handleCloseComposer = (): void => {
+    setResumeFrom(undefined);
+    setComposing(false);
+    run.reset();
+  };
+
+  /** 详情态 [查看输出]：把这条任务重新选为跟踪目标（回到输出面板 + 终态卡）。 */
+  const handleOpenTask = (id: string): void => {
+    setDismissedTaskId(null);
+    setPersistedTaskId(id);
   };
 
   // 倒计时叶子的元素引用要稳定，否则输出面板的 memo 每次容器重渲都被打穿。
@@ -300,6 +339,46 @@ export function HeadlessTaskContainer({
     ),
     [task?.startedAt, task?.timeoutMinutes],
   );
+
+  const disabledReason =
+    headlessTaskSupported === false
+      ? `运行档位「${providerName ?? '当前档位'}」不支持无头任务（headlessTask=false）。请改用支持的档位重建沙箱，或改用交互式终端。`
+      : undefined;
+  const capabilityUnknownNote =
+    headlessTaskSupported === null
+      ? '暂时无法确认当前运行档位是否支持无头任务（档位列表未就绪），发起时以后端校验为准。'
+      : undefined;
+
+  /**
+   * **非发起态**（F21-2 §N.3）：没有正在跟踪的任务，且用户没有主动打开发起表单。
+   *
+   *  · 这个沙箱一条任务都没有 ⇒ 引导态；
+   *  · 有任务（都已终结、或用户刚点了「发起全新任务」之外的路径进来）⇒ **只读详情**
+   *    （指令/状态/耗时/产物/退出码）**+ [新任务] 入口**。
+   *
+   * ⚠️ [新任务] 入口不能省：`GET /api/sandboxes/:id/tasks` 是列表、`selectedTaskId` 记的是
+   * "上次盯着哪一个" —— 一个沙箱多个任务是数据模型本来的样子。"建完就没有发起入口"
+   * 会把多任务能力从界面上抹掉。
+   */
+  if (taskId === null && !composing) {
+    // 列表按 startedAt 倒序 ⇒ 第一条就是最近的那个。
+    const latest = taskList.tasks[0];
+    return (
+      <HeadlessTaskDetailView
+        {...(latest === undefined ? {} : { task: latest })}
+        onNewTask={handleOpenComposer}
+        {...(latest === undefined
+          ? {}
+          : {
+              onOpenTask: () => {
+                handleOpenTask(latest.id);
+              },
+            })}
+        {...(disabledReason === undefined ? {} : { disabledReason })}
+        {...(capabilityUnknownNote === undefined ? {} : { capabilityUnknownNote })}
+      />
+    );
+  }
 
   if (taskId === null) {
     return (
@@ -312,21 +391,15 @@ export function HeadlessTaskContainer({
         onVerboseChange={setVerbose}
         onSubmit={handleSubmit}
         submitting={run.isPending}
-        disabledReason={
-          headlessTaskSupported === false
-            ? `运行档位「${providerName ?? '当前档位'}」不支持无头任务（headlessTask=false）。请改用支持的档位重建沙箱，或改用交互式终端。`
-            : undefined
-        }
-        capabilityUnknownNote={
-          headlessTaskSupported === null
-            ? '暂时无法确认当前运行档位是否支持无头任务（档位列表未就绪），发起时以后端校验为准。'
-            : undefined
-        }
+        disabledReason={disabledReason}
+        capabilityUnknownNote={capabilityUnknownNote}
         errorMessage={runErrorMessage}
         resumeFrom={resumeFrom}
         onClearResume={() => {
           setResumeFrom(undefined);
         }}
+        // 表单是被 [新任务] 打开的 ⇒ 必须有退路（沙箱里已有任务时尤其明显）。
+        onCancel={handleCloseComposer}
       />
     );
   }

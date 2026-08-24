@@ -73,6 +73,13 @@ const meta: Meta<typeof NewSandboxPanelView> = {
     loadingProviders: false,
     initialPrompt: '',
     onInitialPromptChange: noop,
+    showBranchPicker: true,
+    branches: ['main', 'develop', 'feature/x'],
+    branch: '',
+    onSelectBranch: noop,
+    loadingBranches: false,
+    projectName: 'ProjectA',
+    onCancel: noop,
   },
 };
 export default meta;
@@ -170,3 +177,26 @@ export const ZeroSideEffectRejectedImageRef: Story = {
       "无法用当前配置创建：invalid image reference 'acme/img:v1 '。请调整配置后再试（本次请求未创建任何任务）。",
   },
 };
+
+// —— 分支选择器（F21-2 §N.1，本轮新增）：四态 ——
+/** 多分支：缺省项是「跟随基线当前分支」，选它等于**不传** `branch`。 */
+export const BranchesMany: Story = { args: { provider: 'aio' } };
+/** 单分支仓库：照样渲染，缺省项仍在（"只有一条分支"不等于"没有缺省语义"）。 */
+export const BranchesSingle: Story = { args: { provider: 'aio', branches: ['main'] } };
+export const BranchesLoading: Story = {
+  args: { provider: 'aio', branches: [], loadingBranches: true },
+};
+/**
+ * **空项目：整块不渲染**（没有 git，谈不上分支）。
+ * 这条是否定性行为 —— 结构断言在 `SandboxTerminalContainer.test.tsx`
+ *（「空项目不渲染分支选择器」），变异 = 把 `showBranchPicker` 恒置 true。
+ */
+export const BranchesHiddenForEmptyProject: Story = {
+  args: { provider: 'aio', showBranchPicker: false, branches: [] },
+};
+/** 分支列表取不到 ⇒ 降级为"用基线分支"，**创建按钮照常可点**（不拦核心链路）。 */
+export const BranchesLoadFailed: Story = {
+  args: { provider: 'aio', branches: [], branchesErrorMessage: '读取本地引用失败' },
+};
+/** 选了非缺省分支：container 会把它填进请求体的 `branch`。 */
+export const BranchPicked: Story = { args: { provider: 'aio', branch: 'feature/x' } };

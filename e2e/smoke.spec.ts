@@ -110,8 +110,13 @@ test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => 
     await page.goto('/');
     await expect(page.getByText('Agent 管理平台')).toBeVisible();
 
-    // S2：先在项目树里选中 ready 项目 → 才出现新建沙箱面板（selectedReady 门）。
+    // S2：先在项目树里选中 ready 项目（selectedReady 门）。
     await page.getByRole('button', { name: /E2E 冒烟项目/ }).click();
+
+    // ⚠️ 面板**不再自己出现**（F21-2 §N.0）：它此前由 `sandboxId===null` 兜底渲染，
+    // 现在必须点 [＋ 新任务] 打开一个真弹层。这一步本身就是"创建成了一个动作"的证据。
+    await page.getByTestId('new-task-entry').click();
+    await expect(page.getByTestId('modal-new-task')).toBeVisible();
 
     // ⚠️ 两组单选**按 fieldset 作用域**取，不靠正则区分：页面上 provider 有个 `acme`、
     // runtime 有个 `acme-agent`，一个 /acme/ 会同时命中两个而触发 strict 违规。收紧正则

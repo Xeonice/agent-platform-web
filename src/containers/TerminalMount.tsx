@@ -1,7 +1,7 @@
 'use client';
 // 真正实例化 xterm 的子层（08 §2.2）：仅由 TerminalContainer 经 next/dynamic({ssr:false}) 懒加载。
 // xterm.css 由 useTerminalInstance（唯一 @xterm/* import 点）随 terminal chunk 注入（08 §2.3）。
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTerminalInstance } from '@/hooks/useTerminalInstance';
 import { useSandboxTerminalSocket } from '@/hooks/useSandboxTerminalSocket';
 import { useReportUnauthorized } from '@/hooks/useAccessGate';
@@ -28,6 +28,18 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
    * 或后端根本附着不上,前端也照样一轮轮退避重连。
    */
   const [endedMessage, setEndedMessage] = useState<string | null>(null);
+
+  /**
+   * xterm fit 出来的真实尺寸；**在拿到它之前不建连**。
+   *
+   * ★ 这是本次改造的核心。socketConfig.query 的 `cols/rows` 决定容器里 **PTY 的出生
+   * 尺寸**，而 agent CLI 一启动就按它画欢迎横幅/边框。终端协议里没有"回流"——已经
+   * 吐出的字节不会因为后来的 resize 重排，所以此前"先按 80x24 连上、再补一帧 resize"
+   * 的做法**救不回第一屏**：宽屏上就是一个 80 列的窄框浮在一大片空白里。
+   *
+   * 代价是连接晚一帧（attach → fit → setState → 连）。换来的是 PTY 一出生尺寸就对。
+   */
+  const [fittedSize, setFittedSize] = useState<{ cols: number; rows: number } | null>(null);
 
   const handleFrame = useCallback(
     (frame: TerminalServerFrame): void => {
@@ -58,9 +70,19 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
 
   // 非法帧的上报由 useSandboxTerminalSocket 内建经 lib/reportError 落到单一消费点（P1-#4）；
   // 容器层禁止直接 import lib（boundaries），故这里只接 WS 未授权 → 弹解锁门。
+  // 真实尺寸就位后才把它并进 query；之前保持 null ⇒ 不建连。
+  const query = useMemo(
+    () =>
+      fittedSize === null
+        ? socketConfig.query
+        : { ...socketConfig.query, cols: String(fittedSize.cols), rows: String(fittedSize.rows) },
+    [socketConfig.query, fittedSize],
+  );
+
   const { connState, attempt, send, reconnect, handshakeErrorMessage } = useSandboxTerminalSocket({
     uri: socketConfig.uri,
-    query: socketConfig.query,
+    query,
+    enabled: fittedSize !== null,
     onFrame: handleFrame,
     onUnauthorized: reportUnauthorized,
     sessionEnded: endedMessage !== null,
@@ -74,7 +96,20 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
       sessionId,
       container,
       onInput: (d) => sendRef.current({ type: 'input', data: d }),
-      onResize: (cols, rows) => sendRef.current({ type: 'resize', cols, rows }),
+      onResize: (cols, rows) => {
+        // 首次 fit：记下尺寸放行连接（此时还没有 socket，send 必然返回 false，正常）。
+        // 之后的每一次（窗口缩放/侧栏折叠）走 resize 帧，正是它本该干的事。
+        // ★ **只认第一次**。这个值进的是建连 query，而 query 在
+        // `useSandboxTerminalSocket` 的连接 effect 依赖里 —— 每变一次就 close + 重连。
+        // 而连接态一变，`ConnectionStatus` 会渲染一条约 28px 的横条，终端可用高度随之
+        // 变化 ⇒ 行数变 ⇒ query 又变 ⇒ **再重连**：一个自喂循环（实测一次拖拽 2–3 轮）。
+        // 代价不止性能：新建的 PtySocket 丢掉 socketSessionKey（接不回原 pty）、
+        // 把退避预算清零，后端抖动时"退避耗尽 → 手动重连"那个终点态可能永远到不了。
+        //
+        // L-7 真正需要的只是**出生尺寸对**；之后的变化本来就该走 resize 帧（下一行）。
+        setFittedSize((prev) => prev ?? { cols, rows });
+        sendRef.current({ type: 'resize', cols, rows });
+      },
     });
 
     // 容器尺寸变化 → 重新 fit → 上报。窗口缩放、侧栏折叠、无头面板展开都会走这里。
@@ -92,11 +127,13 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
   /**
    * socket 一 open 就把真实尺寸补报一次。
    *
-   * ⚠️ 这一步不能省:连接 query 里的 `cols/rows` 是**写死的 80x24**(见
-   * `lib/terminalSocket`),真实尺寸本来就该靠 resize 帧补。但 attach 那次上报往往
-   * 发生在 socket open 之前 —— `send` 未 open 即丢弃 —— 而尺寸此后没再变过,
-   * 去重逻辑就判定"和上次一样"不再重发。于是 PTY 永远停在 80x24,而 xterm 按真实
-   * 尺寸渲染:tmux 用绝对定位画状态栏,行号全错,屏幕上就是一串重复的状态栏。
+   * ⚠️ 仍然不能省，但**理由已经变了**。此前它是唯一的尺寸来源：连接 query 写死
+   * 80x24，真实尺寸只能靠这一帧补——而那救不回 agent CLI 已经按 80 列画完的第一屏。
+   * 现在建连时 query 里带的就是 fit 出来的真实尺寸（见 `fittedSize`），它退回成一条
+   * **兜底**：attach 那次上报发生在 socket open 之前（`send` 未 open 即丢弃），而尺寸
+   * 此后没再变过，去重逻辑就判定"和上次一样"不再重发；重连场景同理。留着它，PTY 与
+   * xterm 的尺寸在任何路径下都不会各说各话（tmux 用绝对定位画状态栏，尺寸不一致时
+   * 屏幕上就是一串错位的重复状态栏）。
    */
   useEffect(() => {
     if (connState === 'open') term.resync(sessionId);

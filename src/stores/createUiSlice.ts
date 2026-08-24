@@ -1,18 +1,21 @@
-// UI slice（15 §3.1.1）：选中上下文、任务树折叠、瞬时指向、向导往返暂存、横幅抑制。
+// UI slice（15 §3.1.1）：选中上下文、任务树折叠、瞬时指向、横幅抑制。
 // action 为纯记账逻辑；store 保持"哑"（15 §3.2）。
+//
+// ★ 本轮（F21-2 §N.0 / F21-6 §9.4）删掉了「两步向导壳」的全部残骸：
+//  · `WizardData` / `wizardData` / `setWizardData` / `wizardReturn` —— 全仓无人 set、无人读的死值。
+//    向导本身从未被实现（F21-2 §3：20 个组件里 15 个不存在），它们是那个壳留下的化石；
+//    §9.0 定案「两个新建弹窗彼此独立、不嵌套」之后，连回程语义都不存在了。
+//  · `currentModal` 的 `'registerImage'` / `'wizard'` 两个取值 —— 同样是死值。
+//
+// ⚠️ **指令类字段一个都不许回到这里**：`wizardData.initialPrompt` 曾是 store 上唯一
+// 承载任务指令的字段，它现在被删掉不是"放宽"，恰恰相反 —— 指令只活在 container 的
+// 局部 state（15 §3.5 安全红线），store 上连一个能装它的位置都不该有。
 import type { StateCreator } from 'zustand';
-
-export interface WizardData {
-  runtime?: string;
-  selectedProjectId?: string;
-  image?: string;
-  initialPrompt?: string; // ⚠️ 仅内存，绝不 persist（15 §3.5 安全红线）
-}
 
 /**
  * Git 凭证回程载体（15 §3.1.1）：clone 权限失败 → 跳凭证页配置 → 配完回创建处 [重试克隆]。
  * projectId 来自 POST /api/projects 的 202（后端先落库再异步 clone），故回程调 retry-clone，永不重新 create。
- * ⚠️ 绝不 persist（未纳入白名单）：与 wizardReturn 语义分离（前者管配凭证回程，后者管创建后回向导确认步）。
+ * ⚠️ 绝不 persist（未纳入白名单）：它承载的是**本次创建流程**的回程指向，含内部仓库 URL。
  */
 export interface PendingProjectCreate {
   projectId: string;
@@ -87,13 +90,16 @@ export interface UiSlice {
 
   // —— 瞬时 UI 指向（不 persist）——
   selectedProjectForMenu: string | null;
-  currentModal: 'createProject' | 'registerImage' | 'wizard' | null;
+  /**
+   * 当前打开的**弹层**。两个取值都是真 overlay（`role=dialog` + `fixed inset-0 z-50 … bg-black/60`,
+   * 与 `ConfirmDialog.view` 同一套形态），名字自此兑现。
+   *
+   * ⚠️ 在此之前这个名字是**假的**：`'createProject'` 被 `WorkbenchContainer` return 成
+   * `mainContent`，是主区换页而不是弹层；而 `'wizard'` / `'registerImage'` 全仓无人 set、
+   * 无人读（F21-2 §N.0）。本轮两个「新建」都改成真弹层、形态对称，死值一并删除。
+   */
+  currentModal: 'createProject' | 'newTask' | null;
   setCurrentModal: (modal: UiSlice['currentModal']) => void;
-
-  // —— 向导往返暂存（wizardData.initialPrompt 不 persist）——
-  wizardReturn: boolean;
-  wizardData: WizardData | null;
-  setWizardData: (data: WizardData | null) => void;
 
   // —— Git 凭证回程暂存（不 persist）——
   pendingProjectCreate: PendingProjectCreate | null;
@@ -156,12 +162,6 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
   currentModal: null,
   setCurrentModal: (modal): void => {
     set({ currentModal: modal });
-  },
-
-  wizardReturn: false,
-  wizardData: null,
-  setWizardData: (data): void => {
-    set({ wizardData: data });
   },
 
   pendingProjectCreate: null,

@@ -94,6 +94,7 @@ export function NewProjectContainer({ onProjectReady, onCancel }: NewProjectCont
       phase={clone.state.phase}
       percent={clone.percent}
       detailLabel={clone.detailLabel}
+      elapsedLabel={clone.elapsedLabel}
       guidanceMessage={clone.guidance?.message}
       canRetry={clone.guidance?.canRetry}
       needsCredentials={clone.guidance?.needsCredentials}

@@ -8,8 +8,10 @@ export interface CloneProgressProps {
   phase: CloneProgressPhase;
   /** 0–100；null → indeterminate（脉冲条）。 */
   percent: number | null;
-  /** 进度明细（如 "12.3 MB / 40.0 MB" 或 "45%"），可选。 */
+  /** 进度明细，如 `接收对象 · 527/26,348 · 380 KB · 189 KB/s`；逐段可缺。 */
   detailLabel?: string;
+  /** `已用 1:23`；长克隆里最便宜的"我还活着"信号（done/failed 后不给）。 */
+  elapsedLabel?: string;
   /** failed 引导文案。 */
   guidanceMessage?: string;
   /** 重试是否可能有效（PERMISSION 需凭证时 false）。 */
@@ -35,6 +37,7 @@ export function CloneProgressView({
   phase,
   percent,
   detailLabel,
+  elapsedLabel,
   guidanceMessage,
   canRetry = true,
   needsCredentials = false,
@@ -66,9 +69,19 @@ export function CloneProgressView({
               style={percent === null ? undefined : { width: `${String(percent)}%` }}
             />
           </div>
-          {detailLabel !== undefined && detailLabel !== '' && (
-            <p className="mt-2 text-xs text-muted-foreground">{detailLabel}</p>
+          {/* 百分比挪到条子右上角：与条子同一视线，不再挤占明细行。
+              percent 为 null（空窗期/git 还没给数）时不出这一格，条子走脉冲态。 */}
+          {percent !== null && (
+            <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{percent}%</p>
           )}
+          {(detailLabel !== undefined && detailLabel !== '') ||
+          (elapsedLabel !== undefined && elapsedLabel !== '') ? (
+            <div className="mt-2 flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
+              <span className="truncate">{detailLabel}</span>
+              {/* 已用时长右对齐且 tabular-nums：秒位跳动时整行不左右抖。 */}
+              <span className="shrink-0 tabular-nums">{elapsedLabel}</span>
+            </div>
+          ) : null}
           {phase === 'slow' && (
             <p className="mt-2 text-xs text-yellow-300">
               仍在克隆，仓库较大或网络较慢，请继续等待…

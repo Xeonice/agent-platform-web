@@ -173,6 +173,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the branches in the project's baseline (local refs; no network) */
+        get: operations["ProjectController_listBranches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync the baseline from its remote (git fetch --all) */
+        post: operations["ProjectController_sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sandboxes": {
         parameters: {
             query?: never;
@@ -540,12 +574,17 @@ export interface components {
             cloneErrorCode: "CLONE_FAILED_PERMISSION" | "CLONE_FAILED_NETWORK" | "TIMEOUT" | "INTERRUPTED" | "DISK_INSUFFICIENT" | null;
             taskCount: number;
             createdAt: string;
+            repoUrl?: string;
+            repoBranch?: string;
+            baselineSizeBytes?: number;
+            updatedAt: string;
         };
         DeleteProjectDto: {
             keepBaseline?: boolean;
         };
         CreateSandboxDto: {
             projectId: string;
+            branch?: string;
             runtime: string;
             image?: string;
             provider?: string;
@@ -1042,9 +1081,60 @@ export interface operations {
             };
         };
     };
-    SandboxController_list: {
+    ProjectController_listBranches: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    ProjectController_sync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponseDto"];
+                };
+            };
+            /** @description the project is not ready (or has no remote) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SandboxController_list: {
+        parameters: {
+            query?: {
+                projectId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

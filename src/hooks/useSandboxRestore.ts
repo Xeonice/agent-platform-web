@@ -42,13 +42,30 @@ export interface SandboxRestore {
   runtime?: string;
   /** 沙箱实际跑在哪个 provider 档位上（S6：据此精确判定 headlessTask 能力位）。 */
   provider?: string;
+  /**
+   * 沙箱的**模式**：`true` = 无头任务，`false` = 交互式终端（创建时二选一，P20 §3.2）。
+   * 刷新恢复时必须取回来——否则界面无从知道该不该挂无头面板。
+   */
+  headless?: boolean;
   /** 该 id 在后端已不存在（404）：调用方回到新建入口。 */
   notFound: boolean;
   isPending: boolean;
 }
 
 /** `sandboxId === null` 时完全不发请求（Query 走 enabled，不做条件 hook）。 */
-export function useSandboxRestore(sandboxId: string | null): SandboxRestore {
+/**
+ * @param expectedProjectId 当前选中的项目。恢复回来的沙箱**不属于它**时按 `notFound` 处理。
+ *
+ * ★ 为什么必须校验：`selectedSandboxId` 存活在 localStorage、跨会话不失效，而项目是另一个
+ * 选中位。切到项目 B 时，这里仍会拿 A 的沙箱 id 去恢复，于是**只读条写着 B、主区跑着 A 的
+ * agent**。配合弹层焦点那条（H1），键盘输入会进 A 的 shell。
+ * 本轮 `key={projectId}` 重挂 + 左侧树终于有任务可点（L-4），把它从"几乎碰不到"
+ * 变成"点两下就到"。
+ */
+export function useSandboxRestore(
+  sandboxId: string | null,
+  expectedProjectId?: string | null,
+): SandboxRestore {
   const setSandboxStatus = useAppStore((s) => s.setSandboxStatus);
   const setSelectedSandboxId = useAppStore((s) => s.setSelectedSandboxId);
   const status = useAppStore((s) =>
@@ -106,7 +123,14 @@ export function useSandboxRestore(sandboxId: string | null): SandboxRestore {
     });
   }, [data, setSandboxStatus]);
 
-  const notFound = query.error instanceof ApiErrorException && query.error.httpStatus === 404;
+  const notFound404 = query.error instanceof ApiErrorException && query.error.httpStatus === 404;
+  // 属于别的项目 ⇒ 与"不存在"同等对待：调用方回到新建入口，不会渲染错项目的终端。
+  const wrongProject =
+    data !== undefined &&
+    expectedProjectId !== undefined &&
+    expectedProjectId !== null &&
+    data.projectId !== expectedProjectId;
+  const notFound = notFound404 || wrongProject;
   useEffect(() => {
     // 沙箱已被销毁/清理：清掉持久化的选中，免得每次刷新都去打一个必 404 的请求。
     // 只对 404 生效——网络抖动不该把用户的选中状态抹掉。
@@ -117,6 +141,7 @@ export function useSandboxRestore(sandboxId: string | null): SandboxRestore {
     ...(data?.name === undefined ? {} : { name: data.name }),
     ...(data?.runtime === undefined ? {} : { runtime: data.runtime }),
     ...(data?.provider === undefined ? {} : { provider: data.provider }),
+    ...(data?.headless === undefined ? {} : { headless: data.headless }),
     notFound,
     isPending: sandboxId !== null && !staleTerminal && query.isPending,
   };

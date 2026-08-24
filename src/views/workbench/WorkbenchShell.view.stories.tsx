@@ -74,3 +74,48 @@ export const EmptyGroup: Story = {
     terminalSlot,
   },
 };
+
+// —— [+ 新任务] 入口（F21-2 §N.1，本轮新增）——
+/**
+ * 选中了一个就绪项目 ⇒ 入口可点。
+ * ⚠️ 这条 story 存在本身就是"新建任务成了一个动作"的证据（§9.1 #1）——
+ * 在此之前新建面板只是"沙箱为空"时的兜底渲染，**没有任何入口**。
+ */
+export const NewTaskEnabled: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: '后端健康：ok',
+    terminalSlot,
+    selectedProjectId: 'p1',
+  },
+};
+
+/**
+ * 没有可用的选中项目 ⇒ 入口置灰 + 原因（§9.1 #33：绕过会建出无项目归属的 Task）。
+ */
+export const NewTaskDisabled: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: '后端健康：ok',
+    terminalSlot,
+    newTaskDisabledReason: '先选中一个就绪的项目',
+  },
+};
+
+/** 弹层插槽：两个「新建」都往这儿渲染，形态对称（§N.0）。 */
+export const WithOverlay: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: '后端健康：ok',
+    terminalSlot,
+    selectedProjectId: 'p1',
+    overlaySlot: (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="rounded-lg border border-border bg-background p-6 text-sm">弹层占位</div>
+      </div>
+    ),
+  },
+};

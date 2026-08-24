@@ -22,7 +22,13 @@ describe('useProjects', () => {
       expect(result.current.isSuccess).toBe(true);
     });
     expect(result.current.data?.length).toBeGreaterThan(0);
-    expect(result.current.data?.[0]).not.toHaveProperty('repoUrl');
+    /**
+     * ⚠️ 上一版这里断言的是 `not.toHaveProperty('repoUrl')` —— 依据是 10 §7 那条
+     * "「来源」字段不对外展示（产品定案）：repoUrl 不入 DTO"。**该定案已被 F21-6 §9.1 推翻**：
+     * 完整克隆（03 §7.2★）之后，远端地址 / 基线体积 / 最后同步都成了用户必须看得见的信息，
+     * 项目只读条就是拿它们渲染的。断言据此翻面。
+     */
+    expect(result.current.data?.[0]).toHaveProperty('repoUrl');
   });
 
   it('新建 git 项目 → 202 返回 cloning', async () => {

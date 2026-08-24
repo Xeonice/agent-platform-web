@@ -107,3 +107,158 @@ describe('useTerminalInstance · 尺寸上报', () => {
     expect(onResize).toHaveBeenCalled();
   });
 });
+
+describe('useTerminalInstance · attach 并发（xterm 实例不得重复）', () => {
+  /**
+   * 线上真撞到的现象：容器里出现**两个 `.terminal.xterm` 上下叠着**——第一个占满可视区、
+   * 第二个被挤到屏幕外，看起来就是"一大片空白，内容在最底下"。
+   *
+   * 成因是 attach 里那句 `instances.current.get(sessionId)` 守卫查的表，要到函数**最后**
+   * 才写入，中间隔着好几个 `await`（动态 import addon）。两次并发 attach 双双通过守卫，
+   * 各自 `terminal.open(container)`。dev 的 `reactStrictMode` 必然触发
+   * （effect → attach 起飞 → cleanup → dispose **空转** → effect 再跑），
+   * 但任何两次快速 attach 都会撞上。
+   *
+   * MUTATION：删掉 attach 里的 `pending` 在途守卫 → 第一条红。
+   */
+  it('并发两次 attach 只建一个实例', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const container = visibleContainer();
+    const args = {
+      sessionId: 's-race',
+      container,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+
+    // 不 await 第一次就发第二次——正是 StrictMode 双调 effect 的形状。
+    await Promise.all([result.current.attach(args), result.current.attach(args)]);
+
+    expect(container.querySelectorAll('.xterm')).toHaveLength(1);
+  });
+
+  /**
+   * MUTATION：把 dispose 里 `pending.current.has(...)` 那个分支删回 `return` → 本条红。
+   */
+  it('在途 attach 期间 dispose ⇒ 完成时自行拆掉，不留孤儿 DOM', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const container = visibleContainer();
+    const p = result.current.attach({
+      sessionId: 's-abort',
+      container,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    });
+    // attach 还在途中（await 动态 import 里）就撤销——StrictMode 的 cleanup 就是这个时机。
+    result.current.dispose('s-abort');
+    await p;
+
+    expect(container.querySelectorAll('.xterm')).toHaveLength(0);
+  });
+
+  /**
+   * ★ StrictMode 的完整形状：mount → attach① 起飞 → cleanup dispose → mount → attach②。
+   * 被撤销的是①，②才是要留下的那个。
+   *
+   * 第一版修复在这里栽了跟头：② 等到 ① 完成后发现"没有实例"就**直接返回**，
+   * 于是谁都没建，终端整个空白。撤销 ≠ 放弃——② 必须自己接着建。
+   *
+   * MUTATION：把 `if (ready) { reuse; return; }` 之后的落空路径改回无条件 `return`
+   * → 本条红（实例数 0）。
+   */
+  it('StrictMode 形状：attach → dispose → attach ⇒ 最终恰好一个实例', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const container = visibleContainer();
+    const args = {
+      sessionId: 's-strict',
+      container,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+
+    const first = result.current.attach(args);
+    result.current.dispose('s-strict'); // cleanup 发生在 ① 还在途时
+    const second = result.current.attach(args);
+    await Promise.all([first, second]);
+
+    expect(container.querySelectorAll('.xterm')).toHaveLength(1);
+  });
+
+  /**
+   * ★ 以下四条来自 review 找出的漏网形状。第一版修复（布尔撤销标记 + `if` 等待）
+   * 在 B/C/D/G 上都漏：
+   *   - 等待者 `await inflight` 后**不重新查 pending** ⇒ 多个等待者各自落到创建路径，
+   *     互相覆盖 pending ⇒ 两个 `terminal.open(container)`，L-6 原样复发；
+   *   - 落到创建路径前**无条件**清撤销标记 ⇒ 把"我开始等待之后"那次 dispose 一并抹掉
+   *     ⇒ 卸载被吞、留下带 WebGL 上下文的孤儿（浏览器对上下文有硬上限）。
+   *
+   * MUTATION：把等待循环改回 `if` → B/C 红；把代次判断换回布尔集合 → D/G 红。
+   */
+  it('B) attach → dispose → attach → attach ⇒ 恰好一个', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const el = visibleContainer();
+    const args = {
+      sessionId: 'B',
+      container: el,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+    const p1 = result.current.attach(args);
+    result.current.dispose('B');
+    const p2 = result.current.attach(args);
+    const p3 = result.current.attach(args);
+    await Promise.all([p1, p2, p3]);
+    expect(el.querySelectorAll('.xterm')).toHaveLength(1);
+  });
+
+  it('C) attach → dispose → attach → dispose → attach ⇒ 恰好一个', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const el = visibleContainer();
+    const args = {
+      sessionId: 'C',
+      container: el,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+    const p1 = result.current.attach(args);
+    result.current.dispose('C');
+    const p2 = result.current.attach(args);
+    result.current.dispose('C');
+    const p3 = result.current.attach(args);
+    await Promise.all([p1, p2, p3]);
+    expect(el.querySelectorAll('.xterm')).toHaveLength(1);
+  });
+
+  it('D) dispose 晚于两次 attach 到达 ⇒ 一个都不留（卸载不能被吞）', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const el = visibleContainer();
+    const args = {
+      sessionId: 'D',
+      container: el,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+    const p1 = result.current.attach(args);
+    const p2 = result.current.attach(args);
+    result.current.dispose('D');
+    await Promise.all([p1, p2]);
+    expect(el.querySelectorAll('.xterm')).toHaveLength(0);
+  });
+
+  it('G) StrictMode 双调后立刻卸载 ⇒ 一个都不留', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const el = visibleContainer();
+    const args = {
+      sessionId: 'G',
+      container: el,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+    const p1 = result.current.attach(args);
+    result.current.dispose('G');
+    const p2 = result.current.attach(args);
+    result.current.dispose('G');
+    await Promise.all([p1, p2]);
+    expect(el.querySelectorAll('.xterm')).toHaveLength(0);
+  });
+});

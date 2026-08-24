@@ -37,10 +37,15 @@ export const createProjectCloneSlice: StateCreator<ProjectCloneSlice, [], [], Pr
         ...s.projectClones,
         [event.projectId]: {
           phase: event.phase,
+          stage: event.stage,
           percent: event.percent,
+          objectsDone: event.objectsDone,
+          objectsTotal: event.objectsTotal,
           receivedBytes: event.receivedBytes,
-          totalBytes: event.totalBytes,
+          bytesPerSecond: event.bytesPerSecond,
           errorCode: event.errorCode,
+          // 起始时刻只认第一次：后续事件不得把它重置，否则"已用"会一直归零。
+          startedAt: s.projectClones[event.projectId]?.startedAt ?? Date.now(),
         },
       },
     }));

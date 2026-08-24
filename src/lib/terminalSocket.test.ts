@@ -23,8 +23,28 @@ describe('buildTerminalSocketConfig (socket.io /terminal)', () => {
   });
 
   it('支持自定义 schemaHash', () => {
-    expect(buildTerminalSocketConfig('http://h:1', 'x', 'abc123').query['xSchemaHash']).toBe(
-      'abc123',
-    );
+    expect(
+      buildTerminalSocketConfig('http://h:1', 'x', { cols: 80, rows: 24 }, 'abc123').query[
+        'xSchemaHash'
+      ],
+    ).toBe('abc123');
+  });
+
+  /**
+   * 建连 query 里的 cols/rows = 容器里 **PTY 的出生尺寸**。agent CLI 一启动就按它画
+   * 欢迎横幅，而终端不会回流已输出的字节 ⇒ 事后补 resize 救不回第一屏。
+   *
+   * MUTATION：把 query 改回写死的 `cols:'80', rows:'24'` → 本条红。
+   */
+  it('真实尺寸进 query（不是写死 80x24）', () => {
+    const q = buildTerminalSocketConfig('http://h:1', 'x', { cols: 213, rows: 51 }).query;
+    expect(q['cols']).toBe('213');
+    expect(q['rows']).toBe('51');
+  });
+
+  it('不传尺寸才回落 80x24——调用方应当先 fit 再连', () => {
+    const q = buildTerminalSocketConfig('http://h:1', 'x').query;
+    expect(q['cols']).toBe('80');
+    expect(q['rows']).toBe('24');
   });
 });
