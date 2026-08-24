@@ -9,7 +9,7 @@
 import { useMemo, useRef, useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { expect, waitFor, within } from 'storybook/test';
-import { useVirtualList } from '@/hooks/useVirtualList';
+import { useVirtualList } from '@/hooks/_shared/useVirtualList';
 
 const TOTAL_ROWS = 5000;
 const ROW_PX = 24;
