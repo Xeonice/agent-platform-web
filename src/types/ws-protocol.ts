@@ -73,9 +73,19 @@ export const SandboxEventSchema = z.discriminatedUnion('event', [
     event: z.literal('project.clone_progress'),
     projectId: z.string(),
     phase: z.enum(['cloning', 'slow', 'done', 'failed']),
-    receivedBytes: z.number().optional(),
-    totalBytes: z.number().optional(),
+    // git 阶段名（03 §7.2★）：填住 receiving 开始前那段"一个数都没有"的空窗。
+    stage: z
+      .enum(['enumerating', 'counting', 'compressing', 'receiving', 'resolving', 'checkout'])
+      .optional(),
     percent: z.number().optional(),
+    // `(527/26348)`。⚠️ 此处曾有 `totalBytes`，2026-08 删除——git clone 不报总字节数，
+    // 后端从来没发过它，而前端有一条 `receivedBytes && totalBytes` 的分支在等它，
+    // 那条分支生产永远走不到（配着一条手工构造 state 才绿的测试）。分母改用 objectsTotal。
+    objectsDone: z.number().optional(),
+    objectsTotal: z.number().optional(),
+    receivedBytes: z.number().optional(),
+    // 卡住时它先归零，比百分比停住更早暴露。
+    bytesPerSecond: z.number().optional(),
     errorCode: z.string().optional(),
   }),
   z.object({ event: z.literal('runtime-auth.status_changed'), runtime: z.string() }),
@@ -278,7 +288,8 @@ export const WS_PROTOCOL_CANONICAL =
   'terminal.server:data{data},exit{code},pong,session{socketSessionKey}|' +
   'events:sandbox.created{sandboxId,projectId},sandbox.status_changed{sandboxId,status,phase?,errorCode?},' +
   'sandbox.removed{sandboxId},sandbox.waiting_input{sandboxId,waiting,sessionId?},' +
-  'project.clone_progress{projectId,phase,receivedBytes?,totalBytes?,percent?,errorCode?},' +
+  'project.clone_progress{projectId,phase,stage?,percent?,objectsDone?,objectsTotal?,' +
+  'receivedBytes?,bytesPerSecond?,errorCode?},' +
   'runtime-auth.status_changed{runtime},' +
   'runtime.install_progress{sandboxId,runtime,status,versionDetected?,errorCode?}|' +
   'tasks.client:subscribe{taskId,fromSeq?},unsubscribe{taskId},ping|' +

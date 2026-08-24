@@ -107,3 +107,80 @@ describe('useTerminalInstance · 尺寸上报', () => {
     expect(onResize).toHaveBeenCalled();
   });
 });
+
+describe('useTerminalInstance · attach 并发（xterm 实例不得重复）', () => {
+  /**
+   * 线上真撞到的现象：容器里出现**两个 `.terminal.xterm` 上下叠着**——第一个占满可视区、
+   * 第二个被挤到屏幕外，看起来就是"一大片空白，内容在最底下"。
+   *
+   * 成因是 attach 里那句 `instances.current.get(sessionId)` 守卫查的表，要到函数**最后**
+   * 才写入，中间隔着好几个 `await`（动态 import addon）。两次并发 attach 双双通过守卫，
+   * 各自 `terminal.open(container)`。dev 的 `reactStrictMode` 必然触发
+   * （effect → attach 起飞 → cleanup → dispose **空转** → effect 再跑），
+   * 但任何两次快速 attach 都会撞上。
+   *
+   * MUTATION：删掉 attach 里的 `pending` 在途守卫 → 第一条红。
+   */
+  it('并发两次 attach 只建一个实例', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const container = visibleContainer();
+    const args = {
+      sessionId: 's-race',
+      container,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+
+    // 不 await 第一次就发第二次——正是 StrictMode 双调 effect 的形状。
+    await Promise.all([result.current.attach(args), result.current.attach(args)]);
+
+    expect(container.querySelectorAll('.xterm')).toHaveLength(1);
+  });
+
+  /**
+   * MUTATION：把 dispose 里 `pending.current.has(...)` 那个分支删回 `return` → 本条红。
+   */
+  it('在途 attach 期间 dispose ⇒ 完成时自行拆掉，不留孤儿 DOM', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const container = visibleContainer();
+    const p = result.current.attach({
+      sessionId: 's-abort',
+      container,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    });
+    // attach 还在途中（await 动态 import 里）就撤销——StrictMode 的 cleanup 就是这个时机。
+    result.current.dispose('s-abort');
+    await p;
+
+    expect(container.querySelectorAll('.xterm')).toHaveLength(0);
+  });
+
+  /**
+   * ★ StrictMode 的完整形状：mount → attach① 起飞 → cleanup dispose → mount → attach②。
+   * 被撤销的是①，②才是要留下的那个。
+   *
+   * 第一版修复在这里栽了跟头：② 等到 ① 完成后发现"没有实例"就**直接返回**，
+   * 于是谁都没建，终端整个空白。撤销 ≠ 放弃——② 必须自己接着建。
+   *
+   * MUTATION：把 `if (ready) { reuse; return; }` 之后的落空路径改回无条件 `return`
+   * → 本条红（实例数 0）。
+   */
+  it('StrictMode 形状：attach → dispose → attach ⇒ 最终恰好一个实例', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const container = visibleContainer();
+    const args = {
+      sessionId: 's-strict',
+      container,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+
+    const first = result.current.attach(args);
+    result.current.dispose('s-strict'); // cleanup 发生在 ① 还在途时
+    const second = result.current.attach(args);
+    await Promise.all([first, second]);
+
+    expect(container.querySelectorAll('.xterm')).toHaveLength(1);
+  });
+});

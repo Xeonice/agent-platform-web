@@ -1,5 +1,6 @@
 'use client';
-// Task 发起主容器：填指令 → 建沙箱 → 拿 id/任务名 → 订阅 /events 推进 status → running 才开终端（10 §7.4）。
+// Task 发起主容器：[+ 新任务] 开**弹层** → 填指令 → 建沙箱 → 拿 id/任务名 → 订阅 /events
+// 推进 status → running 才开终端（10 §7.4）。
 // 唯一 view↔hooks 粘合点；副作用只在 hook（useProviders / useCreateSandbox / events / lifecycle），
 // 本层只做编排与本地 UI 态。
 //
@@ -19,7 +20,7 @@
 // 而后端注册表里只有 codex / claude-code ⇒ 从这个入口建的沙箱**必然**死在 `unknown runtime 'shell'`。
 // 类型层拦不住（契约是 `runtime: z.string().min(1)`，开放集**故意**不收窄），
 // 正确的防线只有"注册表驱动 UI + 前端不出现任何字面量默认值"这一条 —— 就是本文件现在的形状。
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProviders } from '@/hooks/useProviders';
@@ -27,15 +28,19 @@ import { useRuntimes } from '@/hooks/useRuntimes';
 import { useCreateSandbox, useCreateSandboxErrorView } from '@/hooks/useCreateSandbox';
 import { useSandboxRestore } from '@/hooks/useSandboxRestore';
 import { useTerminalSocketConfig } from '@/hooks/useTerminalSocketConfig';
+import { useProjectBranches } from '@/hooks/useProjectBranches';
+import { useEscapeKey } from '@/hooks/useEscapeKey';
 import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { useAppStore } from '@/stores';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
+import { ModalShellView } from '@/views/common/ModalShell.view';
 import { AuthGateContainer } from '@/containers/AuthGateContainer';
 import { invalidateRuntimeAuth } from '@/hooks/useRuntimeAuthMutations';
 import { SandboxLifecycleContainer } from '@/containers/SandboxLifecycleContainer';
 import { HeadlessTaskContainer } from '@/containers/HeadlessTaskContainer';
 import type { SandboxProvider } from '@/types/sandbox';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
+import type { ProjectSourceType } from '@/types/project';
 
 /** 已创建的任务：id + **后端派生的**默认任务名（前端不再自己从 prompt 派生一份，T-1）。 */
 interface CreatedTask {
@@ -45,15 +50,26 @@ interface CreatedTask {
   runtime?: string;
   /** 沙箱实际落在哪个 provider 档位上（S6 能力位判定）。 */
   provider?: string;
+  /** 模式：`true` = 无头任务，`false` = 交互式终端（创建时二选一，P20 §3.2）。 */
+  headless?: boolean;
 }
 
 export interface SandboxTerminalContainerProps {
   wsBaseUrl: string;
   /** 选中的真实项目（沙箱 /workspace 即该项目文件）。 */
   projectId: string;
+  /** 项目名：弹窗上下文用（弹窗内**没有**项目下拉，归属继承左侧树选中项，§9.0）。 */
+  projectName: string;
+  /** 项目来源：`'empty'` ⇒ 没有 git ⇒ **不渲染分支选择器、也不发 /branches 请求**。 */
+  projectSourceType: ProjectSourceType;
 }
 
-export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTerminalContainerProps) {
+export function SandboxTerminalContainer({
+  wsBaseUrl,
+  projectId,
+  projectName,
+  projectSourceType,
+}: SandboxTerminalContainerProps) {
   // null = 用户尚未手选 → 跟随服务端默认档（前端无默认常量，registry 换默认档即刻生效）。
   const [pickedProvider, setPickedProvider] = useState<SandboxProvider | null>(null);
   // runtime 一侧：null = **用户还没选**（平台没有默认 runtime 概念，既不预选也不猜）。
@@ -63,13 +79,27 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
   // 它可能含仓库路径、内部系统名、业务上下文。提交即清空；后端也**不回显**（10 §7.3），
   // 因此刷新后拿不回来是**有意的**（默认任务名改由后端派生的 name 承接）。
   const [initialPrompt, setInitialPrompt] = useState('');
+  /**
+   * 所选分支；`''` = **没选**。
+   *
+   * ⚠️ 没选**不是**缺省值缺失：分支有天然缺省（基线当前分支），与"平台没有默认 runtime"
+   * 那条恰好相反（04 §8）。所以这里既不预填 `'main'`，也不在提交时补一个值 ——
+   * `''` 时请求体**不含** `branch` 字段，由后端走缺省（§9.4 ④）。
+   */
+  const [branch, setBranch] = useState('');
   const providers = useProviders();
   const runtimes = useRuntimes();
+  const isGitProject = projectSourceType === 'git';
+  // 空项目不发这个请求（enabled:false）——没有 git，谈不上分支。
+  const branches = useProjectBranches({ projectId, isGitProject });
   const createSandbox = useCreateSandbox();
   const createErrorView = useCreateSandboxErrorView(createSandbox.error);
   const { reportRestError } = useReportUnauthorized();
   const setSandboxStatus = useAppStore((s) => s.setSandboxStatus);
   const clearSandboxStatus = useAppStore((s) => s.clearSandboxStatus);
+  // 弹层开关（真 overlay，不再是"沙箱为空时的兜底渲染"，§N.0）。入口在工作台 [+ 新任务]。
+  const currentModal = useAppStore((s) => s.currentModal);
+  const setCurrentModal = useAppStore((s) => s.setCurrentModal);
   // 刷新恢复：selectedSandboxId 是 persist 白名单里的字段（15 §3.5），刷新后还在；
   // 本次会话已有 task 时不发这个请求（内存里的状态更新）。
   const persistedSandboxId = useAppStore((s) => s.selectedSandboxId);
@@ -150,6 +180,9 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
         provider,
         // 空指令不发字段（后端可选）；非空则随创建请求提交，agent 启动时即执行（T-2）。
         ...(prompt === '' ? {} : { initialPrompt: prompt }),
+        // **不选就不带**（§9.4 ④）：缺省 = 基线当前分支，由后端裁决。
+        // 前端填一个值等于把"跟随基线"偷偷变成"锁死在某个分支上"。
+        ...(branch === '' ? {} : { branch }),
       },
       {
         onSuccess: (sandbox) => {
@@ -165,9 +198,13 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
             name: sandbox.name,
             runtime: sandbox.runtime,
             provider: provider === '' ? undefined : provider,
+            headless: sandbox.headless,
           });
           // 落进 persist 白名单里的选中位 ⇒ 刷新后能靠 DTO 把任务名与失败原因取回来。
           setSelectedSandboxId(sandbox.id);
+          // 创建**受理**即关弹窗：进度卡在主区继续推进（§6「创建中」那一格就在主区）。
+          // 失败/门口拒绝时弹窗**留着**——那两条都要求"就地提示改配置"。
+          setCurrentModal(null);
         },
         // 启用口令时建沙箱会 401 → 置锁弹解锁门（11 §3.1）；健康探针 passcode-exempt 不受影响。
         onError: (error) => {
@@ -177,6 +214,20 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
     );
   };
 
+  /**
+   * 关弹窗。**指令随之清空**（15 §3.5 安全红线的自然延伸：它可能含仓库路径与业务上下文，
+   * 关掉弹窗之后前端没有任何理由继续持有它），并把上一次的创建错误一并 reset ——
+   * 否则重开弹窗会先看见一条上次的红字。
+   */
+  const handleCloseModal = useCallback((): void => {
+    setInitialPrompt('');
+    createSandbox.reset();
+    setCurrentModal(null);
+  }, [createSandbox, setCurrentModal]);
+
+  // Esc 关弹窗（与 [✕] / [取消] 同一个动作）；创建中不响应，免得误关。
+  useEscapeKey(currentModal === 'newTask' && !createSandbox.isPending, handleCloseModal);
+
   const handleRetry = (): void => {
     if (sandboxId !== null) clearSandboxStatus(sandboxId);
     setTask(null);
@@ -184,75 +235,118 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
     createSandbox.reset();
   };
 
+  /**
+   * 「新建任务」弹层（§N.1 单弹窗一屏：runtime / provider / 分支 / 指令）。
+   *
+   * ⚠️ 它**不再是兜底渲染**。此前这份面板由 `sandboxId===null || socketConfig===null`
+   * 这个条件"自己出现"——于是"创建"根本不是一个动作，也没有任何入口（§N.0）。
+   * 现在它由 `currentModal==='newTask'` 打开，入口在工作台 [+ 新任务]，
+   * 并且**在沙箱已经跑起来时同样能打开**（一个项目可以有多个任务）。
+   *
+   * ⚠️ 鉴权闸门仍然在 `authGateSlot` 里**就地展开**：不跳步、不新开弹层
+   *（那两步壳从来就不存在，§3）。
+   */
+  const newTaskModal =
+    currentModal !== 'newTask' ? null : (
+      <ModalShellView
+        title="新建任务"
+        subtitle={`在「${projectName}」中发起`}
+        onClose={handleCloseModal}
+        busy={createSandbox.isPending}
+        testId="modal-new-task"
+      >
+        <NewSandboxPanelView
+          runtimes={runtimeList}
+          runtime={runtime}
+          onSelectRuntime={setPickedRuntime}
+          loadingRuntimes={runtimes.isPending}
+          runtimesErrorMessage={runtimes.isError ? runtimes.error.message || '请求失败' : undefined}
+          onRetryRuntimes={() => {
+            void runtimes.refetch();
+          }}
+          providers={providerList}
+          provider={provider}
+          onSelectProvider={setPickedProvider}
+          onCreate={handleCreate}
+          creating={createSandbox.isPending}
+          loadingProviders={providers.isPending}
+          providersErrorMessage={
+            providers.isError ? providers.error.message || '请求失败' : undefined
+          }
+          onRetryProviders={() => {
+            void providers.refetch();
+          }}
+          authGateSlot={
+            authBlocked && selectedRuntimeDto !== undefined ? (
+              <AuthGateContainer
+                runtimeId={selectedRuntimeDto.id}
+                runtimeName={selectedRuntimeDto.displayName}
+                methods={selectedRuntimeDto.authMethods}
+                // 一次性语义文案只在"从未配置"那支出现;已过期是**再来一次**,那句
+                //「只需配置一次」在这里是假话(P20 §5.1 分支③走同一面板但说法不同)。
+                showOneTimeNotice={credentialStatus === 'none'}
+                onOpenCredentials={() => {
+                  router.push('/settings/credentials');
+                }}
+                // 配置成功 ⇒ 让 runtimes 列表重取,`credentialStatus` 翻成 active 后
+                // 闸门自行消失、发起按钮解禁。不在本层记任何凭证态(单一来源在服务端)。
+                onSuccess={() => {
+                  invalidateRuntimeAuth(queryClient);
+                }}
+              />
+            ) : undefined
+          }
+          runtimeIdentityNotice={
+            credentialStatus === 'active' || credentialStatus === 'expiring'
+              ? `将以 ${selectedRuntimeDto?.maskedIdentifier ?? '已配置凭证'} 身份运行${
+                  credentialStatus === 'expiring' ? '（凭证即将到期，建议尽快重新授权）' : ''
+                }`
+              : undefined
+          }
+          createDisabledReason={
+            ttyUnsupported
+              ? `provider「${provider}」不支持终端（spawnTty=false），请改选其它运行档位。`
+              : undefined
+          }
+          // 两条**互斥**的错误呈现路径（P22 §1 / 04 §5）：
+          //  · rejection = 后端显式标了 `sideEffectFree` 的门口拒绝，请求在落库前被拒（没有
+          //    sandbox id、列表不留 failed 记录）⇒ 就地提示改配置，绝不走"创建失败可重试"。
+          //    ⚠️ 判据不是 HTTP 码：这六条拒绝散在 400/404/409 上，反推必漏（见 lib 里的注释）；
+          //  · errorMessage = 其余创建期失败（含后端**漏标**时的保守回落），人话 + 建议。
+          rejectionMessage={createErrorView.rejection}
+          errorMessage={
+            createErrorView.failure === undefined
+              ? undefined
+              : `${createErrorView.failure.title} —— ${createErrorView.failure.advice}`
+          }
+          initialPrompt={initialPrompt}
+          onInitialPromptChange={setInitialPrompt}
+          // —— 分支选择器（§N.1）——
+          // 空项目**整块不渲染**（没有 git，谈不上分支）；加载失败只降级、不拦创建。
+          showBranchPicker={isGitProject}
+          branches={branches.branches}
+          branch={branch}
+          onSelectBranch={setBranch}
+          loadingBranches={branches.isPending}
+          branchesErrorMessage={branches.isError ? '读取本地引用失败' : undefined}
+          projectName={projectName}
+          onCancel={handleCloseModal}
+        />
+      </ModalShellView>
+    );
+
   if (sandboxId === null || socketConfig === null) {
     return (
-      <NewSandboxPanelView
-        runtimes={runtimeList}
-        runtime={runtime}
-        onSelectRuntime={setPickedRuntime}
-        loadingRuntimes={runtimes.isPending}
-        runtimesErrorMessage={runtimes.isError ? runtimes.error.message || '请求失败' : undefined}
-        onRetryRuntimes={() => {
-          void runtimes.refetch();
-        }}
-        providers={providerList}
-        provider={provider}
-        onSelectProvider={setPickedProvider}
-        onCreate={handleCreate}
-        creating={createSandbox.isPending}
-        loadingProviders={providers.isPending}
-        providersErrorMessage={
-          providers.isError ? providers.error.message || '请求失败' : undefined
-        }
-        onRetryProviders={() => {
-          void providers.refetch();
-        }}
-        authGateSlot={
-          authBlocked && selectedRuntimeDto !== undefined ? (
-            <AuthGateContainer
-              runtimeId={selectedRuntimeDto.id}
-              runtimeName={selectedRuntimeDto.displayName}
-              methods={selectedRuntimeDto.authMethods}
-              // 一次性语义文案只在"从未配置"那支出现;已过期是**再来一次**,那句
-              //「只需配置一次」在这里是假话(P20 §5.1 分支③走同一面板但说法不同)。
-              showOneTimeNotice={credentialStatus === 'none'}
-              onOpenCredentials={() => {
-                router.push('/settings/credentials');
-              }}
-              // 配置成功 ⇒ 让 runtimes 列表重取,`credentialStatus` 翻成 active 后
-              // 闸门自行消失、发起按钮解禁。不在本层记任何凭证态(单一来源在服务端)。
-              onSuccess={() => {
-                invalidateRuntimeAuth(queryClient);
-              }}
-            />
-          ) : undefined
-        }
-        runtimeIdentityNotice={
-          credentialStatus === 'active' || credentialStatus === 'expiring'
-            ? `将以 ${selectedRuntimeDto?.maskedIdentifier ?? '已配置凭证'} 身份运行${
-                credentialStatus === 'expiring' ? '（凭证即将到期，建议尽快重新授权）' : ''
-              }`
-            : undefined
-        }
-        createDisabledReason={
-          ttyUnsupported
-            ? `provider「${provider}」不支持终端（spawnTty=false），请改选其它运行档位。`
-            : undefined
-        }
-        // 两条**互斥**的错误呈现路径（P22 §1 / 04 §5）：
-        //  · rejection = 后端显式标了 `sideEffectFree` 的门口拒绝，请求在落库前被拒（没有
-        //    sandbox id、列表不留 failed 记录）⇒ 就地提示改配置，绝不走"创建失败可重试"。
-        //    ⚠️ 判据不是 HTTP 码：这六条拒绝散在 400/404/409 上，反推必漏（见 lib 里的注释）；
-        //  · errorMessage = 其余创建期失败（含后端**漏标**时的保守回落），人话 + 建议。
-        rejectionMessage={createErrorView.rejection}
-        errorMessage={
-          createErrorView.failure === undefined
-            ? undefined
-            : `${createErrorView.failure.title} —— ${createErrorView.failure.advice}`
-        }
-        initialPrompt={initialPrompt}
-        onInitialPromptChange={setInitialPrompt}
-      />
+      <>
+        {newTaskModal}
+        <div
+          data-testid="no-sandbox-placeholder"
+          className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground"
+        >
+          <p>「{projectName}」下还没有任务。</p>
+          <p>点左侧 [＋ 新任务] 发起一个 —— 填了指令，agent 启动时即执行。</p>
+        </div>
+      </>
     );
   }
 
@@ -266,26 +360,48 @@ export function SandboxTerminalContainer({ wsBaseUrl, projectId }: SandboxTermin
       : providerList.find((p) => p.name === sandboxProvider);
   const headlessTaskSupported = headlessProvider?.capabilities.headlessTask ?? null;
 
+  /**
+   * ★ 无头面板**只挂在无头沙箱底下**。
+   *
+   * 此前它对每个沙箱无条件渲染（只判断 runtime 已知），于是**交互式**沙箱底下也挂着
+   * 一条「无头任务」。那条永远停在空态说"这个沙箱还没有任务"——因为交互式沙箱根本
+   * 不会有无头运行，它的 AgentTask 列表恒为空。
+   *
+   * 而界面上另一处也叫"任务"：左侧树的 `项目 · N` 数的是 **Sandbox**（Task 的产品叫法，
+   * 名字就是用户填的指令）。于是同一屏上出现"· 1"和"还没有任务"直接打架——两句话
+   * 各自都对，说的却是两个东西。
+   *
+   * 模式是创建时**二选一**的（P20 §3.2「◉ 交互式终端 / ○ 无头任务」，`SandboxDto.headless`）。
+   * 交互式沙箱的全部界面就是终端本身，底下不该再挂任何东西。
+   */
+  const sandboxHeadless = task?.headless ?? restored.headless;
+
   // sessionId 是前端标签身份（≠ 后端下发的 socketSessionKey，08 §11.1）；S1 单标签固定 :0。
   // 交给生命周期门：startup 展示进度、running 才开终端、failed 可重试。
+  //
+  // ⚠️ 弹层与主区**并存**：沙箱已经跑起来时照样能开「新建任务」——一个项目多个任务是
+  // 数据模型本来的样子，把入口藏起来等于把这个能力从界面上抹掉（同 §N.3 对无头面板的裁决）。
   return (
-    <SandboxLifecycleContainer
-      sessionId={`${sandboxId}:0`}
-      sandboxId={sandboxId}
-      socketConfig={socketConfig}
-      onRetry={handleRetry}
-      taskName={taskName}
-      headlessSlot={
-        sandboxRuntime === undefined ? undefined : (
-          <HeadlessTaskContainer
-            sandboxId={sandboxId}
-            runtime={sandboxRuntime}
-            wsBaseUrl={wsBaseUrl}
-            headlessTaskSupported={headlessTaskSupported}
-            providerName={sandboxProvider}
-          />
-        )
-      }
-    />
+    <>
+      {newTaskModal}
+      <SandboxLifecycleContainer
+        sessionId={`${sandboxId}:0`}
+        sandboxId={sandboxId}
+        socketConfig={socketConfig}
+        onRetry={handleRetry}
+        taskName={taskName}
+        headlessSlot={
+          sandboxRuntime === undefined || sandboxHeadless !== true ? undefined : (
+            <HeadlessTaskContainer
+              sandboxId={sandboxId}
+              runtime={sandboxRuntime}
+              wsBaseUrl={wsBaseUrl}
+              headlessTaskSupported={headlessTaskSupported}
+              providerName={sandboxProvider}
+            />
+          )
+        }
+      />
+    </>
   );
 }

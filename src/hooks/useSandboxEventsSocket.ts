@@ -26,6 +26,7 @@ import { reconnectDelay } from '@/services/ws/ptySocket';
 import { reportError } from '@/lib/reportError';
 import { buildEventsSocketUri } from '@/lib/sandboxLifecycle';
 import { useAppStore } from '@/stores';
+import type { SandboxEvent } from '@/types/ws-protocol';
 import type { ConnState } from '@/types/terminal';
 
 export interface UseSandboxEventsSocketArgs {
@@ -37,6 +38,14 @@ export interface UseSandboxEventsSocketArgs {
   onUnauthorized?: () => void;
   /** runtime-auth.status_changed → patch runtime 凭证 Query（15 §2.3，接 useRuntimeAuthSync）。 */
   onRuntimeAuthChanged?: (runtime: string) => void;
+  /**
+   * 任何 `sandbox.*` 事件到达（接工作台失效左侧任务树 + 项目列表）。
+   *
+   * ⚠️ 为什么不在 hook 内部直接 invalidate：这个 hook 已经把事件分发给两个 store slice，
+   * 那是**纯内存投影**；Query 失效是取数策略，属于调用方（15 §2.3 前端纪律：
+   * WS 只 patch/失效，不在通道层决定谁该重新取数）。
+   */
+  onSandboxChanged?: (event: SandboxEvent) => void;
   /** 测试注入 mock 工厂（避免 mock.module，12 §3.1.1）。 */
   socketFactory?: EventsSocketFactory;
   // ⚠️ **刻意没有** maxReconnect：本通道不设重试次数上限（理由见文件头注释）。
@@ -59,7 +68,14 @@ export interface UseSandboxEventsSocketApi {
 export function useSandboxEventsSocket(
   args: UseSandboxEventsSocketArgs,
 ): UseSandboxEventsSocketApi {
-  const { base, enabled = true, onUnauthorized, onRuntimeAuthChanged, socketFactory } = args;
+  const {
+    base,
+    enabled = true,
+    onUnauthorized,
+    onRuntimeAuthChanged,
+    onSandboxChanged,
+    socketFactory,
+  } = args;
 
   const [connState, setConnState] = useState<ConnState>('idle');
   const [attempt, setAttempt] = useState(0);
@@ -79,6 +95,8 @@ export function useSandboxEventsSocket(
   onUnauthorizedRef.current = onUnauthorized;
   const onRuntimeAuthChangedRef = useRef(onRuntimeAuthChanged);
   onRuntimeAuthChangedRef.current = onRuntimeAuthChanged;
+  const onSandboxChangedRef = useRef(onSandboxChanged);
+  onSandboxChangedRef.current = onSandboxChanged;
 
   const uri = buildEventsSocketUri(base);
 
@@ -104,6 +122,9 @@ export function useSandboxEventsSocket(
         applyCloneRef.current(event);
         if (event.event === 'runtime-auth.status_changed') {
           onRuntimeAuthChangedRef.current?.(event.runtime);
+        }
+        if (event.event.startsWith('sandbox.')) {
+          onSandboxChangedRef.current?.(event);
         }
       },
       onInvalidFrame: (raw) => {

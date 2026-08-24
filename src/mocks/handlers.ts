@@ -143,6 +143,9 @@ function projectDto(overrides: Partial<ProjectDto> & Pick<ProjectDto, 'id' | 'na
     cloneErrorCode: null,
     taskCount: 0,
     createdAt: new Date().toISOString(),
+    // updatedAt 在契约里是**必填**（不是可选）——fixture 比契约宽松就会让
+    // 「最后同步」那一格的降级分支在测试里永远走不到真实形状。
+    updatedAt: new Date().toISOString(),
     ...overrides,
   };
 }
@@ -254,12 +257,38 @@ export const handlers = [
   // 口令解锁（11 §3.1）：dev 无口令门，直接 204 成功（真实 cookie 由后端 set）。
   http.post(`${API_BASE}/api/access/unlock`, () => new HttpResponse(null, { status: 204 })),
 
-  // 项目列表（10 §7 ProjectResponseDto）：dev 打通「项目树 → 建沙箱」。DTO 不含 repoUrl。
+  // 项目列表（10 §7 ProjectResponseDto）：dev 打通「项目树 → 建沙箱」。
+  // ⏳ 基线四字段（repoUrl / repoBranch / baselineSizeBytes / updatedAt）是本轮契约新增、
+  // 生成物尚未同步的部分（见 types/project.ts）——替身先按目标形状给，好让只读条与
+  // 分支选择器在 dev/Storybook 里走得通；契约落地后这里一个字都不用改。
   http.get(`${API_BASE}/api/projects`, () =>
-    HttpResponse.json([projectDto({ id: 'proj-demo', name: '示例项目', cloneStatus: 'ready' })], {
-      status: 200,
-    }),
+    HttpResponse.json(
+      [
+        projectDto({
+          id: 'proj-demo',
+          name: '示例项目',
+          sourceType: 'git',
+          cloneStatus: 'ready',
+          repoUrl: 'https://github.com/acme/demo.git',
+          repoBranch: 'main',
+          baselineSizeBytes: 47_185_920,
+          updatedAt: isoIn(-2 * HOUR),
+        }),
+      ],
+      { status: 200 },
+    ),
   ),
+
+  /**
+   * ⏳ 分支列表（F21-2 §N.1）：`GET /api/projects/:id/branches` → `string[]`。
+   * **不触网、不需要凭证** —— 后端读的是完整克隆下来的**本地**引用（`git branch -r`）。
+   */
+  http.get(`${API_BASE}/api/projects/:id/branches`, () =>
+    HttpResponse.json(['main', 'develop', 'feature/branch-picker']),
+  ),
+
+  /** ⏳ 重新同步基线（F21-6 §9.3）：仅 ready 态；dev 简化为 204。 */
+  http.post(`${API_BASE}/api/projects/:id/sync`, () => new HttpResponse(null, { status: 204 })),
 
   // 新建项目（202 异步）：git → cloning，empty → ready（dev 无 /events，故 empty 秒就绪最省事）。
   http.post(`${API_BASE}/api/projects`, async ({ request }) => {

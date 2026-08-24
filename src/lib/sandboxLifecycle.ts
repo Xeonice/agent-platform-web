@@ -103,3 +103,33 @@ export function startupPercent(status: string): number {
   // (rank+1)/(阶段数+1)：4 阶段 → 20% / 40% / 60% / 80%，running 时由容器切走。
   return Math.round(((rank + 1) / (STARTUP_PHASES.length + 1)) * 100);
 }
+
+/**
+ * 后端 12 个技术状态 → 前端 6 个**展示词汇**（`types/domain.ts` 的 `SandboxStatus`）。
+ *
+ * 两套词汇本来就不同源：后端那套是状态机（`preparing-workspace`/`creating`/… ），
+ * 前端这套是"用户看到的名字"。此前左侧树的任务列表被写死成空数组，这个转换从来没被
+ * 需要过，于是也一直没有——接真实列表时必须补上，否则只能靠 cast 蒙混。
+ *
+ * ⚠️ `waiting-input` **不在这里产生**：它是 `running` 的子态，走 DTO 的 `waitingInput`
+ * 布尔字段（10 §7.4），树上单独渲染 🔵。把它折进 status 会让"等待输入"与"运行中"
+ * 变成互斥的两个值，而它们实际是一个状态加一个标志。
+ */
+export function toDisplayStatus(
+  status: string,
+): 'preparing' | 'running' | 'paused' | 'error' | 'stopped' {
+  switch (classifyStatus(status)) {
+    case 'startup':
+      return 'preparing';
+    case 'running':
+      return 'running';
+    case 'failed':
+      return 'error';
+    case 'ended':
+      // stopping/stopped = 用户主动停；destroying/destroyed 不该出现在列表里
+      // （后端 list 已排除 destroyed），落到这里也按"已停止"显示。
+      return 'stopped';
+    default:
+      return 'preparing';
+  }
+}

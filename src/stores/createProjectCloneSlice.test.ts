@@ -16,15 +16,21 @@ describe('createProjectCloneSlice（clone_progress 投影 10 §7.4）', () => {
       event: 'project.clone_progress',
       projectId: 'p1',
       phase: 'cloning',
+      stage: 'receiving',
       percent: 30,
+      objectsDone: 300,
+      objectsTotal: 1000,
       receivedBytes: 300,
-      totalBytes: 1000,
+      bytesPerSecond: 150,
     });
     expect(useAppStore.getState().projectClones['p1']).toMatchObject({
       phase: 'cloning',
+      stage: 'receiving',
       percent: 30,
+      objectsDone: 300,
+      objectsTotal: 1000,
       receivedBytes: 300,
-      totalBytes: 1000,
+      bytesPerSecond: 150,
     });
 
     useAppStore.getState().applyProjectCloneEvent({

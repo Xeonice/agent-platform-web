@@ -7,18 +7,51 @@ export function isProjectReady(project: Pick<ProjectDto, 'cloneStatus'>): boolea
 }
 
 /**
- * 克隆进度百分比（0–100）：优先用后端 percent；否则用 bytes 比值；都没有则 null（走 indeterminate）。
+ * 克隆进度百分比（0–100）：优先用后端 percent；否则用**对象数**比值；都没有则 null（indeterminate）。
+ *
+ * ⚠️ 兜底分支从前用的是 `receivedBytes / totalBytes`，而 `totalBytes` 是个幽灵字段——
+ * git clone 不报总字节数，后端从来没发过。改用 `objectsDone / objectsTotal`：
+ * `Enumerating objects: 26348` 在**开头**就报出来，是 git 唯一事前就知道的总量。
  */
 export function cloneProgressPercent(state: ProjectCloneState): number | null {
   if (typeof state.percent === 'number') return clamp(Math.round(state.percent), 0, 100);
   if (
-    typeof state.receivedBytes === 'number' &&
-    typeof state.totalBytes === 'number' &&
-    state.totalBytes > 0
+    typeof state.objectsDone === 'number' &&
+    typeof state.objectsTotal === 'number' &&
+    state.objectsTotal > 0
   ) {
-    return clamp(Math.round((state.receivedBytes / state.totalBytes) * 100), 0, 100);
+    return clamp(Math.round((state.objectsDone / state.objectsTotal) * 100), 0, 100);
   }
   return null;
+}
+
+/** git 阶段 → 中文。填住 receiving 之前那段"一个数都没有"的空窗。 */
+const STAGE_LABEL: Record<NonNullable<ProjectCloneState['stage']>, string> = {
+  enumerating: '枚举远端对象',
+  counting: '清点对象',
+  compressing: '远端压缩',
+  receiving: '接收对象',
+  resolving: '解析增量',
+  checkout: '检出文件',
+};
+
+export function cloneStageLabel(stage: ProjectCloneState['stage']): string | undefined {
+  return stage === undefined ? undefined : STAGE_LABEL[stage];
+}
+
+/** 速率，如 `1.2 MB/s`。 */
+export function formatRate(bytesPerSecond: number): string {
+  return `${formatBytes(bytesPerSecond)}/s`;
+}
+
+/** 已用时长 `m:ss`（超过一小时给 `h:mm:ss`）。 */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const s = total % 60;
+  const m = Math.floor(total / 60) % 60;
+  const h = Math.floor(total / 3600);
+  const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+  return `${h > 0 ? `${String(h)}:` : ''}${mm}:${String(s).padStart(2, '0')}`;
 }
 
 function clamp(n: number, lo: number, hi: number): number {

@@ -26,14 +26,38 @@ describe('persist partialize 白名单（15 §3.5 安全红线）', () => {
     );
   });
 
-  it('wizardData.initialPrompt 绝不进 persist（含敏感上下文）', () => {
-    useAppStore.getState().setWizardData({
-      runtime: 'codex',
-      initialPrompt: '内部仓库路径 /srv/secret-repo 与业务上下文',
-    });
-    const persisted = partializeAppState(useAppStore.getState());
-    expect(persisted).not.toHaveProperty('wizardData');
-    expect(JSON.stringify(persisted)).not.toContain('secret-repo');
+  /**
+   * ⚠️ 上一版这条用例的做法是"往 `wizardData.initialPrompt` 里塞敏感串，再断言它没落盘"。
+   * `wizardData` 本轮已从 store 上**整个删除**（F21-2 §N.2 死值清理）——store 上不再有任何
+   * 能装下指令的字段。用例据此改成**更强的那一条**：不是"装了但没带上盘"，而是
+   * **store 的状态里根本不存在承载指令的键**。
+   *
+   * 变异：在 `createUiSlice` 上把 `wizardData` / `initialPrompt` 之类的字段加回去 ⇒ 本例变红。
+   */
+  it('store 上不存在任何承载指令的字段（wizardData 已整体删除）', () => {
+    const stateKeys = Object.keys(useAppStore.getState());
+    for (const forbidden of ['wizardData', 'setWizardData', 'wizardReturn', 'initialPrompt']) {
+      expect(stateKeys).not.toContain(forbidden);
+    }
+    const snapshot = JSON.stringify(partializeAppState(useAppStore.getState())).toLowerCase();
+    expect(snapshot).not.toContain('wizard');
+  });
+
+  /**
+   * `currentModal` 的两个死值（`'registerImage'` / `'wizard'`）随本轮删除 —— 全仓无人 set、
+   * 无人读（F21-2 §N.0）。删除即回归：类型层已经拦住它们，这里再钉一条**运行时**事实——
+   * 活着的两个取值都是真弹层的开关，且默认关闭。
+   */
+  it("currentModal 只剩两个活取值（'createProject' / 'newTask'），默认关闭", () => {
+    expect(useAppStore.getState().currentModal).toBeNull();
+    useAppStore.getState().setCurrentModal('newTask');
+    expect(useAppStore.getState().currentModal).toBe('newTask');
+    useAppStore.getState().setCurrentModal('createProject');
+    expect(useAppStore.getState().currentModal).toBe('createProject');
+    useAppStore.getState().setCurrentModal(null);
+    expect(useAppStore.getState().currentModal).toBeNull();
+    // 弹层开关是瞬时 UI 指向，绝不落盘（刷新即关闭弹窗，§9.1 #32）。
+    expect(partializeAppState(useAppStore.getState())).not.toHaveProperty('currentModal');
   });
 
   it('瞬时 UI 指向 / registry 不落盘', () => {
@@ -74,10 +98,10 @@ describe('persist partialize 白名单（15 §3.5 安全红线）', () => {
   });
 
   it('S5 任务指令红线：白名单快照里不含任何 prompt / 向导暂存类键（Task 发起入口）', () => {
-    // 即便 store 上确实存在承载指令的字段（wizardData），partialize 也绝不把它带上盘。
-    useAppStore.getState().setWizardData({ initialPrompt: '迁移 acme-billing 内部系统的方案' });
+    // 指令只活在 container 局部 state（新建任务弹窗关闭即清空）——store 上连一个能装它的
+    // 位置都没有，快照里自然也不该出现这几个词。
     const snapshot = JSON.stringify(partializeAppState(useAppStore.getState())).toLowerCase();
-    for (const forbidden of ['prompt', 'initialprompt', 'wizarddata', 'acme-billing']) {
+    for (const forbidden of ['prompt', 'initialprompt', 'wizarddata', 'branch']) {
       expect(snapshot).not.toContain(forbidden);
     }
   });

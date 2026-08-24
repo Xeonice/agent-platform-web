@@ -96,7 +96,7 @@ describe('WS_PROTOCOL_CANONICAL ↔ zod schema 自洽', () => {
     expect(WS_PROTOCOL_CANONICAL).toContain('caught_up{taskId,firstSeq,seq}');
   });
 
-  it('长度与 api 侧一致（691 字符）——字面量被改动时最先响的一条', () => {
-    expect(WS_PROTOCOL_CANONICAL).toHaveLength(691);
+  it('长度与 api 侧一致（729 字符）——字面量被改动时最先响的一条', () => {
+    expect(WS_PROTOCOL_CANONICAL).toHaveLength(729);
   });
 });

@@ -13,12 +13,15 @@ describe('projectClone 派生（10 §7）', () => {
     expect(isProjectReady({ cloneStatus: 'failed' })).toBe(false);
   });
 
-  it('cloneProgressPercent 优先 percent，其次 bytes 比值，否则 null', () => {
+  it('cloneProgressPercent 优先 percent，其次**对象数**比值，否则 null', () => {
     expect(cloneProgressPercent({ phase: 'cloning', percent: 42 })).toBe(42);
     expect(cloneProgressPercent({ phase: 'cloning', percent: 150 })).toBe(100); // clamp
-    expect(cloneProgressPercent({ phase: 'cloning', receivedBytes: 50, totalBytes: 200 })).toBe(25);
+    // 兜底分母是 objectsTotal 而非 totalBytes——后者是幽灵字段，git clone 不报总字节数。
+    expect(cloneProgressPercent({ phase: 'cloning', objectsDone: 50, objectsTotal: 200 })).toBe(25);
     expect(cloneProgressPercent({ phase: 'cloning' })).toBeNull();
-    expect(cloneProgressPercent({ phase: 'cloning', receivedBytes: 1, totalBytes: 0 })).toBeNull();
+    expect(cloneProgressPercent({ phase: 'cloning', objectsDone: 1, objectsTotal: 0 })).toBeNull();
+    // 只有字节数、没有对象数 ⇒ 算不出百分比（走 indeterminate），不能瞎猜一个分母。
+    expect(cloneProgressPercent({ phase: 'cloning', receivedBytes: 999 })).toBeNull();
   });
 
   it('formatBytes 人类可读', () => {

@@ -138,9 +138,22 @@ function mockList(tasks: Record<string, unknown>[]): void {
   server.use(http.get(`${API_BASE}/api/sandboxes/:id/tasks`, () => HttpResponse.json(tasks)));
 }
 
+/**
+ * 打开发起表单并交出 textarea。
+ *
+ * ⚠️ 这个 helper 本身就是本轮改造的证据（F21-2 §N.3）：发起表单**不再是默认态** ——
+ * 面板按"这个沙箱有没有任务"分叉成引导 / 只读详情，表单必须被 [发起无头运行] 显式打开。
+ * 此前只要沙箱 running 就直接渲染发起表单，与有没有任务无关。
+ */
+async function openLauncher(): Promise<HTMLElement> {
+  const entry = screen.queryByRole('button', { name: '发起无头运行' });
+  if (entry !== null) fireEvent.click(entry);
+  return screen.findByLabelText('任务指令');
+}
+
 /** 发起一轮任务并连上 WS（多数用例的共同前置）。 */
 async function launch(prompt = '把测试补齐'): Promise<void> {
-  const textarea = await screen.findByLabelText('任务指令');
+  const textarea = await openLauncher();
   fireEvent.change(textarea, { target: { value: prompt } });
   fireEvent.click(screen.getByRole('button', { name: '发起无头任务' }));
   await screen.findByTestId('task-output-pane');
@@ -203,40 +216,42 @@ afterEach(() => {
 // ① 能力位显隐（headlessTask）
 // ————————————————————————————————————————————————————————————————
 describe('HeadlessTaskContainer · 能力位显隐（headlessTask）', () => {
-  it('headlessTask=false ⇒ 发起入口置灰 + 给出原因（与 spawnTty=false 同一套做法）', async () => {
+  it('headlessTask=false ⇒ [发起无头运行] 入口置灰 + 给出原因（与 spawnTty=false 同一套做法）', async () => {
     renderContainer({ headlessTaskSupported: false, providerName: 'boxlite' });
 
-    const button = await screen.findByRole('button', { name: '发起无头任务' });
-    expect(button).toBeDisabled();
+    // 能力位判定前移到了**入口**上：连发起表单都打不开，比"打开一张全禁用的表单"更诚实。
+    const entry = await screen.findByRole('button', { name: '发起无头运行' });
+    expect(entry).toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent(/boxlite.*headlessTask=false/);
-    // 输入框也一并禁用：不给"填了却发不出去"的假入口。
-    expect(screen.getByLabelText('任务指令')).toBeDisabled();
   });
 
-  it('headlessTask=false ⇒ 点击不发任何请求，界面停在发起入口', async () => {
+  it('headlessTask=false ⇒ 点击不发任何请求，界面停在非发起态', async () => {
     const run = mockRun();
     renderContainer({ headlessTaskSupported: false, providerName: 'boxlite' });
-    await screen.findByRole('button', { name: '发起无头任务' });
+    await screen.findByRole('button', { name: '发起无头运行' });
 
-    fireEvent.click(screen.getByRole('button', { name: '发起无头任务' }));
+    fireEvent.click(screen.getByRole('button', { name: '发起无头运行' }));
     await Promise.resolve();
 
     expect(run.body()).toBeUndefined();
-    // 没有任务被创建 ⇒ 不该出现输出面板（对照「零副作用拒绝」那条纪律）。
+    // 入口禁着 ⇒ 表单根本不该出现（更不该出现输出面板）。
+    expect(screen.queryByLabelText('任务指令')).not.toBeInTheDocument();
     expect(screen.queryByTestId('task-output-pane')).not.toBeInTheDocument();
     // 容器里另有一道 guard（handleSubmit 首行判 headlessTaskSupported===false），
-    // 与按钮禁用互为兜底；这里断言的是二者共同的可观察结果。
+    // 与入口禁用互为兜底；这里断言的是二者共同的可观察结果。
   });
 
   it('headlessTask=true ⇒ 正常可用，无置灰原因', async () => {
     renderContainer();
-    await screen.findByLabelText('任务指令');
+    await openLauncher();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('能力位未知（刷新后拿不到 provider）⇒ 不置灰，但就地说明以后端校验为准', async () => {
     renderContainer({ headlessTaskSupported: null });
-    const textarea = await screen.findByLabelText('任务指令');
+    // 引导态先说一次（入口不禁），打开表单后仍然说 —— 两处同源。
+    expect(await screen.findByRole('status')).toHaveTextContent(/无法确认.*以后端校验为准/);
+    const textarea = await openLauncher();
     expect(textarea).toBeEnabled();
     expect(screen.getByRole('status')).toHaveTextContent(/无法确认.*以后端校验为准/);
   });
@@ -250,7 +265,7 @@ describe('HeadlessTaskContainer · 发起', () => {
     const run = mockRun();
     renderContainer();
 
-    const textarea = await screen.findByLabelText('任务指令');
+    const textarea = await openLauncher();
     fireEvent.change(textarea, { target: { value: '把测试补齐' } });
     fireEvent.change(screen.getByLabelText('硬超时'), { target: { value: '240' } });
     fireEvent.click(screen.getByRole('checkbox'));
@@ -277,13 +292,13 @@ describe('HeadlessTaskContainer · 发起', () => {
 
   it('空指令 ⇒ 禁用发起（prompt 下限 1）', async () => {
     renderContainer();
-    await screen.findByLabelText('任务指令');
+    await openLauncher();
     expect(screen.getByRole('button', { name: '发起无头任务' })).toBeDisabled();
   });
 
   it('超 8000 上限 ⇒ 就地红字计数 + 禁用发起', async () => {
     renderContainer();
-    const textarea = await screen.findByLabelText('任务指令');
+    const textarea = await openLauncher();
     fireEvent.change(textarea, { target: { value: 'x'.repeat(8001) } });
 
     expect(screen.getByRole('button', { name: '发起无头任务' })).toBeDisabled();
@@ -294,7 +309,7 @@ describe('HeadlessTaskContainer · 发起', () => {
     mockRun();
     renderContainer();
 
-    const textarea = await screen.findByLabelText('任务指令');
+    const textarea = await openLauncher();
     fireEvent.change(textarea, { target: { value: '迁移 acme-billing 内部系统' } });
     // 输入期间就不该出现在全局 store 里（不是"提交后才清"）。
     expect(JSON.stringify(useAppStore.getState())).not.toContain('acme-billing');
@@ -318,7 +333,7 @@ describe('HeadlessTaskContainer · 发起', () => {
       ),
     );
     renderContainer();
-    const textarea = await screen.findByLabelText('任务指令');
+    const textarea = await openLauncher();
     fireEvent.change(textarea, { target: { value: '跑一下' } });
     fireEvent.click(screen.getByRole('button', { name: '发起无头任务' }));
 
@@ -811,21 +826,63 @@ describe('HeadlessTaskContainer · 刷新恢复与续接', () => {
     expect(latestSocket().emitted).toEqual([{ type: 'subscribe', taskId: 'newest-running' }]);
   });
 
-  it('列表里只剩已结束的任务 ⇒ 不自动顶上来，停在发起入口', async () => {
+  /**
+   * ⚠️ 本轮改判（F21-2 §N.3）：已结束的任务**不自动顶上来**这条不变，但落地形态从
+   * "停在发起表单"改成"**只读详情** + [新任务] 入口"。
+   *
+   * 变异：让详情态也渲染指令 textarea（例如把分叉条件从 `taskId===null && !composing`
+   * 改回 `taskId===null`）⇒ 下面「详情态没有指令 textarea」当场变红。
+   */
+  it('列表里只剩已结束的任务 ⇒ 不自动顶上来，转**只读详情**（不是发起表单）', async () => {
     useAppStore.getState().setSelectedTaskId(null);
-    mockList([taskDto({ id: 'old-done', status: 'succeeded', exitCode: 0 })]);
+    mockList([
+      taskDto({
+        id: 'old-done',
+        status: 'succeeded',
+        exitCode: 0,
+        finishedAt: '2026-08-22T00:03:21.000Z',
+        artifacts: [{ name: 'report.md', size: 2048, modifiedAt: '2026-08-22T00:03:21.000Z' }],
+      }),
+    ]);
     renderContainer();
 
-    await screen.findByLabelText('任务指令');
+    const detail = await screen.findByTestId('headless-task-detail');
+    // 只读详情的五格：状态 / 耗时 / 产物 / 退出码（指令后端不回显，就地说明）。
+    expect(within(detail).getByTestId('detail-status')).toHaveTextContent('已完成');
+    expect(within(detail).getByTestId('detail-exit-code')).toHaveTextContent('0');
+    expect(within(detail).getByText(/report\.md/)).toBeInTheDocument();
+    expect(within(detail).getByText(/3 分 21 秒/)).toBeInTheDocument();
+    expect(within(detail).getByText(/不回显/)).toBeInTheDocument();
+
+    // ① 详情态**没有**指令 textarea（它正是被替换掉的东西）。
+    expect(screen.queryByLabelText('任务指令')).not.toBeInTheDocument();
     expect(screen.queryByTestId('task-output-pane')).not.toBeInTheDocument();
+    // ② 但 [新任务] 入口**必须在**——一个沙箱多个任务是数据模型本来的样子，
+    //    "建完就没有发起入口"会把多任务能力从界面上抹掉。
+    expect(screen.getByRole('button', { name: '发起无头运行' })).toBeEnabled();
+
+    // ③ 点它才回到发起表单（表单是被打开的，不是自己出现的）。
+    fireEvent.click(screen.getByRole('button', { name: '发起无头运行' }));
+    expect(await screen.findByLabelText('任务指令')).toBeInTheDocument();
   });
 
-  it('列表为空（任务已被清理）⇒ 回到发起入口', async () => {
+  it('列表为空（运行已被清理）⇒ 引导态（仍然给 [发起无头运行] 入口）', async () => {
     useAppStore.getState().setSelectedTaskId('task-gone');
     mockList([]);
     renderContainer();
 
-    await screen.findByLabelText('任务指令');
+    const detail = await screen.findByTestId('headless-task-detail');
+    // 措辞刻意避开裸的"任务"：左侧树的 `项目 · N` 数的是 Sandbox，这里数的是
+    // 沙箱内部的无头运行，同名不同物会让两处读数互相打架。
+    expect(within(detail).getByText(/这个沙箱还没跑过无头运行/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('任务指令')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '发起无头运行' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: '发起无头运行' }));
+    expect(await screen.findByLabelText('任务指令')).toBeInTheDocument();
+    // 表单是被打开的 ⇒ 必须有退路（回到引导态）。
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(await screen.findByTestId('headless-task-detail')).toBeInTheDocument();
   });
 
   it('续接：终态点「接着聊」→ 下一轮请求体带上一轮的 sessionRef', async () => {

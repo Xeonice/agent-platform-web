@@ -13,6 +13,24 @@ export interface WorkbenchShellProps {
   onSelectTask?: (taskId: string) => void;
   onSelectProject?: (projectId: string) => void;
   onNewProject?: () => void;
+  /**
+   * 「新建任务」入口（F21-2 §N.1）。
+   *
+   * ⚠️ **今天一个入口都没有** —— 新建任务面板是 `SandboxTerminalContainer` 在
+   * "沙箱为空"时的**兜底渲染**，不是被打开的，于是"创建"根本不是一个动作（§N.0）。
+   * 这个按钮存在本身就是"它变成了一个动作"的证据（§9.1 #1）。
+   */
+  onNewTask?: () => void;
+  /**
+   * 非空 → 入口置灰并给出原因。今天唯一来源：**没有可用的选中项目**
+   *（§9.1 #33：绕过会建出无项目归属的 Task）。
+   */
+  newTaskDisabledReason?: string;
+  /**
+   * 弹层插槽（`currentModal` 的两个取值都往这儿渲染）。
+   * 放在**最后**：overlay 自己是 `fixed inset-0 z-50`，DOM 顺序决定堆叠时谁在上。
+   */
+  overlaySlot?: ReactNode;
 }
 
 /** clone 徽标：cloning→克隆中(黄) / failed→克隆失败(红) / ready→无（就绪不打扰）。 */
@@ -38,6 +56,9 @@ export function WorkbenchShellView({
   onSelectTask,
   onSelectProject,
   onNewProject,
+  onNewTask,
+  newTaskDisabledReason,
+  overlaySlot,
 }: WorkbenchShellProps) {
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
@@ -116,14 +137,34 @@ export function WorkbenchShellView({
               </section>
             ))}
           </nav>
-          <div className="border-t border-border p-2">
+          <div className="flex flex-col gap-2 border-t border-border p-2">
+            {/* 两个「新建」并排：它们本来就是**两个平级的动作**（§9.0 两个弹窗、两个交互）。 */}
+            <Button
+              size="sm"
+              className="w-full"
+              data-testid="new-task-entry"
+              disabled={newTaskDisabledReason !== undefined}
+              title={newTaskDisabledReason}
+              onClick={onNewTask}
+            >
+              ＋ 新任务
+            </Button>
+            {newTaskDisabledReason !== undefined && (
+              <p className="px-1 text-[10px] text-muted-foreground">{newTaskDisabledReason}</p>
+            )}
             <Button variant="outline" size="sm" className="w-full" onClick={onNewProject}>
               ＋ 新建项目
             </Button>
           </div>
         </aside>
-        <main className="min-w-0 flex-1">{terminalSlot}</main>
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {/* min-h-0 + overflow-hidden 缺一不可：flex 项默认 `min-height:auto`，
+              终端内容一高就把 h-screen 撑破，页面出现整页滚动条、xterm 的 fit
+              又按失控高度算行数 ⇒ 一大片空黑。终端自己有 scrollback，不需要页面滚。 */}
+          {terminalSlot}
+        </main>
       </div>
+      {overlaySlot}
     </div>
   );
 }

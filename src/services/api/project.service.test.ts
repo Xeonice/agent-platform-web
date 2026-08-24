@@ -8,6 +8,8 @@ import {
   createProject,
   retryClone,
   convertToEmpty,
+  listProjectBranches,
+  syncProject,
 } from '@/services/api/project.service';
 import { ApiErrorException } from '@/services/api/apiError';
 
@@ -19,11 +21,15 @@ describe('project.service（10 §7）', () => {
     expect(Array.isArray(list)).toBe(true);
     expect(list[0]).toMatchObject({ id: expect.any(String), taskCount: expect.any(Number) });
     expect(['cloning', 'ready', 'failed']).toContain(list[0]?.cloneStatus);
-    // DTO 不含 repoUrl（产品红线）
-    expect(list[0]).not.toHaveProperty('repoUrl');
+    /**
+     * ⚠️ 上一版断言的是 `not.toHaveProperty('repoUrl')`（10 §7「repoUrl 不入 DTO」的产品红线）。
+     * **该定案已被 F21-6 §9.1 推翻**：完整克隆之后，远端地址 / 基线体积 / 最后同步是项目
+     * 只读条的内容来源。断言据此翻面 —— 保留它只会把新契约当成回归。
+     */
+    expect(list[0]).toHaveProperty('repoUrl');
   });
 
-  it('POST /api/projects（git）→ 202 ProjectDto cloning，且请求带 credentials + 不回读 repoUrl', async () => {
+  it('POST /api/projects（git）→ 202 ProjectDto cloning，且请求带 credentials + repoBranch 可选', async () => {
     let seenBody: unknown;
     let seenCredentials: RequestCredentials | undefined;
     server.use(
@@ -49,12 +55,15 @@ describe('project.service（10 §7）', () => {
       name: 'acme',
       sourceType: 'git',
       repoUrl: 'https://github.com/acme/web.git',
+      // `repoBranch` **契约里一直有**，本轮表单才接上（留空 = 远端默认分支，见 F21-6 §9.4）。
+      repoBranch: 'develop',
     });
     expect(project.cloneStatus).toBe('cloning');
-    expect(project).not.toHaveProperty('repoUrl');
     expect(seenCredentials).toBe('include');
-    // repoUrl 只在请求体（创建用），不在响应回读
-    expect(seenBody).toMatchObject({ repoUrl: 'https://github.com/acme/web.git' });
+    expect(seenBody).toMatchObject({
+      repoUrl: 'https://github.com/acme/web.git',
+      repoBranch: 'develop',
+    });
   });
 
   it('convert-to-empty 非 failed 态 → 409 抛 ApiErrorException', async () => {
@@ -79,5 +88,71 @@ describe('project.service（10 §7）', () => {
       ),
     );
     await expect(retryClone('p1')).rejects.toMatchObject({ httpStatus: 401 });
+  });
+});
+
+/**
+ * ⏳ 两个**尚未进生成 openapi.d.ts** 的端点（走手写 fetch，与 access.service 同一先例）。
+ * 手写 fetch 最容易漏掉的两件事就在这里钉死：**带凭据**（口令门 11 §3.1）与**响应形状校验**。
+ */
+describe('project.service · 分支列表与基线同步', () => {
+  it('GET /branches → string[]，且带 credentials（口令门下不会静默 401）', async () => {
+    let seenCredentials: RequestCredentials | undefined;
+    server.use(
+      http.get(`${API_BASE}/api/projects/:id/branches`, ({ request }) => {
+        seenCredentials = request.credentials;
+        return HttpResponse.json(['main', 'develop']);
+      }),
+    );
+    await expect(listProjectBranches('p1')).resolves.toEqual(['main', 'develop']);
+    expect(seenCredentials).toBe('include');
+  });
+
+  /**
+   * 响应形状不对 ⇒ **当异常抛**。不做这层校验的话，后端哪天改成 `{branches:[…]}`，
+   * 选择器会安静地渲染一串空选项，而没有任何一处报错 —— 那才是"用类型蒙混"。
+   * 变异：把校验删掉直接返回 body ⇒ 本例变红。
+   */
+  it('GET /branches 响应不是 string[] ⇒ 抛 ApiErrorException（不把坏形状交出去）', async () => {
+    server.use(
+      http.get(`${API_BASE}/api/projects/:id/branches`, () =>
+        HttpResponse.json({ branches: ['main'] }),
+      ),
+    );
+    await expect(listProjectBranches('p1')).rejects.toBeInstanceOf(ApiErrorException);
+  });
+
+  it('POST /sync → 204，带 credentials；非 2xx 归一化成 ApiErrorException', async () => {
+    let seenCredentials: RequestCredentials | undefined;
+    server.use(
+      http.post(`${API_BASE}/api/projects/:id/sync`, ({ request }) => {
+        seenCredentials = request.credentials;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(syncProject('p1')).resolves.toBeUndefined();
+    expect(seenCredentials).toBe('include');
+
+    server.use(
+      http.post(`${API_BASE}/api/projects/:id/sync`, () =>
+        HttpResponse.json(
+          { code: 'INVALID_STATE', message: '项目未就绪', retryable: false },
+          { status: 409 },
+        ),
+      ),
+    );
+    await expect(syncProject('p1')).rejects.toBeInstanceOf(ApiErrorException);
+  });
+
+  it('路径参数被 encode（项目 id 里的特殊字符不会拼坏 URL）', async () => {
+    let seenUrl = '';
+    server.use(
+      http.get(`${API_BASE}/api/projects/:id/branches`, ({ request }) => {
+        seenUrl = request.url;
+        return HttpResponse.json([]);
+      }),
+    );
+    await listProjectBranches('a/b');
+    expect(seenUrl).toContain('/api/projects/a%2Fb/branches');
   });
 });

@@ -3,7 +3,7 @@
 // runtime 一侧同判据见文件末尾 `runtime 注册表驱动` 一节（14 §10 的那个 bug 的看守）。
 // 另覆盖：默认选中来自服务端（provider 看 isDefault、runtime 看返回顺序）、spawnTty=false 禁用建沙箱并给原因、加载中/失败态。
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
@@ -108,22 +108,49 @@ async function chooseRuntime(id?: string): Promise<void> {
   fireEvent.click(target);
 }
 
-function renderContainer(): void {
+interface RenderOptions {
+  /** 项目来源：`'empty'` ⇒ 不渲染分支选择器、也不发 /branches 请求。默认按 git 项目走。 */
+  sourceType?: 'git' | 'empty';
+  /**
+   * 是否直接把「新建任务」弹层开着。**默认开**——绝大多数既有用例断言的是弹层里那张表单。
+   *
+   * ⚠️ 这一行本身就是本轮改造的证据：面板此前是 `sandboxId===null` 时的**兜底渲染**
+   *（不打开它、它自己就在），现在必须**被打开**（工作台 [+ 新任务] → `currentModal='newTask'`）。
+   */
+  openModal?: boolean;
+}
+
+function renderContainer({ sourceType = 'git', openModal = true }: RenderOptions = {}): void {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
-  render(<SandboxTerminalContainer wsBaseUrl="ws://localhost:3001" projectId="proj-1" />, {
-    wrapper: Wrapper,
-  });
+  if (openModal) useAppStore.getState().setCurrentModal('newTask');
+  render(
+    <SandboxTerminalContainer
+      wsBaseUrl="ws://localhost:3001"
+      projectId="proj-1"
+      projectName="ProjectA"
+      projectSourceType={sourceType}
+    />,
+    { wrapper: Wrapper },
+  );
 }
 
 beforeEach(() => {
   cleanup();
   // 选中位是 persist 白名单字段，跨用例会残留 → 每例复位，否则下一例一挂载就去"恢复"上一例的沙箱。
   useAppStore.getState().setSelectedSandboxId(null);
+  // 弹层开关是瞬时态，但跨用例仍在同一个 store 上 → 每例复位。
+  useAppStore.getState().setCurrentModal(null);
+  // 分支列表：默认给一份（用例可 server.use 覆盖）。读的是本地引用，不触网。
+  server.use(
+    http.get(`${API_BASE}/api/projects/:id/branches`, () =>
+      HttpResponse.json(['main', 'develop', 'feature/x']),
+    ),
+  );
 });
 afterEach(() => {
   cleanup();
@@ -860,15 +887,58 @@ describe('SandboxTerminalContainer · runtime 注册表驱动（14 §10）', () 
     expect(sentProvider).toBe('boxlite');
   });
 
+  /**
+   * ★ 无头面板只挂在**无头沙箱**底下。
+   *
+   * 此前它对每个沙箱无条件渲染，于是交互式沙箱底下也挂一条「无头任务」，永远停在
+   * 空态说"这个沙箱还没有任务"——因为交互式沙箱的 AgentTask 列表恒为空。而左侧树的
+   * `项目 · N` 数的是 **Sandbox**（Task 的产品叫法），同一屏上"· 1"与"还没有任务"
+   * 直接打架：两句话各自都对，说的却是两个东西。
+   *
+   * 模式在创建时二选一（P20 §3.2 / `SandboxDto.headless`）——交互式沙箱的全部界面
+   * 就是终端本身。
+   *
+   * MUTATION：把门控改回只判 `sandboxRuntime === undefined` → 本条红。
+   */
+  it('交互式沙箱（headless=false）⇒ 底下不挂无头面板', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps({ headlessTask: true }), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'claude-code', displayName: 'Claude Code' })]);
+    server.use(
+      http.post(`${API_BASE}/api/sandboxes`, () =>
+        HttpResponse.json(
+          sandboxDto({ id: 'sb-i', runtime: 'claude-code', status: 'running', headless: false }),
+          { status: 201 },
+        ),
+      ),
+      http.get(`${API_BASE}/api/sandboxes/:id/tasks`, () => HttpResponse.json([])),
+    );
+    renderContainer();
+
+    await screen.findByRole('radio', { name: /claude-code/ });
+    await chooseRuntime();
+    fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
+
+    // 沙箱已 running（走到终端那一支）——`TerminalMount` 是 next/dynamic 懒加载的，
+    // jsdom 里解析不了，所以锚点取它的 loading 占位而不是 `terminal-container`。
+    await screen.findByText('终端加载中…');
+    // 交互式沙箱底下不该挂无头面板：对照组是紧邻的 ⑧（同样 setup、headless:true ⇒ 有面板）。
+    expect(screen.queryByTestId('headless-task-detail')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '发起无头运行' })).not.toBeInTheDocument();
+  });
+
   it('⑧ 建出来的沙箱把它自己的 runtime 交给无头任务面板（不是前端再挑一个）', async () => {
     mockRegistry([{ name: 'aio', capabilities: caps({ headlessTask: true }), isDefault: true }]);
     mockRuntimeRegistry([runtimeDto({ id: 'claude-code', displayName: 'Claude Code' })]);
     server.use(
       http.post(`${API_BASE}/api/sandboxes`, () =>
         // 后端回的 runtime 才是权威（可能与请求不同：后端有归一化的余地）。
-        HttpResponse.json(sandboxDto({ id: 'sb-hl', runtime: 'claude-code', status: 'running' }), {
-          status: 201,
-        }),
+        // ★ `headless: true` 不是装饰：无头面板**只挂在无头沙箱底下**。
+        // 交互式沙箱（headless:false）底下挂一条「无头任务」，会永远停在空态说
+        // "还没有任务"，而左侧树同时写着 `项目 · 1` —— 两处读数打架（同名不同物）。
+        HttpResponse.json(
+          sandboxDto({ id: 'sb-hl', runtime: 'claude-code', status: 'running', headless: true }),
+          { status: 201 },
+        ),
       ),
       http.get(`${API_BASE}/api/sandboxes/:id/tasks`, () => HttpResponse.json([])),
     );
@@ -880,6 +950,11 @@ describe('SandboxTerminalContainer · runtime 注册表驱动（14 §10）', () 
 
     // 无头面板挂起来了 = 容器确实拿到了**沙箱自己的** runtime（它为 undefined 时整块不渲染）。
     // 面板里的 POST 路径 `:rt` 就取这个值，所以这一步同时证明了无头链路不会再拿到一个凭空的 runtime。
+    //
+    // ⚠️ 断言从"有指令 textarea"改成"有无头面板"：这个沙箱**一条任务都没有**，
+    // 面板此刻是引导态而不是发起表单（§N.3）——发起表单要 [发起无头运行] 才打开。
+    expect(await screen.findByTestId('headless-task-detail')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '发起无头运行' }));
     expect(await screen.findByLabelText('任务指令')).toBeInTheDocument();
   });
 });
@@ -968,5 +1043,249 @@ describe('SandboxTerminalContainer · 鉴权拦截层（P20 §5.1 三分支）',
     await screen.findByTestId('auth-gate');
     fireEvent.click(screen.getByRole('button', { name: /管理所有凭证/ }));
     expect(nav.push).toHaveBeenCalledWith('/settings/credentials');
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// 弹层形态（F21-2 §N.0）：它**是弹层**，而且是被打开的 —— 不再是"沙箱为空时的兜底渲染"。
+// ————————————————————————————————————————————————————————————————
+describe('SandboxTerminalContainer · 新建任务弹层形态', () => {
+  /**
+   * ⚠️ 本轮最要紧的一条。此前 `NewSandboxPanelView` 由
+   * `sandboxId===null || socketConfig===null` **兜底渲染**：不打开它、它自己就在，
+   * 于是"创建"根本不是一个动作（§N.0）。
+   *
+   * 变异：把 `currentModal !== 'newTask' ? null : (…)` 改回无条件渲染 ⇒ 本例变红。
+   */
+  it('未打开时**不渲染**面板，主区是占位引导（面板不再是兜底态）', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    renderContainer({ openModal: false });
+
+    expect(await screen.findByTestId('no-sandbox-placeholder')).toHaveTextContent(/ProjectA/);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('new-sandbox-panel')).not.toBeInTheDocument();
+  });
+
+  it('打开后是真 overlay（role=dialog + aria-modal），标题带项目上下文', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    renderContainer();
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('data-testid', 'modal-new-task');
+    // 弹窗内**没有**项目下拉：任务归属继承左侧树选中项（§9.0 两个弹窗不嵌套）。
+    expect(within(dialog).getByText(/在「ProjectA」中发起/)).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/项目/)).not.toBeInTheDocument();
+  });
+
+  it('Esc 关闭弹层，且**指令随之清空**（重开不会带着上次的敏感上下文）', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    renderContainer();
+
+    const textarea = await screen.findByLabelText('任务指令（可选）');
+    fireEvent.change(textarea, { target: { value: '迁移 acme-billing 内部系统' } });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    // 重开：表单态已清空（指令绝不跨一次打开残留）。
+    act(() => {
+      useAppStore.getState().setCurrentModal('newTask');
+    });
+    expect(await screen.findByLabelText('任务指令（可选）')).toHaveValue('');
+  });
+
+  it('[取消] 与 [✕] 同样关闭弹层', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    renderContainer();
+
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    act(() => {
+      useAppStore.getState().setCurrentModal('newTask');
+    });
+    fireEvent.click(await screen.findByRole('button', { name: '关闭' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('创建受理 ⇒ 弹层关闭，主区接手进度（失败时弹层留着就地改配置）', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    server.use(
+      http.post(`${API_BASE}/api/sandboxes`, () =>
+        HttpResponse.json(sandboxDto({ id: 'sb-modal', status: 'creating' }), { status: 201 }),
+      ),
+    );
+    renderContainer();
+    await chooseRuntime('codex');
+    fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('门口拒绝（sideEffectFree）⇒ 弹层**不关**，就地提示改配置', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    server.use(
+      http.post(`${API_BASE}/api/sandboxes`, () =>
+        HttpResponse.json(
+          {
+            code: 'UNKNOWN_BRANCH',
+            message: "branch 'gone' 不存在",
+            retryable: false,
+            sideEffectFree: true,
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderContainer();
+    await chooseRuntime('codex');
+    fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
+
+    expect(await screen.findByTestId('create-rejection')).toHaveTextContent(/未创建任何任务/);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    // 零副作用 ⇒ 绝不出"重新创建"失败卡。
+    expect(screen.queryByTestId('create-failure')).not.toBeInTheDocument();
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// 分支选择器（F21-2 §N.1）
+// ————————————————————————————————————————————————————————————————
+describe('SandboxTerminalContainer · 分支选择器', () => {
+  /**
+   * 读取请求体为可断言的记录。**不用 `as` 断言**（14 §4 防绕过类型：测试也不例外）——
+   * `Object.entries` 走一遍就把 `unknown` 变成结构上真实的键值对。
+   */
+  async function readBody(request: Request): Promise<Record<string, unknown>> {
+    const raw: unknown = await request.json();
+    return typeof raw === 'object' && raw !== null ? Object.fromEntries(Object.entries(raw)) : {};
+  }
+
+  /** 捕获 POST /api/sandboxes 的请求体。 */
+  function captureCreate(): { body: () => Record<string, unknown> | undefined } {
+    let captured: Record<string, unknown> | undefined;
+    server.use(
+      http.post(`${API_BASE}/api/sandboxes`, async ({ request }) => {
+        captured = await readBody(request);
+        return HttpResponse.json(sandboxDto(), { status: 201 });
+      }),
+    );
+    return { body: () => captured };
+  }
+
+  it('选项来自 GET /api/projects/:id/branches（缺省项 = 跟随基线当前分支）', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    renderContainer();
+
+    const select = await screen.findByLabelText('分支（可选）');
+    await waitFor(() => {
+      expect(within(select).getByRole('option', { name: 'develop' })).toBeInTheDocument();
+    });
+    // 缺省项在最前，且**它的 value 是空串**——前端不预填任何分支名。
+    expect(select).toHaveValue('');
+    expect(within(select).getByRole('option', { name: /跟随基线当前分支/ })).toBeInTheDocument();
+  });
+
+  /**
+   * ⚠️ 本条是「缺省语义」的看守（§9.4 ④）。
+   * 变异：在 handleCreate 里把 `branch === '' ? {} : { branch }` 改成 `{ branch: branch || 'main' }`
+   * （"顺手补个默认值"）⇒ 本例变红。
+   */
+  it('不选分支 ⇒ 请求体**不含** branch 字段（由后端走基线缺省）', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    const created = captureCreate();
+    renderContainer();
+
+    await screen.findByLabelText('分支（可选）');
+    await chooseRuntime('codex');
+    fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
+
+    await waitFor(() => {
+      expect(created.body()).toBeDefined();
+    });
+    expect(created.body()).not.toHaveProperty('branch');
+  });
+
+  it('选了非缺省分支 ⇒ 请求体 branch = 所选', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    const created = captureCreate();
+    renderContainer();
+
+    const select = await screen.findByLabelText('分支（可选）');
+    await waitFor(() => {
+      expect(within(select).getByRole('option', { name: 'feature/x' })).toBeInTheDocument();
+    });
+    fireEvent.change(select, { target: { value: 'feature/x' } });
+    await chooseRuntime('codex');
+    fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
+
+    await waitFor(() => {
+      expect(created.body()?.['branch']).toBe('feature/x');
+    });
+  });
+
+  /**
+   * 空项目**整块不渲染**，且**一个 /branches 请求都不发**（没有 git，谈不上分支）。
+   * 变异：把 `showBranchPicker={isGitProject}` 改成恒 true ⇒ 本例变红。
+   */
+  it('空项目 ⇒ 不渲染选择器，也不发 /branches 请求', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    let branchHits = 0;
+    server.use(
+      http.get(`${API_BASE}/api/projects/:id/branches`, () => {
+        branchHits += 1;
+        return HttpResponse.json(['main']);
+      }),
+    );
+    renderContainer({ sourceType: 'empty' });
+
+    await screen.findByRole('dialog');
+    await chooseRuntime('codex');
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
+    });
+    expect(screen.queryByTestId('branch-picker')).not.toBeInTheDocument();
+    expect(branchHits).toBe(0);
+  });
+
+  /**
+   * 分支列表取不到 ⇒ 降级为"用基线分支"，**创建照常可点**。
+   * 变异：把 `branchesErrorMessage` 接进 `createDisabledReason`（"顺手拦一下"）⇒ 本例变红。
+   */
+  it('/branches 失败 ⇒ 就地说明并降级，**不禁用创建**', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    server.use(
+      http.get(`${API_BASE}/api/projects/:id/branches`, () =>
+        HttpResponse.json({ code: 'INTERNAL', message: 'boom', retryable: true }, { status: 500 }),
+      ),
+    );
+    renderContainer();
+    await chooseRuntime('codex');
+
+    expect(await screen.findByText(/将使用基线当前分支创建/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
+    });
   });
 });

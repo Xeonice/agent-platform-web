@@ -42,6 +42,11 @@ export interface SandboxRestore {
   runtime?: string;
   /** 沙箱实际跑在哪个 provider 档位上（S6：据此精确判定 headlessTask 能力位）。 */
   provider?: string;
+  /**
+   * 沙箱的**模式**：`true` = 无头任务，`false` = 交互式终端（创建时二选一，P20 §3.2）。
+   * 刷新恢复时必须取回来——否则界面无从知道该不该挂无头面板。
+   */
+  headless?: boolean;
   /** 该 id 在后端已不存在（404）：调用方回到新建入口。 */
   notFound: boolean;
   isPending: boolean;
@@ -117,6 +122,7 @@ export function useSandboxRestore(sandboxId: string | null): SandboxRestore {
     ...(data?.name === undefined ? {} : { name: data.name }),
     ...(data?.runtime === undefined ? {} : { runtime: data.runtime }),
     ...(data?.provider === undefined ? {} : { provider: data.provider }),
+    ...(data?.headless === undefined ? {} : { headless: data.headless }),
     notFound,
     isPending: sandboxId !== null && !staleTerminal && query.isPending,
   };

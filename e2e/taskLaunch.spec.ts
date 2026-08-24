@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import type { SandboxProviderCapabilities } from '../src/types/sandbox';
 import type { RuntimeDto } from '../src/types/runtimeCredential';
 
@@ -51,6 +51,35 @@ const RUNTIMES: RuntimeDto[] = [
 ];
 
 const PROMPT = '分析 /srv/internal-repo 的架构并输出摘要';
+
+/**
+ * 打开「新建任务」弹层。
+ *
+ * ⚠️ 这个 helper 本身就是本轮改造的证据（F21-2 §N.0）：面板此前由
+ * `sandboxId===null || socketConfig===null` **兜底渲染**——不打开它、它自己就在，
+ * 于是"创建"根本不是一个动作。现在它必须被 [＋ 新任务] 打开。
+ */
+async function openNewTaskModal(page: Page): Promise<void> {
+  await page.getByTestId('new-task-entry').click();
+  await expect(page.getByTestId('modal-new-task')).toBeVisible();
+}
+
+/** 一个 ready 的 git 项目（分支选择器要它是 git 项目才渲染）。 */
+function gitProject(): Record<string, unknown> {
+  return {
+    id: 'proj-e2e',
+    name: 'E2E 发起项目',
+    sourceType: 'git',
+    cloneStatus: 'ready',
+    cloneErrorCode: null,
+    taskCount: 0,
+    createdAt: new Date().toISOString(),
+    repoUrl: 'https://github.com/acme/e2e.git',
+    repoBranch: 'main',
+    baselineSizeBytes: 12_582_912,
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进度卡', () => {
   test('填指令 → 提交 → 进度卡按展示序渲染；localStorage 无指令残留', async ({ page }) => {
@@ -107,6 +136,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
 
     await page.goto('/');
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+    await openNewTaskModal(page);
 
     await expect(page.getByRole('radio', { name: /^aio/ })).toBeChecked();
     // provider 有 isDefault 会预选；runtime **不预选**，必须显式点一下。
@@ -178,6 +208,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
 
     await page.goto('/');
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+    await openNewTaskModal(page);
     await expect(page.getByRole('radio', { name: /^aio/ })).toBeChecked();
     // provider 有 isDefault 会预选；runtime **不预选**，必须显式点一下。
     await page.getByRole('radio', { name: /^codex/ }).check();
@@ -254,6 +285,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
 
     await page.goto('/');
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+    await openNewTaskModal(page);
     await expect(page.getByRole('radio', { name: /^aio/ })).toBeChecked();
     // provider 有 isDefault 会预选；runtime **不预选**，必须显式点一下。
     await page.getByRole('radio', { name: /^codex/ }).check();
@@ -261,6 +293,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     await expect(page.getByText('正在启动：会失败的任务')).toBeVisible();
 
     // ——— 刷新：内存里的 WS 状态全丢，只剩 persist 的 selectedSandboxId ———
+    // ⚠️ 刷新后**不再开弹层**：失败卡在主区，弹层是关着的（§9.1 #32 刷新即关闭弹窗）。
     await page.reload();
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
 
@@ -269,5 +302,269 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     await expect(page.getByRole('button', { name: '换一张含 tmux 的镜像' })).toBeVisible();
     await expect(page.getByRole('button', { name: '重试' })).toHaveCount(0);
     await expect(page.getByText('command -v tmux exited 1')).toBeVisible();
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// ★ 本轮新增（F21-2 §7.4）：入口 / 形态对称 / 分支贯通 / 建完是详情
+// ————————————————————————————————————————————————————————————————
+test.describe('★ 新建任务：入口、弹层形态、分支、建完后的形态', () => {
+  /** 四条新用例的共同 stub（都要一个 ready 的 git 项目 + 两个 registry）。 */
+  async function stubBase(page: Page, branches: string[] = ['main', 'develop', 'feature/x']) {
+    await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+    await page.route('**/api/projects', (route) =>
+      route.fulfill({ status: 200, json: [gitProject()] }),
+    );
+    await page.route('**/api/projects/*/branches', (route) =>
+      route.fulfill({ status: 200, json: branches }),
+    );
+    await page.route('**/api/providers', (route) =>
+      route.fulfill({
+        status: 200,
+        json: [
+          { name: 'aio', capabilities: providerCaps({ headlessTask: true }), isDefault: true },
+        ],
+      }),
+    );
+    await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
+  }
+
+  /**
+   * ① **入口存在性**（§9.1 #1，最要紧的一条）。
+   *
+   * 今天没有任何入口——"新建任务"只是沙箱为空时的兜底态。**这条用例存在本身**
+   * 就是"它变成了一个动作"的证据。
+   *
+   * 变异：删掉 `WorkbenchShell.view` 里的 [＋ 新任务] 按钮 ⇒ 本例变红。
+   */
+  test('① 工作台点 [＋ 新任务] → 弹窗打开；没选项目时入口禁用', async ({ page }) => {
+    await stubBase(page);
+    await page.goto('/');
+
+    // 还没选项目 ⇒ 入口禁着（§9.1 #33：绕过会建出无项目归属的 Task）。
+    await expect(page.getByTestId('new-task-entry')).toBeDisabled();
+    await expect(page.getByTestId('modal-new-task')).toHaveCount(0);
+
+    await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+    await expect(page.getByTestId('new-task-entry')).toBeEnabled();
+    await page.getByTestId('new-task-entry').click();
+
+    const modal = page.getByTestId('modal-new-task');
+    await expect(modal).toBeVisible();
+    await expect(modal).toHaveAttribute('role', 'dialog');
+    // 弹窗继承树上选中的项目（§9.1 #3：弹窗内没有项目下拉）。
+    await expect(modal.getByText(/在「E2E 发起项目」中发起/)).toBeVisible();
+  });
+
+  /**
+   * ② **两个弹窗形态对称**（§9.1 #2）：都是 overlay（role=dialog）、Esc 都能关、都不改路由。
+   *
+   * 变异：把「新建项目」改回 return 成主区内容（去掉 ModalShell）⇒ 本例变红。
+   */
+  test('② 新建项目 / 新建任务：都是 overlay、Esc 都能关、都不改路由', async ({ page }) => {
+    await stubBase(page);
+    await page.goto('/');
+    const url = page.url();
+
+    // —— 新建项目 ——
+    await page.getByRole('button', { name: /新建项目/ }).click();
+    const projectModal = page.getByTestId('modal-new-project');
+    await expect(projectModal).toBeVisible();
+    await expect(projectModal).toHaveAttribute('aria-modal', 'true');
+    // 弹层是**盖上去**的，主区（项目树）还在。
+    await expect(page.getByLabel('项目分组任务树')).toBeVisible();
+    expect(page.url()).toBe(url);
+    await page.keyboard.press('Escape');
+    await expect(projectModal).toHaveCount(0);
+
+    // —— 新建任务 ——
+    await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+    await page.getByTestId('new-task-entry').click();
+    const taskModal = page.getByTestId('modal-new-task');
+    await expect(taskModal).toBeVisible();
+    await expect(taskModal).toHaveAttribute('aria-modal', 'true');
+    expect(page.url()).toBe(url);
+    await page.keyboard.press('Escape');
+    await expect(taskModal).toHaveCount(0);
+  });
+
+  /**
+   * ③ **分支贯通（前端一侧）**：选项来自 `GET /api/projects/:id/branches`，
+   * 选了就进请求体、不选就**不进**。
+   *
+   * ⚠️ 文档的 VS-3 步骤 4 要断言容器内 `git rev-parse --abbrev-ref HEAD` = 所选分支，
+   * 那需要**真后端 + 真容器**（浅克隆下必红），mock 边界的 e2e 做不到 —— 这里覆盖到
+   * "前端把用户的选择原样交给后端"为止，容器内那一半留给联调（见报告）。
+   *
+   * 变异：在 handleCreate 里给 branch 补一个默认值（`branch || 'main'`）⇒ 「不选不传」那半变红。
+   */
+  test('③ 分支：选了进请求体 branch；不选则请求体不含 branch', async ({ page }) => {
+    await stubBase(page);
+    let body: Record<string, unknown> = {};
+    await page.route('**/api/sandboxes', async (route) => {
+      const raw: unknown = route.request().postDataJSON();
+      body = typeof raw === 'object' && raw !== null ? Object.fromEntries(Object.entries(raw)) : {};
+      await route.fulfill({
+        status: 201,
+        json: {
+          id: 'sb-branch',
+          projectId: 'proj-e2e',
+          runtime: 'codex',
+          provider: 'aio',
+          name: '分支任务',
+          status: 'creating',
+          headless: false,
+          timeoutMinutes: 120,
+          idleTimeoutSec: 1800,
+          waitingInput: false,
+          version: 1,
+        },
+      });
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+    await openNewTaskModal(page);
+
+    // 选项来自后端（读的是本地引用，不触网）；缺省项 = 跟随基线当前分支。
+    const branchSelect = page.getByLabel('分支（可选）');
+    await expect(branchSelect).toBeVisible();
+    await expect(branchSelect).toHaveValue('');
+    await expect(branchSelect.getByRole('option', { name: 'feature/x' })).toHaveCount(1);
+
+    // —— 不选：请求体不含 branch ——
+    await page.getByRole('radio', { name: /^codex/ }).check();
+    await page.getByRole('button', { name: '发起任务并打开终端' }).click();
+    await expect.poll(() => Object.keys(body)).toContain('projectId');
+    expect(body).not.toHaveProperty('branch');
+
+    // —— 再来一次，这次选 feature/x ——
+    body = {};
+    await page.getByTestId('new-task-entry').click();
+    await page.getByLabel('分支（可选）').selectOption('feature/x');
+    await page.getByRole('radio', { name: /^codex/ }).check();
+    await page.getByRole('button', { name: '发起任务并打开终端' }).click();
+    await expect.poll(() => body['branch']).toBe('feature/x');
+  });
+
+  /**
+   * ③b **空项目不渲染分支选择器**（§9.1 #17）：没有 git，谈不上分支。
+   * 变异：把 `showBranchPicker={isGitProject}` 改成恒 true ⇒ 本例变红。
+   */
+  test('③b 空项目 ⇒ 弹窗内没有分支选择器', async ({ page }) => {
+    await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+    await page.route('**/api/projects', (route) =>
+      route.fulfill({
+        status: 200,
+        json: [{ ...gitProject(), sourceType: 'empty', repoUrl: undefined }],
+      }),
+    );
+    await page.route('**/api/providers', (route) =>
+      route.fulfill({
+        status: 200,
+        json: [{ name: 'aio', capabilities: providerCaps(), isDefault: true }],
+      }),
+    );
+    await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+    await openNewTaskModal(page);
+
+    await expect(page.getByTestId('branch-picker')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '发起任务并打开终端' })).toBeVisible();
+  });
+
+  /**
+   * ④ **建完任务后是详情，不是发起表单**（§9.1 #34 / §N.3）。
+   *
+   * 变异：把 `HeadlessTaskContainer` 的分叉条件从 `taskId===null && !composing`
+   * 改回 `taskId===null`（即"详情态也渲染 textarea"）⇒ 本例第一条断言变红。
+   */
+  test('④ 沙箱有任务 ⇒ 只读详情 + [新任务] 入口（不是一张空的发起表单）', async ({ page }) => {
+    await stubBase(page);
+    await page.route('**/api/sandboxes', (route) =>
+      route.fulfill({
+        status: 201,
+        json: {
+          id: 'sb-detail',
+          projectId: 'proj-e2e',
+          runtime: 'codex',
+          provider: 'aio',
+          name: '已完成的任务',
+          status: 'running',
+          headless: false,
+          timeoutMinutes: 120,
+          idleTimeoutSec: 1800,
+          waitingInput: false,
+          version: 1,
+        },
+      }),
+    );
+    // 这个沙箱下已经有一条**跑完的**任务 ⇒ 面板该是只读详情。
+    await page.route('**/api/sandboxes/*/tasks', (route) =>
+      route.fulfill({
+        status: 200,
+        json: [
+          {
+            id: 'task-done',
+            sandboxId: 'sb-detail',
+            runtime: 'codex',
+            status: 'succeeded',
+            exitCode: 0,
+            timeoutMinutes: 120,
+            lastSeq: 9,
+            artifacts: [{ name: 'report.md', size: 2048, modifiedAt: new Date().toISOString() }],
+            startedAt: '2026-08-22T00:00:00.000Z',
+            finishedAt: '2026-08-22T00:03:21.000Z',
+          },
+        ],
+      }),
+    );
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+    await openNewTaskModal(page);
+    await page.getByRole('radio', { name: /^codex/ }).check();
+    await page.getByRole('button', { name: '发起任务并打开终端' }).click();
+
+    const detail = page.getByTestId('headless-task-detail');
+    await expect(detail).toBeVisible();
+    // ① 详情态**没有**指令 textarea（它正是被替换掉的东西）。
+    await expect(page.getByLabel('任务指令')).toHaveCount(0);
+    await expect(detail.getByTestId('detail-exit-code')).toHaveText('0');
+    await expect(detail.getByText(/report\.md/)).toBeVisible();
+    // ② [新任务] 入口**必须在**：一个沙箱多个任务是数据模型本来的样子，
+    //    "建完就没有发起入口"会把多任务能力从界面上抹掉。
+    await expect(detail.getByRole('button', { name: '新任务' })).toBeEnabled();
+    await detail.getByRole('button', { name: '新任务' }).click();
+    await expect(page.getByLabel('任务指令')).toBeVisible();
+  });
+
+  /**
+   * ⑤ **项目只读条**（F21-6 §9.2/§9.3）：主区顶部四格 + [重新同步]，不新开页面。
+   * 变异：把 `canSync` 改成恒真（克隆中也给同步入口）⇒ 需配合另一条 fixture；
+   * 本例的变异是删掉只读条的渲染 ⇒ 四格断言全红。
+   */
+  test('⑤ 项目只读条：远端/分支/基线/最后同步 + [重新同步] 调 POST /sync', async ({ page }) => {
+    await stubBase(page);
+    let syncHits = 0;
+    await page.route('**/api/projects/*/sync', async (route) => {
+      syncHits += 1;
+      await route.fulfill({ status: 204, body: '' });
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+
+    const bar = page.getByTestId('project-info-bar');
+    await expect(bar).toBeVisible();
+    await expect(bar.getByText('https://github.com/acme/e2e.git')).toBeVisible();
+    await expect(bar.getByText('main')).toBeVisible();
+    await expect(bar.getByText('12 MB')).toBeVisible();
+    await expect(bar.getByText('最后同步')).toBeVisible();
+
+    await bar.getByRole('button', { name: '重新同步' }).click();
+    await expect.poll(() => syncHits).toBe(1);
   });
 });

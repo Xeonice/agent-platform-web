@@ -4,6 +4,11 @@ import { ApiErrorException, toApiError } from '@/services/api/apiError';
 import type { components } from '@/types/generated/openapi';
 import type { SandboxDto } from '@/types/sandbox';
 
+/**
+ * 建沙箱请求体。
+ *
+
+/** 新建沙箱请求体（生成物）。`branch` 本轮新增：不选则**不带该字段**，由后端走基线缺省。 */
 export type CreateSandboxInput = components['schemas']['CreateSandboxDto'];
 /**
  * 沙箱（Task）响应。三个与 S5 相关的字段全部来自生成物，**前端不手写、不派生**：
@@ -31,6 +36,23 @@ export async function createSandbox(input: CreateSandboxInput): Promise<SandboxR
 export async function getSandbox(id: string): Promise<SandboxResponse> {
   const { data, error, response } = await apiClient.GET('/api/sandboxes/{id}', {
     params: { path: { id } },
+  });
+  if (!response.ok || data === undefined) {
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
+  }
+  return data;
+}
+
+/**
+ * GET /api/sandboxes → 全部项目的 sandbox（`projectId` 可选过滤，10 §6）。
+ *
+ * ⚠️ 不传 `projectId` 是**有意的**：工作台左侧树要一次拿到所有项目的任务。
+ * 后端此前对"不带过滤"直接回空数组，同批已修——契约里 `projectId` 也是这次才补进
+ * openapi 的（`@ApiQuery`），在那之前 typed client **根本传不了这个参数**。
+ */
+export async function listSandboxes(projectId?: string): Promise<SandboxResponse[]> {
+  const { data, error, response } = await apiClient.GET('/api/sandboxes', {
+    params: { query: projectId === undefined ? {} : { projectId } },
   });
   if (!response.ok || data === undefined) {
     throw new ApiErrorException(toApiError(error, response.status), response.status);

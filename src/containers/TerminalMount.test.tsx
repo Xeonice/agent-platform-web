@@ -44,14 +44,21 @@ const sock = vi.hoisted(() => ({
   sessionEnded: undefined as boolean | undefined,
   onFrame: null as ((f: TerminalServerFrame) => void) | null,
   send: vi.fn(() => true),
+  // 建连时序的两个观察点：是否放行、以及放行那一刻 query 里的尺寸。
+  enabled: undefined as boolean | undefined,
+  query: null as Record<string, string> | null,
 }));
 vi.mock('@/hooks/useSandboxTerminalSocket', () => ({
   useSandboxTerminalSocket: (args: {
     onFrame: (f: TerminalServerFrame) => void;
     sessionEnded?: boolean;
+    enabled?: boolean;
+    query?: Record<string, string>;
   }) => {
     sock.onFrame = args.onFrame;
     sock.sessionEnded = args.sessionEnded;
+    sock.enabled = args.enabled;
+    sock.query = args.query ?? null;
     return {
       connState: sock.connState,
       attempt: 0,
@@ -174,5 +181,32 @@ describe('TerminalMount · 尺寸与会话终止的接线', () => {
     });
     expect(screen.getByTestId('terminal-session-ended')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /手动重连/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('TerminalMount · 先 fit 再建连（PTY 出生尺寸）', () => {
+  /**
+   * PTY 的出生尺寸由建连 query 的 `cols/rows` 决定，而 agent CLI 一启动就按它画欢迎
+   * 横幅。终端协议没有"回流"——已吐出的字节不会因为后来的 resize 重排，所以
+   * "先按 80x24 连上、事后补一帧 resize"**救不回第一屏**：宽屏上就是一个 80 列的窄框
+   * 浮在一大片空白里。
+   *
+   * MUTATION ①：`enabled: fittedSize !== null` 改成 `enabled: true` → 第一条红。
+   * MUTATION ②：query 不并入 fittedSize（直接用 socketConfig.query）→ 第二条红。
+   */
+  it('fit 之前不建连', () => {
+    mount();
+    // attach 已发生，但 onResize 还没回调 ⇒ 尺寸未知 ⇒ 不放行。
+    expect(sock.enabled).toBe(false);
+  });
+
+  it('fit 之后放行，且 query 带的是真实尺寸（不是 80x24）', () => {
+    mount();
+    act(() => {
+      term.lastArgs?.onResize?.(213, 51);
+    });
+    expect(sock.enabled).toBe(true);
+    expect(sock.query?.['cols']).toBe('213');
+    expect(sock.query?.['rows']).toBe('51');
   });
 });

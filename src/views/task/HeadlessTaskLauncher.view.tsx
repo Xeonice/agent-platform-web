@@ -33,6 +33,12 @@ export interface HeadlessTaskLauncherProps {
   /** 非空 = 本次将续接该会话（上一轮的 sessionRef，填进请求体 resumeFrom）。 */
   resumeFrom?: string;
   onClearResume?: () => void;
+  /**
+   * 收起发起表单、回到详情/引导态（F21-2 §N.3）。
+   * 表单现在是**被 [新任务] 打开的**，不再是"没任务时自己出现的东西" ⇒ 必须有一条退路，
+   * 否则点开之后就回不去了。
+   */
+  onCancel?: () => void;
 }
 
 function timeoutLabel(minutes: TaskTimeoutMinutes): string {
@@ -53,6 +59,7 @@ export function HeadlessTaskLauncherView({
   errorMessage,
   resumeFrom,
   onClearResume,
+  onCancel,
 }: HeadlessTaskLauncherProps) {
   // 用 Array.from 数码点，与后端 8000 的口径（UTF-8 码点）一致，emoji 不被算成两个。
   const promptLength = Array.from(prompt).length;
@@ -175,7 +182,7 @@ export function HeadlessTaskLauncherView({
         </p>
       )}
 
-      <div>
+      <div className="flex gap-2">
         <Button
           onClick={() => {
             onSubmit();
@@ -184,6 +191,18 @@ export function HeadlessTaskLauncherView({
         >
           {submitting ? '发起中…' : resuming ? '接着跑（续接会话）' : '发起无头任务'}
         </Button>
+        {onCancel !== undefined && (
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={submitting}
+            onClick={() => {
+              onCancel();
+            }}
+          >
+            取消
+          </Button>
+        )}
       </div>
     </section>
   );
