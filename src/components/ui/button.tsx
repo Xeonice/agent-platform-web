@@ -1,7 +1,7 @@
 // shadcn/ui Button（代码入仓，非黑盒，07 §1）。UI 库层，view/app 可 import。
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/_shared/utils';
 
 const buttonVariants = cva(
   'inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50',

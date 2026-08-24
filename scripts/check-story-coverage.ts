@@ -28,7 +28,10 @@ const missing: string[] = [];
 for (const view of viewFiles) {
   const dir = dirname(view);
   const base = basename(view, '.view.tsx');
-  const story = join(dir, `${base}.view.stories.tsx`);
+  // story 一律收在 `__stories__/`（07A R-4）：34 个 story 贴在 33 个 view 旁边时
+  // 两边互相淹没——`ls src/views/settings/` 出来 24 个文件一半是 story，
+  // 于是"Storybook 好像不存在"（它一直都在，只是看不见）。
+  const story = join(dir, '__stories__', `${base}.view.stories.tsx`);
   if (!existsSync(story)) missing.push(view);
 }
 

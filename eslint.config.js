@@ -30,10 +30,11 @@ const NO_USELAYOUTEFFECT = {
   message: 'views/ 禁止 useLayoutEffect，副作用移至 hooks/ 层（07 §3 规则 2）',
 };
 
-// ——— @xterm/* 单一 import 点（08 §2.1）：只有 hooks/useTerminalInstance.ts 可 import ———
+// ——— @xterm/* 单一 import 点（08 §2.1）：只有 hooks/terminal/useTerminalInstance.ts 可 import ———
 const XTERM_IMPORT = {
   group: ['@xterm/*'],
-  message: '@xterm/* 只能在 hooks/useTerminalInstance.ts 内 import（08 §2.1 唯一 import 点）',
+  message:
+    '@xterm/* 只能在 hooks/terminal/useTerminalInstance.ts 内 import（08 §2.1 唯一 import 点）',
 };
 // 同时覆盖裸桶导入（@/services、@/stores → index.ts）与子路径（@/services/**、@/stores/**）。
 const VIEW_FORBIDDEN_IMPORTS = [
@@ -188,10 +189,10 @@ export default tseslint.config(
     },
   },
 
-  // ——— @xterm/* 唯一 import 点：除 useTerminalInstance.ts 与 views(下方单独配) 外一律禁止 ———
+  // ——— @xterm/* 唯一 import 点：除 hooks/terminal/useTerminalInstance.ts 与 views(下方单独配) 外一律禁止 ———
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/hooks/useTerminalInstance.ts', 'src/views/**/*.{ts,tsx}'],
+    ignores: ['src/hooks/terminal/useTerminalInstance.ts', 'src/views/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [XTERM_IMPORT] }],
     },
@@ -217,7 +218,7 @@ export default tseslint.config(
   //     避免丢掉 @xterm 单一 import 点约束；useTerminalInstance.ts 例外（它是唯一 @xterm import 点）———
   {
     files: ['src/hooks/**/*.ts'],
-    ignores: ['src/hooks/useTerminalInstance.ts'],
+    ignores: ['src/hooks/terminal/useTerminalInstance.ts'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [XTERM_IMPORT, HOOKS_NO_VIEWS] }],
     },

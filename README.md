@@ -10,24 +10,45 @@
 pnpm install
 pnpm generate:api        # 从 openapi.json 生成 src/types/generated/openapi.d.ts（后端就绪前用占位 spec）
 cp .env.example .env      # 填占位即可；.env 已 gitignore，禁止提交真实值
-pnpm dev                 # http://localhost:3000（dev 下自动起 MSW，GET /api/health 与 /terminal echo 均被 mock）
+pnpm dev                 # http://localhost:3000（默认**直连真后端**）
+NEXT_PUBLIC_API_MOCK=1 pnpm dev   # 需要浏览器 mock 时才开（此前 dev 无条件起 MSW 且关不掉）
+pnpm storybook           # http://localhost:6006 看全部 33 个组件的形态与交互
 ```
 
 首次或 CI 首拉需 `pnpm exec msw init public/`（生成 MSW worker 文件，dev 浏览器 mock 用）。
 
+## 目录怎么找东西
+
+```
+src/
+├── app/          路由层（只做布局编排）
+├── containers/   ┐
+├── hooks/        ├─ 三层都按**功能**分子目录：
+├── lib/          ┘  access / project / sandbox / task / terminal / credential / workbench / _shared
+├── views/        纯展示组件（早就是按功能分的）+ 每个功能下 __stories__/
+├── services/  stores/  types/  components/ui/
+```
+
+- **找某个功能的全部代码**：在 `containers/ hooks/ lib/ views/` 下找同名子目录。
+- **`_shared/` 的判据**：删掉某个功能，它是否还该留下。是 → `_shared/`。
+- **测试**：与源码同级的 `__tests__/`；**story**：与 view 同级的 `__stories__/`。
+- **分层纪律**（谁能 import 谁）由 `eslint-plugin-boundaries` 强制，见 [07](../docs/frontend/07-前端目录结构与视图逻辑分离.md)。
+  `view` 连 `hook` 都不能碰——这条护栏比目录整洁重要得多，重构时一个字没动。
+
 ## 常用命令
 
-| 命令                                      | 作用                                                                         |
-| ----------------------------------------- | ---------------------------------------------------------------------------- |
-| `pnpm typecheck`                          | `tsc --noEmit`（strict + noUncheckedIndexedAccess 等，14 §5）                |
-| `pnpm lint`                               | ESLint（boundaries + 防绕过类型），`--max-warnings=0`                        |
-| `pnpm build`                              | `next build`                                                                 |
-| `pnpm test`                               | Vitest 单测（纯函数 / service+msw / partialize 快照 / ptySocket echo）       |
-| `pnpm test:storybook`                     | Storybook 交互/a11y 测试（Vitest browser，需 `playwright install chromium`） |
-| `pnpm check:stories`                      | 每个 `*.view.tsx` 必须有配套 story，否则 fail                                |
-| `pnpm check:api-drift`                    | 重新生成类型并 `git diff --exit-code`（契约漂移门禁）                        |
-| `pnpm storybook` / `pnpm build-storybook` | Storybook 9                                                                  |
-| `pnpm e2e`                                | Playwright（REST 用 `page.route`、WS 用 `routeWebSocket`）                   |
+| 命令                                      | 作用                                                                          |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| `pnpm typecheck`                          | `tsc --noEmit`（strict + noUncheckedIndexedAccess 等，14 §5）                 |
+| `pnpm lint`                               | ESLint（boundaries + 防绕过类型），`--max-warnings=0`                         |
+| `pnpm build`                              | `next build`                                                                  |
+| `pnpm test`                               | Vitest 单测（纯函数 / service+msw / partialize 快照 / ptySocket echo）        |
+| `pnpm storybook`                          | **组件总览**：33 个 view 的全部形态（含失败态/空态/边界值），改 UI 前先看这里 |
+| `pnpm test:storybook`                     | Storybook 交互/a11y 测试（Vitest browser，需 `playwright install chromium`）  |
+| `pnpm check:stories`                      | 每个 `*.view.tsx` 必须有配套 story，否则 fail                                 |
+| `pnpm check:api-drift`                    | 重新生成类型并 `git diff --exit-code`（契约漂移门禁）                         |
+| `pnpm storybook` / `pnpm build-storybook` | Storybook 9                                                                   |
+| `pnpm e2e`                                | Playwright（REST 用 `page.route`、WS 用 `routeWebSocket`）                    |
 
 ## Harness 门禁逐项落点
 
