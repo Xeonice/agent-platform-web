@@ -28,8 +28,14 @@ const missing: string[] = [];
 for (const view of viewFiles) {
   const dir = dirname(view);
   const base = basename(view, '.view.tsx');
-  const story = join(dir, `${base}.view.stories.tsx`);
-  if (!existsSync(story)) missing.push(view);
+  // story 收在 `__stories__/` 子目录（07A R-4：34 个 story 贴在 33 个 view 旁边，
+  // 两边互相淹没——`ls src/views/settings/` 出来 24 个文件一半是 story）。
+  // 同目录那条是**迁移兼容**，全部搬完后删掉。
+  const candidates = [
+    join(dir, '__stories__', `${base}.view.stories.tsx`),
+    join(dir, `${base}.view.stories.tsx`),
+  ];
+  if (!candidates.some((c) => existsSync(c))) missing.push(view);
 }
 
 if (missing.length > 0) {
