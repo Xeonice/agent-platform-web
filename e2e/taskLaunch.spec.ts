@@ -493,7 +493,10 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
           provider: 'aio',
           name: '已完成的任务',
           status: 'running',
-          headless: false,
+          // ★ 无头面板**只挂无头沙箱**：交互式沙箱底下挂一条「无头任务」会永远停在
+          // 空态说"还没有任务"，而左侧树同时写着 `项目 · 1`——界面上两个东西都叫"任务"
+          // （树数 Sandbox、面板数 AgentTask），同屏就打架。
+          headless: true,
           timeoutMinutes: 120,
           idleTimeoutSec: 1800,
           waitingInput: false,
@@ -536,8 +539,8 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
     await expect(detail.getByText(/report\.md/)).toBeVisible();
     // ② [新任务] 入口**必须在**：一个沙箱多个任务是数据模型本来的样子，
     //    "建完就没有发起入口"会把多任务能力从界面上抹掉。
-    await expect(detail.getByRole('button', { name: '新任务' })).toBeEnabled();
-    await detail.getByRole('button', { name: '新任务' }).click();
+    await expect(detail.getByRole('button', { name: '发起无头运行' })).toBeEnabled();
+    await detail.getByRole('button', { name: '发起无头运行' }).click();
     await expect(page.getByLabel('任务指令')).toBeVisible();
   });
 
