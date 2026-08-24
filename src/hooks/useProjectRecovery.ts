@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useRetryClone, useConvertToEmpty } from '@/hooks/useProjects';
 import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { useAppStore } from '@/stores';
-import { cloneFailureGuidance, type CloneFailureGuidance } from '@/lib/projectClone';
+import { cloneFailureGuidance, type CloneFailureGuidance } from '@/lib/project/projectClone';
 import { ApiErrorException } from '@/services/api/apiError';
 
 export interface UseProjectRecoveryArgs {

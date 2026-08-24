@@ -11,7 +11,7 @@ import {
   selectSeqAnomaly,
   taskStreamReducer,
   toolCallFailed,
-} from '@/lib/taskStream';
+} from '@/lib/task/taskStream';
 import type { RuntimeEvent, TaskServerFrame } from '@/types/ws-protocol';
 import type { TaskStreamState } from '@/types/taskStream';
 

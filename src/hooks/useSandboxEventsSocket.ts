@@ -23,8 +23,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EventsSocket, type EventsSocketFactory } from '@/services/ws/eventsSocket';
 import { reconnectDelay } from '@/services/ws/ptySocket';
-import { reportError } from '@/lib/reportError';
-import { buildEventsSocketUri } from '@/lib/sandboxLifecycle';
+import { reportError } from '@/lib/_shared/reportError';
+import { buildEventsSocketUri } from '@/lib/sandbox/sandboxLifecycle';
 import { useAppStore } from '@/stores';
 import type { SandboxEvent } from '@/types/ws-protocol';
 import type { ConnState } from '@/types/terminal';

@@ -14,7 +14,7 @@ import type {
   AuthModeRow,
   RuntimeCredentialCardModel,
 } from '@/types/runtimeCredential';
-import { formatDaysLeft } from '@/lib/credentialExpiry';
+import { formatDaysLeft } from '@/lib/credential/credentialExpiry';
 
 const ACCOUNT_METHODS: RuntimeAuthMethod[] = ['oauth-device', 'setup-token'];
 

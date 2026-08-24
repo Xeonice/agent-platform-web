@@ -6,8 +6,11 @@ import {
   type ConnState,
   type SocketFactory,
 } from '@/services/ws/ptySocket';
-import { reportError } from '@/lib/reportError';
-import { describeHandshakeErrorCode, isRetryableHandshakeError } from '@/lib/handshakeErrorCopy';
+import { reportError } from '@/lib/_shared/reportError';
+import {
+  describeHandshakeErrorCode,
+  isRetryableHandshakeError,
+} from '@/lib/terminal/handshakeErrorCopy';
 import type { TerminalClientFrame, TerminalServerFrame } from '@/types/ws-protocol';
 
 /** 浅比较两个 string map（P2：把连接稳定性从"调用方君子协定"收回 hook 自身）。 */

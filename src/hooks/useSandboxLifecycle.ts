@@ -9,13 +9,13 @@ import {
   INSTANCE_PHASE_KEY,
   type LifecycleDecision,
   type StartupPhaseKey,
-} from '@/lib/sandboxLifecycle';
-import { installSubCopy } from '@/lib/runtimeInstallProgress';
+} from '@/lib/sandbox/sandboxLifecycle';
+import { installSubCopy } from '@/lib/sandbox/runtimeInstallProgress';
 import {
   describeSandboxError,
   SANDBOX_ENDED_COPY,
   type SandboxErrorCopy,
-} from '@/lib/sandboxErrorCopy';
+} from '@/lib/sandbox/sandboxErrorCopy';
 
 export interface SandboxLifecycle {
   /** 当前后端 status（无记录时为 null）。 */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { selectProjectTaskTree, countWaitingInput } from '@/lib/selectProjectTaskTree';
+import { selectProjectTaskTree, countWaitingInput } from '@/lib/project/selectProjectTaskTree';
 import type { Project, Sandbox } from '@/types/domain';
 
 const projects: Project[] = [

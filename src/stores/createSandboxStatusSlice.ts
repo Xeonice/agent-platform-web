@@ -4,7 +4,7 @@
 // ⚠️ 纯内存运行时态，不 persist（未纳入 partializeAppState 白名单）。
 import type { StateCreator } from 'zustand';
 import type { SandboxEvent } from '@/types/ws-protocol';
-import type { RuntimeInstallProgress } from '@/lib/runtimeInstallProgress';
+import type { RuntimeInstallProgress } from '@/lib/sandbox/runtimeInstallProgress';
 
 /** 返回去掉指定 key 的浅拷贝（避免 dynamic-delete / rest-siblings lint）。 */
 function omitKey<T>(map: Record<string, T>, key: string): Record<string, T> {

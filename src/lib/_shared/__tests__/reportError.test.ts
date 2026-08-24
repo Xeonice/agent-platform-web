@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { reportError, setErrorReporter } from '@/lib/reportError';
+import { reportError, setErrorReporter } from '@/lib/_shared/reportError';
 
 afterEach(() => {
   setErrorReporter(null);

@@ -7,7 +7,7 @@ import {
   normalizeHost,
   gitTestErrorMessage,
   credentialTypeLabel,
-} from '@/lib/gitCredential';
+} from '@/lib/credential/gitCredential';
 
 describe('platformToHost（选来源自动推导 host）', () => {
   it('SaaS 三家推导固定 host', () => {

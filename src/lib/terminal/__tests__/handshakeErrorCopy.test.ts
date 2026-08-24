@@ -1,7 +1,10 @@
 // 握手码 → 人话 + "还值不值得重连"。这份表存在的唯一理由是把**两类完全不同的失败**分开：
 // 可自愈的（未授权）继续重连，确定性的（协议漂移）停手并叫人刷新。
 import { describe, it, expect } from 'vitest';
-import { describeHandshakeErrorCode, isRetryableHandshakeError } from '@/lib/handshakeErrorCopy';
+import {
+  describeHandshakeErrorCode,
+  isRetryableHandshakeError,
+} from '@/lib/terminal/handshakeErrorCopy';
 
 describe('describeHandshakeErrorCode', () => {
   it('SCHEMA_MISMATCH 的人话指向**刷新页面**，且明说重连没用', () => {

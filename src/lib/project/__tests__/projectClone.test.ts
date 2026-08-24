@@ -4,7 +4,7 @@ import {
   cloneProgressPercent,
   formatBytes,
   cloneFailureGuidance,
-} from '@/lib/projectClone';
+} from '@/lib/project/projectClone';
 
 describe('projectClone 派生（10 §7）', () => {
   it('isProjectReady 仅 cloneStatus=ready', () => {

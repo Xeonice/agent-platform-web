@@ -1,7 +1,7 @@
 // 工作台左侧任务树的取数（15 §5）：一次拿**全部项目**的 sandbox，交给 lib 纯函数分组。
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { listSandboxes } from '@/services/api/sandbox.service';
-import { toDisplayStatus } from '@/lib/sandboxLifecycle';
+import { toDisplayStatus } from '@/lib/sandbox/sandboxLifecycle';
 import type { Sandbox } from '@/types/domain';
 
 export const sandboxListKeys = {

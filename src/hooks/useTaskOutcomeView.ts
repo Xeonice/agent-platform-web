@@ -2,7 +2,7 @@
 // 存在的理由：`describeTaskOutcome` / `formatArtifactSize` 住在 lib，而 **view 与 container 都不能 import lib**
 // （boundaries 07 §4.1）⇒ 派生必须落在 hook 这一层，view props 才拿得到成品文案。
 import { useMemo } from 'react';
-import { describeTaskOutcome, formatArtifactSize } from '@/lib/taskOutcome';
+import { describeTaskOutcome, formatArtifactSize } from '@/lib/task/taskOutcome';
 import type { TaskArtifact } from '@/types/task';
 import type { TaskArtifactView, TaskExit, TaskOutcomeCopy } from '@/types/taskStream';
 

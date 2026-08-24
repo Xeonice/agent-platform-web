@@ -6,7 +6,7 @@ import {
   apiKeyExpectedPrefix,
   apiKeyPrefixValid,
   type AuthFlowState,
-} from '@/lib/authFlow';
+} from '@/lib/credential/authFlow';
 import type { AuthChallenge } from '@/types/runtimeCredential';
 
 const deviceChallenge: AuthChallenge = {

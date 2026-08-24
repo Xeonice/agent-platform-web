@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act, cleanup } from '@testing-library/react';
 import type { TerminalServerFrame } from '@/types/ws-protocol';
-import { WS_SCHEMA_HASH } from '@/lib/terminalSocket';
+import { WS_SCHEMA_HASH } from '@/lib/terminal/terminalSocket';
 import { TERMINAL_EXIT_ATTACH_FAILED, type TerminalSocketConfig } from '@/types/terminal';
 
 const term = vi.hoisted(() => ({

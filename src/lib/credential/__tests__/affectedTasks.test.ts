@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { affectedRunningTasks } from '@/lib/affectedTasks';
+import { affectedRunningTasks } from '@/lib/credential/affectedTasks';
 import type { AffectedTaskInput } from '@/types/runtimeCredential';
 
 function task(id: string, runtime: string, status: string): AffectedTaskInput {

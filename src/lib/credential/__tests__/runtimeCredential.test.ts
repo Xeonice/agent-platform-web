@@ -4,7 +4,7 @@ import {
   switchModeDecision,
   revokeConfirmConfig,
   methodToMode,
-} from '@/lib/runtimeCredential';
+} from '@/lib/credential/runtimeCredential';
 import type { RuntimeDto } from '@/types/runtimeCredential';
 
 const NOW = Date.parse('2026-08-19T00:00:00.000Z');

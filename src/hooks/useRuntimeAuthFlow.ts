@@ -8,7 +8,7 @@ import {
   apiKeyExpectedPrefix,
   apiKeyPrefixValid,
   type AuthFlowState,
-} from '@/lib/authFlow';
+} from '@/lib/credential/authFlow';
 import {
   beginAuth,
   pollAuthStatus,

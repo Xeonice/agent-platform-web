@@ -1,7 +1,7 @@
 // Git 凭证的纯派生（可单测）：平台→host 推导、passphrase 预校验、测试连接错误码人话映射、host 校验。
 // UI 决策集中于此，view 只吃结果（07 §6）。零副作用、零网络。
 import type { GitPlatform } from '@/types/gitCredential';
-import { GIT_PLATFORMS, isKnownGitPlatform } from '@/lib/gitPlatforms';
+import { GIT_PLATFORMS, isKnownGitPlatform } from '@/lib/credential/gitPlatforms';
 
 /**
  * 选来源 → 自动推导 host；'other'（自建）返回 null 交由用户手填（F21-3 §10.2）。

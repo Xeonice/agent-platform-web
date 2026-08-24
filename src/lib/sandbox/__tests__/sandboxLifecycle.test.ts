@@ -7,7 +7,7 @@ import {
   buildEventsSocketUri,
   STARTUP_PHASES,
   INSTANCE_PHASE_KEY,
-} from '@/lib/sandboxLifecycle';
+} from '@/lib/sandbox/sandboxLifecycle';
 
 describe('sandboxLifecycle 映射（10 §7.4 / P20 §3.3）', () => {
   it('startup 状态集 → startup 决策；status → 展示格按「展示序」映射', () => {

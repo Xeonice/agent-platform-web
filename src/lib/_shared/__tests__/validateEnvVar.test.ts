@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateEnvVars } from '@/lib/validateEnvVar';
+import { validateEnvVars } from '@/lib/_shared/validateEnvVar';
 
 describe('validateEnvVars (07 §8.3.1)', () => {
   it('合法变量通过前端预检', () => {

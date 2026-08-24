@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useSandboxTerminalSocket } from '@/hooks/useSandboxTerminalSocket';
-import { setErrorReporter } from '@/lib/reportError';
+import { setErrorReporter } from '@/lib/_shared/reportError';
 import type { SocketLike, SocketFactory, SocketFactoryArgs } from '@/services/ws/ptySocket';
 import type { TerminalClientFrame } from '@/types/ws-protocol';
 

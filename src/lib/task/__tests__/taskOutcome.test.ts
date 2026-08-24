@@ -11,7 +11,7 @@ import {
   describeTaskErrorCode,
   describeTaskOutcome,
   formatArtifactSize,
-} from '@/lib/taskOutcome';
+} from '@/lib/task/taskOutcome';
 import type { TaskErrorCode } from '@/types/task';
 
 describe('describeTaskOutcome · exitCode 缺席', () => {

@@ -4,7 +4,7 @@ import {
   buildTasksSocketQuery,
   buildTasksSocketUri,
   WS_TASKS_SCHEMA_HASH,
-} from '@/lib/taskSocketConfig';
+} from '@/lib/task/taskSocketConfig';
 
 describe('buildTasksSocketUri', () => {
   it('ws(s):// 归一化成 http(s):// 并挂上 /tasks namespace（socket.io 用 http origin）', () => {

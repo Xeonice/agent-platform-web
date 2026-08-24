@@ -4,8 +4,8 @@ import { useCallback, useMemo, useRef } from 'react';
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css'; // CSS 随 terminal chunk 注入（08 §2.3），不放全局 layout
-import { WriteBatcher } from '@/lib/writeBatcher';
-import { buildTerminalOptions } from '@/lib/terminalTheme';
+import { WriteBatcher } from '@/lib/_shared/writeBatcher';
+import { buildTerminalOptions } from '@/lib/terminal/terminalTheme';
 import type { RendererKind } from '@/stores/createTerminalRegistrySlice';
 
 interface ManagedInstance {

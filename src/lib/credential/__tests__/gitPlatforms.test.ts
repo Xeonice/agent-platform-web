@@ -4,8 +4,8 @@ import {
   GIT_PLATFORM_OPTIONS,
   isKnownGitPlatform,
   type KnownGitPlatform,
-} from '@/lib/gitPlatforms';
-import { platformToHost } from '@/lib/gitCredential';
+} from '@/lib/credential/gitPlatforms';
+import { platformToHost } from '@/lib/credential/gitCredential';
 import type { GitPlatform } from '@/types/gitCredential';
 
 // openapi 生成的 GitPlatform 枚举全集（新增平台时此常量会随生成物变化，配合 Record 强制覆盖）。

@@ -13,15 +13,15 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { TaskSocket, type TaskSocketFactory } from '@/services/ws/taskSocket';
 import { reconnectDelay } from '@/services/ws/ptySocket';
-import { reportError } from '@/lib/reportError';
-import { buildTasksSocketQuery, buildTasksSocketUri } from '@/lib/taskSocketConfig';
+import { reportError } from '@/lib/_shared/reportError';
+import { buildTasksSocketQuery, buildTasksSocketUri } from '@/lib/task/taskSocketConfig';
 import {
   buildSubscribeFrame,
   describeSeqAnomaly,
   initialTaskStreamState,
   selectSeqAnomaly,
   taskStreamReducer,
-} from '@/lib/taskStream';
+} from '@/lib/task/taskStream';
 import type { TaskExit, TaskStreamState } from '@/types/taskStream';
 import type { ConnState } from '@/types/terminal';
 

@@ -12,7 +12,7 @@ import {
   isZeroSideEffectRejection,
   zeroSideEffectRejectionMessage,
   type SandboxErrorCopy,
-} from '@/lib/sandboxErrorCopy';
+} from '@/lib/sandbox/sandboxErrorCopy';
 
 export function useCreateSandbox(): UseMutationResult<SandboxResponse, Error, CreateSandboxInput> {
   return useMutation<SandboxResponse, Error, CreateSandboxInput>({

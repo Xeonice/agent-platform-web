@@ -17,9 +17,9 @@ import {
   switchModeConfirmText,
   RUNTIME_REVOKE_WARNING,
   type SwitchModeDecision,
-} from '@/lib/runtimeCredential';
-import { matchesRuntimeSearch } from '@/lib/maskAccount';
-import { affectedRunningTasks, type AffectedTasksResult } from '@/lib/affectedTasks';
+} from '@/lib/credential/runtimeCredential';
+import { matchesRuntimeSearch } from '@/lib/credential/maskAccount';
+import { affectedRunningTasks, type AffectedTasksResult } from '@/lib/credential/affectedTasks';
 import { ApiErrorException } from '@/services/api/apiError';
 import type {
   RuntimeCredentialCardModel,

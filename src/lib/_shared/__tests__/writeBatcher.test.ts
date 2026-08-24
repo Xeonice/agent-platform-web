@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { WriteBatcher } from '@/lib/writeBatcher';
+import { WriteBatcher } from '@/lib/_shared/writeBatcher';
 
 /** 受控调度器：手动触发"下一帧"。 */
 function controlledScheduler() {

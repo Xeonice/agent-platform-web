@@ -3,7 +3,7 @@ import {
   buildTerminalSocketConfig,
   WS_SCHEMA_HASH,
   TERMINAL_NAMESPACE,
-} from '@/lib/terminalSocket';
+} from '@/lib/terminal/terminalSocket';
 
 describe('buildTerminalSocketConfig (socket.io /terminal)', () => {
   it('uri = origin + /terminal namespace，query 带 sandboxId/cols/rows/xSchemaHash', () => {

@@ -20,8 +20,8 @@ import {
   gitTestErrorMessage,
   GIT_CREDENTIAL_GUIDANCE,
   HTTPS_TOKEN_SCOPE_HINT,
-} from '@/lib/gitCredential';
-import { GIT_PLATFORM_OPTIONS, type GitPlatformOption } from '@/lib/gitPlatforms';
+} from '@/lib/credential/gitCredential';
+import { GIT_PLATFORM_OPTIONS, type GitPlatformOption } from '@/lib/credential/gitPlatforms';
 import { ApiErrorException } from '@/services/api/apiError';
 import type {
   GitCredentialCardModel,

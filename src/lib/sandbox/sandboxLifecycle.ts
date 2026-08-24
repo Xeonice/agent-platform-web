@@ -2,7 +2,7 @@
 //  - 生命周期决策：startup(启动中) / running(可开终端) / failed / ended / unknown
 //  - 启动四阶段（P20 §3.3，**展示序**）：初始化 / 拉取镜像 / 准备工作区 / 启动实例
 // UI 决策不散落在容器条件里，集中在此，view 只吃派生结果。
-import { normalizeOrigin } from '@/lib/terminalSocket';
+import { normalizeOrigin } from '@/lib/terminal/terminalSocket';
 import type { components } from '@/types/generated/openapi';
 
 /** 后端权威 12 值状态（生成类型约束；events 通道 status 为自由字符串，运行时对齐这些取值）。 */

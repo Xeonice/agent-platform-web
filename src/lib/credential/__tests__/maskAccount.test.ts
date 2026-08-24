@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { maskEmail, maskKey, matchesRuntimeSearch } from '@/lib/maskAccount';
+import { maskEmail, maskKey, matchesRuntimeSearch } from '@/lib/credential/maskAccount';
 
 describe('maskEmail / maskKey（F21-3 §7.1 掩码回归）', () => {
   it('邮箱 → a***@gmail.com', () => {

@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useTaskStream } from '@/hooks/useTaskStream';
-import { setErrorReporter } from '@/lib/reportError';
+import { setErrorReporter } from '@/lib/_shared/reportError';
 import type { TaskSocketFactory, TaskSocketFactoryArgs, TaskSocketLike } from '@/types/taskSocket';
 import type { TaskClientFrame } from '@/types/ws-protocol';
 

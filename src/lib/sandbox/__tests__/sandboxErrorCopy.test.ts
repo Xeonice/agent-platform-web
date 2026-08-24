@@ -4,7 +4,7 @@ import {
   isZeroSideEffectRejection,
   zeroSideEffectRejectionMessage,
   SANDBOX_ENDED_COPY,
-} from '@/lib/sandboxErrorCopy';
+} from '@/lib/sandbox/sandboxErrorCopy';
 // 信封形状取生成物（同被测文件），后端改字段 ⇒ 这里编译期就红。
 import type { components } from '@/types/generated/openapi';
 

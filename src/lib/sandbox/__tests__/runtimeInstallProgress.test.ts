@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { installSubCopy } from '@/lib/runtimeInstallProgress';
+import { installSubCopy } from '@/lib/sandbox/runtimeInstallProgress';
 
 describe('runtime.install_progress → 进度卡子文案（15 §2.3 / P22 §1）', () => {
   it('无进度 → 无子文案（进度卡照常渲染四格）', () => {

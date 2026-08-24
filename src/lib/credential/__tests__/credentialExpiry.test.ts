@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { expiryState, formatDaysLeft } from '@/lib/credentialExpiry';
+import { expiryState, formatDaysLeft } from '@/lib/credential/credentialExpiry';
 
 const NOW = Date.parse('2026-08-19T00:00:00.000Z');
 const days = (n: number): string => new Date(NOW + n * 24 * 60 * 60 * 1000).toISOString();

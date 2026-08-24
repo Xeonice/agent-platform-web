@@ -9,7 +9,7 @@ import {
   formatRate,
   formatElapsed,
   type CloneFailureGuidance,
-} from '@/lib/projectClone';
+} from '@/lib/project/projectClone';
 import type { ProjectCloneState } from '@/types/project';
 
 export interface ProjectCloneView {

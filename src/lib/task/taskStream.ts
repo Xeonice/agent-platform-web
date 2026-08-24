@@ -11,7 +11,7 @@
 //  ④ **条目有上限**（`MAX_STREAM_ITEMS`）：一个跑 4 小时的任务能刷出几十万条，浏览器扛不住。
 //    超出即丢**最早**的那些并记账（`droppedItems`），UI 明说"前 N 条已省略"——
 //    静默丢弃比丢弃本身更糟。
-import { describeTaskChannelErrorCode } from '@/lib/taskOutcome';
+import { describeTaskChannelErrorCode } from '@/lib/task/taskOutcome';
 import type { RuntimeEvent, TaskClientFrame, TaskServerFrame } from '@/types/ws-protocol';
 import type {
   TaskSeqAnomaly,

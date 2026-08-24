@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useSandboxEventsSocket } from '@/hooks/useSandboxEventsSocket';
-import { setErrorReporter } from '@/lib/reportError';
+import { setErrorReporter } from '@/lib/_shared/reportError';
 import { useAppStore } from '@/stores';
 import type { EventsSocketLike, EventsSocketFactory } from '@/services/ws/eventsSocket';
 

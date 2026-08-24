@@ -1,6 +1,6 @@
 // 硬超时倒计时（副作用归 hook 层：本地时钟 tick，**不是轮询**——一个网络请求都不发）。
 import { useEffect, useState } from 'react';
-import { describeTaskDeadline, type TaskDeadlineView } from '@/lib/taskOutcome';
+import { describeTaskDeadline, type TaskDeadlineView } from '@/lib/task/taskOutcome';
 
 /**
  * 每秒重算一次「还剩多久」。任务已终结（`running === false`）时停表，

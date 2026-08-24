@@ -14,7 +14,7 @@ import {
   runAgentTask,
 } from '@/services/api/task.service';
 import { ApiErrorException } from '@/services/api/apiError';
-import { describeDownloadProgress, describeTaskErrorCode } from '@/lib/taskOutcome';
+import { describeDownloadProgress, describeTaskErrorCode } from '@/lib/task/taskOutcome';
 import { isTerminalTaskStatus, type AgentTaskDto, type RunAgentTaskInput } from '@/types/task';
 // 只为把 `window.showSaveFilePicker` 的全局声明拉进本模块的类型视野（值层面是空 import）。
 import type {} from '@/types/fileSystemAccess';

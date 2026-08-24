@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { selectProjectTaskTree, countWaitingInput } from '@/lib/selectProjectTaskTree';
-import { WriteBatcher } from '@/lib/writeBatcher';
+import { selectProjectTaskTree, countWaitingInput } from '@/lib/project/selectProjectTaskTree';
+import { WriteBatcher } from '@/lib/_shared/writeBatcher';
 import type { Project, Sandbox } from '@/types/domain';
 
 // 单测门禁「验证单测」：用既有纯函数做有意义的最小真实断言，证明 vitest 门禁确实在执行代码路径。

@@ -1,6 +1,6 @@
 // projects × tasks 派生分组树（15 §5）：hook 取数并调用 lib 纯函数，不建平行结构。
 import { useMemo } from 'react';
-import { countWaitingInput, selectProjectTaskTree } from '@/lib/selectProjectTaskTree';
+import { countWaitingInput, selectProjectTaskTree } from '@/lib/project/selectProjectTaskTree';
 import type { Project, ProjectGroup, Sandbox } from '@/types/domain';
 
 export interface ProjectTaskTree {

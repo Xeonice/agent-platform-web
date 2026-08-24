@@ -1,6 +1,6 @@
 // /tasks 通道的连接描述（纯函数，可单测）。与 lib/terminalSocket、lib/sandboxLifecycle 的
 // buildEventsSocketUri 同一模式：origin 归一化在一处，namespace 常量不散落。
-import { normalizeOrigin } from '@/lib/terminalSocket';
+import { normalizeOrigin } from '@/lib/terminal/terminalSocket';
 
 export const TASKS_NAMESPACE = '/tasks';
 
