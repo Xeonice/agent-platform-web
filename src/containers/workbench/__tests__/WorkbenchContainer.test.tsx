@@ -22,7 +22,7 @@ vi.mock('@/hooks/sandbox/useSandboxEventsSocket', () => ({
   useSandboxEventsSocket: () => ({ connState: 'closed', attempt: 0 }),
 }));
 
-import { WorkbenchContainer } from '@/containers/WorkbenchContainer';
+import { WorkbenchContainer } from '@/containers/workbench/WorkbenchContainer';
 import { useAppStore } from '@/stores';
 import type { ProjectDto } from '@/types/project';
 

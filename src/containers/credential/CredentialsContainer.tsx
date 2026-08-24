@@ -2,8 +2,8 @@
 // 凭证页容器（F21-3 §3）：Runtime 凭证分区（本切片）+ Git 凭证分区（S3 复用）并列 + 二级弹层
 //（切模式确认 / 吊销确认）。逻辑全在 useCredentials；凭证明文不经此容器（授权面板在 AuthGateContainer 局部 state）。
 import { useCredentials } from '@/hooks/credential/useCredentials';
-import { AuthGateContainer } from '@/containers/AuthGateContainer';
-import { GitCredentialsContainer } from '@/containers/GitCredentialsContainer';
+import { AuthGateContainer } from '@/containers/credential/AuthGateContainer';
+import { GitCredentialsContainer } from '@/containers/credential/GitCredentialsContainer';
 import { RuntimeCredentialsSectionView } from '@/views/settings/RuntimeCredentialsSection.view';
 import { ConfirmDialogView } from '@/views/settings/ConfirmDialog.view';
 import { RevokeConfirmDialogView } from '@/views/settings/RevokeConfirmDialog.view';

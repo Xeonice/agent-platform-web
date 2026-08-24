@@ -6,7 +6,7 @@
 // 终端网关一律 attach 已存在的会话 —— 打开终端不再是"开工开关"，而是接管一个可能已有输出的会话。
 import type { ReactNode } from 'react';
 import { useSandboxLifecycle } from '@/hooks/sandbox/useSandboxLifecycle';
-import { TerminalContainer } from '@/containers/TerminalContainer';
+import { TerminalContainer } from '@/containers/terminal/TerminalContainer';
 import { SandboxStartupProgressView } from '@/views/sandbox/SandboxStartupProgress.view';
 import { SandboxOutcomeView } from '@/views/sandbox/SandboxOutcome.view';
 import type { TerminalSocketConfig } from '@/types/terminal';

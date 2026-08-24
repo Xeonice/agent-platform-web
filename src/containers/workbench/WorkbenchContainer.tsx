@@ -23,9 +23,9 @@ import { WorkbenchShellView } from '@/views/workbench/WorkbenchShell.view';
 import { ModalShellView } from '@/views/common/ModalShell.view';
 import { useModalFocus } from '@/hooks/_shared/useModalFocus';
 import { ProjectInfoBarView } from '@/views/project/ProjectInfoBar.view';
-import { SandboxTerminalContainer } from '@/containers/SandboxTerminalContainer';
-import { NewProjectContainer } from '@/containers/NewProjectContainer';
-import { ProjectRecoveryContainer } from '@/containers/ProjectRecoveryContainer';
+import { SandboxTerminalContainer } from '@/containers/sandbox/SandboxTerminalContainer';
+import { NewProjectContainer } from '@/containers/project/NewProjectContainer';
+import { ProjectRecoveryContainer } from '@/containers/project/ProjectRecoveryContainer';
 import type { Project, Sandbox } from '@/types/domain';
 
 const WS_BASE_URL = process.env['NEXT_PUBLIC_WS_BASE_URL'] ?? 'ws://localhost:3001';

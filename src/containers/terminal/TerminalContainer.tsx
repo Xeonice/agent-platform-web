@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import type { TerminalSocketConfig } from '@/types/terminal';
 
-const TerminalMount = dynamic(() => import('@/containers/TerminalMount'), {
+const TerminalMount = dynamic(() => import('@/containers/terminal/TerminalMount'), {
   ssr: false,
   loading: () => (
     <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

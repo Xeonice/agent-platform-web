@@ -15,7 +15,7 @@ const nav = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: nav.push }),
 }));
-import { SandboxTerminalContainer } from '@/containers/SandboxTerminalContainer';
+import { SandboxTerminalContainer } from '@/containers/sandbox/SandboxTerminalContainer';
 import { useAppStore } from '@/stores';
 import type { SandboxResponse } from '@/services/api/sandbox.service';
 import type { RuntimeDto } from '@/types/runtimeCredential';

@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { server } from '@/mocks/node';
-import { HeadlessTaskContainer } from '@/containers/HeadlessTaskContainer';
+import { HeadlessTaskContainer } from '@/containers/task/HeadlessTaskContainer';
 import { OBJECT_URL_REVOKE_DELAY_MS } from '@/hooks/task/useAgentTask';
 import { abortError, installSaveFilePicker } from '@/mocks/saveFilePicker';
 import { useAppStore } from '@/stores';

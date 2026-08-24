@@ -72,7 +72,7 @@ vi.mock('@/hooks/access/useAccessGate', () => ({
   useReportUnauthorized: () => ({ reportUnauthorized: () => undefined }),
 }));
 
-import TerminalMount from '@/containers/TerminalMount';
+import TerminalMount from '@/containers/terminal/TerminalMount';
 
 // jsdom 没有 ResizeObserver。桩留一个句柄，顺带让"清理时 disconnect 了没有"可断言。
 const roInstances: { observed: number; disconnected: boolean }[] = [];

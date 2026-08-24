@@ -2,7 +2,7 @@
 // 避免下次进入陈旧横幅复现、对已处理/已删项目误发 retry-clone。
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
-import { PendingCloneReturnGuard } from '@/containers/PendingCloneReturnGuard';
+import { PendingCloneReturnGuard } from '@/containers/project/PendingCloneReturnGuard';
 import { useAppStore } from '@/stores';
 
 // next/navigation：用 vi.hoisted 持有可变 pathname，逐用例切换。
