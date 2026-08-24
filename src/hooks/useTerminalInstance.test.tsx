@@ -183,4 +183,82 @@ describe('useTerminalInstance · attach 并发（xterm 实例不得重复）', (
 
     expect(container.querySelectorAll('.xterm')).toHaveLength(1);
   });
+
+  /**
+   * ★ 以下四条来自 review 找出的漏网形状。第一版修复（布尔撤销标记 + `if` 等待）
+   * 在 B/C/D/G 上都漏：
+   *   - 等待者 `await inflight` 后**不重新查 pending** ⇒ 多个等待者各自落到创建路径，
+   *     互相覆盖 pending ⇒ 两个 `terminal.open(container)`，L-6 原样复发；
+   *   - 落到创建路径前**无条件**清撤销标记 ⇒ 把"我开始等待之后"那次 dispose 一并抹掉
+   *     ⇒ 卸载被吞、留下带 WebGL 上下文的孤儿（浏览器对上下文有硬上限）。
+   *
+   * MUTATION：把等待循环改回 `if` → B/C 红；把代次判断换回布尔集合 → D/G 红。
+   */
+  it('B) attach → dispose → attach → attach ⇒ 恰好一个', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const el = visibleContainer();
+    const args = {
+      sessionId: 'B',
+      container: el,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+    const p1 = result.current.attach(args);
+    result.current.dispose('B');
+    const p2 = result.current.attach(args);
+    const p3 = result.current.attach(args);
+    await Promise.all([p1, p2, p3]);
+    expect(el.querySelectorAll('.xterm')).toHaveLength(1);
+  });
+
+  it('C) attach → dispose → attach → dispose → attach ⇒ 恰好一个', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const el = visibleContainer();
+    const args = {
+      sessionId: 'C',
+      container: el,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+    const p1 = result.current.attach(args);
+    result.current.dispose('C');
+    const p2 = result.current.attach(args);
+    result.current.dispose('C');
+    const p3 = result.current.attach(args);
+    await Promise.all([p1, p2, p3]);
+    expect(el.querySelectorAll('.xterm')).toHaveLength(1);
+  });
+
+  it('D) dispose 晚于两次 attach 到达 ⇒ 一个都不留（卸载不能被吞）', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const el = visibleContainer();
+    const args = {
+      sessionId: 'D',
+      container: el,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+    const p1 = result.current.attach(args);
+    const p2 = result.current.attach(args);
+    result.current.dispose('D');
+    await Promise.all([p1, p2]);
+    expect(el.querySelectorAll('.xterm')).toHaveLength(0);
+  });
+
+  it('G) StrictMode 双调后立刻卸载 ⇒ 一个都不留', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const el = visibleContainer();
+    const args = {
+      sessionId: 'G',
+      container: el,
+      onInput: () => undefined,
+      onResize: () => undefined,
+    };
+    const p1 = result.current.attach(args);
+    result.current.dispose('G');
+    const p2 = result.current.attach(args);
+    result.current.dispose('G');
+    await Promise.all([p1, p2]);
+    expect(el.querySelectorAll('.xterm')).toHaveLength(0);
+  });
 });

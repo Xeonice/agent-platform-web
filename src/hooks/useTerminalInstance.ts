@@ -41,8 +41,16 @@ export function useTerminalInstance(): TerminalInstanceApi {
   const instances = useRef(new Map<string, ManagedInstance>());
   /** 在途 attach（key = sessionId）。见 attach 里的竞态守卫。 */
   const pending = useRef(new Map<string, Promise<void>>());
-  /** attach 在途期间被 dispose 的会话：完成时自行拆掉，不留孤儿 DOM。 */
-  const disposedWhilePending = useRef(new Set<string>());
+  /**
+   * 每个 session 的**撤销代次**：`dispose` 每调一次 +1。
+   *
+   * ★ 为什么不是布尔集合（第一版就是，漏了两种形状）：布尔分不清"哪一次 dispose"。
+   * 落到创建路径前若无条件清标记，就会把**我开始等待之后**才发生的那次 dispose 一并抹掉
+   * ⇒ 卸载被吞、留下孤儿实例（带 WebGL 上下文，浏览器对它有硬上限）。
+   * 代次让每次创建只认"在我之前发起的撤销"：创建前记下 `myGen`，完成时若代次已变，
+   * 说明期间有人 dispose 过 ⇒ 这一份没人要，就地拆掉。
+   */
+  const disposeGeneration = useRef(new Map<string, number>());
 
   /**
    * 已建实例的复用路径：容器变了就移动 DOM，刷新回调，补一次 fit。
@@ -58,6 +66,15 @@ export function useTerminalInstance(): TerminalInstanceApi {
   const attach = useCallback(
     async (args: AttachArgs): Promise<void> => {
       const { sessionId, container, onInput, onResize } = args;
+      /**
+       * ★ 代次要在**函数入口**记，不能等排完队再记。
+       *
+       * 语义是"我这次 attach 发起时的世界"。若等到等待循环之后再记，那时可能已经
+       * 隔了一次 dispose —— 于是"attach① → attach② → dispose（晚到）"这种形状里，
+       * attach② 会拿着 dispose **之后**的代次去创建，判断不出自己已被撤销，
+       * 留下一个谁也不会再拆的孤儿。
+       */
+      const myGen = disposeGeneration.current.get(sessionId) ?? 0;
       const existing = instances.current.get(sessionId);
       if (existing) {
         // 复用：容器变化时移动 DOM（不重新 open），并补一次 fit（08 §7.4 / §11.5）。
@@ -77,21 +94,21 @@ export function useTerminalInstance(): TerminalInstanceApi {
        * `dispose`（表里还没东西，**空转**）→ effect 再跑 → 第二次 attach。
        * 但这不是 dev 专属——任何两次快速 attach（重挂、容器换父）都会撞上。
        */
-      const inflight = pending.current.get(sessionId);
-      if (inflight) {
-        await inflight;
+      /**
+       * ⚠️ 必须是 `while` 不是 `if`。第一版是 `if`：等待者醒来后若没拿到实例就落去自建，
+       * 而**每一个**等待者都会这么做 —— 两个人同时落到创建路径、互相覆盖 `pending`，
+       * 结果又是两个 `terminal.open(container)`，L-6 原样复发。
+       * 循环让后来者继续等前一个创建者，直到要么拿到实例、要么真的没人在建。
+       */
+      while (pending.current.has(sessionId)) {
+        await pending.current.get(sessionId);
         const ready = instances.current.get(sessionId);
         if (ready) {
           reuse(ready, args);
           return;
         }
-        // ⚠️ 在途那次被 dispose 撤销了（它会自行拆掉，见下方 disposed 分支）。
-        // **不能就此返回** —— StrictMode 的 mount→cleanup→mount 正是这个形状：
-        // 撤销的是第一次，第二次才是真正要留下的那个。这里落到下面自己建。
+        // 在途那次被撤销或抛了异常 ⇒ 回到循环：可能已有别人接手在建，也可能轮到我。
       }
-
-      // 轮到我建了：清掉可能残留的撤销标记，否则会把这一次也误拆。
-      disposedWhilePending.current.delete(sessionId);
 
       let settle!: () => void;
       pending.current.set(
@@ -153,9 +170,8 @@ export function useTerminalInstance(): TerminalInstanceApi {
           lastReportedSize: null,
           onResize,
         };
-        // 在途期间被 dispose 了 ⇒ 这一份没人要，就地拆掉，绝不落进容器。
-        if (disposedWhilePending.current.has(sessionId)) {
-          disposedWhilePending.current.delete(sessionId);
+        // 创建期间有人 dispose 过（代次变了）⇒ 这一份没人要，就地拆掉，绝不落进容器。
+        if ((disposeGeneration.current.get(sessionId) ?? 0) !== myGen) {
           batcher.flushAndCancel();
           terminal.dispose();
           return;
@@ -200,14 +216,14 @@ export function useTerminalInstance(): TerminalInstanceApi {
   );
 
   const dispose = useCallback((sessionId: string): void => {
+    // ★ 代次**无条件**递增，哪怕表里已有实例。
+    // 表里没有 ≠ 没有东西要清：attach 可能正在途中（它要到最后才写表）。此前这里
+    // 直接 return —— StrictMode 的 mount→cleanup→mount 里 cleanup 空转、在途那次
+    // 照常把 xterm 挂进容器，留下孤儿。而"只在 pending 时才记"同样漏：dispose 可能
+    // 发生在**两个等待者都已排队**之后，那时 pending 里是别人的 promise。
+    disposeGeneration.current.set(sessionId, (disposeGeneration.current.get(sessionId) ?? 0) + 1);
     const managed = instances.current.get(sessionId);
-    if (!managed) {
-      // ★ 表里没有**不等于没有东西要清**：attach 可能正在途中（它要到最后才写表）。
-      // 此前这里直接 return —— 于是 StrictMode 的 mount→cleanup→mount 里，cleanup
-      // 空转、在途那次照常把 xterm 挂进容器，留下一个谁也不认识的孤儿实例。
-      if (pending.current.has(sessionId)) disposedWhilePending.current.add(sessionId);
-      return;
-    }
+    if (!managed) return;
     managed.batcher.flushAndCancel(); // flush → dispose 顺序（08 §11.7）
     managed.terminal.dispose();
     instances.current.delete(sessionId);

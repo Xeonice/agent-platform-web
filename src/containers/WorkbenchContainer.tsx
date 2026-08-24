@@ -7,7 +7,7 @@
 // 是主区换页，不是弹层，`currentModal` 这个名字是假的（§N.0）。而「新建任务」连入口都没有，
 // 只是 `SandboxTerminalContainer` 在沙箱为空时的兜底渲染。现在两个动作**形态对称**：
 // 同一套 overlay、各有显式入口。
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useHealth } from '@/hooks/useHealth';
 import { useProjects, projectKeys } from '@/hooks/useProjects';
@@ -21,6 +21,7 @@ import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { useAppStore } from '@/stores';
 import { WorkbenchShellView } from '@/views/workbench/WorkbenchShell.view';
 import { ModalShellView } from '@/views/common/ModalShell.view';
+import { useModalFocus } from '@/hooks/useModalFocus';
 import { ProjectInfoBarView } from '@/views/project/ProjectInfoBar.view';
 import { SandboxTerminalContainer } from '@/containers/SandboxTerminalContainer';
 import { NewProjectContainer } from '@/containers/NewProjectContainer';
@@ -127,6 +128,10 @@ export function WorkbenchContainer() {
   // Esc 关「新建项目」弹层（「新建任务」那一个由 SandboxTerminalContainer 自己管——
   // 它的 busy 判据是那边的 mutation.isPending）。
   useEscapeKey(currentModal === 'createProject', closeModal);
+  // 焦点移进弹层 + Tab 陷阱 + 关闭还原。缺了它，焦点会留在打开弹窗的那个元素上
+  // （这个产品里常常是正在跑的终端）⇒ 用户敲的字进了另一个 agent 的 shell。
+  const projectModalRef = useRef<HTMLDivElement>(null);
+  useModalFocus(currentModal === 'createProject', projectModalRef);
 
   /**
    * [+ 新任务] 的可用性（§9.1 #33）。
@@ -240,7 +245,12 @@ export function WorkbenchContainer() {
       }
       overlaySlot={
         currentModal !== 'createProject' ? null : (
-          <ModalShellView title="新建项目" onClose={closeModal} testId="modal-new-project">
+          <ModalShellView
+            shellRef={projectModalRef}
+            title="新建项目"
+            onClose={closeModal}
+            testId="modal-new-project"
+          >
             <NewProjectContainer onProjectReady={handleProjectReady} onCancel={closeModal} />
           </ModalShellView>
         )

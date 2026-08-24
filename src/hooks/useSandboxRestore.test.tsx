@@ -157,4 +157,65 @@ describe('useSandboxRestore · 终态选中的时效', () => {
     useAppStore.getState().setSelectedSandboxId('sb-new');
     expect(useAppStore.getState().selectedSandboxTerminalAt).toBeNull();
   });
+
+  /**
+   * ★ H2：恢复回来的沙箱不属于当前项目时必须按 `notFound` 处理。
+   *
+   * `selectedSandboxId` 活在 localStorage、跨会话不失效，而项目是另一个选中位 ⇒
+   * 切到项目 B 时这里仍会拿 A 的沙箱去恢复，界面就成了"只读条写 B、主区跑 A 的 agent"。
+   *
+   * MUTATION：去掉 `wrongProject` 那一段 → 本条红。
+   */
+  it('恢复到的沙箱属于别的项目 ⇒ notFound（不渲染错项目的终端）', async () => {
+    server.use(
+      http.get(`${API_BASE}/api/sandboxes/:id`, () =>
+        HttpResponse.json({
+          id: 'sb-a',
+          projectId: 'proj-A',
+          runtime: 'codex',
+          provider: 'aio',
+          name: 'A 的任务',
+          status: 'running',
+          headless: false,
+          timeoutMinutes: null,
+          idleTimeoutSec: 1800,
+          waitingInput: false,
+          version: 0,
+        }),
+      ),
+    );
+    const { result } = renderHook(() => useSandboxRestore('sb-a', 'proj-B'), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => {
+      expect(result.current.notFound).toBe(true);
+    });
+  });
+
+  it('属于当前项目 ⇒ 正常恢复', async () => {
+    server.use(
+      http.get(`${API_BASE}/api/sandboxes/:id`, () =>
+        HttpResponse.json({
+          id: 'sb-a',
+          projectId: 'proj-A',
+          runtime: 'codex',
+          provider: 'aio',
+          name: 'A 的任务',
+          status: 'running',
+          headless: false,
+          timeoutMinutes: null,
+          idleTimeoutSec: 1800,
+          waitingInput: false,
+          version: 0,
+        }),
+      ),
+    );
+    const { result } = renderHook(() => useSandboxRestore('sb-a', 'proj-A'), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => {
+      expect(result.current.name).toBe('A 的任务');
+    });
+    expect(result.current.notFound).toBe(false);
+  });
 });

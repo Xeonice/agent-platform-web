@@ -1067,6 +1067,35 @@ describe('SandboxTerminalContainer · 新建任务弹层形态', () => {
     expect(screen.queryByTestId('new-sandbox-panel')).not.toBeInTheDocument();
   });
 
+  /**
+   * ★ 焦点必须移进弹层（H1）。缺了它，焦点留在打开弹窗的那个元素上——在这个产品里
+   * 常常是**正在跑的终端**，于是用户在弹窗里敲的指令进了另一个 agent 的 shell，
+   * 而弹窗的输入框一个字都收不到。实测复现过（`activeElement` = `.xterm-helper-textarea`）。
+   *
+   * ⚠️ 这条**必须测任务弹窗**：新建项目那个的表单碰巧带 `autoFocus`，焦点本来就会进去，
+   * 拿它测等于假绿（我第一版就写错了地方，删掉 `useModalFocus` 照样全绿）。
+   *
+   * MUTATION：删掉 `useModalFocus(currentModal === 'newTask', taskModalRef)` → 本条红。
+   */
+  it('打开后焦点移进弹层（不留在外面的终端上）', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    // 模拟"焦点原本在弹窗外"：造一个外部输入框并聚焦它。
+    const outside = document.createElement('textarea');
+    document.body.appendChild(outside);
+    outside.focus();
+    expect(document.activeElement).toBe(outside);
+
+    renderContainer();
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    });
+    // 且不该落在 [✕] 上——弹窗是让人填东西的，回车会直接把它关掉。
+    expect(document.activeElement?.getAttribute('data-modal-close')).toBeNull();
+    outside.remove();
+  });
+
   it('打开后是真 overlay（role=dialog + aria-modal），标题带项目上下文', async () => {
     mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
     mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);

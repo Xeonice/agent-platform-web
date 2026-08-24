@@ -99,9 +99,15 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
       onResize: (cols, rows) => {
         // 首次 fit：记下尺寸放行连接（此时还没有 socket，send 必然返回 false，正常）。
         // 之后的每一次（窗口缩放/侧栏折叠）走 resize 帧，正是它本该干的事。
-        setFittedSize((prev) =>
-          prev !== null && prev.cols === cols && prev.rows === rows ? prev : { cols, rows },
-        );
+        // ★ **只认第一次**。这个值进的是建连 query，而 query 在
+        // `useSandboxTerminalSocket` 的连接 effect 依赖里 —— 每变一次就 close + 重连。
+        // 而连接态一变，`ConnectionStatus` 会渲染一条约 28px 的横条，终端可用高度随之
+        // 变化 ⇒ 行数变 ⇒ query 又变 ⇒ **再重连**：一个自喂循环（实测一次拖拽 2–3 轮）。
+        // 代价不止性能：新建的 PtySocket 丢掉 socketSessionKey（接不回原 pty）、
+        // 把退避预算清零，后端抖动时"退避耗尽 → 手动重连"那个终点态可能永远到不了。
+        //
+        // L-7 真正需要的只是**出生尺寸对**；之后的变化本来就该走 resize 帧（下一行）。
+        setFittedSize((prev) => prev ?? { cols, rows });
         sendRef.current({ type: 'resize', cols, rows });
       },
     });

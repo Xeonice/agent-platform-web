@@ -12,6 +12,11 @@
 import type { ReactNode } from 'react';
 
 export interface ModalShellProps {
+  /**
+   * 壳的 ref，交给 container 的 `useModalFocus` 做焦点移入 / Tab 陷阱 / 关闭还原。
+   * 副作用不能在本层做（views/ 禁 useEffect，07 §3 规则 2），所以只出这个口子。
+   */
+  shellRef?: React.RefObject<HTMLDivElement | null>;
   /** 弹层标题；同时作为 `aria-label`（读屏用户听到的就是它）。 */
   title: string;
   /** 副标题：用来交代上下文（如「在 ProjectA 中发起」）。 */
@@ -28,6 +33,7 @@ export interface ModalShellProps {
 }
 
 export function ModalShellView({
+  shellRef,
   title,
   subtitle,
   onClose,
@@ -41,6 +47,10 @@ export function ModalShellView({
 
   return (
     <div
+      ref={shellRef}
+      // 弹层自身可聚焦：没有任何输入控件时（纯确认类内容）焦点也有落点，
+      // 否则 focus() 无处可去、Tab 陷阱就没有起点。
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -64,6 +74,7 @@ export function ModalShellView({
             aria-label="关闭"
             disabled={busy}
             className="rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+            data-modal-close=""
             onClick={close}
           >
             ✕

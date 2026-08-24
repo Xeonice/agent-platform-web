@@ -20,7 +20,7 @@
 // 而后端注册表里只有 codex / claude-code ⇒ 从这个入口建的沙箱**必然**死在 `unknown runtime 'shell'`。
 // 类型层拦不住（契约是 `runtime: z.string().min(1)`，开放集**故意**不收窄），
 // 正确的防线只有"注册表驱动 UI + 前端不出现任何字面量默认值"这一条 —— 就是本文件现在的形状。
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProviders } from '@/hooks/useProviders';
@@ -34,6 +34,7 @@ import { useReportUnauthorized } from '@/hooks/useAccessGate';
 import { useAppStore } from '@/stores';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
 import { ModalShellView } from '@/views/common/ModalShell.view';
+import { useModalFocus } from '@/hooks/useModalFocus';
 import { AuthGateContainer } from '@/containers/AuthGateContainer';
 import { invalidateRuntimeAuth } from '@/hooks/useRuntimeAuthMutations';
 import { SandboxLifecycleContainer } from '@/containers/SandboxLifecycleContainer';
@@ -105,7 +106,7 @@ export function SandboxTerminalContainer({
   const persistedSandboxId = useAppStore((s) => s.selectedSandboxId);
   const setSelectedSandboxId = useAppStore((s) => s.setSelectedSandboxId);
   const restoreId = task === null ? persistedSandboxId : null;
-  const restored = useSandboxRestore(restoreId);
+  const restored = useSandboxRestore(restoreId, projectId);
   const sandboxId = task?.id ?? (restored.notFound ? null : restoreId);
   const taskName = task?.name ?? restored.name;
   // 无头任务打给沙箱自己的 runtime（本会话取创建响应，刷新后取 DTO）。
@@ -227,6 +228,9 @@ export function SandboxTerminalContainer({
 
   // Esc 关弹窗（与 [✕] / [取消] 同一个动作）；创建中不响应，免得误关。
   useEscapeKey(currentModal === 'newTask' && !createSandbox.isPending, handleCloseModal);
+  // 同上：焦点必须移进弹层，否则打字会进正在跑的终端（实测复现过）。
+  const taskModalRef = useRef<HTMLDivElement>(null);
+  useModalFocus(currentModal === 'newTask', taskModalRef);
 
   const handleRetry = (): void => {
     if (sandboxId !== null) clearSandboxStatus(sandboxId);
@@ -249,6 +253,7 @@ export function SandboxTerminalContainer({
   const newTaskModal =
     currentModal !== 'newTask' ? null : (
       <ModalShellView
+        shellRef={taskModalRef}
         title="新建任务"
         subtitle={`在「${projectName}」中发起`}
         onClose={handleCloseModal}

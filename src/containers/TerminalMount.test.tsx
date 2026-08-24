@@ -209,4 +209,29 @@ describe('TerminalMount · 先 fit 再建连（PTY 出生尺寸）', () => {
     expect(sock.query?.['cols']).toBe('213');
     expect(sock.query?.['rows']).toBe('51');
   });
+
+  /**
+   * ★ 尺寸变化**不得**改动建连 query —— 否则连接 effect 会 close + 重连，而连接态一变
+   * `ConnectionStatus` 就多渲染一条横条、把终端高度再改一次 ⇒ 自喂循环。
+   * 出生尺寸对就够了（L-7），之后的变化走 resize 帧。
+   *
+   * MUTATION：`setFittedSize((prev) => prev ?? {cols,rows})` 改回"每次都更新" → 本条红。
+   */
+  it('后续 resize 不改建连 query（只发 resize 帧，不重连）', () => {
+    mount();
+    act(() => {
+      term.lastArgs?.onResize?.(213, 51);
+    });
+    const first = sock.query;
+    expect(first?.['cols']).toBe('213');
+
+    act(() => {
+      term.lastArgs?.onResize?.(80, 20); // 窗口被拖小
+    });
+    // query 必须原样：cols 仍是首次那个值。
+    expect(sock.query?.['cols']).toBe('213');
+    expect(sock.query?.['rows']).toBe('51');
+    // 而 resize 帧照发（PTY 靠它跟上真实尺寸）。
+    expect(sock.send).toHaveBeenCalledWith({ type: 'resize', cols: 80, rows: 20 });
+  });
 });
