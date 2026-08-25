@@ -54,6 +54,43 @@ describe('错误码 → 人话 + 可操作建议（P22 §1）', () => {
     expect(copy.actions[0]?.label).toContain('换一张含 tmux 的镜像');
   });
 
+  /**
+   * ★ 工作区准备的两个码 —— 后端 2026-08 才真正开始产出它们。
+   *
+   * 在那之前 `prepare()` 抛的是 Node 的 errno（`ENOSPC` / `EACCES`），后端原样当平台码
+   * 用，于是这两条**从来没有到达过这张表**，全部落进 `fallbackCopy`。后端把码归一进闭集
+   * 之后，如果这里不补句子，用户看到的**仍然是那段兜底话**——码修准了、话没变，
+   * 等于没修。这是 `BRANCH_NOT_FOUND` 那次「两侧各自完整、合起来漏一条」的同一种形状。
+   *
+   * MUTATION: 删掉 COPY_TABLE 里的 `DISK_INSUFFICIENT` ⇒ 下面第一条红（落回兜底的
+   * 「未能获取具体原因」，并带上一个裸 [重试]）。
+   */
+  it('DISK_INSUFFICIENT：说清要先清理磁盘，且**没有裸 [重试]**（空间没变，重试必然同样失败）', () => {
+    const copy = describeSandboxError({ code: 'DISK_INSUFFICIENT' });
+    expect(copy.title).toContain('磁盘');
+    expect(copy.advice).toContain('清理');
+    // 落回兜底的特征串——出现它就说明这条码根本没进表。
+    expect(copy.advice).not.toContain('未能获取具体原因');
+    // 按钮可以是"清理后重试"，但绝不能是一个什么前提都不说的裸「重试」。
+    expect(copy.actions.length).toBeGreaterThan(0);
+    expect(copy.actions.some((a) => a.label === '重试')).toBe(false);
+  });
+
+  it('WORKSPACE_PREPARE_FAILED：平台侧故障 → 给 [重试]，并指向 traceId 报障', () => {
+    const copy = describeSandboxError({ code: 'WORKSPACE_PREPARE_FAILED' });
+    expect(copy.title).toContain('工作区');
+    expect(copy.advice).not.toContain('未能获取具体原因');
+    expect(copy.advice).toContain('traceId');
+    expect(copy.actions.some((a) => a.key === 'retry')).toBe(true);
+  });
+
+  it('⚠️ errno 不该出现在这张表里 —— 它们是后端要归一掉的东西，不是前端要认的码', () => {
+    // 若哪天有人"顺手"给 ENOSPC 补一条文案，那等于承认 errno 会出线，
+    // 正好把后端刚收口的那道闭集又捅开一个洞。这里钉住：它只能是未知码。
+    const copy = describeSandboxError({ code: 'ENOSPC' });
+    expect(copy.advice).toContain('未能获取具体原因');
+  });
+
   it('未知码 / 无码：仍给人话 + 可点动作（异步失败拿不到码时的兜底）', () => {
     const unknown = describeSandboxError({ code: 'WHATEVER' });
     expect(unknown.actions.length).toBeGreaterThan(0);

@@ -80,7 +80,8 @@ export const SandboxEventSchema = z.discriminatedUnion('event', [
     percent: z.number().optional(),
     // `(527/26348)`。⚠️ 此处曾有 `totalBytes`，2026-08 删除——git clone 不报总字节数，
     // 后端从来没发过它，而前端有一条 `receivedBytes && totalBytes` 的分支在等它，
-    // 那条分支生产永远走不到（配着一条手工构造 state 才绿的测试）。分母改用 objectsTotal。
+    // 那条分支生产永远走不到（配着一条手工构造 state 才绿的测试）。
+    // ⚠️ `objectsTotal` 是**本阶段的**分母，不是全程分母——见 types/project.ts 末尾。
     objectsDone: z.number().optional(),
     objectsTotal: z.number().optional(),
     receivedBytes: z.number().optional(),

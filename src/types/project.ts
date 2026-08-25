@@ -29,7 +29,7 @@ export interface ProjectCloneState {
   /** git 阶段；填住 receiving 开始前那段空窗（实测 3.4s 起，慢远端更久）。 */
   stage?: CloneStage;
   percent?: number;
-  /** `(527/26348)` —— 真分母。 */
+  /** `(527/26348)` —— **本阶段自己的** done/total；跨阶段分母会变（见文件末注释）。 */
   objectsDone?: number;
   objectsTotal?: number;
   receivedBytes?: number;
@@ -42,4 +42,14 @@ export interface ProjectCloneState {
 
 // ⚠️ 这里曾有 `totalBytes?`，2026-08 删除：git clone 不报总字节数，后端从未发过它，
 // 而 buildDetailLabel 有一条 `receivedBytes && totalBytes` 的分支在等它——生产永远
-// 走不到，却有一条手工构造 state 的测试把它测成绿的。分母改用 objectsTotal。
+// 走不到，却有一条手工构造 state 的测试把它测成绿的。
+//
+// ⚠️ 当时顺手写下的「分母改用 objectsTotal」这句**不准确**：`objectsTotal` 是
+// **本阶段的**分母，不是整个 clone 的。`Compressing` 只算需压缩的对象、`Resolving
+// deltas` 的分母是 delta 数、`Updating files` 的分母是文件数——量纲都不同，跨阶段
+// 当同一个分母用，数字会在阶段切换时跳变。
+//
+// 现有消费方没出错，但是**碰巧**没出错：`cloneProgressPercent` 优先吃 git 给的
+// per-stage `percent`，`buildDetailLabel` 把这对数和**阶段名**并排渲染，阶段名限定了
+// 它们的含义。要做「整体进度」得另想办法，别照这句话直接除。详见
+// `api/…/git-cloner.port.ts` 里同名字段上的长注释。
