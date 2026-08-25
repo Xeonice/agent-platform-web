@@ -21,6 +21,7 @@ import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
 import { useAppStore } from '@/stores';
 import { WorkbenchShellView } from '@/views/workbench/WorkbenchShell.view';
 import { ModalShellView } from '@/views/common/ModalShell.view';
+import { useRouter } from 'next/navigation';
 import { useModalFocus } from '@/hooks/_shared/useModalFocus';
 import { ProjectInfoBarView } from '@/views/project/ProjectInfoBar.view';
 import { SandboxTerminalContainer } from '@/containers/sandbox/SandboxTerminalContainer';
@@ -37,6 +38,7 @@ export function WorkbenchContainer() {
   const health = useHealth();
   const projects = useProjects();
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
+  const router = useRouter();
   const setSelectedProjectId = useAppStore((s) => s.setSelectedProjectId);
   const setSelectedSandboxId = useAppStore((s) => s.setSelectedSandboxId);
   const selectedSandboxId = useAppStore((s) => s.selectedSandboxId);
@@ -204,13 +206,17 @@ export function WorkbenchContainer() {
         // 仅 ready 态（§9.3）：克隆中/失败各有自己的出口，谈不上"重新同步"。
         canSync={selectedProject.cloneStatus === 'ready'}
         syncing={syncProject.isPending}
-        syncErrorMessage={syncProject.error?.message}
+        // 人话由 hook 按 code 查表给出（10A E-5）——此前这里直接渲染 envelope.message,
+        // 而那是 sanitizeCloneMessage(git stderr),一行英文报错。
+        {...(syncProject.errorMessage === undefined
+          ? {}
+          : { syncErrorMessage: syncProject.errorMessage })}
+        syncNeedsCredentials={syncProject.needsCredentials}
+        onConfigureCredentials={() => {
+          router.push('/settings/credentials');
+        }}
         onSync={() => {
-          syncProject.mutate(selectedProject.id, {
-            onError: (error) => {
-              reportRestError(error);
-            },
-          });
+          syncProject.sync(selectedProject.id);
         }}
       />
     );

@@ -32,6 +32,9 @@ export interface ProjectInfoBarProps {
   canSync: boolean;
   syncing: boolean;
   syncErrorMessage?: string;
+  /** 权限类失败 ⇒ 就地给 [配置 Git 凭证]（与克隆失败同一条出路，不让用户自己找路）。 */
+  syncNeedsCredentials?: boolean;
+  onConfigureCredentials?: () => void;
   onSync: () => void;
 }
 
@@ -80,6 +83,8 @@ export function ProjectInfoBarView({
   canSync,
   syncing,
   syncErrorMessage,
+  syncNeedsCredentials = false,
+  onConfigureCredentials,
   onSync,
 }: ProjectInfoBarProps) {
   const isEmptyProject = sourceType === 'empty';
@@ -124,9 +129,22 @@ export function ProjectInfoBarView({
       )}
 
       {syncErrorMessage !== undefined && syncErrorMessage !== '' && (
-        <p role="alert" className="text-red-400">
-          {syncErrorMessage}
-        </p>
+        <span className="flex items-center gap-2">
+          <span role="alert" className="text-red-400">
+            {syncErrorMessage}
+          </span>
+          {/* 权限类失败的出路不在这条只读条上——直接把用户送到凭证页，
+              与克隆失败那条路同款（F21-3 §10.2）。 */}
+          {syncNeedsCredentials && onConfigureCredentials !== undefined && (
+            <button
+              type="button"
+              className="shrink-0 underline hover:text-foreground"
+              onClick={onConfigureCredentials}
+            >
+              配置 Git 凭证
+            </button>
+          )}
+        </span>
       )}
     </div>
   );

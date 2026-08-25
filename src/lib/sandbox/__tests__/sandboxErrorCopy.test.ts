@@ -69,9 +69,14 @@ describe('错误码 → 人话 + 可操作建议（P22 §1）', () => {
 });
 
 /**
- * 后端在 `create` 门口做的**零副作用**拒绝，六条（04 §5 / 10 §6.1）。
+ * 后端在 `create` 门口做的**零副作用**拒绝，**七条**（04 §5 / 10 §6.8）。
  * 状态码一栏是真实值，**刻意留在 fixture 里**：它是"判据不看状态码"这件事的证物——
- * 六条散在 400/404/409 三个码上，任何"从状态码反推"的写法都必然漏掉其中一部分。
+ * 七条散在 400/404/409 三个码上，任何"从状态码反推"的写法都必然漏掉其中一部分。
+ *
+ * ⚠️ **这张名单与 10 §6.8 的表必须同步**。真发生过一次：`BRANCH_NOT_FOUND` 随
+ * 「建 Task 选分支」进了文档的表，而这里停在六条 —— 两侧各自都"完整"，
+ * 合起来漏了一条，29 条测试照样全绿。漏掉的那条会掉进 `fallbackCopy`，
+ * **恰恰带着 [重试]**，对零副作用拒绝说了最不该说的那句话。
  */
 const ZERO_SIDE_EFFECT_REJECTIONS = [
   { code: 'UNKNOWN_PROVIDER', httpStatus: 400, message: "unknown provider 'nope'" },
@@ -80,10 +85,11 @@ const ZERO_SIDE_EFFECT_REJECTIONS = [
   { code: 'UNSUPPORTED_CAPABILITY', httpStatus: 409, message: 'provider boxlite 不支持 snapshot' },
   { code: 'PROJECT_NOT_FOUND', httpStatus: 404, message: 'project proj-9 not found' },
   { code: 'PROJECT_NOT_READY', httpStatus: 409, message: "project proj-1 is 'cloning'" },
+  { code: 'BRANCH_NOT_FOUND', httpStatus: 400, message: "project p has no branch 'x'" },
 ] as const;
 
 describe('零副作用拒绝（后端显式声明 sideEffectFree）≠ 创建失败可重试', () => {
-  it('六条门口拒绝**全部**认出来（判据读字段，不读 HTTP 状态码）', () => {
+  it('七条门口拒绝**全部**认出来（判据读字段，不读 HTTP 状态码）', () => {
     for (const rejection of ZERO_SIDE_EFFECT_REJECTIONS) {
       expect(
         isZeroSideEffectRejection(
@@ -91,11 +97,37 @@ describe('零副作用拒绝（后端显式声明 sideEffectFree）≠ 创建失
         ),
       ).toBe(true);
     }
-    // 判据不看状态码这件事的证物：六条散在三个状态码上，只有两条是 409。
+    // 判据不看状态码这件事的证物：七条散在三个状态码上，只有两条是 409。
     // 旧写法 `httpStatus === 409 && code === 'UNSUPPORTED_CAPABILITY'` 只认得其中一条。
     const statuses = new Set(ZERO_SIDE_EFFECT_REJECTIONS.map((r) => r.httpStatus));
     expect([...statuses].sort((a, b) => a - b)).toEqual([400, 404, 409]);
     expect(ZERO_SIDE_EFFECT_REJECTIONS.filter((r) => r.httpStatus === 409)).toHaveLength(2);
+  });
+
+  /**
+   * ★ 结构性防线：**每一条门口拒绝都必须在 COPY_TABLE 里有自己的文案**。
+   *
+   * 上面那条用例只验"认得出它是零副作用"，认得出之后仍可能没有文案 ——
+   * `BRANCH_NOT_FOUND` 就是这么漏的：`isZeroSideEffectRejection` 读的是
+   * `sideEffectFree` 字段（与码无关，所以它一直是对的），而 `COPY_TABLE` 是按码查表，
+   * 少一条就掉进带 [重试] 的 `fallbackCopy`。两件事，两条用例。
+   *
+   * MUTATION：把 `BRANCH_NOT_FOUND` 从 `COPY_TABLE` 删掉 ⇒ 本条红
+   *（而上面那条仍然绿 —— 这正是需要两条用例的原因）。
+   */
+  it('每一条门口拒绝都有自己的文案，且**都不给 [重试]**', () => {
+    for (const rejection of ZERO_SIDE_EFFECT_REJECTIONS) {
+      const copy = describeSandboxError(
+        env({ code: rejection.code, message: rejection.message, sideEffectFree: true }),
+      );
+      // 掉进 fallback 的特征就是带上了 retry —— 门口拒绝一律不该有它。
+      expect(
+        copy.actions.map((a) => a.key),
+        `${rejection.code} 掉进了 fallbackCopy（带 [重试]），说明 COPY_TABLE 里没有它`,
+      ).not.toContain('retry');
+      // 文案得是为这条码写的，不是兜底那段。
+      expect(copy.title).not.toMatch(/任务启动失败/);
+    }
   });
 
   it('也不认码白名单：前端没见过的新门口拒绝码，只要后端标了就算数', () => {
