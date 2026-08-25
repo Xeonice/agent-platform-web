@@ -151,10 +151,10 @@ describe('useSyncProject', () => {
     );
     const { result } = renderHook(() => useSyncProject(), { wrapper: makeWrapper() });
     act(() => {
-      result.current.mutate('p-1');
+      result.current.sync('p-1');
     });
     await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
+      expect(result.current.isPending).toBe(false);
     });
     expect(hit).toBe(1);
     expect(requested[0]).toContain('/api/projects/p-1/sync');
@@ -171,11 +171,50 @@ describe('useSyncProject', () => {
     );
     const { result } = renderHook(() => useSyncProject(), { wrapper: makeWrapper() });
     act(() => {
-      result.current.mutate('p-1');
+      result.current.sync('p-1');
     });
     await waitFor(() => {
-      expect(result.current.isError).toBe(true);
+      expect(result.current.errorMessage).toBeDefined();
     });
-    expect(result.current.error?.message).toContain('项目未就绪');
+    expect(result.current.needsCredentials).toBe(false);
+  });
+
+  /**
+   * ★ 10A E-5：sync 的 git 失败**按 code 查人话表**，不直接渲染 message。
+   *
+   * 后端 sync 复用了 clone 的错误码，注释里明写着「前端已经按这些码分支了」——
+   * 但那句话此前不成立：`cloneFailureGuidance` 全仓只有一处调用，读的是
+   * `clone_progress` 的 WS 投影表，与 sync mutation 的 error **不同源**。
+   * 于是私有仓没配凭证时点 [重新同步]，用户看到的是 `sanitizeCloneMessage(git stderr)`，
+   * 一行英文；而同一个失败原因在**克隆**路径上早就有中文人话 + 凭证入口。
+   *
+   * MUTATION：把 `cloneFailureGuidance(code)` 换回 `m.error?.message` ⇒ 本条红。
+   */
+  it('权限失败 ⇒ 给中文人话 + 凭证入口，而不是把 git stderr 甩给用户', async () => {
+    server.use(
+      http.post(`${API_BASE}/api/projects/:id/sync`, () =>
+        HttpResponse.json(
+          {
+            code: 'CLONE_FAILED_PERMISSION',
+            // 后端这句是 sanitizeCloneMessage(git stderr) —— 给开发者看的，不是给用户看的
+            message: "remote: Repository not found. fatal: repository 'https://…' not found",
+            retryable: false,
+          },
+          { status: 403 },
+        ),
+      ),
+    );
+    const { result } = renderHook(() => useSyncProject(), { wrapper: makeWrapper() });
+    act(() => {
+      result.current.sync('p-1');
+    });
+    await waitFor(() => {
+      expect(result.current.errorMessage).toBeDefined();
+    });
+    // 与克隆失败路径**同一句人话**（复用 cloneFailureGuidance，不另写一套词汇）
+    expect(result.current.errorMessage).toContain('没有访问该仓库的权限');
+    expect(result.current.errorMessage).not.toContain('fatal:');
+    // 权限类失败要给出路，否则用户只知道"不行"不知道"去哪配"
+    expect(result.current.needsCredentials).toBe(true);
   });
 });

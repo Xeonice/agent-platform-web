@@ -7,14 +7,11 @@
 //  · **失败不拦创建**：分支只是"可选的覆盖"，缺省永远在（基线当前分支）。取不到列表时
 //    选择器降级为"用基线分支"，创建按钮**照常可点** —— 把一个可选项的加载失败升级成
 //    阻断，等于让一条本来不该存在的失败路径拦住核心链路。
-import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-  type UseMutationResult,
-} from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listProjectBranches, syncProject } from '@/services/api/project.service';
 import { projectKeys } from '@/hooks/project/useProjects';
+import { cloneFailureGuidance } from '@/lib/project/projectClone';
+import { ApiErrorException } from '@/services/api/apiError';
 
 /** 分支 query key 族（15 §2.1）：挂在项目下的独立资源。 */
 export const branchKeys = {
@@ -64,12 +61,49 @@ export function useProjectBranches({
  * 重新同步基线（F21-6 §9.3）：`POST /api/projects/:id/sync`，**仅 `ready` 态**可调。
  * 成功后 invalidate 项目列表，只读条的「最后同步」与「基线体积」随之刷新。
  */
-export function useSyncProject(): UseMutationResult<void, Error, string> {
+export interface SyncProjectApi {
+  sync: (projectId: string) => void;
+  isPending: boolean;
+  /** 人话失败原因；`undefined` = 没失败。 */
+  errorMessage?: string;
+  /** 权限类失败 ⇒ 就地给 [配置 Git 凭证] 入口（与克隆失败同一条出路）。 */
+  needsCredentials: boolean;
+}
+
+/**
+ * `POST /api/projects/:id/sync`。
+ *
+ * ★ **失败原因按 code 查人话表，不直接渲染 message**（10A E-5）。
+ *
+ * 后端 sync 的 git 失败复用了 clone 的错误码（`CLONE_FAILED_PERMISSION` /
+ * `CLONE_FAILED_NETWORK` / `TIMEOUT` / `DISK_INSUFFICIENT` / `INTERRUPTED`），
+ * 它的注释里明写着这个复用假设：「前端已经按这些码分支了」。
+ *
+ * 但那句话此前**不成立**：`cloneFailureGuidance` 全仓只有一处调用，读的是
+ * `clone_progress` 的 WS 投影表，与 sync mutation 的 error **不同源**。
+ * 于是私有仓没配凭证时点 [重新同步]，用户看到的是 `envelope.message` ——
+ * 而那是 `sanitizeCloneMessage(git stderr)`，一行英文：
+ *   `remote: Repository not found. fatal: repository '…' not found`
+ * 同一个失败原因在**克隆**路径上早就有中文人话 + 凭证入口，好的那套用不上。
+ */
+export function useSyncProject(): SyncProjectApi {
   const queryClient = useQueryClient();
-  return useMutation({
+  const m = useMutation({
     mutationFn: syncProject,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: projectKeys.all() });
     },
   });
+
+  const code = m.error instanceof ApiErrorException ? m.error.envelope.code : undefined;
+  const guidance = m.error ? cloneFailureGuidance(code) : null;
+
+  return {
+    sync: (projectId) => {
+      m.mutate(projectId);
+    },
+    isPending: m.isPending,
+    ...(guidance === null ? {} : { errorMessage: guidance.message }),
+    needsCredentials: guidance?.needsCredentials ?? false,
+  };
 }
