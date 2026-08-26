@@ -23,11 +23,22 @@ export type SandboxProviderDto = components['schemas']['ProviderResponseDto'];
 export type SandboxDto = components['schemas']['SandboxResponseDto'];
 
 /**
- * 逐 provider 能力位（**7 位全 required**）：驱动按能力显隐，今天只消费 spawnTty。
+ * 逐 provider 能力位（**7 位全 required**）：驱动按能力显隐。
  *
- * `headlessTask` 一位同时管住作业面与文件面（04 §2.6）——两者必然同进同退，
- * 「能跑任务但取不回产物」不是可交付的一半。契约已定，两个内置 provider 目前都声明
- * `false`；实现落在 S6 切片，届时 UI 才有「这个档位能不能跑无头任务」的判据。
+ * 前端**今天真正消费的只有两位**，其余五位一律只是原样透传（列在这里是为了让下一个人
+ * 一眼看见边界，而不是去 grep 才发现某一位其实没人读）：
+ *  · `spawnTty`     —— `SandboxTerminalContainer`：false ⇒ 禁用建沙箱入口并给出原因。
+ *  · `headlessTask` —— 按沙箱 DTO 的 `provider` 反查该档位：false ⇒ 无头任务入口置灰 + 原因。
+ *    这一位同时管住作业面与文件面（04 §2.6）——两者必然同进同退，「能跑任务但取不回产物」
+ *    不是可交付的一半。S6 已落地，两个内置 provider 现在都声明 `true`。
+ *  · `volumeMount` / `updateResources` / `pauseResume` / `snapshot` / `watchEvents`
+ *    —— **没有任何 UI 读它们**。
+ *
+ * ⚠️ 后一组不读，是**故意**的，不是漏了：能力位说的是「这个档位支不支持」，
+ * 不等于「平台已经把这个功能做出来了」。快照/暂停/改配额今天连 REST 端点都没有，
+ * 前端要是顺手按 `capabilities.snapshot` 长出一个按钮，用户点下去只会撞到 404 ——
+ * 而且这个按钮会随后端换一版 provider 实现**自己冒出来**，没人改过一行前端代码。
+ * 所以加这类入口的判据是「端点存在 + 有人验过」，能力位只是它的**前置条件**，不是触发器。
  */
 export type SandboxProviderCapabilities = SandboxProviderDto['capabilities'];
 

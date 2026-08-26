@@ -39,7 +39,6 @@ import { AuthGateContainer } from '@/containers/credential/AuthGateContainer';
 import { invalidateRuntimeAuth } from '@/hooks/credential/useRuntimeAuthMutations';
 import { SandboxLifecycleContainer } from '@/containers/sandbox/SandboxLifecycleContainer';
 import { HeadlessTaskContainer } from '@/containers/task/HeadlessTaskContainer';
-import type { SandboxProvider } from '@/types/sandbox';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
 import type { ProjectSourceType } from '@/types/project';
 
@@ -72,7 +71,6 @@ export function SandboxTerminalContainer({
   projectSourceType,
 }: SandboxTerminalContainerProps) {
   // null = 用户尚未手选 → 跟随服务端默认档（前端无默认常量，registry 换默认档即刻生效）。
-  const [pickedProvider, setPickedProvider] = useState<SandboxProvider | null>(null);
   // runtime 一侧：null = **用户还没选**（平台没有默认 runtime 概念，既不预选也不猜）。
   const [pickedRuntime, setPickedRuntime] = useState<string | null>(null);
   const [task, setTask] = useState<CreatedTask | null>(null);
@@ -114,15 +112,18 @@ export function SandboxTerminalContainer({
   const socketConfig = useTerminalSocketConfig(wsBaseUrl, sandboxId);
 
   const providerList = providers.data ?? [];
-  // 默认档来自数组里 isDefault 的那项（契约把默认档挂在每项上，无顶层字段）。
-  // 兜底：registry 非空但没有任何一项 isDefault（属契约异常）→ 取第一项而非留空——
-  // 留空会让创建按钮一直禁着、看起来像 bug，取第一项能保住终端这条核心链路且用户仍可改选；
-  // 数组为空 → '' → 落到 view 的「后端未注册任何 provider」分支。
-  const serverDefault = providerList.find((p) => p.isDefault)?.name ?? providerList[0]?.name ?? '';
-  const provider = pickedProvider ?? serverDefault;
-  // 选中项的能力位透出到容器层：今天只用 spawnTty 决定终端入口，其余能力位随对象一起交给 view 备用。
-  const selectedProvider = providerList.find((p) => p.name === provider);
-  const ttyUnsupported = selectedProvider !== undefined && !selectedProvider.capabilities.spawnTty;
+  /**
+   * 后端为**这台宿主**选定的档位（`isDefault` 那项）。前端**只读**，不再让用户选：
+   * aio 是 docker 容器、boxlite 是微 VM，哪个跑得起来是宿主平台的事实而不是用户偏好
+   * （见 `provider-registry.ts` 的 `hostPreferredProvider`）。
+   *
+   * ⚠️ 兜底取第一项是为了「registry 非空但没有任何一项 isDefault」这种**契约异常**仍能
+   * 保住终端这条核心链路。它现在更不该发生了——后端 boot 时就 fail fast——但留着无害。
+   * 数组为空 ⇒ `undefined` ⇒ view 出「后端未注册任何沙箱运行环境」并禁用创建。
+   */
+  const hostProvider = providerList.find((p) => p.isDefault) ?? providerList[0];
+  // 能力位透出到容器层：今天只用 spawnTty 决定终端入口。
+  const ttyUnsupported = hostProvider !== undefined && !hostProvider.capabilities.spawnTty;
 
   const runtimeList = runtimes.data ?? [];
   /**
@@ -168,7 +169,7 @@ export function SandboxTerminalContainer({
     // 与上面三条同理:按钮已禁用,这里兜住键盘等旁路触发。今天按钮是原生
     // `<button disabled>`(挡得住一切激活路径),但同函数里其余三条都兜了,少这一条
     // 只是等着某天换成自定义控件时变成真口子。
-    if (provider === '' || runtime === '' || ttyUnsupported || authBlocked) return;
+    if (hostProvider === undefined || runtime === '' || ttyUnsupported || authBlocked) return;
     const prompt = initialPrompt.trim();
     if (Array.from(prompt).length > INITIAL_PROMPT_MAX_LENGTH) return; // 视图已禁用，这里兜旁路触发
     // **提交即清空**（安全红线）：值只在这一刻进入请求体，之后前端不再持有。
@@ -178,7 +179,8 @@ export function SandboxTerminalContainer({
         projectId,
         // 取自 GET /api/runtimes 的真实注册键（用户可改选）——前端不再有任何 runtime 字面量。
         runtime,
-        provider,
+        // ⚠️ **刻意不传 `provider`**（契约里它是 optional）：档位由后端按宿主平台决定，
+        //    前端传一份等于让「选哪个」有第二个知情者，两处迟早不一致。
         // 空指令不发字段（后端可选）；非空则随创建请求提交，agent 启动时即执行（T-2）。
         ...(prompt === '' ? {} : { initialPrompt: prompt }),
         // **不选就不带**（§9.4 ④）：缺省 = 基线当前分支，由后端裁决。
@@ -193,12 +195,12 @@ export function SandboxTerminalContainer({
             failureMessage: sandbox.failureMessage,
           });
           // 任务名直接用后端返回的 name（从 prompt 派生，规则 P21-1 §9）——前端不派生第二份。
-          // provider 优先用后端回的（权威），回落到本次选中的档位（openapi 同步前生成类型还没这个字段）。
+          // provider 取**后端回的**——它才知道这次真的落在哪个档位上（前端已不再参与选择）。
           setTask({
             id: sandbox.id,
             name: sandbox.name,
             runtime: sandbox.runtime,
-            provider: provider === '' ? undefined : provider,
+            provider: sandbox.provider,
             headless: sandbox.headless,
           });
           // 落进 persist 白名单里的选中位 ⇒ 刷新后能靠 DTO 把任务名与失败原因取回来。
@@ -269,9 +271,7 @@ export function SandboxTerminalContainer({
           onRetryRuntimes={() => {
             void runtimes.refetch();
           }}
-          providers={providerList}
-          provider={provider}
-          onSelectProvider={setPickedProvider}
+          hostProvider={hostProvider}
           onCreate={handleCreate}
           creating={createSandbox.isPending}
           loadingProviders={providers.isPending}
@@ -309,8 +309,11 @@ export function SandboxTerminalContainer({
               : undefined
           }
           createDisabledReason={
+            // ⚠️ 原文案是「请改选其它运行档位」——**现在用户改不了了**（档位由宿主平台决定）。
+            //    一条指向不存在的操作的提示，比不提示更贵：它让人在界面上找一个不存在的开关。
             ttyUnsupported
-              ? `provider「${provider}」不支持终端（spawnTty=false），请改选其它运行档位。`
+              ? `当前宿主的运行档位「${hostProvider.name}」不支持终端（spawnTty=false）。` +
+                '档位由平台按宿主环境选定，不能在这里更改；可以改用**无头任务**（不开终端，agent 启动即执行）。'
               : undefined
           }
           // 两条**互斥**的错误呈现路径（P22 §1 / 04 §5）：

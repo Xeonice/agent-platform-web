@@ -91,6 +91,60 @@ describe('错误码 → 人话 + 可操作建议（P22 §1）', () => {
     expect(copy.advice).toContain('未能获取具体原因');
   });
 
+  /**
+   * ★ 钉定 digest 带来的新失败档 —— 它是**钉住 digest 换来的**，今天不存在。
+   *
+   * 今天镜像坐标是 tag，拉取永远能拉到"某个东西"；镜像切片落地后按 `ref@digest` 拉
+   * （04 §7 时刻④），上游把那个 digest GC 掉之后就会出现「tag 还在、版本没了」。
+   *
+   * ⚠️ 关键在于**两个码给的出路必须不同**，否则单开一个码毫无意义：
+   * `IMAGE_PULL_FAILED` 让用户去查地址和网络；`IMAGE_DIGEST_GONE` 明说地址没错、
+   * 改地址和重试都没用，出路是 [检查更新]。下面第三条就是钉这个"不同"。
+   *
+   * MUTATION: 删掉 `IMAGE_DIGEST_GONE` 条目 ⇒ 它落到 `fallbackCopy`，带回一个
+   * `[重试]` —— 对着一个"重试一万次也不会变"的失败说"再试一次"，第一条当场红。
+   */
+  it('IMAGE_DIGEST_GONE：明说地址没错，且**不给 [重试]**（重试拉的还是那个已不存在的 digest）', () => {
+    const copy = describeSandboxError({ code: 'IMAGE_DIGEST_GONE' });
+    expect(copy.advice).not.toContain('未能获取具体原因'); // 没落到兜底
+    expect(copy.actions.some((a) => a.key === 'retry')).toBe(false);
+    expect(copy.advice).toContain('检查更新');
+  });
+
+  it('两个镜像拉取失败码给的是**不同的出路** —— 否则不必是两个码', () => {
+    const pull = describeSandboxError({ code: 'IMAGE_PULL_FAILED' });
+    const gone = describeSandboxError({ code: 'IMAGE_DIGEST_GONE' });
+    // `IMAGE_PULL_FAILED` 今天的建议仍然成立（tag 坐标下"查地址/查网络"是对的），
+    // 这一条同时钉住"不要顺手把它改成模棱两可的话去兼顾两种情况"。
+    expect(pull.actions.some((a) => a.key === 'retry')).toBe(true);
+    expect(gone.actions.some((a) => a.key === 'retry')).toBe(false);
+    expect(pull.advice).not.toBe(gone.advice);
+  });
+
+  /**
+   * ⭐ 全新部署的第一条错误 —— 它必须与 `INVALID_IMAGE_REFERENCE` **说不同的话**。
+   *
+   * 门口曾经把两种情况合并成后者，于是「一张镜像都没注册」被说成「你的镜像地址里有
+   * 空白或控制字符」。第二条断言就是钉这个区分：合并回一个码，两句话会变成同一句。
+   *
+   * MUTATION: 删掉 `IMAGE_NOT_REGISTERED` 条目 ⇒ 落回兜底并带出 [重试]，两条都红。
+   */
+  it('IMAGE_NOT_REGISTERED：指向镜像管理，且**不给 [重试]**（库里没有的东西重试不会出现）', () => {
+    const copy = describeSandboxError({ code: 'IMAGE_NOT_REGISTERED' });
+    expect(copy.advice).not.toContain('未能获取具体原因');
+    expect(copy.advice).toContain('镜像管理');
+    expect(copy.actions.some((a) => a.key === 'retry')).toBe(false);
+  });
+
+  it('它与 INVALID_IMAGE_REFERENCE 给的是不同的出路 —— 否则不必是两个码', () => {
+    const notRegistered = describeSandboxError({ code: 'IMAGE_NOT_REGISTERED' });
+    const badRef = describeSandboxError({ code: 'INVALID_IMAGE_REFERENCE' });
+    expect(notRegistered.advice).not.toBe(badRef.advice);
+    // 「地址不合法」那条谈的是字符；「没有可用镜像」那条不该提字符——用户什么都没填。
+    expect(badRef.advice).toContain('控制字符');
+    expect(notRegistered.advice).not.toContain('控制字符');
+  });
+
   it('未知码 / 无码：仍给人话 + 可点动作（异步失败拿不到码时的兜底）', () => {
     const unknown = describeSandboxError({ code: 'WHATEVER' });
     expect(unknown.actions.length).toBeGreaterThan(0);
@@ -244,5 +298,102 @@ describe('零副作用拒绝（后端显式声明 sideEffectFree）≠ 创建失
         expect(`${title}${advice}`).not.toContain(banned);
       }
     }
+  });
+});
+
+/**
+ * ★ **镜像上下文本轮进 10 §6.8 主表的 11 个码：谁该有顶层文案，谁不该有。**
+ *
+ * 这不是"补齐文案"那么简单——**配错地方的文案永远不命中，而不命中不会让任何测试变红**
+ *（F21-4 §8.3）。所以两个方向都要钉：
+ *   · 顶层 `code` 的那三个（`REF_NOT_FOUND` / `REGISTRY_UNREACHABLE` / `MANIFEST_INVALID`）
+ *     **必须**在表里，否则掉进 `fallbackCopy`，带回一个对它们全错的 [重试]；
+ *   · 只活在 `details[].code` / `warnings[].code` 里的那八个**必须不在**表里——
+ *     给它们配顶层文案是白配，还会让下一个人以为顶层查表这条路能拿到它们。
+ *
+ * `IMAGE_DIGEST_GONE` 也是顶层码，但上一轮就在表里了，语义本轮不动（另有用例守着）。
+ */
+describe('镜像错误码：顶层的配文案，details[]/warnings[] 里的一律不配（10 §6.8 / F21-4 §8.3）', () => {
+  /** 顶层 `code` —— 前端按 `envelope.code` 查表能查到的那些。 */
+  const TOP_LEVEL_IMAGE_CODES = ['REF_NOT_FOUND', 'REGISTRY_UNREACHABLE', 'MANIFEST_INVALID'];
+
+  /**
+   * **不是顶层码**的八个，连同它们真正住的地方。
+   * 拿它们去 `describeSandboxError` 查，正确结果是**查不到**（走兜底）。
+   */
+  const NON_TOP_LEVEL_IMAGE_CODES = [
+    { code: 'IMAGE_TMUX_MISSING', livesIn: 'details[].code（顶层 MANIFEST_INVALID）' },
+    { code: 'IMAGE_ENTRYPOINT_INVALID', livesIn: 'details[].code（顶层 MANIFEST_INVALID）' },
+    { code: 'ENV_NAME_INVALID', livesIn: 'details[].code（顶层 VALIDATION_FAILED）' },
+    { code: 'ENV_NAME_RESERVED', livesIn: 'details[].code（顶层 VALIDATION_FAILED）' },
+    { code: 'ENV_LIMIT_EXCEEDED', livesIn: 'details[].code（顶层 VALIDATION_FAILED）' },
+    { code: 'ENV_DUPLICATE_KEY', livesIn: 'details[].code（顶层 VALIDATION_FAILED）' },
+    { code: 'RUNTIME_NOT_PREINSTALLED', livesIn: 'ValidationOutcome.warnings[].code' },
+  ];
+
+  it('三个顶层镜像码都有自己的文案（掉进兜底就说明漏收了）', () => {
+    for (const code of TOP_LEVEL_IMAGE_CODES) {
+      const copy = describeSandboxError({ code });
+      expect(copy.advice, `${code} 掉进了 fallbackCopy`).not.toContain('未能获取具体原因');
+      expect(copy.title).not.toBe('❌ 任务启动失败');
+      expect(copy.actions.length).toBeGreaterThan(0);
+      expect(copy.title).not.toContain(code);
+    }
+  });
+
+  /**
+   * MUTATION：给 `ENV_DUPLICATE_KEY` 在 `COPY_TABLE` 里加一条"看起来很合理"的顶层文案
+   * ⇒ 本条红。而在没有这条用例时，那条白配的文案**永远不会被任何路径读到**，
+   * 也永远不会有测试变红——它只会让下一个人相信顶层查表能拿到 `ENV_*`。
+   */
+  it('八个非顶层码**都不在**顶层文案表里（配了也永远查不到）', () => {
+    for (const { code, livesIn } of NON_TOP_LEVEL_IMAGE_CODES) {
+      const copy = describeSandboxError({ code });
+      expect(copy.advice, `${code} 住在 ${livesIn}，不该有顶层文案`).toContain('未能获取具体原因');
+    }
+  });
+
+  /**
+   * `REGISTRY_UNREACHABLE` 是这一组里**唯一** `retryable:true` 的码（10 §6.8 原话），
+   * 于是也是唯一该给 [重试] 的。另外两条原样重来必然被同一道门再拒一次。
+   */
+  it('只有 REGISTRY_UNREACHABLE 给 [重试]，另外两条不给', () => {
+    expect(
+      describeSandboxError({ code: 'REGISTRY_UNREACHABLE' }).actions.some((a) => a.key === 'retry'),
+    ).toBe(true);
+    expect(
+      describeSandboxError({ code: 'REF_NOT_FOUND' }).actions.some((a) => a.key === 'retry'),
+    ).toBe(false);
+    expect(
+      describeSandboxError({ code: 'MANIFEST_INVALID' }).actions.some((a) => a.key === 'retry'),
+    ).toBe(false);
+  });
+
+  /**
+   * ★ **订正回归**：`MANIFEST_INVALID` 的旧文案描述的是**运行期**的 `IMAGE_CONTRACT_VIOLATION`
+   *（「缺少 tmux 等必须项」＝起会话前实测失败），而它自己是**注册期** 422。
+   * 10 §6.8 记着这笔账。两个码必须并存、两句话必须各说各的。
+   *
+   * MUTATION：把 `MANIFEST_INVALID` 的 advice 改回「该镜像未通过平台校验（如缺少 tmux 等必须项）」
+   * ⇒ 第一条断言红（它又开始替运行期那个码说话了）。
+   */
+  it('MANIFEST_INVALID 说的是**注册期不许进库**，不是运行期"任务停了"', () => {
+    const registerTime = describeSandboxError({ code: 'MANIFEST_INVALID' });
+    const runTime = describeSandboxError({ code: 'IMAGE_CONTRACT_VIOLATION' });
+
+    // 注册期这条不许写死"缺少 tmux"——缺的可能是 entrypoint，具体原因在 details[] 里逐条给。
+    expect(registerTime.advice).not.toContain('tmux');
+    // 也不许出现"任务/实例已停止"这类措辞：注册页上根本没有实例。
+    for (const banned of ['任务', '实例', '停止']) {
+      expect(`${registerTime.title}${registerTime.advice}`).not.toContain(banned);
+    }
+    // 它要说清的是"什么都没落库"（后端 24 §7.2「invalid 不落库」）。
+    expect(registerTime.advice).toContain('落库');
+
+    // 运行期那条反过来：它必须说"任务停了"，且仍然点名 tmux（实测缺的就是它）。
+    expect(runTime.title).toContain('tmux');
+    expect(runTime.title).toContain('任务已停止');
+    // 两条文案不许是同一句——那正是"合并成一段话"之后的样子。
+    expect(registerTime.advice).not.toBe(runTime.advice);
   });
 });

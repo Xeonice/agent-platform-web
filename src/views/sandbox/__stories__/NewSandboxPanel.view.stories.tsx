@@ -40,20 +40,38 @@ function caps(overrides: Partial<SandboxProviderCapabilities> = {}): SandboxProv
   };
 }
 
-const PROVIDERS: SandboxProviderDto[] = [
-  { name: 'aio', capabilities: caps(), isDefault: true },
-  {
-    name: 'boxlite',
-    capabilities: caps({ pauseResume: false, snapshot: false }),
-    isDefault: false,
-  },
-];
-
-/** 第三方注册进 registry 的档位：前端零改动即出现在选项里。 */
-const PROVIDERS_WITH_THIRD_PARTY: SandboxProviderDto[] = [
-  ...PROVIDERS,
-  { name: 'acme', capabilities: caps({ volumeMount: false }), isDefault: false },
-];
+/**
+ * ⚠️ **档位不再由用户选**，所以 story 里也不再有「候选名单」——只有**这台宿主选定的那一个**
+ * （后端 `GET /api/providers` 里 `isDefault` 的那条）。aio 是 docker 容器、boxlite 是微 VM，
+ * 哪个跑得起来是宿主平台的事实（见后端 `hostPreferredProvider()`：macOS→boxlite / Linux→aio）。
+ *
+ * ⚠️ 这两条**用真名字，就得配真能力位**（12 §3.4）：下面七位逐位抄自后端
+ * `aio-sandbox.provider.ts` / `boxlite-sandbox.provider.ts` 里各自声明的 `capabilities`。
+ * 此前它们吃 `caps()` 的"默认全开"，于是 story 里的 aio 声称支持 snapshot、boxlite 声称
+ * 支持 updateResources 且不支持 headlessTask —— 三位都跟后端相反。story 不参与断言，
+ * 所以这种偏差永远不会自己红，只会被下一个人当成事实读走。
+ */
+const AIO: SandboxProviderDto = {
+  name: 'aio',
+  capabilities: caps({ snapshot: false, headlessTask: true }),
+  isDefault: true,
+};
+const BOXLITE: SandboxProviderDto = {
+  name: 'boxlite',
+  capabilities: caps({
+    updateResources: false,
+    pauseResume: false,
+    snapshot: false,
+    headlessTask: true,
+  }),
+  isDefault: true,
+};
+/** 第三方注册的档位被后端选中：前端零改动即照常工作（不再有"出现在选项里"这回事）。 */
+const THIRD_PARTY: SandboxProviderDto = {
+  name: 'acme',
+  capabilities: caps({ volumeMount: false }),
+  isDefault: true,
+};
 
 const meta: Meta<typeof NewSandboxPanelView> = {
   title: 'Sandbox/NewSandboxPanel',
@@ -65,8 +83,7 @@ const meta: Meta<typeof NewSandboxPanelView> = {
     onSelectRuntime: noop,
     loadingRuntimes: false,
     onRetryRuntimes: noop,
-    providers: PROVIDERS,
-    onSelectProvider: noop,
+    hostProvider: AIO,
     onCreate: noop,
     onRetryProviders: noop,
     creating: false,
@@ -86,10 +103,12 @@ export default meta;
 
 type Story = StoryObj<typeof NewSandboxPanelView>;
 
-export const DefaultAio: Story = { args: { provider: 'aio' } };
-export const BoxliteSelected: Story = { args: { provider: 'boxlite' } };
+/** Linux 宿主：后端选 aio（原生 docker）。 */
+export const HostChoseAio: Story = { args: { hostProvider: AIO } };
+/** macOS 宿主：后端选 boxlite（Apple Hypervisor.framework，无需 Docker）。 */
+export const HostChoseBoxlite: Story = { args: { hostProvider: BOXLITE } };
 /** 改选 registry 里的另一个 runtime（前端从未枚举过这两个键，它们来自 GET /api/runtimes）。 */
-export const ClaudeCodeRuntime: Story = { args: { provider: 'aio', runtime: 'claude-code' } };
+export const ClaudeCodeRuntime: Story = { args: { runtime: 'claude-code' } };
 /**
  * 后端注册表里多一个第三方 runtime → 列表自动多一项（与 provider 同一条扩展性判据，14 §10.3 ①）。
  */
@@ -97,50 +116,52 @@ export const ThirdPartyRuntime: Story = {
   args: {
     runtimes: [...RUNTIMES, runtimeDto({ id: 'acme-agent', displayName: 'Acme Agent' })],
     runtime: 'acme-agent',
-    provider: 'aio',
   },
 };
 export const LoadingRuntimes: Story = {
-  args: { runtimes: [], runtime: '', loadingRuntimes: true, provider: 'aio' },
+  args: { runtimes: [], runtime: '', loadingRuntimes: true },
 };
 export const RuntimesLoadFailed: Story = {
-  args: { runtimes: [], runtime: '', runtimesErrorMessage: 'registry 不可用', provider: 'aio' },
+  args: { runtimes: [], runtime: '', runtimesErrorMessage: 'registry 不可用' },
 };
 export const EmptyRuntimeRegistry: Story = {
-  args: { runtimes: [], runtime: '', provider: 'aio' },
+  args: { runtimes: [], runtime: '' },
 };
-/** 服务端 registry 里多一个第三方 provider → 列表自动多一项（本次扩展性修复的判据）。 */
+/** 第三方 provider 被后端选中：前端零改动即照常工作（开放注册表的判据）。 */
 export const ThirdPartyProvider: Story = {
-  args: { providers: PROVIDERS_WITH_THIRD_PARTY, provider: 'acme' },
+  args: { hostProvider: THIRD_PARTY },
 };
 /** capabilities.spawnTty === false → 禁用建沙箱入口并给出原因。 */
 export const TtyUnsupported: Story = {
   args: {
-    providers: [
-      { name: 'headless-only', capabilities: caps({ spawnTty: false }), isDefault: true },
-      ...PROVIDERS.map((p) => ({ ...p, isDefault: false })),
-    ],
-    provider: 'headless-only',
+    hostProvider: {
+      name: 'headless-only',
+      capabilities: caps({ spawnTty: false }),
+      isDefault: true,
+    },
+    // ⚠️ 文案不再说「请改选其它运行档位」——档位由宿主决定，用户改不了；
+    //    一条指向不存在的操作的提示，比不提示更贵。
     createDisabledReason:
-      'provider「headless-only」不支持终端（spawnTty=false），请改选其它运行档位。',
+      '当前宿主的运行档位「headless-only」不支持终端（spawnTty=false）。' +
+      '档位由平台按宿主环境选定，不能在这里更改；可以改用**无头任务**（不开终端，agent 启动即执行）。',
   },
 };
 export const LoadingProviders: Story = {
-  args: { providers: [], provider: '', loadingProviders: true },
+  args: { hostProvider: undefined, loadingProviders: true },
 };
 export const ProvidersLoadFailed: Story = {
-  args: { providers: [], provider: '', providersErrorMessage: 'registry 不可用' },
+  args: { hostProvider: undefined, providersErrorMessage: 'registry 不可用' },
 };
-export const EmptyRegistry: Story = { args: { providers: [], provider: '' } };
-export const Creating: Story = { args: { provider: 'aio', creating: true } };
+export const EmptyRegistry: Story = { args: { hostProvider: undefined } };
+export const Creating: Story = { args: { creating: true } };
 export const CreateError: Story = {
-  args: { provider: 'aio', errorMessage: '创建失败：镜像拉取超时' },
+  args: { errorMessage: '创建失败：镜像拉取超时' },
 };
 
 // —— 任务指令（S5：Task 发起入口）——
 /** 填了指令：agent 启动时即执行（不必等用户打开终端）。 */
 export const WithInitialPrompt: Story = {
-  args: { provider: 'aio', initialPrompt: '分析这个仓库的架构并输出摘要' },
+  args: { initialPrompt: '分析这个仓库的架构并输出摘要' },
 };
 /**
  * **首屏**：runtime 必选、不预选（04 §8：平台没有「默认 runtime」概念）⇒ 一个都没选中、
@@ -148,12 +169,12 @@ export const WithInitialPrompt: Story = {
  * 注意这句提示**不是** role="alert"：它是"你还有一步没做"，不是故障。
  */
 export const RuntimeUnchosen: Story = {
-  args: { runtime: '', provider: 'aio' },
+  args: { runtime: '' },
 };
 
 /** 8000 上限：超限就地红字计数 + 禁用发起（P21-2 §6）。 */
 export const InitialPromptTooLong: Story = {
-  args: { provider: 'aio', initialPrompt: 'x'.repeat(8001) },
+  args: { initialPrompt: 'x'.repeat(8001) },
 };
 /**
  * 「零副作用」的门口拒绝（后端在信封里标 `sideEffectFree`）：请求在落库前被拒，
@@ -165,14 +186,13 @@ export const InitialPromptTooLong: Story = {
  */
 export const ZeroSideEffectRejected: Story = {
   args: {
-    provider: 'boxlite',
+    hostProvider: BOXLITE,
     rejectionMessage:
       '无法用当前配置创建：provider boxlite 不支持 snapshot。请调整配置后再试（本次请求未创建任何任务）。',
   },
 };
 export const ZeroSideEffectRejectedImageRef: Story = {
   args: {
-    provider: 'aio',
     rejectionMessage:
       "无法用当前配置创建：invalid image reference 'acme/img:v1 '。请调整配置后再试（本次请求未创建任何任务）。",
   },
@@ -180,11 +200,11 @@ export const ZeroSideEffectRejectedImageRef: Story = {
 
 // —— 分支选择器（F21-2 §N.1，本轮新增）：四态 ——
 /** 多分支：缺省项是「跟随基线当前分支」，选它等于**不传** `branch`。 */
-export const BranchesMany: Story = { args: { provider: 'aio' } };
+export const BranchesMany: Story = { args: {} };
 /** 单分支仓库：照样渲染，缺省项仍在（"只有一条分支"不等于"没有缺省语义"）。 */
-export const BranchesSingle: Story = { args: { provider: 'aio', branches: ['main'] } };
+export const BranchesSingle: Story = { args: { branches: ['main'] } };
 export const BranchesLoading: Story = {
-  args: { provider: 'aio', branches: [], loadingBranches: true },
+  args: { branches: [], loadingBranches: true },
 };
 /**
  * **空项目：整块不渲染**（没有 git，谈不上分支）。
@@ -192,11 +212,11 @@ export const BranchesLoading: Story = {
  *（「空项目不渲染分支选择器」），变异 = 把 `showBranchPicker` 恒置 true。
  */
 export const BranchesHiddenForEmptyProject: Story = {
-  args: { provider: 'aio', showBranchPicker: false, branches: [] },
+  args: { showBranchPicker: false, branches: [] },
 };
 /** 分支列表取不到 ⇒ 降级为"用基线分支"，**创建按钮照常可点**（不拦核心链路）。 */
 export const BranchesLoadFailed: Story = {
-  args: { provider: 'aio', branches: [], branchesErrorMessage: '读取本地引用失败' },
+  args: { branches: [], branchesErrorMessage: '读取本地引用失败' },
 };
 /** 选了非缺省分支：container 会把它填进请求体的 `branch`。 */
-export const BranchPicked: Story = { args: { provider: 'aio', branch: 'feature/x' } };
+export const BranchPicked: Story = { args: { branch: 'feature/x' } };

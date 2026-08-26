@@ -6,6 +6,12 @@
 //    向导本身从未被实现（F21-2 §3：20 个组件里 15 个不存在），它们是那个壳留下的化石；
 //    §9.0 定案「两个新建弹窗彼此独立、不嵌套」之后，连回程语义都不存在了。
 //  · `currentModal` 的 `'registerImage'` / `'wizard'` 两个取值 —— 同样是死值。
+//    ⚠️ **`'registerImage'` 于 2026-08 镜像切片落地时加了回来**，而且是按 F21-4 §2 的
+//    「加回来的两个条件」加的：① **set 与 read 一起落地**（`hooks/image/useImages.ts` 里
+//    `openRegister()` set、`registerOpen` read，`ImagesContainer` 据此渲染），不是只加一个
+//    联合成员——只在类型里存在的取值比没有更坏，它让人以为弹窗接好了；② **是真 overlay**
+//    （`RegisterImageModal.view` 的 `role=dialog` + `fixed inset-0 z-50 … bg-black/60`，
+//    与 `ConfirmDialog.view` 同一套形态）。`'wizard'` 仍然是死值，**没有加回来**。
 //
 // ⚠️ **指令类字段一个都不许回到这里**：`wizardData.initialPrompt` 曾是 store 上唯一
 // 承载任务指令的字段，它现在被删掉不是"放宽"，恰恰相反 —— 指令只活在 container 的
@@ -91,14 +97,18 @@ export interface UiSlice {
   // —— 瞬时 UI 指向（不 persist）——
   selectedProjectForMenu: string | null;
   /**
-   * 当前打开的**弹层**。两个取值都是真 overlay（`role=dialog` + `fixed inset-0 z-50 … bg-black/60`,
+   * 当前打开的**弹层**。三个取值都是真 overlay（`role=dialog` + `fixed inset-0 z-50 … bg-black/60`,
    * 与 `ConfirmDialog.view` 同一套形态），名字自此兑现。
    *
    * ⚠️ 在此之前这个名字是**假的**：`'createProject'` 被 `WorkbenchContainer` return 成
    * `mainContent`，是主区换页而不是弹层；而 `'wizard'` / `'registerImage'` 全仓无人 set、
-   * 无人读（F21-2 §N.0）。本轮两个「新建」都改成真弹层、形态对称，死值一并删除。
+   * 无人读（F21-2 §N.0）。上一轮两个「新建」都改成真弹层、形态对称，死值一并删除。
+   *
+   * ⚠️ `'registerImage'` 本轮**连 set 带 read 一起**加了回来（理由见文件头）：
+   * `hooks/image/useImages.ts` set，`containers/image/ImagesContainer.tsx` read 并渲染
+   * `RegisterImageModal.view`。`'wizard'` 没有回来——它今天仍然没有产出方。
    */
-  currentModal: 'createProject' | 'newTask' | null;
+  currentModal: 'createProject' | 'newTask' | 'registerImage' | null;
   setCurrentModal: (modal: UiSlice['currentModal']) => void;
 
   // —— Git 凭证回程暂存（不 persist）——

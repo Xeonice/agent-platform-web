@@ -20,8 +20,15 @@ import type {
   RuntimeDto,
   RuntimeSettings,
 } from '@/types/runtimeCredential';
-import type { SandboxDto, SandboxProviderCapabilities, SandboxProviderDto } from '@/types/sandbox';
+import type { SandboxDto, SandboxProviderDto } from '@/types/sandbox';
 import type { AgentTaskDto } from '@/types/task';
+import type {
+  CheckImageUpdateDto,
+  ImageManifestDto,
+  RegisterImageResponseDto,
+  RevalidateOutcomeDto,
+  ValidationOutcomeDto,
+} from '@/types/image';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
@@ -32,7 +39,8 @@ const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:30
 //  · runtime  —— `api/packages/modules/runtime/src/infrastructure/adapters/{codex,claude-code}/*.adapter.ts`
 //                 里的 `readonly id / displayName / vendor` 与 `getAuthMethods()`；
 //  · provider —— `api/packages/modules/sandbox/src/infrastructure/registry/provider-registry.ts`
-//                 （`private defaultName = 'aio'`）与 `sandbox.module.ts` 注册的 aio / boxlite。
+//                 的 `hostPreferredProvider()`，与 `sandbox.module.ts` 注册的 aio / boxlite；
+//                 能力位逐位抄自两个 provider 类自己声明的 `capabilities`（见 PROVIDER_REGISTRY）。
 //
 // 它们**是开放集**：第三方在运行时注册的键不在这份名单里，也永远不该被前端枚举。
 // 这份名单只是 dev/测试替身"手上恰好有的那几个真实取值"，不是闭集声明。
@@ -44,6 +52,21 @@ const PROVIDER_NAMES = { aio: 'aio', boxlite: 'boxlite' } as const;
 /** dev/Storybook 里"服务端默认档"：runtime 取注册表第一项（契约无 isDefault），provider 取 isDefault 那项。 */
 const DEFAULT_RUNTIME_ID: string = RUNTIME_IDS.codex;
 const DEFAULT_RUNTIME_LABEL = 'Codex';
+
+/**
+ * 替身里标 `isDefault` 的那一项。
+ *
+ * ⚠️ **这个取值是替身自己拍板的，不是对后端的断言。** 后端的默认档已经不再写死：
+ * `hostPreferredProvider()` 按宿主平台选——macOS→boxlite（微 VM，走 Apple
+ * Hypervisor.framework，原生），Linux→aio（原生 docker，因为
+ * `AioSandboxProvider extends DockerContainerBackend`，Mac 上它要 Docker Desktop）。
+ * 替身跑在浏览器（dev/Storybook）里根本读不到宿主平台，**不可能**复刻这个判定；
+ * 硬猜一个再声称"与后端一致"，正是 12 §3.4 要禁的那种凭空。
+ *
+ * 所以这里只钉一个稳定取值供 dev 用，并且把话说明白：
+ * **任何测试都不许断言"默认档叫 aio"**——那只在 Linux 上碰巧成立（`handlers.test.ts`
+ * 因此只钉"恰好一个 isDefault"，不钉名字）。
+ */
 const DEFAULT_PROVIDER_NAME: string = PROVIDER_NAMES.aio;
 
 function isoIn(ms: number): string {
@@ -52,37 +75,52 @@ function isoIn(ms: number): string {
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
 
-/** 生成一份 provider 能力位（默认全能力开启，按需覆盖）——形状即生成物 ProviderResponseDto.capabilities。 */
-function providerCapabilities(
-  overrides: Partial<SandboxProviderCapabilities> = {},
-): SandboxProviderCapabilities {
-  return {
-    spawnTty: true,
-    volumeMount: true,
-    updateResources: true,
-    pauseResume: true,
-    snapshot: true,
-    watchEvents: true,
-    headlessTask: false,
-    ...overrides,
-  };
-}
-
 /**
  * provider registry（`GET /api/providers` → ProviderResponseDto[]）：后端开放 registry 的只读投影。
- * S6：aio 打开 headlessTask（dev 能走通无头链路），boxlite 保持 false ——
- * 这样"档位不支持无头任务 → 入口置灰 + 原因"那条路径在 dev 里也看得见。
+ *
+ * ⚠️ **七位能力位一律逐位写全，不走"默认全开 + 少量 override"的工厂。**
+ * 此前这里是 `providerCapabilities({ headlessTask: true })` 那种写法，代价是：没被 override
+ * 的位悄悄变成"全 true"，于是替身声称 aio 支持 snapshot、boxlite 支持 updateResources——
+ * 后端两个类里这三位实际都是 `false`。这正是 14 §10 那个 `runtime: 'shell'` 的同一个病：
+ * **一个谁都没写过、却看着很正常的值**。逐位写全 ⇒ 每一位都得有人对着后端源码点头。
+ *
+ * 值的逐位依据（抄自 provider 类自己声明的 `readonly capabilities`）：
+ *  · aio     —— `api/.../infrastructure/providers/aio/aio-sandbox.provider.ts`
+ *               （传给 `DockerContainerBackend` 构造器的 `capabilities`）
+ *  · boxlite —— `api/.../infrastructure/providers/boxlite/boxlite-sandbox.provider.ts`
+ *
+ * ⚠️ 两个内置 provider 的 `headlessTask` **现在都是 true**（S6 已落地）。此前这里给
+ * boxlite 留 `false`，注释说"这样『档位不支持无头 → 入口置灰 + 原因』在 dev 里也看得见"——
+ * 那句话本身就不成立：替身里每个沙箱 DTO 的 `provider` 都是 `DEFAULT_PROVIDER_NAME`，
+ * boxlite 的能力位在 dev 里**从来没被读到过**。置灰那条路径由 Storybook
+ * （`HeadlessTaskLauncher.view.stories`）与容器单测覆盖，不需要在替身里造一个假的 false。
  */
 const PROVIDER_REGISTRY: readonly SandboxProviderDto[] = [
   {
     name: PROVIDER_NAMES.aio,
-    capabilities: providerCapabilities({ headlessTask: true }),
-    isDefault: true,
+    capabilities: {
+      spawnTty: true,
+      volumeMount: true,
+      updateResources: true,
+      pauseResume: true,
+      snapshot: false,
+      watchEvents: true,
+      headlessTask: true,
+    },
+    isDefault: DEFAULT_PROVIDER_NAME === PROVIDER_NAMES.aio,
   },
   {
     name: PROVIDER_NAMES.boxlite,
-    capabilities: providerCapabilities({ pauseResume: false, snapshot: false }),
-    isDefault: false,
+    capabilities: {
+      spawnTty: true,
+      volumeMount: true,
+      updateResources: false,
+      pauseResume: false,
+      snapshot: false,
+      watchEvents: true,
+      headlessTask: true,
+    },
+    isDefault: DEFAULT_PROVIDER_NAME === PROVIDER_NAMES.boxlite,
   },
 ];
 
@@ -248,6 +286,125 @@ function stringField(body: unknown, key: string): string | undefined {
   const value: unknown = Reflect.get(body, key);
   return typeof value === 'string' ? value : undefined;
 }
+
+// ————————————————————————————————————————————————————————————————
+// 镜像替身（F21-4 §8.1 的 8 个 operation）。
+//
+// ⚠️ **`supportedRuntimes` 的取值必须来自上面那份 runtime 注册表**（本文件纪律 ②）：
+// 向导下拉的过滤规则是 `supportedRuntimes 含所选 runtime`，替身里凭空写一个
+// `'shell'` 会让"过滤"在测试里永远自洽、真后端上永远过滤不出东西——正是 14 §10 那次事故的形状。
+// `handlers.test.ts` 从外部把这条钉住。
+//
+// ⚠️ digest 用真 `sha256:` + 64 hex：模型层要认「空串 / `sha256:unresolved` ⇒ 未解析」，
+// 替身给一个短哈希的话，"截断展示"这件事在 dev/Storybook 里根本看不出对错。
+// ————————————————————————————————————————————————————————————————
+
+const DIGEST_A = 'sha256:4b17e0c1f2a34b5c6d7e8f90112233445566778899aabbccddeeff0011223344';
+const DIGEST_B = 'sha256:8e05a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d77';
+
+function imageManifestDto(overrides: Partial<ImageManifestDto> = {}): ImageManifestDto {
+  return {
+    id: 'img-manifest-1',
+    imageId: 'img-1',
+    imageName: 'ghcr.io/agent-infra/sandbox',
+    isBuiltin: true,
+    ref: 'ghcr.io/agent-infra/sandbox:latest',
+    version: 'latest',
+    baseImage: 'ghcr.io/agent-infra/sandbox',
+    digest: DIGEST_A,
+    entrypointContract: { workdir: '/workspace', entrypoint: ['/bin/sh'] },
+    supportedRuntimes: [RUNTIME_IDS.codex, RUNTIME_IDS.claudeCode],
+    resourceDefaults: { cores: 2, ramMb: 4096, diskMb: 20480 },
+    labelsRequired: [],
+    // 04 §7 ★血统。默认工厂是**内置根镜像**（`isBuiltin: true`），它自己就是锚点 ⇒ `null`
+    // （0012 记的语义 ①）。下面几条第三方夹具各自 override 成 `DIGEST_A`——那正是本条
+    // 内置镜像的 digest，于是**替身内部的血统链是自洽可查的**，跟真后端的准入规则同形。
+    // 纪律 ② 同款：替身里凭空写一个查无此人的锚点，"血统"在测试里永远自洽、真后端上永远拒绝。
+    derivedFromDigest: null,
+    validationStatus: 'valid',
+    validationErrors: null,
+    isActive: true,
+    imageConfig: null,
+    registeredAt: isoIn(-7 * DAY),
+    resolvedAt: isoIn(-7 * DAY),
+    ...overrides,
+  };
+}
+
+/** 三行：预置 ✅ · 自定义 ⚠️（当前活行）· 同一张镜像的旧版本（已下线 ⇒ 历史里可回滚）。 */
+const IMAGE_MANIFESTS: ImageManifestDto[] = [
+  imageManifestDto(),
+  /**
+   * ⭐ `pending` 那一条 —— **它是为了让一条断言变得可证伪而加的**。
+   *
+   * 13 §2.4 的 `validation_status` 默认值就是 `pending`，而 P21-4 §5 的状态矩阵里
+   * 没有它的呈现。可选性必须按**白名单**（valid|warning）放行，写成「≠ invalid」
+   * 就会把它漏进向导下拉。
+   *
+   * ⚠️ 加它之前，`handlers.test.ts` 里那条「白名单放行」的断言是**守不住的**：
+   * 夹具里根本没有 pending，把替身改成「≠ invalid」测试照样全绿。
+   * 断言存在 ≠ 断言有效 —— 得先有能触发它的数据。
+   */
+  imageManifestDto({
+    id: 'img-manifest-pending',
+    derivedFromDigest: DIGEST_A,
+    imageId: 'img-3',
+    imageName: 'docker.io/myrepo/just-registered',
+    isBuiltin: false,
+    ref: 'docker.io/myrepo/just-registered:v1',
+    version: 'v1',
+    digest: `sha256:${'c'.repeat(64)}`,
+    validationStatus: 'pending',
+    validationErrors: [],
+  }),
+  imageManifestDto({
+    id: 'img-manifest-2',
+    derivedFromDigest: DIGEST_A,
+    imageId: 'img-2',
+    imageName: 'docker.io/myrepo/ml-agent',
+    isBuiltin: false,
+    ref: 'docker.io/myrepo/ml-agent:v1.0',
+    version: 'v1.0',
+    digest: DIGEST_B,
+    supportedRuntimes: [RUNTIME_IDS.codex],
+    validationStatus: 'warning',
+    validationErrors: [
+      {
+        path: 'platform.supportedRuntimes',
+        code: 'RUNTIME_NOT_PREINSTALLED',
+        message: '未预装 claude-code，创建时需现装，实测约 12.5 分钟',
+      },
+    ],
+    imageConfig: {
+      env: [
+        { key: 'LOG_LEVEL', value: 'info', secret: false },
+        // 已存 secret 的 value 后端恒掩码成 ''（I-IMG-5），入站方向它的含义是「保持不变」。
+        { key: 'MY_SECRET', value: '', secret: true },
+      ],
+    },
+    registeredAt: isoIn(-3 * DAY),
+    resolvedAt: isoIn(-3 * DAY),
+  }),
+  imageManifestDto({
+    id: 'img-manifest-3',
+    // ⚠️ 这条**刻意留 `null`**：它注册于 90 天前，是「切片前存量行」——0012 记的 NULL
+    // 语义 ②。前端不许把 NULL 一律读成「内置根镜像」，而那条区分只有在夹具里**同时**
+    // 存在 ① 和 ② 两种 NULL 时才可证伪（与上面 `pending` 那条同一手法）。
+    derivedFromDigest: null,
+    imageId: 'img-2',
+    imageName: 'docker.io/myrepo/ml-agent',
+    isBuiltin: false,
+    ref: 'docker.io/myrepo/ml-agent:v1.0',
+    version: 'v1.0',
+    digest: DIGEST_A,
+    supportedRuntimes: [RUNTIME_IDS.codex],
+    isActive: false,
+    registeredAt: isoIn(-90 * DAY),
+    resolvedAt: isoIn(-90 * DAY),
+  }),
+];
+
+const VALIDATION_OK: ValidationOutcomeDto = { status: 'valid', errors: [], warnings: [] };
 
 export const handlers = [
   // liveness probe：真实契约 GET /api/health 无响应体 schema，getHealth 只读 response.ok/status。
@@ -417,9 +574,11 @@ export const handlers = [
     () => new HttpResponse(null, { status: 204 }),
   ),
 
-  // provider registry（GET /api/providers → ProviderResponseDto[]）：后端开放 registry 的只读投影，
-  // 前端「运行档位」单选由它驱动；默认档由数组项的 isDefault 标记（无顶层字段）。
-  // 第三方 provider 只要出现在这份响应里，UI 自动多一项。
+  // provider registry（GET /api/providers → ProviderResponseDto[]）：后端开放 registry 的只读投影。
+  // ⚠️ 它**不再驱动一个「运行档位」单选**——那组单选已删（跑在哪种沙箱上是宿主平台的事实，
+  // 不是用户偏好）。前端今天只从这份响应里取两样东西：`isDefault` 那一项的能力位
+  // （`spawnTty` 决定终端入口），以及按沙箱 DTO 的 `provider` 反查该档位的 `headlessTask`。
+  // 默认档由数组项的 isDefault 标记（无顶层字段）。
   http.get(`${API_BASE}/api/providers`, () => HttpResponse.json(PROVIDER_REGISTRY)),
 
   // 单个沙箱（刷新恢复的唯一来源）：任务名 + 失败原因（failureCode/failureMessage 仅 failed 时出现）。
@@ -513,4 +672,116 @@ export const handlers = [
       headers: { 'content-type': 'application/octet-stream' },
     }),
   ),
+
+  // ——— 镜像（F21-4 §8.1）———
+  //
+  // `runtimeId` 缺席 ⇒ 管理页要的全量（含历史版本）；带上 ⇒ 向导可选集。
+  //
+  // ⚠️ **本替身此前实现的是另一条规则，2026-08 订正**，两处都错：
+  //   ① `validationStatus !== 'invalid'` —— 而 `lib/image/selectableImages` 有一条专门的
+  //      用例禁止这种写法：13 §2.4 的 `pending` 默认值会从这个口子漏进向导下拉。
+  //   ② `supportedRuntimes.includes(runtimeId)` —— 那条规则已被真机实测否掉
+  //      （只预装 codex 的平台镜像会让 claude-code 一张都选不到，见 selectableImages 文件头）。
+  //
+  // ⚠️ **替身与生产实现两条不同的规则，是最难发现的一种错**：集成测试全绿，而它验证的
+  //   是替身的行为。
+  //
+  //   本想直接 import `lib/image/selectableImages` 复用，被 `boundaries` 挡了
+  //   （`{ from: 'mock', allow: ['type','mock'] }`）——**而那条规则是对的，两条理由**：
+  //   ① 本 handler 替的是**后端** `listSelectable`，不是前端那个客户端过滤，复用会把两件
+  //      事混成一件；② 替身 import 生产代码之后就再也抓不出生产代码的 bug（它照抄了）。
+  //   所以规则在这里重写一遍，由**测试**去钉住两处行为一致（handlers.test.ts）。
+  http.get(`${API_BASE}/api/images`, ({ request }) => {
+    const runtimeId = new URL(request.url).searchParams.get('runtimeId');
+    if (runtimeId === null) return HttpResponse.json(IMAGE_MANIFESTS);
+    return HttpResponse.json(
+      // 白名单，不是「≠ invalid」：13 §2.4 的 pending 默认值不许漏进向导下拉。
+      // runtime **不参与过滤**：血统保证了任何合规镜像都装得上任何 runtime，
+      // 预装与否只决定选项旁那句「需现装约 12.5 分钟」（见 lib/image/selectableImages 文件头）。
+      IMAGE_MANIFESTS.filter(
+        (m) => m.isActive && (m.validationStatus === 'valid' || m.validationStatus === 'warning'),
+      ),
+    );
+  }),
+
+  // 注册前预检：**不落库**，所以这里也不往 IMAGE_MANIFESTS 里塞东西。
+  http.post(`${API_BASE}/api/images/validate`, () => HttpResponse.json(VALIDATION_OK)),
+
+  // 注册：dev 一律当成"新的一行"（201）。⚠️ 200 与 201 是两条不同的前端路径，
+  // 需要 200 那条的用例自己 `server.use()` 覆盖——替身默认值不替它做决定。
+  http.post(`${API_BASE}/api/images`, () => {
+    const manifest = imageManifestDto({
+      id: 'img-manifest-new',
+      imageId: 'img-new',
+      imageName: 'docker.io/myrepo/new-agent',
+      isBuiltin: false,
+      ref: 'docker.io/myrepo/new-agent:v2.0',
+      version: 'v2.0',
+      digest: DIGEST_B,
+      supportedRuntimes: [RUNTIME_IDS.codex],
+      registeredAt: isoIn(0),
+      resolvedAt: isoIn(0),
+    });
+    const body: RegisterImageResponseDto = { manifest, validation: VALIDATION_OK };
+    return HttpResponse.json(body, { status: 201 });
+  }),
+
+  // 重新验证：对**已钉定的 digest** 重跑校验；digest 没变 ⇒ 结论写回。
+  http.post(`${API_BASE}/api/images/:id/validate`, () => {
+    const body: RevalidateOutcomeDto = {
+      ...VALIDATION_OK,
+      currentDigest: DIGEST_A,
+      upstreamDigest: DIGEST_A,
+      digestChanged: false,
+    };
+    return HttpResponse.json(body);
+  }),
+
+  // 检查更新：dev 给"已是最新"（changed:false）。要对比弹层的用例自己覆盖。
+  http.post(`${API_BASE}/api/images/:id/check-update`, ({ params }) => {
+    const id = String(params['id']);
+    const current = IMAGE_MANIFESTS.find((m) => m.id === id) ?? IMAGE_MANIFESTS[0];
+    const digest = current?.digest ?? DIGEST_A;
+    const body: CheckImageUpdateDto = {
+      current: { digest, resolvedAt: current?.resolvedAt ?? isoIn(-3 * DAY) },
+      upstream: { digest, validation: VALIDATION_OK },
+      changed: false,
+    };
+    return HttpResponse.json(body);
+  }),
+
+  // 切换版本（「更新到新版本」与「回滚到旧版本」同一个动作）。
+  http.post(`${API_BASE}/api/images/:id/activate`, ({ params }) => {
+    const id = String(params['id']);
+    const row = IMAGE_MANIFESTS.find((m) => m.id === id) ?? IMAGE_MANIFESTS[0];
+    return HttpResponse.json(imageManifestDto({ ...row, id, isActive: true }));
+  }),
+
+  // 两个可变字段的唯一入口。⚠️ `isActive:true` 后端**回 400 并指向 /activate**，
+  // 替身照做——否则前端写出一个真后端上必然 400 的调用，而测试全绿。
+  http.patch(`${API_BASE}/api/images/:id`, async ({ params, request }) => {
+    const id = String(params['id']);
+    const body: unknown = await request.json();
+    const row = IMAGE_MANIFESTS.find((m) => m.id === id) ?? IMAGE_MANIFESTS[0];
+    const isActive =
+      typeof body === 'object' && body !== null && 'isActive' in body
+        ? Reflect.get(body, 'isActive')
+        : undefined;
+    if (isActive === true) {
+      return HttpResponse.json(
+        {
+          code: 'BAD_REQUEST',
+          message: '启用请改用 POST /api/images/:id/activate',
+          retryable: false,
+          sideEffectFree: true,
+        },
+        { status: 400 },
+      );
+    }
+    return HttpResponse.json(
+      imageManifestDto({ ...row, id, ...(isActive === false ? { isActive: false } : {}) }),
+    );
+  }),
+
+  http.delete(`${API_BASE}/api/images/:id`, () => new HttpResponse(null, { status: 204 })),
 ];

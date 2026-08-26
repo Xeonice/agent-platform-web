@@ -13,6 +13,14 @@ import type { RuntimeDto } from '../src/types/runtimeCredential';
 // 装 CLI 子文案（runtime.install_progress）与 WS 即时失败码靠真 socket.io /events 推送，
 // Playwright 拦不住 socket.io 握手，故由 slice/hook/container 单测覆盖，此处不做假。
 
+/**
+ * provider 能力位 fixture（默认全开，按需覆盖）。
+ *
+ * ⚠️ **这是一份"形状"替身，不是对 aio / boxlite 真实能力位的声称。** 前端今天只读两位
+ * （`spawnTty` 决定终端入口、`headlessTask` 决定无头入口），其余五位没有任何 UI 读它们，
+ * 每条用例按自己要走的分支挑值即可。真实能力位的唯一一份镜像在 `src/mocks/handlers.ts`
+ * 的 `PROVIDER_REGISTRY`（逐位抄自后端两个 provider 类），需要对照后端时看那里。
+ */
 function providerCaps(
   overrides: Partial<SandboxProviderCapabilities> = {},
 ): SandboxProviderCapabilities {
@@ -138,8 +146,17 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
     await openNewTaskModal(page);
 
-    await expect(page.getByRole('radio', { name: /^aio/ })).toBeChecked();
-    // provider 有 isDefault 会预选；runtime **不预选**，必须显式点一下。
+    // ⚠️ 这里**曾经**还有一句 `expect(radio /^aio/).toBeChecked()`（"provider 有 isDefault 会预选"）。
+    //    那组「运行档位 (provider)」单选**已删**：`AioSandboxProvider extends DockerContainerBackend`
+    //    ——aio 就是 docker 容器，boxlite 是微 VM（macOS 走 Apple Hypervisor.framework）。
+    //    哪个跑得起来是**宿主平台的事实**，不是用户偏好，选择权已收回后端
+    //    （`hostPreferredProvider()`：macOS→boxlite / Linux→aio），前端连 provider
+    //    都不往 `POST /api/sandboxes` 的请求体里写。那句断言留着只会在一个不存在的
+    //    单选上超时，而且它钉的"默认档叫 aio"本身也只在 Linux 上碰巧成立。
+    //    档位这条线现在由 `smoke.spec.ts` 从两个方向守：单选组不存在 + 请求体不带 provider。
+    //
+    //    runtime 一侧是**另一套判据**：平台没有「默认 runtime」的概念（04 §8）⇒ 不预选，
+    //    必须显式点一下，否则按钮一直禁着。
     await page.getByRole('radio', { name: /^codex/ }).check();
     await page.getByLabel('任务指令（可选）').fill(PROMPT);
     await page.getByRole('button', { name: '发起任务并打开终端' }).click();
@@ -209,8 +226,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     await page.goto('/');
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
     await openNewTaskModal(page);
-    await expect(page.getByRole('radio', { name: /^aio/ })).toBeChecked();
-    // provider 有 isDefault 会预选；runtime **不预选**，必须显式点一下。
+    // 档位单选已删（见本文件上方那段说明）；runtime **不预选**，必须显式点一下。
     await page.getByRole('radio', { name: /^codex/ }).check();
     await page.getByRole('button', { name: '发起任务并打开终端' }).click();
 
@@ -286,8 +302,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     await page.goto('/');
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
     await openNewTaskModal(page);
-    await expect(page.getByRole('radio', { name: /^aio/ })).toBeChecked();
-    // provider 有 isDefault 会预选；runtime **不预选**，必须显式点一下。
+    // 档位单选已删（见本文件上方那段说明）；runtime **不预选**，必须显式点一下。
     await page.getByRole('radio', { name: /^codex/ }).check();
     await page.getByRole('button', { name: '发起任务并打开终端' }).click();
     await expect(page.getByText('正在启动：会失败的任务')).toBeVisible();

@@ -18,7 +18,7 @@
 // 视图不得把它写进任何 store / storage；container 提交即清空。
 import type { ReactNode } from 'react';
 import type { RuntimeDto } from '@/types/runtimeCredential';
-import type { SandboxProvider, SandboxProviderDto } from '@/types/sandbox';
+import type { SandboxProviderDto } from '@/types/sandbox';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
 import { Button } from '@/components/ui/button';
 
@@ -42,18 +42,22 @@ export interface NewSandboxPanelProps {
   onRetryRuntimes: () => void;
 
   /**
-   * 服务端 registry 下发的可选档位（扁平数组，含 capabilities 与 isDefault；
-   * 空数组 = 后端没注册 provider）。默认选中由 container 依 isDefault 算好后经 `provider` 传入。
+   * 后端为**这台宿主**选定的档位（`GET /api/providers` 里 `isDefault` 那条）；
+   * `undefined` = 还没就绪（加载中 / 失败 / 后端一个 provider 都没注册）。
+   *
+   * ⚠️ **这里不再让用户选档位**：`AioSandboxProvider extends DockerContainerBackend`
+   * ——aio 就是 docker 容器；boxlite 是微 VM（macOS 上走 Apple Hypervisor.framework）。
+   * 哪个跑得起来是**宿主平台**的事实，不是用户的偏好：Mac 上选 aio 只会撞上
+   * 「没有 Docker」。选择权收回后端（`provider-registry.ts` 的 `hostPreferredProvider`），
+   * 前端**只读**它——而且只用来判能力位（如 `spawnTty`），发请求时连传都不传，
+   * 免得「选哪个」有第二个知情者。
    */
-  providers: readonly SandboxProviderDto[];
-  /** 当前选中 provider 名；'' 表示尚无可选项（加载中/失败/空 registry）。 */
-  provider: SandboxProvider;
-  onSelectProvider: (provider: SandboxProvider) => void;
+  hostProvider?: SandboxProviderDto;
   onCreate: () => void;
   creating: boolean;
-  /** provider 列表加载中：出骨架并禁用创建（不静默展示空列表）。 */
+  /** provider 尚在加载：禁用创建并说明（**不静默**——按钮禁着却不给理由是最难查的那种）。 */
   loadingProviders: boolean;
-  /** provider 列表加载失败文案（非空即出可重试提示，不静默降级为空列表）。 */
+  /** provider 加载失败文案（非空即出可重试提示，不静默降级）。 */
   providersErrorMessage?: string;
   onRetryProviders: () => void;
   /** 非空 → 禁用创建并展示原因（如所选 provider 不支持终端，capabilities.spawnTty === false）。 */
@@ -113,11 +117,6 @@ export interface NewSandboxPanelProps {
   onInitialPromptChange: (value: string) => void;
 }
 
-/** 逐 provider 的能力注记：今天只有 spawnTty 对 UI 有意义（终端是核心链路），其余能力位留给后续 UI。 */
-function capabilityNote(info: SandboxProviderDto): string | null {
-  return info.capabilities.spawnTty ? null : '不支持终端';
-}
-
 export function NewSandboxPanelView({
   runtimes,
   runtime,
@@ -125,9 +124,7 @@ export function NewSandboxPanelView({
   loadingRuntimes,
   runtimesErrorMessage,
   onRetryRuntimes,
-  providers,
-  provider,
-  onSelectProvider,
+  hostProvider,
   onCreate,
   creating,
   loadingProviders,
@@ -150,7 +147,7 @@ export function NewSandboxPanelView({
   onInitialPromptChange,
 }: NewSandboxPanelProps) {
   const loadFailed = providersErrorMessage !== undefined && providersErrorMessage !== '';
-  const noProviders = !loadingProviders && !loadFailed && providers.length === 0;
+  const noProviders = !loadingProviders && !loadFailed && hostProvider === undefined;
   const runtimesLoadFailed = runtimesErrorMessage !== undefined && runtimesErrorMessage !== '';
   const noRuntimes = !loadingRuntimes && !runtimesLoadFailed && runtimes.length === 0;
   /**
@@ -167,7 +164,6 @@ export function NewSandboxPanelView({
     loadingProviders ||
     loadFailed ||
     noProviders ||
-    provider === '' ||
     // runtime 与 provider 同权：两个开放注册表任一没就绪，请求就发不出去 ——
     // 与其发一个必被后端拒的 runtime，不如把按钮禁着并说明原因（14 §10.3 ②的前端一侧）。
     loadingRuntimes ||
@@ -195,8 +191,9 @@ export function NewSandboxPanelView({
         </p>
       </div>
 
-      {/* runtime 与 provider 是**两个各自独立**的开放注册表：前者决定跑哪个 agent CLI
-          （codex / claude-code / 第三方注册的），后者决定跑在哪种沙箱上。两组都由服务端下发。 */}
+      {/* runtime 是开放注册表：跑哪个 agent CLI（codex / claude-code / 第三方注册的）由服务端下发。
+          ⚠️ 曾经与它并列的还有一组「运行档位 (provider)」单选——**已删**：跑在哪种沙箱上
+          是宿主平台的事实，不是用户的偏好（详见下面那段注释）。 */}
       <fieldset className="flex flex-col gap-2" disabled={creating}>
         <legend className="mb-1 text-xs text-muted-foreground">运行时 (runtime) · 必选</legend>
 
@@ -274,66 +271,52 @@ export function NewSandboxPanelView({
           {authGateSlot}
         </div>
       )}
+      {/*
+        ⚠️ **这里曾经是「运行档位 (provider)」单选组，现在故意什么都不渲染。**
 
-      <fieldset className="flex flex-col gap-2" disabled={creating}>
-        <legend className="mb-1 text-xs text-muted-foreground">运行档位 (provider)</legend>
+        aio 是 docker 容器（`AioSandboxProvider extends DockerContainerBackend`），
+        boxlite 是微 VM（macOS 上走 Apple Hypervisor.framework）。哪个跑得起来是
+        **宿主平台的事实**，不是用户的偏好——Mac 上选 aio 只会撞上「没有 Docker」，
+        而报出来的错还是「镜像尚未注册」，指不到真正的原因。选择权因此收回后端
+        （`provider-registry.ts` 的 `hostPreferredProvider`）。
 
-        {loadingProviders && (
-          <div
-            aria-busy="true"
-            aria-label="正在加载可选运行档位"
-            data-testid="providers-skeleton"
-            className="flex flex-col gap-2"
-          >
-            <span className="h-4 w-40 animate-pulse rounded bg-muted" />
-            <span className="h-4 w-40 animate-pulse rounded bg-muted" />
-          </div>
-        )}
+        ⚠️ 但**异常态仍然要说话**：加载中 / 失败 / 后端一个 provider 都没注册时，
+        创建按钮是禁着的——禁着却不给理由，是最难查的那种 UI。
+      */}
+      {(loadingProviders || loadFailed || noProviders) && (
+        <div className="flex flex-col items-center gap-2 text-sm">
+          {loadingProviders && (
+            <span
+              aria-busy="true"
+              aria-label="正在确认运行环境"
+              data-testid="providers-skeleton"
+              className="h-4 w-40 animate-pulse rounded bg-muted"
+            />
+          )}
 
-        {loadFailed && (
-          <div className="flex flex-col items-start gap-2">
-            <p role="alert" className="text-sm text-red-400">
-              运行档位加载失败：{providersErrorMessage}
+          {loadFailed && (
+            <div className="flex flex-col items-center gap-2">
+              <p role="alert" className="text-red-400">
+                运行环境确认失败：{providersErrorMessage}
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  onRetryProviders();
+                }}
+              >
+                重试
+              </Button>
+            </div>
+          )}
+
+          {noProviders && (
+            <p role="alert" className="text-muted-foreground">
+              后端未注册任何沙箱运行环境，暂无法创建沙箱。
             </p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                onRetryProviders();
-              }}
-            >
-              重试加载运行档位
-            </Button>
-          </div>
-        )}
-
-        {noProviders && (
-          <p role="alert" className="text-sm text-muted-foreground">
-            后端未注册任何 provider，暂无法创建沙箱。
-          </p>
-        )}
-
-        {!loadingProviders &&
-          !loadFailed &&
-          providers.map((p) => {
-            const note = capabilityNote(p);
-            return (
-              <label key={p.name} className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="sandbox-provider"
-                  value={p.name}
-                  checked={provider === p.name}
-                  onChange={() => {
-                    onSelectProvider(p.name);
-                  }}
-                />
-                <span className="font-mono">{p.name}</span>
-                {note !== null && <span className="text-muted-foreground">— {note}</span>}
-                {p.isDefault && <span className="text-xs text-muted-foreground">(默认)</span>}
-              </label>
-            );
-          })}
-      </fieldset>
+          )}
+        </div>
+      )}
 
       {/*
         分支选择器（F21-2 §N.1）。三条否定性语义都在这一块里：
