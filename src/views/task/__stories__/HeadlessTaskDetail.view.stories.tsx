@@ -54,10 +54,13 @@ export const NoArtifacts: Story = { args: { task: taskDto({ artifacts: [] }) } }
 /** **无任务 ⇒ 引导态**（仍然给 [新任务] 入口）。 */
 export const EmptyGuide: Story = { args: { task: undefined } };
 
-/** 档位不支持无头任务 ⇒ [新任务] 置灰 + 原因（与 spawnTty=false 同一套做法）。 */
+/**
+ * 档位不支持无头任务 ⇒ [新任务] 置灰 + 原因（与 spawnTty=false 同一套做法）。
+ * ⚠️ 名字用第三方的 `acme-box`：内置的 aio / boxlite 现在 `headlessTask` 都是 `true`。
+ */
 export const CapabilityBlocked: Story = {
   args: {
     task: undefined,
-    disabledReason: '运行档位「boxlite」不支持无头任务（headlessTask=false）。',
+    disabledReason: '运行档位「acme-box」不支持无头任务（headlessTask=false）。',
   },
 };

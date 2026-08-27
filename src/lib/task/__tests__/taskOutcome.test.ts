@@ -142,6 +142,9 @@ describe('describeTaskErrorCode · 码 → 人话', () => {
     // （`AgentTaskResponseDto` 没有自由文本字段）。完整论证见生产侧词表的条目注释。
     UNKNOWN_RUNTIME: 'copy',
     IMAGE_PULL_FAILED: 'copy',
+    // 本轮随镜像切片进入闭集。**决策：copy** —— 终态这条路上后端没有自由文本可放行，
+    // 而这个码要说的那句话（"重跑没用，去 [检查更新]"）与默认直觉相反，正是必须写清的场合。
+    IMAGE_DIGEST_GONE: 'copy',
     RESOURCE_EXHAUSTED: 'copy',
     TIMEOUT: 'copy',
     PROVIDER_UNAVAILABLE: 'copy',

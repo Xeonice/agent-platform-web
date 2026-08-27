@@ -2,7 +2,14 @@ import { test, expect } from '@playwright/test';
 import type { SandboxDto, SandboxProviderCapabilities } from '../src/types/sandbox';
 import type { RuntimeDto } from '../src/types/runtimeCredential';
 
-/** provider 能力位 fixture（默认全开，按需覆盖）。 */
+/**
+ * provider 能力位 fixture（默认全开，按需覆盖）。
+ *
+ * ⚠️ **这是一份"形状"替身，不是对 aio / boxlite 真实能力位的声称。** 前端今天只读两位
+ * （`spawnTty` 决定终端入口、`headlessTask` 决定无头入口），其余五位没有任何 UI 读它们，
+ * 每条用例按自己要走的分支挑值即可。真实能力位的唯一一份镜像在 `src/mocks/handlers.ts`
+ * 的 `PROVIDER_REGISTRY`（逐位抄自后端两个 provider 类），需要对照后端时看那里。
+ */
 function providerCaps(
   overrides: Partial<SandboxProviderCapabilities> = {},
 ): SandboxProviderCapabilities {
@@ -84,9 +91,11 @@ test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => 
       }),
     );
 
-    // provider 档位由服务端 registry 驱动（GET /api/providers → ProviderResponseDto[]）：
-    // e2e 跑生产构建（不启 MSW），故显式 stub。默认档由数组项的 isDefault 标记（无顶层字段）。
-    // 这里带一个第三方 provider（acme），用例断言它无需改前端代码即出现在选项里。
+    // provider registry（GET /api/providers → ProviderResponseDto[]）：e2e 跑生产构建
+    // （不启 MSW），故显式 stub。默认档由数组项的 isDefault 标记（无顶层字段）。
+    // ⚠️ 这里仍然给三项（含第三方 acme），但**不再是"用例断言它出现在选项里"**——
+    // 「运行档位」单选已删，界面上根本不列 provider。三项留着是为了让下面那条
+    // 「单选组不存在」的断言有分量：registry 里有几项跟界面上出不出现选项，已经解耦了。
     await page.route('**/api/providers', (route) =>
       route.fulfill({
         status: 200,
@@ -102,10 +111,13 @@ test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => 
     // （12 §3.4：替身的值不能凭空），并额外带一个第三方 runtime 验证"前端零改动即多一项"。
     await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
 
-    await page.route('**/api/sandboxes', (route) =>
+    // 建沙箱请求体留一份：下面要证明前端**没把 provider 写进去**（见 ② ）。
+    let createBody: Record<string, unknown> | undefined;
+    await page.route('**/api/sandboxes', async (route) => {
+      createBody = route.request().postDataJSON() as Record<string, unknown>;
       // 显式标注 SandboxDto：DTO 加必填字段时这里编译期红，而不是替身静默少一个字段。
-      route.fulfill({ status: 201, json: SANDBOX }),
-    );
+      await route.fulfill({ status: 201, json: SANDBOX });
+    });
 
     await page.goto('/');
     await expect(page.getByText('Agent 管理平台')).toBeVisible();
@@ -118,16 +130,23 @@ test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => 
     await page.getByTestId('new-task-entry').click();
     await expect(page.getByTestId('modal-new-task')).toBeVisible();
 
-    // ⚠️ 两组单选**按 fieldset 作用域**取，不靠正则区分：页面上 provider 有个 `acme`、
-    // runtime 有个 `acme-agent`，一个 /acme/ 会同时命中两个而触发 strict 违规。收紧正则
-    // 只是把这次撞车躲开——下一个同前缀的 id 照撞。按组取则结构上不可能撞。
-    const providers = page.getByRole('group', { name: /运行档位/ });
+    // ⚠️ runtime 单选**按 fieldset 作用域**取，不靠正则区分：这份替身里 runtime 有个
+    // `acme-agent`，将来别处再冒出一个同前缀的 id，一个 /acme/ 就会命中两个而触发 strict
+    // 违规。收紧正则只是把眼前这次撞车躲开，按组取则结构上不可能撞。
     const runtimes = page.getByRole('group', { name: /运行时/ });
 
-    // provider 档位由服务端 registry 驱动：默认选中来自响应里 isDefault 的那项（aio），
-    // 且第三方 provider（acme）无需改前端代码即出现在选项里。
-    await expect(providers.getByRole('radio', { name: /^aio/ })).toBeChecked();
-    await expect(providers.getByRole('radio', { name: /acme/ })).toBeVisible();
+    // ① **「运行档位 (provider)」单选组已删，这里断言它不存在。**
+    //    `AioSandboxProvider extends DockerContainerBackend` —— aio 就是 docker 容器；
+    //    boxlite 是微 VM（macOS 上走 Apple Hypervisor.framework）。哪个跑得起来是**宿主
+    //    平台的事实**，不是用户偏好：Mac 上让人选 aio，只会撞上「没有 Docker」，而报出来
+    //    的错还是「镜像尚未注册」，指不到真原因。选择权因此收回后端
+    //    （`provider-registry.ts` 的 `hostPreferredProvider()`：macOS→boxlite / Linux→aio）。
+    //
+    //    这条断言写成"不存在"而不是删掉了事：**删掉等于以后谁把单选加回来都没人拦**，
+    //    而加回来正是这次要防的那件事。上面的替身仍然给三个 provider（含第三方 acme）——
+    //    正好证明"registry 里有几项"跟"界面上出不出现选项"已经解耦了。
+    //    变异：把 `NewSandboxPanel.view.tsx` 里那组单选加回来 ⇒ 这条红。
+    await expect(page.getByRole('group', { name: /运行档位/ })).toHaveCount(0);
 
     // runtime 一侧**不同判据**：平台没有「默认 runtime」概念（04 §8）⇒ 必选、不预选。
     // 一个都不该被选中，按钮此刻禁着；第三方 runtime 仍然无需改前端代码即出现在选项里。
@@ -136,9 +155,15 @@ test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => 
     await expect(page.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
     await runtimes.getByRole('radio', { name: /claude-code/ }).check();
 
-    // 改选 boxlite 证明可选档
-    await providers.getByRole('radio', { name: /boxlite/ }).check();
     await page.getByRole('button', { name: '发起任务并打开终端' }).click();
+
+    // ② **请求体里不许有 provider。** 上面那条只说明界面上没得选；这条说明前端连一个
+    //    "顺手带上的默认值"都没有——"跑哪个档位"全世界只有后端一个知情者。
+    //    此前这里是 `providers.getByRole('radio', {name:/boxlite/}).check()`（"改选 boxlite
+    //    证明可选档"），那句现在描述的是一个已被撤销的产品决定。
+    //    变异：让 container 在 createSandbox 的 body 里带上 `provider` ⇒ 这条红。
+    await expect.poll(() => createBody).toBeDefined();
+    expect(createBody).not.toHaveProperty('provider');
 
     // 终端容器挂载（xterm）+ 连接状态条出现（无真后端时为连接中/重连中）
     await expect(page.getByTestId('terminal-container')).toBeVisible();

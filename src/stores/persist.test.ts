@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { partializeAppState, useAppStore, type PersistedState } from '@/stores';
 
@@ -44,20 +47,50 @@ describe('persist partialize 白名单（15 §3.5 安全红线）', () => {
   });
 
   /**
-   * `currentModal` 的两个死值（`'registerImage'` / `'wizard'`）随本轮删除 —— 全仓无人 set、
-   * 无人读（F21-2 §N.0）。删除即回归：类型层已经拦住它们，这里再钉一条**运行时**事实——
-   * 活着的两个取值都是真弹层的开关，且默认关闭。
+   * `currentModal` 的两个死值（`'registerImage'` / `'wizard'`）曾随「删死值」那一轮一起删除
+   * —— 全仓无人 set、无人读（F21-2 §N.0）。
+   *
+   * ⚠️ **`'registerImage'` 本轮回来了，但回来的条件是 F21-2 §7.1 早就写好的那条**：
+   * 那条回归用例原本断言的是「两个死值删除后无残留引用」，而 F21-4 §2 明说——加回来时
+   * 断言要改成「**有 set、有 read**」，否则两页会互相判对方是 bug。所以下面第二条用例
+   * 不是在放宽，它换了个更硬的判据：光有联合成员不够，得有人真的 set 它、真的读它。
+   * `'wizard'` 没有回来，仍然按死值钉着。
    */
-  it("currentModal 只剩两个活取值（'createProject' / 'newTask'），默认关闭", () => {
+  it("currentModal 的三个活取值（'createProject' / 'newTask' / 'registerImage'），默认关闭", () => {
     expect(useAppStore.getState().currentModal).toBeNull();
     useAppStore.getState().setCurrentModal('newTask');
     expect(useAppStore.getState().currentModal).toBe('newTask');
     useAppStore.getState().setCurrentModal('createProject');
     expect(useAppStore.getState().currentModal).toBe('createProject');
+    useAppStore.getState().setCurrentModal('registerImage');
+    expect(useAppStore.getState().currentModal).toBe('registerImage');
     useAppStore.getState().setCurrentModal(null);
     expect(useAppStore.getState().currentModal).toBeNull();
     // 弹层开关是瞬时 UI 指向，绝不落盘（刷新即关闭弹窗，§9.1 #32）。
     expect(partializeAppState(useAppStore.getState())).not.toHaveProperty('currentModal');
+  });
+
+  /**
+   * ★ **「加回来的两个条件」之一的回归**（F21-4 §2）：`'registerImage'` 必须**同时有 set 和 read**。
+   *
+   * 只加一个联合成员而没人 set / 没人读，正是它上一次被删的原因——一个只在类型里存在的取值
+   * 比没有更坏，它让人以为弹窗接好了。类型系统对此完全沉默（多一个联合成员永远编译得过），
+   * 所以这条只能在源码文本层面钉：`setCurrentModal('registerImage')` 与
+   * `currentModal === 'registerImage'` 两处都得真的存在。
+   *
+   * MUTATION：把 `hooks/image/useImages.ts` 里的 `setCurrentModal('registerImage')` 改成
+   * `setCurrentModal(null)`（弹窗再也打不开，但 tsc 与其它用例全绿）⇒ 本条红。
+   */
+  it("'registerImage' 有 set 也有 read —— 不是只在联合类型里活着的死值", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+    const sources = [
+      readFileSync(join(root, 'hooks/image/useImages.ts'), 'utf8'),
+      readFileSync(join(root, 'containers/image/ImagesContainer.tsx'), 'utf8'),
+    ].join('\n');
+    expect(sources).toContain("setCurrentModal('registerImage')");
+    expect(sources).toMatch(/registerOpen|currentModal === 'registerImage'/);
+    // `'wizard'` 没有回来：它今天仍然没有任何产出方。
+    expect(useAppStore.getState().currentModal).not.toBe('wizard');
   });
 
   it('瞬时 UI 指向 / registry 不落盘', () => {

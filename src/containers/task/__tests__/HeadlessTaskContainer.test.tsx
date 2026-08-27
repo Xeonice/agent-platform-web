@@ -216,18 +216,31 @@ afterEach(() => {
 // ① 能力位显隐（headlessTask）
 // ————————————————————————————————————————————————————————————————
 describe('HeadlessTaskContainer · 能力位显隐（headlessTask）', () => {
+  /**
+   * ⚠️ 这里**故意用第三方名字 `acme-box`，不用 `boxlite`**。
+   * 原来写的是 `providerName: 'boxlite'`，读起来像"boxlite 不支持无头任务"——那在今天是
+   * **假的**：后端 `boxlite-sandbox.provider.ts` 与 `aio-sandbox.provider.ts` 两个内置档位
+   * 的 `headlessTask` 现在都是 `true`（S6 已落地）。用一个真实存在的档位名去演它没有的
+   * 短板，等于在测试里写一条关于后端的错误事实，下一个人照着它做判断就会踩空。
+   *
+   * 而这条用例真正要证的东西跟叫什么名字无关：**能力位为 false 时入口置灰、且原因里带上
+   * 那个档位的名字**。开放 registry 里第三方档位不支持无头任务是完全可能的，用第三方名
+   * 既准确又把"名字要原样透出"这一点钉得更死（写死 'boxlite' 时它可能只是碰巧对上）。
+   */
+  const NO_HEADLESS_PROVIDER = 'acme-box';
+
   it('headlessTask=false ⇒ [发起无头运行] 入口置灰 + 给出原因（与 spawnTty=false 同一套做法）', async () => {
-    renderContainer({ headlessTaskSupported: false, providerName: 'boxlite' });
+    renderContainer({ headlessTaskSupported: false, providerName: NO_HEADLESS_PROVIDER });
 
     // 能力位判定前移到了**入口**上：连发起表单都打不开，比"打开一张全禁用的表单"更诚实。
     const entry = await screen.findByRole('button', { name: '发起无头运行' });
     expect(entry).toBeDisabled();
-    expect(screen.getByRole('alert')).toHaveTextContent(/boxlite.*headlessTask=false/);
+    expect(screen.getByRole('alert')).toHaveTextContent(/acme-box.*headlessTask=false/);
   });
 
   it('headlessTask=false ⇒ 点击不发任何请求，界面停在非发起态', async () => {
     const run = mockRun();
-    renderContainer({ headlessTaskSupported: false, providerName: 'boxlite' });
+    renderContainer({ headlessTaskSupported: false, providerName: NO_HEADLESS_PROVIDER });
     await screen.findByRole('button', { name: '发起无头运行' });
 
     fireEvent.click(screen.getByRole('button', { name: '发起无头运行' }));

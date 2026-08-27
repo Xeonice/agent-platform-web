@@ -8,8 +8,10 @@ import { SettingsMenuView, type SettingsMenuItem } from '@/views/settings/Settin
 
 const MENU: (SettingsMenuItem & { href: string })[] = [
   { key: 'credentials', label: '🔐 凭证管理', href: '/settings/credentials' },
-  // F21-4 / F21-5 后续切片接入；此处占位不可点，避免 404。
-  { key: 'images', label: '🖼️ 镜像管理', href: '/settings/images', disabled: true },
+  // ⚠️ 本轮解禁：`app/settings/images/page.tsx` 已落地，再挂 `disabled` 就成了
+  // 「页面建好了也进不去」——F21-4 §2 点名的正是这一条（菜单与子页必须同一轮改）。
+  { key: 'images', label: '🖼️ 镜像管理', href: '/settings/images' },
+  // F21-5 后续切片接入；此处占位不可点，避免 404。
   { key: 'system', label: '⚙️ 系统状态', href: '/settings/system', disabled: true },
 ];
 

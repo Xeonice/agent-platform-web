@@ -108,6 +108,21 @@ async function chooseRuntime(id?: string): Promise<void> {
   fireEvent.click(target);
 }
 
+/**
+ * 等「宿主档位」就绪。
+ *
+ * ⚠️ 这些用例过去写的是 `await findByRole('radio', { name: /aio/ })` —— 拿**档位单选出现**
+ * 当同步点。那组单选已经删了（档位由后端按宿主平台选定，用户不该关心），所以改等
+ * **创建按钮真的可点**：它同时覆盖 providers 与 runtimes 两个查询，比等某个具体控件更贴近
+ * 「这一步真的能做了」。
+ */
+async function waitForCreatable(): Promise<void> {
+  await chooseRuntime();
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
+  });
+}
+
 interface RenderOptions {
   /** 项目来源：`'empty'` ⇒ 不渲染分支选择器、也不发 /branches 请求。默认按 git 项目走。 */
   sourceType?: 'git' | 'empty';
@@ -156,90 +171,94 @@ afterEach(() => {
   cleanup();
 });
 
-describe('SandboxTerminalContainer · provider 档位服务端驱动', () => {
-  it('① 后端 registry 新增第三方 provider（acme）→ UI 自动出现该选项（前端零改动）', async () => {
+/**
+ * ★ 档位（provider）**由后端按宿主平台选定，前端不给选**。
+ *
+ * ── 为什么删掉那组单选 ────────────────────────────────────────────────────────
+ * `AioSandboxProvider extends DockerContainerBackend` —— aio 就是 docker 容器；
+ * boxlite 是微 VM（macOS 上走 Apple Hypervisor.framework，与 docker 无关）。
+ * **哪个跑得起来是宿主平台的事实，不是用户的偏好**：Mac 上选 aio 只会撞上「没有 Docker」，
+ * 而报出来的错还是「镜像尚未注册」，指不到真正的原因。
+ *
+ * 本组测试因此从「用户能不能选中/切换」改成三件事：
+ *   ① 前端**只读** `isDefault`，且**不把 provider 写进请求体**（"选哪个"只有后端知道）；
+ *   ② 能力位（spawnTty）仍然驱动 UI，只是数据源变成"后端选定的那一个"；
+ *   ③ 未就绪（加载中/失败/空 registry）仍然要**说话**——按钮禁着却不给理由最难查。
+ */
+describe('SandboxTerminalContainer · 档位由宿主平台选定（前端不选）', () => {
+  it('⭐ 请求体里**不带** provider —— 「选哪个」只能有一个知情者', async () => {
     mockRegistry([
-      { name: 'aio', capabilities: caps(), isDefault: true },
-      { name: 'boxlite', capabilities: caps({ snapshot: false }), isDefault: false },
-      // 第三方注册进 registry 的档位：前端从未在任何常量/联合类型里写过 'acme'。
-      { name: 'acme', capabilities: caps({ volumeMount: false }), isDefault: false },
+      { name: 'aio', capabilities: caps(), isDefault: false },
+      { name: 'boxlite', capabilities: caps({ snapshot: false }), isDefault: true },
     ]);
     renderContainer();
 
-    const acme = await screen.findByRole('radio', { name: /acme/ });
-    expect(acme).toBeInTheDocument();
-    expect(radiosNamed('sandbox-provider')).toHaveLength(3);
-
-    // 可选中，并被写进建沙箱请求体（证明不是"只显示不可用"）。
-    let sentProvider: unknown;
+    let body: unknown;
     server.use(
       http.post(`${API_BASE}/api/sandboxes`, async ({ request }) => {
-        const body: unknown = await request.json();
-        sentProvider =
-          typeof body === 'object' && body !== null && 'provider' in body ? body.provider : null;
-        return HttpResponse.json(sandboxDto({ id: 'sb-1', provider: 'acme' }), { status: 201 });
+        body = await request.json();
+        return HttpResponse.json(sandboxDto({ id: 'sb-1', provider: 'boxlite' }), { status: 201 });
       }),
     );
-    fireEvent.click(acme);
     await chooseRuntime();
     fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
     await waitFor(() => {
-      expect(sentProvider).toBe('acme');
+      expect(body).toBeDefined();
     });
+    // MUTATION: container 里把 `provider` 加回请求体 ⇒ 本条红。
+    // 前端传一份等于让「选哪个」有第二个知情者，两处迟早不一致。
+    expect(body).not.toHaveProperty('provider');
+    // 而 runtime 仍然是用户选的，必须在（对照：证明上一条不是"整个请求体都空"）。
+    expect(body).toHaveProperty('runtime');
   });
 
-  it('② 默认选中来自服务端 isDefault 那项（前端无默认常量）', async () => {
+  it('⭐ 界面上**没有**档位单选组 —— 用户不该关心自己跑在哪种沙箱上', async () => {
     mockRegistry([
-      { name: 'aio', capabilities: caps(), isDefault: false },
-      // 默认档由服务端在数组项上标记（注意：不是数组第一项，排除"取首项"的假绿）。
-      { name: 'acme', capabilities: caps(), isDefault: true },
+      { name: 'aio', capabilities: caps(), isDefault: true },
+      { name: 'boxlite', capabilities: caps(), isDefault: false },
     ]);
     renderContainer();
-
-    await waitFor(() => {
-      expect(screen.getByRole('radio', { name: /acme/ })).toBeChecked();
-    });
-    expect(screen.getByRole('radio', { name: /aio/ })).not.toBeChecked();
-  });
-
-  it('②b 无任何 isDefault（契约异常）→ 兜底选中第一项，核心链路仍可用', async () => {
-    mockRegistry([
-      { name: 'first', capabilities: caps(), isDefault: false },
-      { name: 'second', capabilities: caps(), isDefault: false },
-    ]);
-    renderContainer();
-
-    await waitFor(() => {
-      expect(screen.getByRole('radio', { name: /first/ })).toBeChecked();
-    });
     await chooseRuntime();
-    expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
+
+    // MUTATION: 把 view 里那组单选渲染回来 ⇒ 本条红。
+    expect(radiosNamed('sandbox-provider')).toHaveLength(0);
+    // 对照：runtime 那组**还在**（证明不是"整个面板没渲染"这种假绿）。
+    expect(radiosNamed('sandbox-runtime').length).toBeGreaterThan(0);
   });
 
-  it('③ 所选 provider spawnTty=false → 禁用建沙箱并给出原因文案', async () => {
+  it('能力位取 isDefault 那项，不是数组第一项', async () => {
+    // ⚠️ 第一项 spawnTty=true、被标 default 的那项 spawnTty=false：
+    //    "取首项"的实现会让按钮保持可用，从而在这条上露馅。
     mockRegistry([
-      { name: 'headless-only', capabilities: caps({ spawnTty: false }), isDefault: true },
       { name: 'aio', capabilities: caps(), isDefault: false },
+      { name: 'headless-only', capabilities: caps({ spawnTty: false }), isDefault: true },
     ]);
     renderContainer();
+    await chooseRuntime();
 
     const createBtn = await screen.findByRole('button', { name: '发起任务并打开终端' });
     await waitFor(() => {
       expect(createBtn).toBeDisabled();
     });
     expect(screen.getByRole('alert')).toHaveTextContent(/不支持终端（spawnTty=false）/);
-    // 列表里也给出能力注记（capabilities 驱动的显隐口子）。
-    expect(screen.getByRole('radio', { name: /headless-only — 不支持终端/ })).toBeInTheDocument();
-
-    // 改选支持终端的档位 → 恢复可用（runtime 必选，先选上，否则禁用原因换成了"还没选 runtime"）。
-    await chooseRuntime();
-    fireEvent.click(screen.getByRole('radio', { name: /^aio/ }));
-    await waitFor(() => {
-      expect(createBtn).toBeEnabled();
-    });
+    // ⚠️ 文案**不许**再叫用户「改选其它运行档位」——那个开关已经不存在了，
+    //    一条指向不存在操作的提示比不提示更贵。
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/改选/);
   });
 
-  it('④ 加载中：出骨架且禁用创建（不静默展示空列表）', async () => {
+  it('无任何 isDefault（契约异常）→ 兜底取第一项，核心链路仍可用', async () => {
+    mockRegistry([
+      { name: 'first', capabilities: caps(), isDefault: false },
+      { name: 'second', capabilities: caps(), isDefault: false },
+    ]);
+    renderContainer();
+    await chooseRuntime();
+
+    // 后端现在 boot 时就 fail fast，这种响应更不该出现；但真出现时不该把整条链路堵死。
+    expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
+  });
+
+  it('加载中：出骨架且禁用创建（不静默）', async () => {
     server.use(
       http.get(`${API_BASE}/api/providers`, async () => {
         await new Promise(() => undefined); // 永挂起，保持 pending 态以观测骨架
@@ -250,10 +269,18 @@ describe('SandboxTerminalContainer · provider 档位服务端驱动', () => {
 
     expect(await screen.findByTestId('providers-skeleton')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
-    expect(radiosNamed('sandbox-provider')).toHaveLength(0);
   });
 
-  it('⑤ 失败：给可重试提示；重试成功后列表出现', async () => {
+  it('空 registry：说明原因并禁用创建', async () => {
+    mockRegistry([]);
+    renderContainer();
+    await chooseRuntime();
+
+    expect(await screen.findByText(/后端未注册任何沙箱运行环境/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
+  });
+
+  it('失败：给可重试提示；重试成功后恢复可用', async () => {
     let attempt = 0;
     server.use(
       http.get(`${API_BASE}/api/providers`, () => {
@@ -269,13 +296,14 @@ describe('SandboxTerminalContainer · provider 档位服务端驱动', () => {
     );
     renderContainer();
 
-    expect(await screen.findByText(/运行档位加载失败/)).toBeInTheDocument();
+    expect(await screen.findByText(/运行环境确认失败/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole('button', { name: '重试加载运行档位' }));
-    expect(await screen.findByRole('radio', { name: /aio/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
     await chooseRuntime();
-    expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
+    });
   });
 });
 
@@ -380,8 +408,7 @@ describe('SandboxTerminalContainer · initialPrompt 发起入口（S5 T-1/T-2）
     );
     renderContainer();
 
-    await screen.findByRole('radio', { name: /aio/ }); // 等 provider 加载完，按钮才可点
-    await chooseRuntime();
+    await waitForCreatable();
     fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
     await waitFor(() => {
       expect(hasField).toBe(false);
@@ -408,8 +435,7 @@ describe('SandboxTerminalContainer · initialPrompt 发起入口（S5 T-1/T-2）
     );
     renderContainer();
 
-    await screen.findByRole('radio', { name: /aio/ }); // 等 provider 加载完，按钮才可点
-    await chooseRuntime();
+    await waitForCreatable();
     fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
     // 进度卡标题用的是后端的 name。
     expect(await screen.findByText('正在启动：后端派生的任务名')).toBeInTheDocument();
@@ -454,8 +480,7 @@ describe('SandboxTerminalContainer · 新错误呈现（P22 §1 / 04 §5）', ()
       );
       renderContainer();
 
-      await screen.findByRole('radio', { name: /aio/ }); // 等 provider 加载完，按钮才可点
-      await chooseRuntime();
+      await waitForCreatable();
       fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
 
       // 就地提示：仍停在新建面板（拿不到 sandbox id，列表也不该出现 failed 记录）。
@@ -496,7 +521,7 @@ describe('SandboxTerminalContainer · 新错误呈现（P22 §1 / 04 §5）', ()
     );
     renderContainer();
 
-    await screen.findByRole('radio', { name: /aio/ });
+    await waitForCreatable();
     await chooseRuntime();
     fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
 
@@ -527,8 +552,7 @@ describe('SandboxTerminalContainer · 新错误呈现（P22 §1 / 04 §5）', ()
     );
     renderContainer();
 
-    await screen.findByRole('radio', { name: /aio/ }); // 等 provider 加载完，按钮才可点
-    await chooseRuntime();
+    await waitForCreatable();
     fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
     expect(await screen.findByText(/镜像拉取失败/)).toBeInTheDocument();
   });
@@ -542,8 +566,7 @@ describe('SandboxTerminalContainer · 新错误呈现（P22 §1 / 04 §5）', ()
     );
     renderContainer();
 
-    await screen.findByRole('radio', { name: /aio/ }); // 等 provider 加载完，按钮才可点
-    await chooseRuntime();
+    await waitForCreatable();
     fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
     await screen.findByText(/正在启动/);
 
@@ -573,8 +596,7 @@ describe('SandboxTerminalContainer · 新错误呈现（P22 §1 / 04 §5）', ()
     );
     renderContainer();
 
-    await screen.findByRole('radio', { name: /aio/ }); // 等 provider 加载完，按钮才可点
-    await chooseRuntime();
+    await waitForCreatable();
     fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
     await screen.findByText(/正在启动/);
 
@@ -773,8 +795,9 @@ describe('SandboxTerminalContainer · runtime 注册表驱动（14 §10）', () 
       expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
     });
     expect(screen.queryByText(/平台没有默认运行时/)).not.toBeInTheDocument();
-    // 对照 provider 一侧：那边**有** isDefault，仍然照服务端的默认档预选（本条不改那半边）。
-    expect(screen.getByRole('radio', { name: /^aio/ })).toBeChecked();
+    // ⚠️ 曾经在这里对照「provider 一侧照 isDefault 预选」——那组单选已删（档位由宿主平台
+    //    选定，用户不该关心）。runtime 与 provider 的分界因此变成：**runtime 必须用户选，
+    //    档位用户碰不到**，而不是「一个有默认、一个没有」。
   });
 
   it('④ 后端一个 runtime 都没注册 ⇒ 禁用创建并说明原因（绝不退回某个字面量默认值）', async () => {
@@ -789,12 +812,13 @@ describe('SandboxTerminalContainer · runtime 注册表驱动（14 §10）', () 
     );
     renderContainer();
 
-    await screen.findByRole('radio', { name: /aio/ });
+    // ⚠️ **不能用 `waitForCreatable()`**：它内含 `chooseRuntime()`，而本条测的正是
+    //    「一个 runtime 都没得选」。同步点改成那句提示自己出现。
+    expect(await screen.findByText(/后端未注册任何 runtime/)).toBeInTheDocument();
     const createBtn = screen.getByRole('button', { name: '发起任务并打开终端' });
     await waitFor(() => {
       expect(createBtn).toBeDisabled();
     });
-    expect(screen.getByText(/后端未注册任何 runtime/)).toBeInTheDocument();
     expect(radiosNamed('sandbox-runtime')).toHaveLength(0);
 
     // 旁路触发（键盘/程序化点击）同样不许发请求——空 runtime 发出去就是一次注定失败的创建。
@@ -873,18 +897,19 @@ describe('SandboxTerminalContainer · runtime 注册表驱动（14 §10）', () 
     renderContainer();
 
     fireEvent.click(await screen.findByRole('radio', { name: /claude-code/ }));
-    fireEvent.click(screen.getByRole('radio', { name: /boxlite/ }));
 
-    // 两组各自恰好选中一个（勾一组不会把另一组也带过去）。
+    // runtime 恰好选中一个（这一组仍然是用户的）。
     expect(checkedRadiosNamed('sandbox-runtime')).toHaveLength(1);
-    expect(checkedRadiosNamed('sandbox-provider')).toHaveLength(1);
+    // ⚠️ 档位那组已经不存在——曾经这里断的是「勾一组不会把另一组带过去」，
+    //    现在只剩一组，那条前提没了。
+    expect(radiosNamed('sandbox-provider')).toHaveLength(0);
 
-    await chooseRuntime();
     fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
     await waitFor(() => {
       expect(sentRuntime).toBe('claude-code');
     });
-    expect(sentProvider).toBe('boxlite');
+    // 档位由后端定，请求体里**不带**它。
+    expect(sentProvider).toBeUndefined();
   });
 
   /**

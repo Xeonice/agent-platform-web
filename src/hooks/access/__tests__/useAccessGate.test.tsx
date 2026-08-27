@@ -82,4 +82,40 @@ describe('useAccessGate', () => {
       expect(useAppStore.getState().accessLocked).toBe(false);
     });
   });
+
+  it('⭐ PASSCODE_LOCKED 是 **429**，也必须置锁 —— 判据是码不是状态', () => {
+    // ⚠️ 只认 401 时，「被锁定」会漏出去掉进 `sandboxErrorCopy` 的「零副作用 ⇒ 改配置」
+    //    那条路，在建任务对话框里弹出「无法用当前配置创建：口令错误次数过多…请调整配置后
+    //    再试」——**改配置改不出来**（要等锁定过期），而且它压根不是任务配置的问题。
+    //
+    // MUTATION: 把判定改回只有 `httpStatus === 401` ⇒ 本条红。
+    const { result } = renderHook(() => useReportUnauthorized());
+    act(() => {
+      result.current.reportRestError(
+        new ApiErrorException(
+          {
+            code: 'PASSCODE_LOCKED',
+            message: '口令错误次数过多，已暂时锁定；请 277 秒后重试',
+            retryable: true,
+          },
+          429,
+        ),
+      );
+    });
+    expect(useAppStore.getState().accessLocked).toBe(true);
+  });
+
+  it('普通 429（限流，不是口令门）**不**置锁 —— 否则任何限流都会被误读成"要重新解锁"', () => {
+    // ⚠️ 这条是上一条的对照：没有它，把判定放宽成"所有 429"也能全绿。
+    const { result } = renderHook(() => useReportUnauthorized());
+    act(() => {
+      result.current.reportRestError(
+        new ApiErrorException(
+          { code: 'RATE_LIMITED', message: '请求过于频繁', retryable: true },
+          429,
+        ),
+      );
+    });
+    expect(useAppStore.getState().accessLocked).toBe(false);
+  });
 });

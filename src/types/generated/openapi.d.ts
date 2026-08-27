@@ -549,6 +549,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List image manifests. `runtimeId` filters to the wizard-selectable set (is_active ∧ not invalid ∧ supports that runtime); without it the management page gets history too. */
+        get: operations["ImageController_list"];
+        put?: never;
+        /** Register an image: resolve → validate → freeze the digest */
+        post: operations["ImageController_register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pre-flight validate a reference — never persists a manifest */
+        post: operations["ImageController_validate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-validate a registered manifest (04 §7 时刻②). A digest change is reported old → new — it is a coordinate migration, not a 「refresh succeeded」. */
+        post: operations["ImageController_revalidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Hard-delete a manifest row; 409 when referenced or built-in */
+        delete: operations["ImageController_remove"];
+        options?: never;
+        head?: never;
+        /** Update the two mutable fields (isActive:false | imageConfig). `isActive:true` is refused with 400 pointing at /activate. */
+        patch: operations["ImageController_patch"];
+        trace?: never;
+    };
+    "/api/images/{id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make this row the current version of its tag — the same action for 「更新到新版本」 and 「回滚到旧版本」, in one transaction. */
+        post: operations["ImageController_activate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{id}/check-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-resolve this row’s tag and compare digests. Stores nothing; 409 when the row is pinned by digest (no tag to re-resolve). */
+        post: operations["ImageController_checkUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -640,7 +744,7 @@ export interface components {
                 modifiedAt: string;
             }[];
             /** @enum {string} */
-            errorCode?: "TASK_FAILED" | "TASK_KILLED" | "TASK_TIMED_OUT" | "SANDBOX_GONE" | "RESUME_FAILED" | "UNKNOWN_RUNTIME" | "IMAGE_PULL_FAILED" | "RESOURCE_EXHAUSTED" | "NOT_FOUND" | "ALREADY_EXISTS" | "TIMEOUT" | "PERMISSION_DENIED" | "INVALID_STATE" | "PROVIDER_UNAVAILABLE" | "UNSUPPORTED_CAPABILITY" | "INTERNAL";
+            errorCode?: "TASK_FAILED" | "TASK_KILLED" | "TASK_TIMED_OUT" | "SANDBOX_GONE" | "RESUME_FAILED" | "UNKNOWN_RUNTIME" | "IMAGE_PULL_FAILED" | "IMAGE_DIGEST_GONE" | "RESOURCE_EXHAUSTED" | "NOT_FOUND" | "ALREADY_EXISTS" | "TIMEOUT" | "PERMISSION_DENIED" | "INVALID_STATE" | "PROVIDER_UNAVAILABLE" | "UNSUPPORTED_CAPABILITY" | "INTERNAL";
             startedAt: string;
             finishedAt?: string;
         };
@@ -782,6 +886,173 @@ export interface components {
             runtimeId: string;
             /** @enum {string} */
             activeAuthMethod: "account" | "api-key";
+        };
+        ImageManifestResponseDto: {
+            id: string;
+            imageId: string;
+            imageName: string;
+            isBuiltin: boolean;
+            ref: string;
+            version: string;
+            baseImage: string;
+            digest: string;
+            entrypointContract: {
+                workdir: string;
+                entrypoint: string[];
+                healthcheckCmd?: string[];
+            };
+            supportedRuntimes: string[];
+            resourceDefaults: {
+                cores: number;
+                ramMb: number;
+                diskMb: number;
+            };
+            labelsRequired: string[];
+            derivedFromDigest: string | null;
+            /** @enum {string} */
+            validationStatus: "pending" | "valid" | "warning" | "invalid";
+            validationErrors: {
+                path?: string;
+                code: string;
+                message: string;
+            }[] | null;
+            isActive: boolean;
+            imageConfig: {
+                env: {
+                    key: string;
+                    value: string;
+                    secret: boolean;
+                }[];
+                cmdOverride?: string[];
+            } | null;
+            registeredAt: string;
+            resolvedAt: string;
+        };
+        RegisterImageDto: {
+            ref: string;
+        };
+        RegisterImageResponseDto: {
+            manifest: {
+                id: string;
+                imageId: string;
+                imageName: string;
+                isBuiltin: boolean;
+                ref: string;
+                version: string;
+                baseImage: string;
+                digest: string;
+                entrypointContract: {
+                    workdir: string;
+                    entrypoint: string[];
+                    healthcheckCmd?: string[];
+                };
+                supportedRuntimes: string[];
+                resourceDefaults: {
+                    cores: number;
+                    ramMb: number;
+                    diskMb: number;
+                };
+                labelsRequired: string[];
+                derivedFromDigest: string | null;
+                /** @enum {string} */
+                validationStatus: "pending" | "valid" | "warning" | "invalid";
+                validationErrors: {
+                    path?: string;
+                    code: string;
+                    message: string;
+                }[] | null;
+                isActive: boolean;
+                imageConfig: {
+                    env: {
+                        key: string;
+                        value: string;
+                        secret: boolean;
+                    }[];
+                    cmdOverride?: string[];
+                } | null;
+                registeredAt: string;
+                resolvedAt: string;
+            };
+            validation: {
+                /** @enum {string} */
+                status: "pending" | "valid" | "warning" | "invalid";
+                errors: {
+                    path?: string;
+                    code: string;
+                    message: string;
+                }[];
+                warnings: {
+                    path?: string;
+                    code: string;
+                    message: string;
+                }[];
+            };
+        };
+        ValidationOutcomeResponseDto: {
+            /** @enum {string} */
+            status: "pending" | "valid" | "warning" | "invalid";
+            errors: {
+                path?: string;
+                code: string;
+                message: string;
+            }[];
+            warnings: {
+                path?: string;
+                code: string;
+                message: string;
+            }[];
+        };
+        RevalidateOutcomeResponseDto: {
+            /** @enum {string} */
+            status: "pending" | "valid" | "warning" | "invalid";
+            errors: {
+                path?: string;
+                code: string;
+                message: string;
+            }[];
+            warnings: {
+                path?: string;
+                code: string;
+                message: string;
+            }[];
+            currentDigest: string;
+            upstreamDigest: string;
+            digestChanged: boolean;
+        };
+        PatchImageDto: {
+            isActive?: boolean;
+            imageConfig?: {
+                env: {
+                    key: string;
+                    value: string;
+                    secret?: boolean;
+                }[];
+                cmdOverride?: string[];
+            };
+        };
+        CheckImageUpdateResponseDto: {
+            current: {
+                digest: string;
+                resolvedAt: string;
+            };
+            upstream: {
+                digest: string;
+                validation: {
+                    /** @enum {string} */
+                    status: "pending" | "valid" | "warning" | "invalid";
+                    errors: {
+                        path?: string;
+                        code: string;
+                        message: string;
+                    }[];
+                    warnings: {
+                        path?: string;
+                        code: string;
+                        message: string;
+                    }[];
+                };
+            } | null;
+            changed: boolean;
         };
         ErrorEnvelope: {
             code: string;
@@ -1618,6 +1889,190 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ImageController_list: {
+        parameters: {
+            query?: {
+                runtimeId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageManifestResponseDto"][];
+                };
+            };
+        };
+    };
+    ImageController_register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterImageDto"];
+            };
+        };
+        responses: {
+            /** @description this digest was already known */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterImageResponseDto"];
+                };
+            };
+            /** @description a new manifest row */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterImageResponseDto"];
+                };
+            };
+        };
+    };
+    ImageController_validate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterImageDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationOutcomeResponseDto"];
+                };
+            };
+        };
+    };
+    ImageController_revalidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevalidateOutcomeResponseDto"];
+                };
+            };
+        };
+    };
+    ImageController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ImageController_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchImageDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageManifestResponseDto"];
+                };
+            };
+        };
+    };
+    ImageController_activate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageManifestResponseDto"];
+                };
+            };
+        };
+    };
+    ImageController_checkUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckImageUpdateResponseDto"];
+                };
             };
         };
     };

@@ -52,12 +52,16 @@ export const Submitting: Story = {
 /**
  * 能力位显隐：所选 provider `capabilities.headlessTask === false` ⇒ **置灰 + 原因**，
  * 与 `spawnTty=false` 禁用终端入口同一套做法。
+ *
+ * ⚠️ 档位名用第三方的 `acme-box`，**不用 `boxlite`**：两个内置档位（aio / boxlite）的
+ * `headlessTask` 现在都是 `true`（S6 已落地），拿 boxlite 演"不支持"是在 story 里
+ * 挂一条关于后端的假事实。开放 registry 里第三方档位不支持无头任务才是这一态的真实来源。
  */
 export const CapabilityBlocked: Story = {
   args: {
     prompt: '跑一轮回归',
     disabledReason:
-      '运行档位「boxlite」不支持无头任务（headlessTask=false）。请改用支持的档位重建沙箱，或改用交互式终端。',
+      '运行档位「acme-box」不支持无头任务（headlessTask=false）。请改用支持的档位重建沙箱，或改用交互式终端。',
   },
 };
 
