@@ -20,6 +20,8 @@ import { listProviders } from '@/services/api/provider.service';
 import { createSandbox, getSandbox } from '@/services/api/sandbox.service';
 import { listAgentTasks } from '@/services/api/task.service';
 import { listImages } from '@/services/api/image.service';
+import { listAudit } from '@/services/api/system.service';
+import { AUDIT_CATEGORY_EMIT_STATUS } from '@/lib/audit/auditStream';
 import { ApiErrorException } from '@/services/api/apiError';
 
 describe('MSW 替身：开放集的取值必须来自替身自己的注册表', () => {
@@ -272,5 +274,202 @@ describe('MSW 替身：血统指向的锚点必须在替身内部查得到', () 
     const nulls = manifests.filter((m) => m.derivedFromDigest === null);
     expect(nulls.some((m) => m.isBuiltin)).toBe(true);
     expect(nulls.some((m) => !m.isBuiltin)).toBe(true);
+  });
+});
+
+/**
+ * ★ 审计流替身的形状必须**够得着真实后端会产出的形状**（12 §3.4）。
+ *
+ * 起因与 `'shell'` 同形：这份替身此前只喂 `category: sandbox|image`、
+ * 只有 `sandbox.provision.stage` 一种 type、**每一行都恒有** `durationMs`/`outcome`/
+ * `subjectType:'sandbox'`、`actor` 清一色 `system`。于是
+ *   · 后端**从不写**的 `image` 类别在 dev 里有数据（真实环境永远为空）；
+ *   · 后端**最高频**的 `scheduler` 一次都没喂过；
+ *   · 「无 detail 的行不给展开箭头」「非沙箱行没有时间线入口」这两条纪律
+ *     在替身下几乎没被触发过——story / 测试全绿，真实界面的行密度完全不同。
+ *
+ * 判据取自**后端写入点的实际取值**（audit.projector.ts + provision-sandbox.workflow.ts
+ * + runtime-install.orchestrator.ts），不是这份替身自己的字面量。
+ */
+describe('MSW 替身：审计流的形状要够得着真实后端', () => {
+  /**
+   * ★★ 这条是 `AUDIT_CATEGORY_EMIT_STATUS`（`lib/audit/auditStream.ts`）的**跨仓对账守卫**。
+   *
+   * 那张表是一份手抄：真实来源是后端的那些写入点，openapi 表达不了「契约允许 ≠ 今天在写」。
+   * 前端拿它决定空态说「当前筛选无匹配记录」还是「该类事件平台尚未记录」——抄本一旦漂移，
+   * 页面上明明有镜像事件，空态却还在说「尚未记录」，而**所有别的用例照旧全绿**。
+   *
+   * ⚠️ 判据**不是字面量清单**（那只是把手抄搬个家），而是「替身实际产出的类别集合」——
+   * 替身的形状是逐条照着后端写入点对齐的（`handlers.ts` 抬头），是本仓离后端最近的参照物。
+   * 且**必须两个方向都断言**，少一个方向就锁不住（下面 ①/② 的编号与断言体里的注释一致）：
+   *   · 只有方向①（"标 emitted 的替身里必须有"） ⇒ **后端开始写 image、替身跟着补上、
+   *     而表还标着 not-yet** 时不会红：方向①根本不看被标 not-yet 的类别，那份过期的抄本
+   *     就这么留在页面上说「尚未记录」。
+   *   · 只有方向②（"标 not-yet 的替身里一条都不许有"） ⇒ **有人把 image 误标成 emitted、
+   *     替身里却一条都没有**时不会红：方向②根本不看被标 emitted 的类别，那句"后端在写"
+   *     没有任何东西背书。
+   * 两个方向一起上，单改一边过不去。
+   *
+   * ★ 2026-08-28 这条**真的响过一次**：后端补齐 image/system 的写入点、替身按纪律补上那两档
+   * 形状的当天，方向②当场红，逼着把表改成全 `emitted`。
+   * 这就是它被造出来要抓的那一刻——不是"加了个断言"，是"它替我们发现了跨仓漂移"。
+   *
+   * ⚠️ 今天五个类别全 `emitted` ⇒ 方向②暂时没有真实实例可管，但**不许因此删掉它**：
+   * 下一个类别（`automation` v1.1、或还空着的 `sandbox.health` 那种）落地时，
+   * 它就是"后端补了、前端表没跟上"唯一会响的那道锁。
+   */
+  it('★ 对账：AUDIT_CATEGORY_EMIT_STATUS 与替身实际产出的类别**双向**一致', async () => {
+    const page = await listAudit({ limit: 300 });
+    expect(page.items.length).toBeGreaterThan(0);
+    const inFixture = new Set<string>(page.items.map((e) => e.category));
+    const declared = Object.entries(AUDIT_CATEGORY_EMIT_STATUS);
+    // 表里五个类别一个不少（少一个 = 有类别没被这条守卫看着）。
+    expect(declared).toHaveLength(5);
+
+    for (const [category, status] of declared) {
+      if (status === 'emitted') {
+        // 方向 ①：声称"后端在写"的，替身里必须真的有——否则这句声称没有任何东西背书。
+        expect(
+          [...inFixture],
+          `AUDIT_CATEGORY_EMIT_STATUS 说 ${category} 后端在写，但替身一条都没产出`,
+        ).toContain(category);
+      } else {
+        // 方向 ②：声称"一条都不写"的，替身里一条都不许有——替身补上了就说明后端已经在写了。
+        expect(
+          [...inFixture],
+          `替身产出了 ${category}，但 AUDIT_CATEGORY_EMIT_STATUS 还标着 not-yet-emitted：` +
+            `后端已经开始写了就必须改表，否则空态会一直说「该类事件平台尚未记录」`,
+        ).not.toContain(category);
+      }
+    }
+  });
+
+  it('actor 覆盖后端的六个（含**最高频的 scheduler**），且 scheduler 就是最高频的那个', async () => {
+    const page = await listAudit({ limit: 300 });
+    const actors = page.items.map((e) => e.actor);
+    for (const actor of [
+      'scheduler',
+      'reaper',
+      'user',
+      'health-check',
+      'provider-event',
+      'system',
+    ]) {
+      expect(actors, `替身从未产出 actor=${actor}`).toContain(actor);
+    }
+    const count = (a: string): number => actors.filter((x) => x === a).length;
+    for (const other of ['reaper', 'user', 'health-check', 'provider-event', 'system']) {
+      expect(count('scheduler')).toBeGreaterThan(count(other));
+    }
+  });
+
+  it('⭐ 至少一条**没有** durationMs / outcome / detail（真实的 project.created 就长这样）', async () => {
+    // 这一条行在界面上：耗时与结果两列是空的、**不给展开箭头**、也没有 [查看该沙箱完整时间线]。
+    // 替身里一条都没有的那一版，这三条纪律从来没被真正触发过。
+    const page = await listAudit({ limit: 300 });
+    const bare = page.items.filter(
+      (e) => e.durationMs === undefined && e.outcome === undefined && e.detail === undefined,
+    );
+    expect(bare.length).toBeGreaterThan(0);
+    expect(bare.some((e) => e.type === 'project.created')).toBe(true);
+    expect(bare.some((e) => e.type === 'credential.stored')).toBe(true);
+    // 非沙箱 subject ⇒ 没有时间线入口这条判据在替身里真的会被走到。
+    expect(bare.every((e) => e.subjectType !== 'sandbox')).toBe(true);
+  });
+
+  /**
+   * ★ `system.*` 是替身里第一批**连主体都没有**的行（后端：主体就是平台自己）。
+   *
+   * 「非沙箱行没有时间线入口」此前只被 `project.created` / `credential.stored` 那种
+   * "有 subject、只是不是 sandbox" 的行验证过。`subjectType` 缺席是更强的形态：
+   * 任何 `event.subjectType === 'sandbox'` 之外的简写（比如 `subjectId!` 或
+   * `subjectType.startsWith(...)`）在这一批上才会真正炸。
+   */
+  it('⭐ system.* 一条都没有 subjectType / subjectId（主体就是平台自己 ⇒ 无时间线入口）', async () => {
+    const page = await listAudit({ limit: 300 });
+    const system = page.items.filter((e) => e.category === 'system');
+    expect(system.length).toBeGreaterThan(0);
+    for (const e of system) {
+      expect(e.subjectType, `${e.type} 不该有 subjectType`).toBeUndefined();
+      expect(e.subjectId, `${e.type} 不该有 subjectId`).toBeUndefined();
+    }
+    // 口令的**任何**投影都不许进 detail（长度 / 前缀 / 哈希都算）：审计是长期留存且可导出的。
+    for (const e of system) {
+      const keys = Object.keys(e.detail ?? {});
+      expect(
+        keys.every((k) => !/pass|code|secret|token|hash/i.test(k)),
+        `${e.type} 的 detail 键 ${keys.join(',')} 里疑似有口令投影`,
+      ).toBe(true);
+    }
+  });
+
+  it('⭐ 非沙箱的 error 级样本真的存在（system.access.locked）', async () => {
+    // 此前 error 只出在 `sandbox.provision.stage` 上 ⇒ "error 行长什么样"几乎只被
+    // 一个形状验证过，而那个形状恰好**有** subject / durationMs / detail 全套。
+    const page = await listAudit({ limit: 300 });
+    const errors = page.items.filter((e) => e.severity === 'error');
+    expect(errors.some((e) => e.type === 'system.access.locked')).toBe(true);
+    expect(errors.some((e) => e.subjectType === undefined)).toBe(true);
+  });
+
+  /**
+   * ★ 镜像事件的 `subjectId` 必须是**这份替身自己 `GET /api/images` 里真有的** manifestId
+   *   （本文件抬头那条纪律，与 `'shell'` 同形），而 `summary` 里才是完整 ref。
+   *
+   * ⚠️ 把 ref 塞进 subjectId 的那一版，「按对象筛」在 dev 里照样自洽、真后端上永远筛不到。
+   */
+  it('⭐ image.* 的 subjectId ∈ GET /api/images 的 manifestId，且 summary 里是完整 ref', async () => {
+    const manifestIds = new Set((await listImages()).map((m) => m.id));
+    const refById = new Map((await listImages()).map((m) => [m.id, m.ref]));
+    const page = await listAudit({ limit: 300 });
+    const images = page.items.filter((e) => e.category === 'image');
+    expect(images.length).toBeGreaterThan(0);
+    for (const e of images) {
+      expect(e.subjectType).toBe('image');
+      expect([...manifestIds], `${e.type} 的 subjectId 不在镜像清单里`).toContain(e.subjectId);
+      const ref = refById.get(e.subjectId ?? '');
+      expect(ref).toBeDefined();
+      // summary 里给的是人能读的 ref（registry/repo:tag），不是那个 id。
+      expect(e.summary, `${e.type} 的 summary 里没有 ref`).toContain(ref);
+      expect(e.subjectId).not.toBe(ref);
+    }
+  });
+
+  /**
+   * ⛔ `image.config_updated` **不带 detail**（04 §2.3★）：镜像 env 会被物化成
+   * `export K=V` 拼进命令串，它的任何投影落进审计 = 把用户填的密钥永久留在一张可导出的表里。
+   * 界面上这行因此没有展开箭头——那是对的，不是漏了。替身里给它编一个 detail，
+   * 这条纪律就再也没有现场。
+   */
+  it('⭐ image.config_updated 一条 detail 都没有（env 绝不投影进审计）', async () => {
+    const page = await listAudit({ limit: 300 });
+    const updates = page.items.filter((e) => e.type === 'image.config_updated');
+    expect(updates.length).toBeGreaterThan(0);
+    expect(updates.every((e) => e.detail === undefined)).toBe(true);
+  });
+
+  /**
+   * ⏳ `sandbox.health` 后端**至今没有生产者**（沙箱档唯一还空着的 type）。
+   *
+   * ⚠️ 这条守的是与"多喂一个类别"对称的另一半：替身**不许**凭空造一个后端不产出的 type。
+   * 造了它，「健康检查也会记一笔」这件事在 dev / story 里成立、真实环境永远不成立。
+   * 后端哪天真写了，这条会红——那时该做的是补形状、并把这条改成"必须有"。
+   */
+  it('⏳ sandbox.health 一条都不喂（后端还没有这个写入点）', async () => {
+    const page = await listAudit({ limit: 300 });
+    expect(page.items.map((e) => e.type)).not.toContain('sandbox.health');
+  });
+
+  it('⭐ severity 是**服务端**筛的：`warn,error` 只回 warn/error，且两者都回得出来', async () => {
+    // ⚠️ 替身不实现 `IN (...)` 的话，「仅告警」在 dev / Storybook / e2e 里等于没筛，
+    //    而所有断言都还能凑出来——正是"前端与它自己的替身完全自洽"那一形态。
+    const alerts = await listAudit({ severity: 'warn-and-error', limit: 300 });
+    expect(alerts.items.length).toBeGreaterThan(0);
+    expect(alerts.items.every((e) => e.severity === 'warn' || e.severity === 'error')).toBe(true);
+    expect(alerts.items.some((e) => e.severity === 'warn')).toBe(true);
+    expect(alerts.items.some((e) => e.severity === 'error')).toBe(true);
+    // 并且真的筛掉了东西（否则这条在"替身恒回全部"时也会绿）。
+    const all = await listAudit({ limit: 300 });
+    expect(alerts.items.length).toBeLessThan(all.items.length);
   });
 });

@@ -17,10 +17,20 @@ export interface SandboxStartupProgressProps {
   /** 后端派生的默认任务名（10 §7.3 SandboxDto.name）；前端不自己派生。 */
   taskName?: string;
   /**
-   * 挂在某一格下的子文案（今天唯一来源：`runtime.install_progress` 的装 CLI 进度，
-   * 挂「启动实例」格）。视图只按 phaseKey 找格子渲染，不关心它是谁产的。
+   * 挂在某一格下的子文案（来源：起实例的 `sandbox.instance_progress` 与装 CLI 的
+   * `runtime.install_progress`，两者都挂「启动实例」格）。视图只按 phaseKey 找格子渲染，
+   * 不关心它是谁产的、也不做仲裁。
    */
   phaseNote?: { phaseKey: string; text: string };
+  /**
+   * 当前阶段「已等待」的显示串（`3:10`），渲染在**进行中**那一格的标签右侧。
+   *
+   * ⚠️ 缺席就是不渲染，视图**不许兜底成 `0:00`**：容器给不出这个串只有一种情况——
+   * 它拿不到可信的计时锚点（刷新恢复出来的状态没有"何时进入"这回事）。补一个 0 会把
+   * 「不知道等了多久」显示成「刚开始等」，而这两件事对着一个已经等了三分钟的用户，
+   * 差别正是这张卡存在的全部理由。
+   */
+  activeElapsedLabel?: string;
 }
 
 export function SandboxStartupProgressView({
@@ -30,6 +40,7 @@ export function SandboxStartupProgressView({
   statusLabel,
   taskName,
   phaseNote,
+  activeElapsedLabel,
 }: SandboxStartupProgressProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 p-6 text-center">
@@ -75,6 +86,14 @@ export function SandboxStartupProgressView({
                   >
                     {phase.label}
                   </span>
+                  {state === 'active' && activeElapsedLabel !== undefined && (
+                    <span
+                      data-testid="phase-elapsed"
+                      className="font-mono text-xs tabular-nums text-muted-foreground"
+                    >
+                      {activeElapsedLabel}
+                    </span>
+                  )}
                 </span>
                 {note !== null && (
                   <span

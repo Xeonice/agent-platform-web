@@ -1,5 +1,5 @@
 // 生命周期决策补测：容器据 decision 从"启动中"切到终端（running），失败可重试。
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useSandboxLifecycle } from '@/hooks/sandbox/useSandboxLifecycle';
 import { useAppStore } from '@/stores';
@@ -156,5 +156,112 @@ describe('useSandboxLifecycle', () => {
     const { result } = renderHook(() => useSandboxLifecycle(null));
     expect(result.current.decision).toBe('startup');
     expect(result.current.status).toBeNull();
+  });
+});
+
+/**
+ * 起实例那一步的呈现（10 §7.4）—— 那次「停在启动实例 3 分 10 秒、看起来像卡死」的收口。
+ *
+ * 两件事在这里合流，而它们的**来源刻意不同**：
+ *   · 「为什么慢」= 后端推的 `sandbox.instance_progress.imageStaged`（浏览器推不出来）；
+ *   · 「已经等了多久」= 前端自己从收到 `starting` 的那一刻数（后端一个字节都不推）。
+ */
+describe('起实例进度与前端自算的「已等待」（10 §7.4）', () => {
+  const enterStarting = (): void => {
+    useAppStore.getState().applySandboxEvent({
+      event: 'sandbox.status_changed',
+      sandboxId: 's1',
+      status: 'starting',
+    });
+  };
+
+  it('instance_progress 的子文案挂「启动实例」格，且不改 status', () => {
+    const { result, rerender } = renderHook(() => useSandboxLifecycle('s1'));
+    act(() => {
+      enterStarting();
+      useAppStore.getState().applySandboxEvent({
+        event: 'sandbox.instance_progress',
+        sandboxId: 's1',
+        phase: 'starting',
+        imageStaged: false,
+      });
+    });
+    rerender();
+    expect(result.current.status).toBe('starting');
+    expect(result.current.phaseNote?.phaseKey).toBe('instance');
+    expect(result.current.phaseNote?.text).toContain('不是卡死');
+  });
+
+  it('装 CLI 的文案**接管**起实例的文案（同一格里更晚的那一步赢）', () => {
+    // 两条事件先后落在同一格下。没有这条仲裁，用户会在 CLI 已经开装之后，
+    // 继续读着「正在拉起实例」——一句已经变成过去时的话。
+    const { result, rerender } = renderHook(() => useSandboxLifecycle('s1'));
+    act(() => {
+      enterStarting();
+      const apply = useAppStore.getState().applySandboxEvent;
+      apply({ event: 'sandbox.instance_progress', sandboxId: 's1', phase: 'ready' });
+      apply({
+        event: 'runtime.install_progress',
+        sandboxId: 's1',
+        runtime: 'claude-code',
+        status: 'installing',
+      });
+    });
+    rerender();
+    expect(result.current.phaseNote?.text).toContain('正在安装 claude-code');
+  });
+
+  it('WS 来的 starting ⇒ 有「已等待」，且随时间走字', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const { result, rerender } = renderHook(() => useSandboxLifecycle('s1'));
+      act(() => {
+        enterStarting();
+      });
+      rerender();
+      expect(result.current.elapsedLabel).toBe('0:00');
+
+      // 用户那次真实的等待：190529ms。
+      // ⚠️ 只推进定时器，**不额外 setSystemTime**：advanceTimersByTime 自己就把系统时钟
+      // 一起推了，两个都做等于走了两倍的时间（第一次写就这么错的，断言当场抓到 6:20）。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(190_529);
+      });
+      expect(result.current.elapsedLabel).toBe('3:10');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('REST 恢复出来的 starting ⇒ **没有**「已等待」，而不是从 0 数起', () => {
+    // 刷新之后前端没有可信锚点（DTO 上没有"何时进入该状态"）。显示 0:00 会把
+    // 「不知道等了多久」渲染成「刚开始等」，对一个已经等了三分钟的用户是最坏的那种错。
+    const { result, rerender } = renderHook(() => useSandboxLifecycle('s1'));
+    act(() => {
+      useAppStore.getState().setSandboxStatus('s1', 'starting');
+    });
+    rerender();
+    expect(result.current.decision).toBe('startup');
+    expect(result.current.elapsedLabel).toBeUndefined();
+  });
+
+  it('running 之后不再有「已等待」（也不再每秒重渲染）', () => {
+    const { result, rerender } = renderHook(() => useSandboxLifecycle('s1'));
+    act(() => {
+      enterStarting();
+    });
+    rerender();
+    expect(result.current.elapsedLabel).toBeDefined();
+
+    act(() => {
+      useAppStore.getState().applySandboxEvent({
+        event: 'sandbox.status_changed',
+        sandboxId: 's1',
+        status: 'running',
+      });
+    });
+    rerender();
+    expect(result.current.elapsedLabel).toBeUndefined();
   });
 });

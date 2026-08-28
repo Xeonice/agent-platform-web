@@ -35,7 +35,7 @@ export function SandboxLifecycleContainer({
   taskName,
   headlessSlot,
 }: SandboxLifecycleContainerProps) {
-  const { decision, status, phases, activePhaseIndex, percent, phaseNote, outcome } =
+  const { decision, status, phases, activePhaseIndex, percent, phaseNote, elapsedLabel, outcome } =
     useSandboxLifecycle(sandboxId);
 
   if (decision === 'running') {
@@ -82,6 +82,7 @@ export function SandboxLifecycleContainer({
       statusLabel={status ?? undefined}
       taskName={taskName}
       phaseNote={phaseNote}
+      activeElapsedLabel={elapsedLabel}
     />
   );
 }
