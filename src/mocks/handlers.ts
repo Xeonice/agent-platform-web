@@ -29,6 +29,7 @@ import type {
   RevalidateOutcomeDto,
   ValidationOutcomeDto,
 } from '@/types/image';
+import type { AuditEventDto, AuditListDto } from '@/types/audit';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
@@ -405,6 +406,639 @@ const IMAGE_MANIFESTS: ImageManifestDto[] = [
 ];
 
 const VALIDATION_OK: ValidationOutcomeDto = { status: 'valid', errors: [], warnings: [] };
+
+// ————————————————————————————————————————————————————————————————
+// 审计流替身数据（13 §2.8.2 的 `audit_events` 行形状；**恒按 seq 降序**）。
+//
+// ★ 形状与取值逐条对齐**后端实写的写入点**（12 §3.4「替身的值不能凭空」）：
+//   · 写入口 ①（`api/apps/api/src/platform/audit/audit.projector.ts`）——
+//     `sandbox.created` / `sandbox.state_changed` / `project.created` / `credential.stored`
+//     / `sandbox.runtime_install` / `credential.injected` / `sandbox.task.*`
+//   · 写入口 ②（`provision-sandbox.workflow.ts` / `runtime-install.orchestrator.ts`）——
+//     `sandbox.provision.stage` / `sandbox.workspace.prepared` / `sandbox.agent_session`
+//     / `sandbox.probe` / `sandbox.credential.absent`
+//   · 写入口 ③（2026-08-28 后端补齐的审计覆盖缺口）——
+//     `project.clone_retried` / `project.converted_to_empty` / `project.clone_cancelled`
+//     / `project.baseline_synced` / `project.deleted`；`credential.auth_mode_changed`；
+//     **镜像整档** `image.registered|validated|activated|deactivated|config_updated|deleted`；
+//     **系统整档** `system.access.unlocked|unlock_failed|locked|locked_attempt`。
+//     ⇒ 五个契约类别至此**全部有生产者**，`AUDIT_CATEGORY_EMIT_STATUS` 随之全标 `emitted`
+//       （`handlers.test.ts` 那条双向对账守卫就是这么响的：替身先补形状，表没跟上就红）。
+//   · ⏳ `sandbox.health` 后端**仍未落地**，所以这里**一条都不喂**——替身里凭空造一个
+//     后端不产出的 type，正是本文件抬头那条纪律要禁的（`'shell'` 事故同形）。
+//
+// ⚠️ 这份替身此前与真实后端**几乎不相交**，而三处都属于"dev/story/测试全绿、真实界面不一样"：
+//   ① `category` 只喂 `sandbox` + `image`（且那时后端**从不写** `image`）⇒ 「类别=镜像」
+//      在 dev 里有数据、真实环境永远为空。今天反过来：后端真写了，替身必须真有。
+//   ② `type` 只有 `sandbox.provision.stage` 与一个后端根本不产出的 `image.validation.warning`。
+//   ③ **每一行都恒有 `durationMs` + `outcome` + `subjectType:'sandbox'`** ⇒ 真实的
+//      `project.created` / `credential.stored` 那几列全是空的、也没有 [查看该沙箱完整时间线]，
+//      行密度与所有 story / 测试都对不上；而「无 detail 的行不给展开箭头」这条纪律
+//      在替身下几乎没被触发过（这里的 `project.created` / `credential.stored` 就是它的现场）。
+//      ★ `system.*` 更进一步：它**连 `subjectType`/`subjectId` 都没有**（主体就是平台自己），
+//        是「非沙箱行没有时间线入口」那条纪律在替身里第一个"连主体都没有"的现场。
+//   ④ `actor` 清一色 `system`，**最高频的 `scheduler` 一次都没喂过**（后端写入点里
+//      provision/runtime-install 那批写 `scheduler`）。`AUDIT_ACTORS = TRIGGERED_BY ∪ {'system'}`
+//      六个值这里全覆盖。⑤ 新补的管理动作（镜像/系统/项目）后端一律写 `user`。
+//
+// `at` 是**毫秒精度**（本仓第一处），故这里刻意给出同一秒内的多条。
+// ————————————————————————————————————————————————————————————————
+
+/** `SandboxStateChanged.triggeredBy` 原样透传成 actor（后端 `transitionActor()`）。 */
+const TRANSITION_ACTORS = ['health-check', 'provider-event', 'reaper'] as const;
+
+/** 一条事件的"形状"。 */
+type AuditShape = (seq: number, at: string, sandboxId: string) => AuditEventDto;
+
+/**
+ * 形状 + 它在流里占几个轮转槽位。
+ *
+ * ⚠️ **权重不是装饰，是"哪种事件在刷屏"这件事本身**：真实审计流里 provision / 探测 /
+ * runtime 安装是每建一个沙箱就刷十几条的，而"注册一张镜像""改一次口令""删一个项目"
+ * 是稀疏的管理动作。此前用的是"一形状一槽位"的等权轮转——补进镜像/系统/项目那 15 个
+ * 管理形状之后，等权会让 `user` 一举盖过 `scheduler`，替身的行密度与真实流当场对不上
+ * （`handlers.test.ts` 那条「scheduler 是最高频的那个」正是钉这件事的）。
+ * ⛔ 所以不许靠"多复制几行 shape"来配权重——那是把权重藏进重复代码里。
+ */
+interface AuditShapeSpec {
+  /** 占几个槽位。3 = 刷屏的调度器动作；1 = 稀疏的管理动作。 */
+  readonly weight: number;
+  readonly make: AuditShape;
+}
+
+/** 调度器批：真实流里的绝对多数。 */
+const SCHEDULER_WEIGHT = 3;
+
+/**
+ * 镜像事件的主体：**必须是这份替身自己 `GET /api/images` 里真有的那张清单**（本文件纪律 ②）。
+ *
+ * ⚠️ `subjectId` 是 manifestId、`summary` 里才是完整 `ref`（registry/repo:tag）——两者
+ * 不是一回事。把 ref 写进 subjectId 的那一版，"按对象筛"在真后端上永远筛不到东西，
+ * 而 dev 里看着完全正常。这里查不到就当场抛，凭空的 id 进不来。
+ */
+function imageSubject(manifestId: string): { subjectId: string; ref: string } {
+  const manifest = IMAGE_MANIFESTS.find((m) => m.id === manifestId);
+  if (manifest === undefined) {
+    throw new Error(`审计替身引用了不存在的镜像清单：${manifestId}`);
+  }
+  return { subjectId: manifest.id, ref: manifest.ref };
+}
+
+const AUDIT_SHAPES: readonly AuditShapeSpec[] = [
+  // ——— 写入口 ②：provision workflow / runtime-install，全部 actor: 'scheduler' ———
+  {
+    weight: SCHEDULER_WEIGHT,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.provision.stage',
+      severity: 'info',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      actor: 'scheduler',
+      summary: 'provision 阶段「prepare-workspace」完成',
+      detail: { stage: 'prepare-workspace' },
+      durationMs: 1000 + (seq % 37) * 91,
+      outcome: 'ok',
+    }),
+  },
+  {
+    weight: SCHEDULER_WEIGHT,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.provision.stage',
+      severity: 'error',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      actor: 'scheduler',
+      summary: 'provision 阶段「create」失败',
+      detail: { stage: 'create', message: `provider ${PROVIDER_NAMES.aio} 无可用容量` },
+      durationMs: 4231,
+      outcome: 'failed',
+      errorCode: 'PROVIDER_UNAVAILABLE',
+    }),
+  },
+  {
+    weight: SCHEDULER_WEIGHT,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.workspace.prepared',
+      // baseline 读不到时后端是**静默降级成空工作区**的，所以这条是 warn 而不是 info。
+      severity: 'warn',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      actor: 'scheduler',
+      summary: '工作区就绪，但源 baseline 读不到 —— 工作区是空的',
+      detail: { baselineExisted: false, entryCount: 0, hostPath: `/var/lib/ap/ws/${sandboxId}` },
+      outcome: 'ok',
+    }),
+  },
+  {
+    weight: SCHEDULER_WEIGHT,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.workspace.prepared',
+      severity: 'info',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      actor: 'scheduler',
+      summary: `工作区就绪，${String((seq % 9) + 1)} 个顶层条目`,
+      detail: {
+        baselineExisted: true,
+        entryCount: (seq % 9) + 1,
+        hostPath: `/var/lib/ap/ws/${sandboxId}`,
+      },
+      outcome: 'ok',
+    }),
+  },
+  {
+    weight: SCHEDULER_WEIGHT,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.probe',
+      severity: 'info',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      actor: 'scheduler',
+      summary: `探测 ${DEFAULT_RUNTIME_ID}：exit 0`,
+      detail: {
+        runtimeId: DEFAULT_RUNTIME_ID,
+        argv: [DEFAULT_RUNTIME_ID, '--version'],
+        exitCode: 0,
+        stdoutTail: 'codex 0.42.1',
+        stderrTail: '',
+      },
+      durationMs: 120 + (seq % 11) * 7,
+      outcome: 'ok',
+    }),
+  },
+  {
+    weight: SCHEDULER_WEIGHT,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.probe',
+      // 「探测说没装」是 warn；「探测炸了」才是 error（后端把这两件事分开记）。
+      severity: 'warn',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      actor: 'scheduler',
+      summary: `探测 ${RUNTIME_IDS.claudeCode}：exit 127`,
+      detail: {
+        runtimeId: RUNTIME_IDS.claudeCode,
+        argv: [RUNTIME_IDS.claudeCode, '--version'],
+        exitCode: 127,
+        stdoutTail: '',
+        stderrTail: 'command not found',
+      },
+      durationMs: 90,
+      outcome: 'failed',
+    }),
+  },
+  {
+    weight: SCHEDULER_WEIGHT,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.agent_session',
+      severity: 'info',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      actor: 'scheduler',
+      summary: `已启动 ${DEFAULT_RUNTIME_ID} agent 会话`,
+      detail: {
+        runtimeId: DEFAULT_RUNTIME_ID,
+        started: true,
+        reusedExisting: false,
+        promptCarried: true,
+      },
+      durationMs: 2000 + (seq % 23) * 61,
+      outcome: 'ok',
+    }),
+  },
+  {
+    weight: SCHEDULER_WEIGHT,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.credential.absent',
+      severity: 'warn',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      actor: 'scheduler',
+      summary: `没有可用的 ${DEFAULT_RUNTIME_ID} 凭证，agent 将以未登录状态启动`,
+      detail: { runtimeId: DEFAULT_RUNTIME_ID },
+      outcome: 'skipped',
+      errorCode: 'CREDENTIAL_NOT_FOUND',
+    }),
+  },
+  // ——— 写入口 ①：projector（actor 来自领域事件） ———
+  // ⚠️ 权重 3 不是"让它多一点"：三个槽位是相邻下标，而 `seq % 3` 在这三个下标上恰好取遍
+  //    0/1/2 ⇒ `triggeredBy` 那三个 actor 一个不落。压成 1 的话会只剩一个 actor 出现，
+  //    而「六个 actor 全覆盖」那条断言就会红——那正是它该红的时候。
+  {
+    weight: 3,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.state_changed',
+      severity: 'info',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      // `triggeredBy` **原样透传**：这三个值只会从这条路径进来。
+      actor: TRANSITION_ACTORS[seq % TRANSITION_ACTORS.length] ?? 'reaper',
+      summary: '沙箱状态 running → stopped',
+      detail: { from: 'running', to: 'stopped' },
+      outcome: 'ok',
+    }),
+  },
+  {
+    weight: 2,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.created',
+      severity: 'info',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      actor: 'user',
+      summary: `创建沙箱 ${sandboxId}`,
+      detail: { projectId: 'proj-demo' },
+    }),
+  },
+  {
+    weight: 2,
+    make: (seq, at, sandboxId) => ({
+      seq,
+      at,
+      category: 'sandbox',
+      type: 'sandbox.runtime_install',
+      severity: 'info',
+      subjectType: 'sandbox',
+      subjectId: sandboxId,
+      actor: 'system',
+      summary: `${DEFAULT_RUNTIME_ID} 安装状态：installed`,
+      detail: { runtimeId: DEFAULT_RUNTIME_ID, status: 'installed', versionDetected: '0.42.1' },
+    }),
+  },
+  // ⚠️ 下面两条是**这份替身里最重要的两行**：后端的 `project.created` / `credential.stored`
+  // 就是这个形状 —— **没有 `durationMs`、没有 `outcome`、没有 `detail`**，subjectType 也不是
+  // `sandbox`。于是它们在界面上：那几列是空的、没有 [查看该沙箱完整时间线]、**不给展开箭头**。
+  // 此前替身里一行这样的都没有，「无 detail 的行不给展开箭头」这条纪律几乎没被触发过。
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'project',
+      type: 'project.created',
+      severity: 'info',
+      subjectType: 'project',
+      subjectId: `proj-${String((seq % 3) + 1)}`,
+      actor: 'user',
+      summary: `创建项目 proj-${String((seq % 3) + 1)}`,
+    }),
+  },
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'credential',
+      type: 'credential.stored',
+      severity: 'info',
+      subjectType: 'credential',
+      subjectId: `cred-${String((seq % 4) + 1)}`,
+      actor: 'user',
+      summary: `保存凭证 cred-${String((seq % 4) + 1)}`,
+    }),
+  },
+  // ——— 写入口 ③ · 项目档的新增 type（后端 2026-08-28 补齐） ———
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'project',
+      type: 'project.clone_retried',
+      severity: 'info',
+      subjectType: 'project',
+      subjectId: `proj-${String((seq % 3) + 1)}`,
+      actor: 'user',
+      summary: `重试克隆 proj-${String((seq % 3) + 1)}（第 2 次）`,
+      detail: { attempt: 2, previousErrorCode: 'CLONE_FAILED_NETWORK' },
+      durationMs: 12_400,
+      outcome: 'ok',
+    }),
+  },
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'project',
+      type: 'project.converted_to_empty',
+      // 克隆最终没成、项目被降级成空项目 —— 用户拿到的东西与他要的不一样，是 warn。
+      severity: 'warn',
+      subjectType: 'project',
+      subjectId: `proj-${String((seq % 3) + 1)}`,
+      actor: 'user',
+      summary: `克隆放弃，proj-${String((seq % 3) + 1)} 已转为空项目`,
+      // ⚠️ detail **只有 host，没有完整 repoUrl**：URL 里可能带 `user:token@`，
+      //    审计是长期留存的，整条 URL 落进去等于把凭证写进了一张谁都能导出的表。
+      detail: { discardedRepoHost: 'github.com' },
+      outcome: 'ok',
+    }),
+  },
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'project',
+      type: 'project.clone_cancelled',
+      severity: 'warn',
+      subjectType: 'project',
+      subjectId: `proj-${String((seq % 3) + 1)}`,
+      actor: 'user',
+      summary: `用户取消了 proj-${String((seq % 3) + 1)} 的克隆`,
+      // `skipped` ≠ `failed`：没做完，但不是出错。界面上这两个不许混成一个"❌"。
+      outcome: 'skipped',
+    }),
+  },
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'project',
+      type: 'project.baseline_synced',
+      severity: 'info',
+      subjectType: 'project',
+      subjectId: `proj-${String((seq % 3) + 1)}`,
+      actor: 'user',
+      summary: '基线已同步至 origin/main',
+      detail: { branch: 'main', entryCount: (seq % 7) + 3 },
+      durationMs: 3000 + (seq % 13) * 121,
+      outcome: 'ok',
+    }),
+  },
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'project',
+      type: 'project.deleted',
+      // 删除是不可逆的，恒 warn（哪怕成功）。
+      severity: 'warn',
+      subjectType: 'project',
+      subjectId: `proj-${String((seq % 3) + 1)}`,
+      actor: 'user',
+      // ⚠️ `keptBaseline` 是这条**唯一**能回答"磁盘上还剩没剩东西"的地方：删项目时
+      //    留不留基线是用户的选择，事后只有这一条记着。压进 summary 就再也筛不出来。
+      summary: `删除项目 proj-${String((seq % 3) + 1)}`,
+      detail: { keptBaseline: seq % 2 === 0 },
+      outcome: 'ok',
+    }),
+  },
+  // ——— 写入口 ③ · 凭证档的新增 type ———
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'credential',
+      type: 'credential.auth_mode_changed',
+      severity: 'info',
+      // ⚠️ 主体是 **runtime**，不是 credential：subjectId 是 `claude-code` 这样的 runtimeId。
+      //    「凭证类事件的 subjectId 一定是 cred-*」这种简写在这条上当场破功。
+      subjectType: 'runtime',
+      subjectId: RUNTIME_IDS.claudeCode,
+      actor: 'user',
+      summary: `${RUNTIME_IDS.claudeCode} 认证方式：api-key → oauth-device`,
+      detail: { runtimeId: RUNTIME_IDS.claudeCode, from: 'api-key', to: 'oauth-device' },
+      outcome: 'ok',
+    }),
+  },
+  // ——— 写入口 ③ · 镜像整档（此前零生产者） ———
+  // subjectType 恒 `image`、subjectId 是 manifestId，**summary 里才是完整 ref**。
+  {
+    weight: 1,
+    make: (seq, at) => {
+      const { subjectId, ref } = imageSubject('img-manifest-pending');
+      return {
+        seq,
+        at,
+        category: 'image',
+        type: 'image.registered',
+        severity: 'info',
+        subjectType: 'image',
+        subjectId,
+        actor: 'user',
+        summary: `注册镜像 ${ref}`,
+        detail: { ref, resolvedDigest: `sha256:${'c'.repeat(64)}` },
+        durationMs: 2400,
+        outcome: 'ok',
+      };
+    },
+  },
+  {
+    weight: 1,
+    make: (seq, at) => {
+      const { subjectId, ref } = imageSubject('img-manifest-2');
+      return {
+        seq,
+        at,
+        category: 'image',
+        type: 'image.validated',
+        severity: 'info',
+        subjectType: 'image',
+        subjectId,
+        actor: 'user',
+        summary: `校验镜像 ${ref}：warning（1 条）`,
+        detail: { status: 'warning', errorCount: 0, warningCount: 1, digestChanged: false },
+        durationMs: 8600,
+        outcome: 'ok',
+      };
+    },
+  },
+  {
+    weight: 1,
+    make: (seq, at) => {
+      const { subjectId, ref } = imageSubject('img-manifest-2');
+      return {
+        seq,
+        at,
+        category: 'image',
+        type: 'image.activated',
+        severity: 'info',
+        subjectType: 'image',
+        subjectId,
+        actor: 'user',
+        summary: `启用镜像 ${ref}`,
+        detail: { replacedManifestId: 'img-manifest-3' },
+        outcome: 'ok',
+      };
+    },
+  },
+  {
+    weight: 1,
+    make: (seq, at) => {
+      const { subjectId, ref } = imageSubject('img-manifest-3');
+      return {
+        seq,
+        at,
+        category: 'image',
+        type: 'image.deactivated',
+        // 下线意味着"新建沙箱不会再用它"，是个会让人意外的状态变化 ⇒ warn。
+        severity: 'warn',
+        subjectType: 'image',
+        subjectId,
+        actor: 'user',
+        summary: `下线镜像 ${ref}`,
+        detail: { reason: 'replaced-by-newer-manifest' },
+        outcome: 'ok',
+      };
+    },
+  },
+  {
+    weight: 1,
+    make: (seq, at) => {
+      const { subjectId, ref } = imageSubject('img-manifest-2');
+      return {
+        seq,
+        at,
+        category: 'image',
+        type: 'image.config_updated',
+        severity: 'info',
+        subjectType: 'image',
+        subjectId,
+        actor: 'user',
+        // ⛔ **这条刻意没有 `detail`**（04 §2.3★）：镜像 env 会被物化成 `export K=V` 拼进
+        //    命令串，把它的任何投影写进审计，等于把用户填的密钥永久留在一张可导出的表里。
+        //    界面上这行因此**没有展开箭头** —— 那是对的，不是漏了。
+        summary: `更新镜像配置 ${ref}`,
+        outcome: 'ok',
+      };
+    },
+  },
+  {
+    weight: 1,
+    make: (seq, at) => {
+      const { subjectId, ref } = imageSubject('img-manifest-3');
+      return {
+        seq,
+        at,
+        category: 'image',
+        type: 'image.deleted',
+        severity: 'warn',
+        subjectType: 'image',
+        subjectId,
+        actor: 'user',
+        summary: `删除镜像 ${ref}`,
+        detail: { ref },
+        outcome: 'ok',
+      };
+    },
+  },
+  // ——— 写入口 ③ · 系统整档（此前零生产者） ———
+  // ★ 这四条**没有 `subjectType` / `subjectId`**：主体就是平台自己。
+  //   于是界面上它们既没有 [查看该沙箱完整时间线]，"对象"列也是空的——
+  //   「非沙箱行没有时间线入口」那条纪律在这里是"连主体都没有"的极端形态。
+  // ⛔ detail 里只有计数，**绝无口令的任何投影**（长度、前缀、哈希都不行）。
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'system',
+      type: 'system.access.unlocked',
+      severity: 'info',
+      actor: 'user',
+      summary: '口令校验通过，已解锁',
+      outcome: 'ok',
+    }),
+  },
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'system',
+      type: 'system.access.unlock_failed',
+      severity: 'warn',
+      actor: 'user',
+      summary: '口令错误（第 2 次，共 5 次机会）',
+      detail: { consecutiveFailures: 2, maxFailures: 5 },
+      outcome: 'failed',
+      errorCode: 'PASSCODE_INVALID',
+    }),
+  },
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'system',
+      type: 'system.access.locked',
+      // ★ 替身里为数不多的 `error` 级样本之一，而且是**非沙箱**的那种：
+      //   此前 error 只出在 `sandbox.provision.stage` 上，"error 行长什么样"
+      //   几乎只被那一个形状验证过。
+      severity: 'error',
+      actor: 'user',
+      summary: '连续 5 次口令错误，已锁定 15 分钟',
+      detail: { consecutiveFailures: 5, maxFailures: 5, lockedForSec: 900 },
+      outcome: 'failed',
+      errorCode: 'PASSCODE_LOCKED',
+    }),
+  },
+  {
+    weight: 1,
+    make: (seq, at) => ({
+      seq,
+      at,
+      category: 'system',
+      type: 'system.access.locked_attempt',
+      severity: 'warn',
+      actor: 'user',
+      summary: '锁定期间又试了一次，未校验',
+      // 锁定期内的尝试**根本没走校验** ⇒ `skipped`，不是 `failed`。
+      detail: { lockedForSec: 812 },
+      outcome: 'skipped',
+      errorCode: 'PASSCODE_LOCKED',
+    }),
+  },
+];
+
+/** 权重展开成槽位表：下标 = `seq % 槽位数`。 */
+const AUDIT_SHAPE_SLOTS: readonly AuditShape[] = AUDIT_SHAPES.flatMap(({ weight, make }) =>
+  Array.from({ length: weight }, () => make),
+);
+
+function auditEvent(seq: number): AuditEventDto {
+  const at = new Date(Date.now() - (300 - seq) * 1237).toISOString();
+  const sandboxId = `sb-${String((seq % 5) + 1)}`;
+  const shape = AUDIT_SHAPE_SLOTS[seq % AUDIT_SHAPE_SLOTS.length];
+  if (shape === undefined) throw new Error('AUDIT_SHAPES 不能为空');
+  return shape(seq, at, sandboxId);
+}
+
+const AUDIT_EVENTS: AuditEventDto[] = Array.from({ length: 300 }, (_, i) => auditEvent(300 - i));
 
 export const handlers = [
   // liveness probe：真实契约 GET /api/health 无响应体 schema，getHealth 只读 response.ok/status。
@@ -784,4 +1418,96 @@ export const handlers = [
   }),
 
   http.delete(`${API_BASE}/api/images/:id`, () => new HttpResponse(null, { status: 204 })),
+
+  // ————————————————————————————————————————————————————————————————
+  // 平台级审计流（10 §6.6.1 / F21-5 §3A）。
+  //
+  // ⚠️ 这个替身**真的实现了双向游标**，不是"返回固定一页"：`since` / `before` 语义写错
+  // （尤其 `since` 取"最旧的 n 条"而不是"最新的 n 条"）在前端表现为增量永远追不上头部，
+  // 而一个只会回定长页的替身根本测不出来。取值与顺序对齐 `audit.repository.ts`：
+  // **恒按 seq 降序**，`hasMore` 用「多取一条」判定。
+  //
+  // ⚠️ `severity` 同理，**必须在这里（服务端一侧）筛**：它是逗号分隔多值、后端 `IN (...)`，
+  // 而且是**先筛后取最新 n 条**。替身若不实现它，「仅告警」在 dev / e2e 里会把 info 也显示出来
+  // ——那正是"前端与它自己的替身完全自洽、真后端从没进过回路"的形态。
+  // ————————————————————————————————————————————————————————————————
+  http.get(`${API_BASE}/api/system/audit`, ({ request }) => {
+    const url = new URL(request.url);
+    const num = (key: string): number | undefined => {
+      const raw = url.searchParams.get(key);
+      return raw === null ? undefined : Number(raw);
+    };
+    const since = num('since');
+    const before = num('before');
+    // 互斥：与后端 `audit.controller.ts` 同一个信封（同传 400 VALIDATION_FAILED）。
+    if (since !== undefined && before !== undefined) {
+      return HttpResponse.json(
+        {
+          code: 'VALIDATION_FAILED',
+          message: '请求参数 since 与 before 互斥',
+          retryable: false,
+          sideEffectFree: true,
+        },
+        { status: 400 },
+      );
+    }
+    const limit = num('limit') ?? 200;
+    const category = url.searchParams.get('category');
+    // 逗号分隔多值 → 集合；空串按"没给"处理（后端对非法值 400，这里不模拟那一支）。
+    const severityRaw = url.searchParams.get('severity');
+    const severities =
+      severityRaw === null || severityRaw === ''
+        ? null
+        : severityRaw.split(',').filter((v) => v.length > 0);
+    const subjectId = url.searchParams.get('subjectId');
+    const from = url.searchParams.get('from');
+    const to = url.searchParams.get('to');
+
+    const matched = AUDIT_EVENTS.filter((e) => {
+      if (since !== undefined && e.seq <= since) return false;
+      if (before !== undefined && e.seq >= before) return false;
+      if (category !== null && e.category !== category) return false;
+      if (severities !== null && !severities.includes(e.severity)) return false;
+      if (subjectId !== null && e.subjectId !== subjectId) return false;
+      if (from !== null && Date.parse(e.at) < Date.parse(from)) return false;
+      if (to !== null && Date.parse(e.at) > Date.parse(to)) return false;
+      return true;
+    });
+    // 恒降序；`since` 方向取的同样是**最新的 n 条**（否则增量永远追不上风暴头部）。
+    const body: AuditListDto = { items: matched.slice(0, limit), hasMore: matched.length > limit };
+    return HttpResponse.json(body);
+  }),
+
+  // 导出：前端只触发下载、不解析 body，所以替身给一段字节流 + Content-Disposition 就够了。
+  http.get(`${API_BASE}/api/system/audit/export`, () => auditExportSuccess()),
 ];
+
+function auditExportSuccess(): HttpResponse<Blob> {
+  return new HttpResponse(new Blob(['fake-tar-gz']), {
+    headers: {
+      'content-type': 'application/gzip',
+      'content-disposition': 'attachment; filename="audit-export.tar.gz"',
+    },
+  });
+}
+
+/**
+ * **导出的失败路径替身**（`server.use(auditExportFailureHandler)` 覆盖上面那条）。
+ *
+ * ⚠️ 它不是可有可无的补充：后端刻意保留了「失败时返回 JSON 错误信封」的能力，而这个响应
+ * **没有 `Content-Disposition`**、`content-type` 是 `application/json`——浏览器不会下载它，
+ * 会**把当前标签页导航过去**。前端那个 `<a>` 因此必须带 `target="_blank"`
+ * （见 `system.service.ts` 文件头 ②）：否则整个 SPA 连同用户的筛选与滚动位置一起
+ * 被换成一张裸 JSON 错误页。默认恒 200 的替身让这条路径长期没有现场。
+ */
+export const auditExportFailureHandler = http.get(`${API_BASE}/api/system/audit/export`, () =>
+  HttpResponse.json(
+    {
+      code: 'EXPORT_FAILED',
+      message: '导出失败：磁盘空间不足',
+      retryable: true,
+      sideEffectFree: true,
+    },
+    { status: 500 },
+  ),
+);

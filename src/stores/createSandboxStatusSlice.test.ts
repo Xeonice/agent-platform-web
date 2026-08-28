@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAppStore } from '@/stores';
 
 beforeEach(() => {
@@ -22,7 +22,7 @@ describe('createSandboxStatusSlice（/events 投影 10 §7.4）', () => {
       status: 'creating',
       phase: 'image-pull',
     });
-    expect(useAppStore.getState().sandboxStatuses['sb1']).toEqual({
+    expect(useAppStore.getState().sandboxStatuses['sb1']).toMatchObject({
       status: 'creating',
       phase: 'image-pull',
     });
@@ -181,5 +181,108 @@ describe('失败原因的两条通道写同一字段（S5 收口）', () => {
     expect(entry?.failureCode).toBe('IMAGE_CONTRACT_VIOLATION');
     // 自由文本原样存，不参与判定（码与文本已由后端拆成两列，禁止 parse message 取码）。
     expect(entry?.failureMessage).toBe('command -v tmux exited 1');
+  });
+});
+
+/**
+ * `sandbox.instance_progress` 投影 + 启动计时的**锚点**（10 §7.4）。
+ *
+ * 背景：一次真实的 Task 停在「启动实例」3 分 10 秒、全程零反馈，用户判它卡死。审计流
+ * 事后说清楚了：190529ms 全在 provider 起实例那一步（13GB 镜像本机首次使用）。
+ */
+describe('sandbox.instance_progress 投影 + observedAt 计时锚点（10 §7.4）', () => {
+  it('只落 instanceStartups，**绝不动 sandboxStatuses**（起实例期间 status 恒为 starting）', () => {
+    useAppStore.getState().setSandboxStatus('sb1', 'starting');
+    const before = useAppStore.getState().sandboxStatuses['sb1'];
+    useAppStore.getState().applySandboxEvent({
+      event: 'sandbox.instance_progress',
+      sandboxId: 'sb1',
+      phase: 'starting',
+      imageStaged: false,
+    });
+    expect(useAppStore.getState().instanceStartups['sb1']).toEqual({
+      phase: 'starting',
+      imageStaged: false,
+    });
+    expect(useAppStore.getState().sandboxStatuses['sb1']).toBe(before);
+  });
+
+  it('imageStaged 缺席时投影里也缺席 —— 「说不出」不许被记成 false', () => {
+    useAppStore.getState().applySandboxEvent({
+      event: 'sandbox.instance_progress',
+      sandboxId: 'sb1',
+      phase: 'starting',
+    });
+    expect(useAppStore.getState().instanceStartups['sb1']?.imageStaged).toBeUndefined();
+  });
+
+  it('ready 覆盖 starting（同一格里的前后两段，不是两条并存的文案）', () => {
+    const apply = useAppStore.getState().applySandboxEvent;
+    apply({ event: 'sandbox.instance_progress', sandboxId: 'sb1', phase: 'starting' });
+    apply({ event: 'sandbox.instance_progress', sandboxId: 'sb1', phase: 'ready' });
+    expect(useAppStore.getState().instanceStartups['sb1']?.phase).toBe('ready');
+  });
+
+  it('转入终态 / removed / clear 都会清掉起实例的陈旧文案', () => {
+    const apply = useAppStore.getState().applySandboxEvent;
+    apply({ event: 'sandbox.instance_progress', sandboxId: 'sb1', phase: 'starting' });
+    apply({ event: 'sandbox.status_changed', sandboxId: 'sb1', status: 'running' });
+    expect(useAppStore.getState().instanceStartups['sb1']).toBeUndefined();
+
+    apply({ event: 'sandbox.instance_progress', sandboxId: 'sb2', phase: 'starting' });
+    apply({ event: 'sandbox.removed', sandboxId: 'sb2' });
+    expect(useAppStore.getState().instanceStartups['sb2']).toBeUndefined();
+  });
+
+  it('WS 的 status_changed **产生**计时锚点', () => {
+    useAppStore.getState().applySandboxEvent({
+      event: 'sandbox.status_changed',
+      sandboxId: 'sb1',
+      status: 'starting',
+    });
+    expect(typeof useAppStore.getState().sandboxStatuses['sb1']?.observedAt).toBe('number');
+  });
+
+  it('REST 写入**不产生**锚点 —— DTO 上没有"何时进入这个状态"这回事', () => {
+    // 这一条是这个字段最容易被"顺手改好"的地方：在 setSandboxStatus 里也盖一个
+    // Date.now() 看起来完全合理，代价是一个 3 分钟前就开始的等待被显示成「已等待 0:02」。
+    useAppStore.getState().setSandboxStatus('sb1', 'starting');
+    expect(useAppStore.getState().sandboxStatuses['sb1']?.observedAt).toBeUndefined();
+  });
+
+  it('同一个 status 重放不重置锚点（WS 重连会重放最后一条状态事件）', () => {
+    const apply = useAppStore.getState().applySandboxEvent;
+    apply({ event: 'sandbox.status_changed', sandboxId: 'sb1', status: 'starting' });
+    const first = useAppStore.getState().sandboxStatuses['sb1']?.observedAt;
+    apply({ event: 'sandbox.status_changed', sandboxId: 'sb1', status: 'starting' });
+    expect(useAppStore.getState().sandboxStatuses['sb1']?.observedAt).toBe(first);
+  });
+
+  it('状态**变了**才换锚点 —— 每一格各自计时', () => {
+    // ⚠️ 必须假时钟：两次 `Date.now()` 落在同一毫秒里时，「重取了」和「沿用了」长得
+    // 一模一样，这条断言就会在**实现是错的**时候照样绿。
+    vi.useFakeTimers();
+    try {
+      const apply = useAppStore.getState().applySandboxEvent;
+      vi.setSystemTime(1_000);
+      apply({ event: 'sandbox.status_changed', sandboxId: 'sb1', status: 'creating' });
+      expect(useAppStore.getState().sandboxStatuses['sb1']?.observedAt).toBe(1_000);
+      vi.setSystemTime(61_000);
+      apply({ event: 'sandbox.status_changed', sandboxId: 'sb1', status: 'starting' });
+      expect(useAppStore.getState().sandboxStatuses['sb1']?.observedAt).toBe(61_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('REST 刷新恢复到**同一个** status 时保住已有锚点，计时不会中途消失', () => {
+    useAppStore.getState().applySandboxEvent({
+      event: 'sandbox.status_changed',
+      sandboxId: 'sb1',
+      status: 'starting',
+    });
+    const anchor = useAppStore.getState().sandboxStatuses['sb1']?.observedAt;
+    useAppStore.getState().setSandboxStatus('sb1', 'starting');
+    expect(useAppStore.getState().sandboxStatuses['sb1']?.observedAt).toBe(anchor);
   });
 });

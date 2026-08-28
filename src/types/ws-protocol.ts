@@ -104,8 +104,34 @@ export const SandboxEventSchema = z.discriminatedUnion('event', [
     // 失败原因一律取 sandbox.status_changed.errorCode / SandboxResponseDto.failureCode。
     errorCode: z.string().optional(),
   }),
+  // 起实例那一步的两个**边界**（10 §7.4）。同样单开一条、同样因为那段时间 status 恒为
+  // 'starting'——实测冷镜像 190529ms（13GB 现拉 + 铺 rootfs），而 CPU 是 0%、网络没连接，
+  // 用户和排查的人都会判它卡死。
+  //
+  // ⚠️ **没有百分比、也没有"已耗时"，这两条缺席都是刻意的**：
+  //   · provider 那一步就是一个 await，只有「开始」和「结束」，编一个百分比就是幽灵字段
+  //     （本仓已经因为同一个原因删过 clone_progress.totalBytes）；
+  //   · "已等待多久"前端自己就能算——它知道自己是什么时候收到 starting 的那一刻。
+  // 剩下的 `imageStaged` 才是后端**独有**的事实：本机有没有这份镜像的位。
+  // **缺席 ≠ false**：缺席是「provider 说不出」，false 是「确实没有」，只有后者能拿去
+  // 当"你要等几分钟"的理由。
+  z.object({
+    event: z.literal('sandbox.instance_progress'),
+    sandboxId: z.string(),
+    phase: z.enum(['starting', 'ready']),
+    imageStaged: z.boolean().optional(),
+  }),
 ]);
 export type SandboxEvent = z.infer<typeof SandboxEventSchema>;
+
+/**
+ * `sandbox.instance_progress.phase` 的闭集（从 schema 反推，不手抄）——文案层按它分支。
+ * 后端加一个 phase ⇒ 这里自动变宽 ⇒ 文案层的穷举 switch 编译期报红。
+ */
+export type InstanceStartupPhase = Extract<
+  SandboxEvent,
+  { event: 'sandbox.instance_progress' }
+>['phase'];
 
 // ————————————————————————————————————————————————————————————————
 // /tasks 通道（S6 无头 Task）：判别键 `type`，**双向**（客户端发订阅、服务端推事件）。
@@ -292,7 +318,8 @@ export const WS_PROTOCOL_CANONICAL =
   'project.clone_progress{projectId,phase,stage?,percent?,objectsDone?,objectsTotal?,' +
   'receivedBytes?,bytesPerSecond?,errorCode?},' +
   'runtime-auth.status_changed{runtime},' +
-  'runtime.install_progress{sandboxId,runtime,status,versionDetected?,errorCode?}|' +
+  'runtime.install_progress{sandboxId,runtime,status,versionDetected?,errorCode?},' +
+  'sandbox.instance_progress{sandboxId,phase,imageStaged?}|' +
   'tasks.client:subscribe{taskId,fromSeq?},unsubscribe{taskId},ping|' +
   'tasks.server:event{taskId,seq,event},caught_up{taskId,firstSeq,seq},' +
   'exit{taskId,status,exitCode?},error{taskId,code},pong';
