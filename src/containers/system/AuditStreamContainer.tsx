@@ -15,7 +15,6 @@
 import { useCallback, useState } from 'react';
 import { useAuditFilters } from '@/hooks/system/useAuditFilters';
 import { useAuditStream } from '@/hooks/system/useAuditStream';
-import { useExportAuditLogs } from '@/hooks/system/useExportAuditLogs';
 import { AuditStreamCardView } from '@/views/system/AuditStreamCard.view';
 import { AuditFilterBarView } from '@/views/system/AuditFilterBar.view';
 
@@ -29,7 +28,6 @@ export function AuditStreamContainer({ initialSubjectId }: AuditStreamContainerP
   const [expandedSeq, setExpandedSeq] = useState<number | null>(null);
 
   const stream = useAuditStream(f.filters);
-  const exportLogs = useExportAuditLogs();
 
   const toggleDetail = useCallback((seq: number) => {
     setExpandedSeq((current) => (current === seq ? null : seq));
@@ -69,7 +67,6 @@ export function AuditStreamContainer({ initialSubjectId }: AuditStreamContainerP
       onRetry={stream.retry}
       onRetryLiveUpdate={stream.retryLiveUpdate}
       onClearFilters={clearFilters}
-      onExport={exportLogs}
       filterBar={
         <AuditFilterBarView
           category={f.category}

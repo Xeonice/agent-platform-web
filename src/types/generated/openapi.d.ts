@@ -103,23 +103,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Liveness probe (passcode-exempt) */
-        get: operations["HealthController_health"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -687,6 +670,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Liveness probe (passcode-exempt) */
+        get: operations["HealthController_health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/init-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 冷启动首屏据此决定是否进初始化向导；附上次出网检测结果（不重跑检测，进向导直接渲染历史结果） */
+        get: operations["SystemController_initStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/init": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 完成初始化：跑一轮出网检测（复用 /diagnose 的探测）+ 存代理 + 写 initialized=true。一次性操作，已初始化返 409 */
+        post: operations["SystemController_initialize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 运行期配置（代理 / 公开地址 / 版本）。⛔ 永不回显口令 hash */
+        get: operations["SystemController_getSettings"];
+        /** 改运行期配置（proxyConfig / publicBaseUrl；null=清空，缺席=不改）。⚠️ 不写 initialized */
+        put: operations["SystemController_updateSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** CPU / RAM / 磁盘水位 + 保留卷占用 + 活跃 Task 数 */
+        get: operations["SystemController_getResources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 运维看板：已注册 provider / runtime / imageSpec + capabilities + 健康与最近 1h 失败率。⚠️ 与 GET /api/providers 是两个端点 */
+        get: operations["SystemController_getProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/diagnose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 八项诊断，SSE 逐项流式（帧类型手写于两仓 sse-protocol.ts）。八项并行、单项超时 5s，整轮 ≈ 最慢那项；断连即中止剩余检查 */
+        post: operations["SystemController_diagnose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1111,6 +1214,116 @@ export interface components {
             } | null;
             changed: boolean;
         };
+        InitStatusResponseDto: {
+            initialized: boolean;
+            initializedAt?: string;
+            lastConnectivityCheck?: {
+                target: string;
+                ok: boolean;
+                latencyMs?: number;
+                hint?: string;
+                modelApi: boolean;
+            }[];
+            lastConnectivityCheckAt?: string;
+        };
+        InitRequestDto: {
+            proxyConfig?: {
+                httpProxy?: string;
+                httpsProxy?: string;
+                noProxy?: string;
+            };
+            acknowledgeOffline?: boolean;
+        };
+        SystemSettingsResponseDto: {
+            initialized: boolean;
+            proxyConfig?: {
+                httpProxy?: string;
+                httpsProxy?: string;
+                noProxy?: string;
+            };
+            publicBaseUrl?: string;
+            accessPasscodeEnabled: boolean;
+            accessPasscodeUpdatedAt?: string;
+            version: {
+                platform: string;
+                node: string;
+            };
+        };
+        UpdateSystemSettingsDto: {
+            proxyConfig?: {
+                httpProxy?: string;
+                httpsProxy?: string;
+                noProxy?: string;
+            } | null;
+            publicBaseUrl?: string | null;
+        };
+        SystemResourcesResponseDto: {
+            cpu: {
+                cores: number;
+                loadAvg1m: number;
+                usedPercent: number;
+                /** @enum {string} */
+                level: "ok" | "warn" | "critical";
+            };
+            ram: {
+                totalBytes: number;
+                usedBytes: number;
+                usedPercent: number;
+                /** @enum {string} */
+                level: "ok" | "warn" | "critical";
+            };
+            disk: {
+                path: string;
+                totalBytes: number;
+                usedBytes: number;
+                availableBytes: number;
+                usedPercent: number;
+                /** @enum {string} */
+                level: "ok" | "warn" | "critical";
+                reservedPercent: number;
+            };
+            retainedVolumes: {
+                count: number;
+                totalBytes: number;
+                percentOfDisk: number;
+                /** @enum {string} */
+                level: "ok" | "warn" | "critical";
+                oldestExpiresAt?: string;
+                truncated: boolean;
+            };
+            activeTasks: number;
+        };
+        SystemProvidersResponseDto: {
+            providers: {
+                id: string;
+                capabilities: {
+                    spawnTty: boolean;
+                    volumeMount: boolean;
+                    updateResources: boolean;
+                    pauseResume: boolean;
+                    snapshot: boolean;
+                    watchEvents: boolean;
+                    headlessTask: boolean;
+                };
+                isDefault: boolean;
+                healthy: boolean;
+                recentFailureRate?: number;
+                sampleSize: number;
+                failureCount: number;
+            }[];
+            runtimes: {
+                id: string;
+                displayName: string;
+                vendor: string;
+                authMethods: string[];
+                credentialConfigured: boolean;
+            }[];
+            imageSpecs: {
+                id: string;
+                isDefault: boolean;
+            }[];
+            healthWindowMs: number;
+        };
         ErrorEnvelope: {
             code: string;
             message: string;
@@ -1271,23 +1484,6 @@ export interface operations {
         };
     };
     StreamableHttpController_handleDeleteRequest: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    HealthController_health: {
         parameters: {
             query?: never;
             header?: never;
@@ -2180,6 +2376,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CheckImageUpdateResponseDto"];
+                };
+            };
+        };
+    };
+    HealthController_health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SystemController_initStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InitStatusResponseDto"];
+                };
+            };
+        };
+    };
+    SystemController_initialize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InitRequestDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InitStatusResponseDto"];
+                };
+            };
+        };
+    };
+    SystemController_getSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemSettingsResponseDto"];
+                };
+            };
+        };
+    };
+    SystemController_updateSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSystemSettingsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemSettingsResponseDto"];
+                };
+            };
+        };
+    };
+    SystemController_getResources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemResourcesResponseDto"];
+                };
+            };
+        };
+    };
+    SystemController_getProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemProvidersResponseDto"];
+                };
+            };
+        };
+    };
+    SystemController_diagnose: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE 帧流：event: start / check / done。帧的 TypeScript 类型是手写的（两仓 sse-protocol.ts，B5 跨仓对账），openapi 只声明 content-type */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
         };

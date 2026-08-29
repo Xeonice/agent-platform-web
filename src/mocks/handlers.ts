@@ -30,6 +30,14 @@ import type {
   ValidationOutcomeDto,
 } from '@/types/image';
 import type { AuditEventDto, AuditListDto } from '@/types/audit';
+import { SSE_DIAGNOSE_SCHEMA_HASH } from '@/types/sse-protocol';
+import type { DiagnoseServerFrame } from '@/types/sse-protocol';
+import type {
+  InitStatusDto,
+  SystemProvidersDto,
+  SystemResourcesDto,
+  SystemSettingsDto,
+} from '@/types/system';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
@@ -1480,6 +1488,48 @@ export const handlers = [
 
   // 导出：前端只触发下载、不解析 body，所以替身给一段字节流 + Content-Disposition 就够了。
   http.get(`${API_BASE}/api/system/audit/export`, () => auditExportSuccess()),
+
+  // ————————————————————————————————————————————————————————————————
+  // 系统状态与初始化的六个端点（10 §6.6 / F21-5 / F21-8）。
+  //
+  // ⚠️ 三个数值上的纪律（12 §3.4「替身的值不能凭空」）：
+  //  ① **每个维度的 `level` 与 `usedPercent` 必须自洽**，且用后端那两套阈值算
+  //     （CPU/RAM 80/95、磁盘 **75/90**，`system-resources.service.ts`）。替身随手把
+  //     `disk: {usedPercent: 82, level: 'ok'}` 写在一起，前端"整体取最差维度"那条就永远
+  //     测不出错——它拿到的输入本来就是错的。
+  //  ② **`recentFailureRate` 在 `sampleSize === 0` 时缺席**（0/0 不是 0%）。替身补一个
+  //     `0` 上去，「无样本」这一档在 dev / Storybook 里就再也不出现。
+  //  ③ **诊断是真的 SSE 流**：`event: X\ndata: {...}\n\n`，一帧一段。回一个 JSON 数组
+  //     的替身能让前端"看着能跑"，而真后端上第一帧就解析不了。
+  // ————————————————————————————————————————————————————————————————
+  http.get(`${API_BASE}/api/system/init-status`, () => HttpResponse.json(initStatusDto())),
+
+  http.post(`${API_BASE}/api/system/init`, () =>
+    HttpResponse.json(initStatusDto({ initialized: true, initializedAt: isoIn(0) }), {
+      // ⚠️ 201 而不是 200：后端显式标了 `@ApiCreatedResponse`（Nest 对 POST 回 201）。
+      status: 201,
+    }),
+  ),
+
+  http.get(`${API_BASE}/api/system/settings`, () => HttpResponse.json(systemSettingsDto())),
+
+  http.put(`${API_BASE}/api/system/settings`, async ({ request }) => {
+    const body: unknown = await request.json();
+    const proxy =
+      typeof body === 'object' && body !== null && 'proxyConfig' in body
+        ? Reflect.get(body, 'proxyConfig')
+        : undefined;
+    // 三态：`null` = 清空、缺席 = 不改、有值 = 改。替身照做，否则前端写出一个
+    // "用户没动它 ⇒ 传 null" 的调用而测试全绿，真后端上会把代理配置清掉。
+    if (proxy === null) return HttpResponse.json(systemSettingsDto({ proxyConfig: undefined }));
+    return HttpResponse.json(systemSettingsDto());
+  }),
+
+  http.get(`${API_BASE}/api/system/resources`, () => HttpResponse.json(systemResourcesDto())),
+
+  http.get(`${API_BASE}/api/system/providers`, () => HttpResponse.json(systemProvidersDto())),
+
+  http.post(`${API_BASE}/api/system/diagnose`, () => diagnoseSseResponse(DIAGNOSE_FRAMES)),
 ];
 
 function auditExportSuccess(): HttpResponse<Blob> {
@@ -1510,4 +1560,283 @@ export const auditExportFailureHandler = http.get(`${API_BASE}/api/system/audit/
     },
     { status: 500 },
   ),
+);
+
+// ————————————————————————————————————————————————————————————————
+// 系统状态 / 初始化的替身数据与工厂
+// ————————————————————————————————————————————————————————————————
+
+function initStatusDto(overrides: Partial<InitStatusDto> = {}): InitStatusDto {
+  return {
+    initialized: true,
+    initializedAt: isoIn(-30 * DAY),
+    lastConnectivityCheck: [
+      { target: 'https://api.openai.com', ok: true, latencyMs: 182, modelApi: true },
+      {
+        target: 'ghcr.io',
+        ok: false,
+        hint: '连接超时；如在内网请配置 HTTP_PROXY',
+        modelApi: false,
+      },
+    ],
+    lastConnectivityCheckAt: isoIn(-30 * DAY),
+    ...overrides,
+  };
+}
+
+function systemSettingsDto(overrides: Partial<SystemSettingsDto> = {}): SystemSettingsDto {
+  return {
+    initialized: true,
+    proxyConfig: { httpProxy: 'http://127.0.0.1:7890', noProxy: 'localhost,127.0.0.1' },
+    publicBaseUrl: 'http://localhost:3000',
+    accessPasscodeEnabled: false,
+    // ⛔ 永不回显口令 hash —— 后端的 DTO 里就没有这个字段，替身也不许"顺手"造一个。
+    version: { platform: '1.1.0', node: process.version },
+    ...overrides,
+  };
+}
+
+const GB = 1024 ** 3;
+
+/**
+ * 资源水位。**每个维度的 `level` 都由它自己的 `usedPercent` 按后端阈值算出来**，
+ * 不是随手填的：CPU/RAM 用 80/95，磁盘用 **75/90**（两套不同，见 `system-resources.service.ts`）。
+ */
+function systemResourcesDto(): SystemResourcesDto {
+  const diskTotal = 200 * GB;
+  const diskUsed = 150 * GB;
+  const retainedBytes = 45 * GB;
+  return {
+    cpu: { cores: 8, loadAvg1m: 4.2, usedPercent: 52.5, level: 'ok' },
+    ram: { totalBytes: 16 * GB, usedBytes: 5.8 * GB, usedPercent: 36.3, level: 'ok' },
+    disk: {
+      path: '/data',
+      totalBytes: diskTotal,
+      usedBytes: diskUsed,
+      availableBytes: diskTotal - diskUsed,
+      usedPercent: 75,
+      // 75% 恰好踩在磁盘的 ⚠️ 线上（后端 `percent >= 75 ⇒ warn`）——替身刻意站在边界上，
+      // 因为"整体取最差维度"这条只有在**某一维度不是 ok** 的时候才有得测。
+      level: 'warn',
+      reservedPercent: 15,
+    },
+    retainedVolumes: {
+      count: 12,
+      totalBytes: retainedBytes,
+      percentOfDisk: 22.5,
+      level: 'ok',
+      oldestExpiresAt: isoIn(6 * DAY),
+      truncated: false,
+    },
+    activeTasks: 5,
+  };
+}
+
+/**
+ * provider 健康看板。
+ *
+ * ⚠️ **第一个 provider 有样本、第二个没有**：`recentFailureRate` 在无样本时**缺席**
+ * （0/0 不是 0%，后端刻意的）。两种都喂，才让「无样本」那一档在 dev / Storybook 里真出现。
+ * ⚠️ 能力位逐位取自 `PROVIDER_REGISTRY`（同一份注册表，不另抄一遍）。
+ */
+function systemProvidersDto(): SystemProvidersDto {
+  const [first, second] = PROVIDER_REGISTRY;
+  const providers: SystemProvidersDto['providers'] = [];
+  if (first !== undefined) {
+    providers.push({
+      id: first.name,
+      capabilities: first.capabilities,
+      isDefault: first.isDefault,
+      healthy: true,
+      // 5% ⇒ ⚠️（>1%）但仍 healthy（未越过 10% 的 ❌ 线）——这正是「只看 healthy 会把
+      // 5% 画成全绿」那个错法的现场。
+      recentFailureRate: 0.05,
+      sampleSize: 40,
+      failureCount: 2,
+    });
+  }
+  if (second !== undefined) {
+    providers.push({
+      id: second.name,
+      capabilities: second.capabilities,
+      isDefault: second.isDefault,
+      // 无样本 ⇒ 后端把 healthy 置 true，但**不给** recentFailureRate。
+      healthy: true,
+      sampleSize: 0,
+      failureCount: 0,
+    });
+  }
+  return {
+    providers,
+    runtimes: RUNTIME_REGISTRY.map((r) => ({
+      id: r.id,
+      displayName: r.displayName,
+      vendor: r.vendor,
+      authMethods: [...r.authMethods],
+      credentialConfigured: r.credentialStatus !== 'none',
+    })),
+    imageSpecs: [{ id: 'oci', isDefault: true }],
+    healthWindowMs: 60 * 60 * 1000,
+  };
+}
+
+/**
+ * 诊断八帧（顺序 = `DIAGNOSE_CHECK_IDS`）。
+ *
+ * ⚠️ 这组取值刻意覆盖四种结论 + 两条产品硬要求：
+ *  · `port-conflict` 是 **fail**，`summary` 里带着**端口号 · 进程名与 pid · 平台原本要用它
+ *    做什么**（P21-5 §9B：只报"被占用"等于把诊断最有用的部分丢掉）；
+ *  · `preset-image` 是 **info + step:'staged'**（P21-5 §9A 第 5 步**不是失败**）。
+ *    替身把它写成 warn/fail，前端那条"info 渲染 ℹ️"的分支在 dev 里就永远看不到。
+ */
+const DIAGNOSE_FRAMES: readonly DiagnoseServerFrame[] = [
+  {
+    event: 'start',
+    checks: [
+      { id: 'container-runtime', label: '容器运行时可达' },
+      { id: 'dev-kvm', label: '/dev/kvm 可用（boxlite 微 VM）' },
+      { id: 'disk-space', label: '磁盘余量（DATA_ROOT）' },
+      { id: 'port-conflict', label: '端口占用' },
+      { id: 'outbound-network', label: '外网连通（模型 API / 镜像仓库）' },
+      { id: 'ws-loopback', label: 'WS 回环' },
+      { id: 'data-root-fs', label: 'DATA_ROOT 文件系统' },
+      { id: 'preset-image', label: '预制镜像就绪' },
+    ],
+    timeoutMs: 5000,
+  },
+  {
+    event: 'check',
+    id: 'container-runtime',
+    label: '容器运行时可达',
+    status: 'ok',
+    summary: 'aio：docker socket 可达（/var/run/docker.sock），版本 27.3.1',
+    durationMs: 142,
+  },
+  {
+    event: 'check',
+    id: 'dev-kvm',
+    label: '/dev/kvm 可用（boxlite 微 VM）',
+    status: 'ok',
+    summary: '/dev/kvm 存在且当前用户可读写',
+    durationMs: 6,
+  },
+  {
+    event: 'check',
+    id: 'disk-space',
+    label: '磁盘余量（DATA_ROOT）',
+    status: 'ok',
+    summary: '/data 剩余 50 GB（共 200 GB，已用 75%）',
+    durationMs: 11,
+  },
+  {
+    event: 'check',
+    id: 'port-conflict',
+    label: '端口占用',
+    status: 'fail',
+    // ⚠️ 三样齐全：端口号 · 进程名 (pid) · 平台原本要用它做什么。
+    summary:
+      '端口 3000（平台 HTTP/WS 服务（REST · /events · /terminal · /tasks 同一端口））被 com.docke (pid 41235) 占用',
+    hint: '先确认它是什么：lsof -nP -iTCP:3000 -sTCP:LISTEN；确实该让路就停掉它，否则给平台换一个端口：PORT=<其它端口> 重启平台',
+    detail: {
+      conflicts: [
+        {
+          port: 3000,
+          purpose: '平台 HTTP/WS 服务（REST · /events · /terminal · /tasks 同一端口）',
+          holders: [{ pid: 41235, command: 'com.docke' }],
+        },
+      ],
+    },
+    durationMs: 312,
+  },
+  {
+    event: 'check',
+    id: 'outbound-network',
+    label: '外网连通（模型 API / 镜像仓库）',
+    status: 'warn',
+    summary: 'api.openai.com 可达（182ms）；ghcr.io 连接超时',
+    hint: 'HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 重启平台',
+    durationMs: 5000,
+  },
+  {
+    event: 'check',
+    id: 'ws-loopback',
+    label: 'WS 回环',
+    status: 'ok',
+    summary: '本机 /events 握手 + 回环帧往返 8ms',
+    durationMs: 24,
+  },
+  {
+    event: 'check',
+    id: 'data-root-fs',
+    label: 'DATA_ROOT 文件系统',
+    status: 'warn',
+    summary: '/data 文件系统为 ext4，不支持 reflink —— CoW 加速功能受限',
+    hint: '换用支持 reflink 的文件系统（Btrfs / XFS）承载 DATA_ROOT',
+    durationMs: 9,
+  },
+  {
+    event: 'check',
+    id: 'preset-image',
+    label: '预制镜像就绪',
+    // ⚠️ **info 不是 warn**：镜像是好的，只是本机还没铺开（P21-5 §9A 第 5 步）。
+    status: 'info',
+    step: 'staged',
+    summary:
+      '预制镜像已就绪，但尚未在本机铺开 —— **首个任务需要数分钟准备镜像**（13GB 镜像实测冷启动约 190 秒），之后每次 3–4 秒',
+    hint: '不需要任何操作：第一个任务会自动拉取并铺开；想提前铺可以先跑一个空任务',
+    durationMs: 431,
+  },
+  {
+    event: 'done',
+    okCount: 4,
+    infoCount: 1,
+    warnCount: 2,
+    // ⚠️ 含 timeout（这一轮没有超时项，所以就是那 1 个 fail）。
+    failCount: 1,
+    // ⚠️ 八项**并行** ⇒ 整轮 ≈ 最慢那项（5000ms），不是各项之和。
+    totalMs: 5012,
+  },
+];
+
+/**
+ * 把若干帧写成一条真的 SSE 流。
+ *
+ * ⚠️ `event:` 行与帧体里的 `event` 字段**都要有**（后端 `SseWriter` 就是这么写的）：
+ * 前者给 `EventSource` 那条消费路径，后者给 `fetch` + `ReadableStream` 那条。
+ * 替身少写 `event:` 行今天不会有人发现（本仓走后者），但它会让"照替身写的解析器"
+ * 在换回 EventSource 的那天静默收不到任何东西。
+ */
+export function diagnoseSseResponse(
+  frames: readonly DiagnoseServerFrame[],
+): HttpResponse<ReadableStream<Uint8Array>> {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const frame of frames) {
+        controller.enqueue(
+          encoder.encode(`event: ${frame.event}\ndata: ${JSON.stringify(frame)}\n\n`),
+        );
+      }
+      controller.close();
+    },
+  });
+  return new HttpResponse(stream, {
+    headers: {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      'x-schema-hash': SSE_DIAGNOSE_SCHEMA_HASH,
+    },
+  });
+}
+
+/**
+ * **断流替身**（`server.use(diagnoseAbortedHandler)`）：发完前三项就把流掐掉，
+ * 一个 `done` 帧都不给。
+ *
+ * ⚠️ 它不是可有可无的补充：F21-5 §8 要求断流时**保留已到达项** + 显示「诊断中断」。
+ * 默认那条恒完整的替身让这条路径长期没有现场，而"中断时把已有结果一起清空"这种写法
+ * 在完整流下表现完全正常。
+ */
+export const diagnoseAbortedHandler = http.post(`${API_BASE}/api/system/diagnose`, () =>
+  diagnoseSseResponse(DIAGNOSE_FRAMES.slice(0, 3)),
 );
