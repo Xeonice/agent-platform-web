@@ -76,7 +76,6 @@ export interface AuditStreamCardProps {
   /** 只重试增量通道（不重拉历史页）。 */
   onRetryLiveUpdate: () => void;
   onClearFilters: () => void;
-  onExport: () => void;
 }
 
 export function AuditStreamCardView({
@@ -100,7 +99,6 @@ export function AuditStreamCardView({
   onRetry,
   onRetryLiveUpdate,
   onClearFilters,
-  onExport,
 }: AuditStreamCardProps) {
   return (
     <section
@@ -111,11 +109,10 @@ export function AuditStreamCardView({
         <h2 id="audit-stream-heading" className="text-base font-semibold">
           🧾 审计流
         </h2>
-        {/* [导出日志] 的规格归属 DiagnosticsCard（§3），本切片里诊断卡尚未落地，
-            先挂在这里；导出物是后端打的 tar.gz，前端不解析、也不自己标注截取范围。 */}
-        <Button type="button" size="sm" variant="outline" onClick={onExport}>
-          导出日志
-        </Button>
+        {/* ⚠️ **[导出日志] 不在这里** —— 它的规格归属 `DiagnosticsCard`（F21-5 §3）。
+            诊断卡落地之前它临时挂在本卡上，两张卡同屏之后就成了**同一页上两个同名按钮**：
+            e2e 的 `getByRole('button', { name: '导出日志' })` 当场 strict-mode 违规，而更要紧的是
+            用户会以为这两个按钮导出的是不同的东西（其实是同一个 tar.gz 三件套）。 */}
       </header>
 
       {filterBar}

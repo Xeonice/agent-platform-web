@@ -67,7 +67,6 @@ const meta: Meta<typeof AuditStreamCardView> = {
     onRetry: fn(),
     onRetryLiveUpdate: fn(),
     onClearFilters: fn(),
-    onExport: fn(),
   },
   decorators: [
     (Story) => (

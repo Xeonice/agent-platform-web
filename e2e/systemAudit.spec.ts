@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { AuditEventDto, AuditListDto } from '../src/types/audit';
+import type { SystemProvidersDto, SystemResourcesDto } from '../src/types/system';
 
 // F21-5 §7.4（v1.1 场景 5–7）+ §9.2 VS-3 的真浏览器那一段。
 // REST 用 `page.route`（E2E 层**不启 MSW**，12 §4.1：Service Worker 会让请求对 page.route 不可见）。
@@ -55,9 +56,43 @@ async function routeAudit(
   return seen;
 }
 
+/**
+ * 四张卡（资源 / provider / 连接 / 诊断）与审计卡**同屏共存**（P21-5 §10.1：两者不合并）。
+ *
+ * ⚠️ 本文件测的是审计那一块，但页面挂载时资源与 provider 两个 query 会真的发出去 ——
+ * 不 stub 它们，这些用例就依赖"CI 里恰好没有后端、于是请求失败得很快"，那是**用环境
+ * 兜住的测试**。stub 掉之后，本文件的每一条断言都只取决于审计那条流。
+ */
+const GB = 1024 ** 3;
+const RESOURCES: SystemResourcesDto = {
+  cpu: { cores: 8, loadAvg1m: 0.8, usedPercent: 10, level: 'ok' },
+  ram: { totalBytes: 16 * GB, usedBytes: 3.2 * GB, usedPercent: 20, level: 'ok' },
+  disk: {
+    path: '/data',
+    totalBytes: 200 * GB,
+    usedBytes: 120 * GB,
+    availableBytes: 80 * GB,
+    usedPercent: 60,
+    level: 'ok',
+    reservedPercent: 15,
+  },
+  retainedVolumes: { count: 0, totalBytes: 0, percentOfDisk: 0, level: 'ok', truncated: false },
+  activeTasks: 0,
+};
+const SYSTEM_PROVIDERS: SystemProvidersDto = {
+  providers: [],
+  runtimes: [],
+  imageSpecs: [],
+  healthWindowMs: 3_600_000,
+};
+
 test.describe('F21-5 审计流', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+    await page.route('**/api/system/resources', (route) => route.fulfill({ json: RESOURCES }));
+    await page.route('**/api/system/providers', (route) =>
+      route.fulfill({ json: SYSTEM_PROVIDERS }),
+    );
   });
 
   test('设置菜单可进入系统状态页，审计区渲染人话 summary（不是 JSON 串）', async ({ page }) => {
@@ -261,6 +296,51 @@ test.describe('F21-5 审计流', () => {
     await expect(page.getByText('类别：凭证')).toBeVisible();
     await expect(page.getByText('当前筛选无匹配记录')).toBeVisible();
     await expect(page.getByText('该类事件平台尚未记录')).toHaveCount(0);
+  });
+
+  // ————————————————————————————————————————————————————————————————
+  // 四张卡与审计卡同屏（F21-5 §3 组件树 · P21-5 §10.1「两种日志不合并」）
+  // ————————————————————————————————————————————————————————————————
+  test('资源 / provider / 连接 / 诊断四张卡与审计卡同屏共存，且互不合并', async ({ page }) => {
+    await page.route('**/api/system/resources', (route) =>
+      route.fulfill({
+        json: {
+          ...RESOURCES,
+          // 磁盘 96% 而 CPU/RAM 正常：整体取**最差维度**（审计 P1-9）。
+          disk: {
+            path: '/data',
+            totalBytes: 200 * GB,
+            usedBytes: 192 * GB,
+            availableBytes: 8 * GB,
+            usedPercent: 96,
+            level: 'critical',
+            reservedPercent: 15,
+          },
+        } satisfies SystemResourcesDto,
+      }),
+    );
+    await routeAudit(page, (q) =>
+      q.has('since') ? { items: [], hasMore: false } : { items: [ev(1200)], hasMore: false },
+    );
+
+    await page.goto('/settings/system');
+
+    // 四张卡各自的标题都在（组件树 §3）。
+    await expect(page.getByRole('heading', { name: '📊 资源池水位' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '🏃 Provider 状态' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '🌐 连接状态' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '🔧 诊断' })).toBeVisible();
+    // ⚠️ 审计卡是**另一个区块**，不是被并进任何一张卡里（P21-5 §10.1）。
+    await expect(page.getByRole('heading', { name: '🧾 审计流' })).toBeVisible();
+    await expect(page.getByTestId('audit-row-1200')).toBeVisible();
+
+    // ⭐ 取最差维度：平均会把这台机器算成健康，而它一个 Task 都建不出来。
+    await expect(page.getByText('资源耗尽，无法创建新 Task')).toBeVisible();
+    await expect(page.getByText('资源充足')).toHaveCount(0);
+
+    // 诊断还没跑过 ⇒ **不画八行占位**（清单由服务端首帧下发，不是本地常量）。
+    await expect(page.getByTestId('diagnostic-item-container-runtime')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '重新诊断' })).toBeEnabled();
   });
 
   test('接口 500 ⇒ 「加载失败」，且页面上没有「暂无记录」', async ({ page }) => {
