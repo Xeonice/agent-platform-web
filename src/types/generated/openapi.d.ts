@@ -260,6 +260,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sandboxes/{id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start a stopped sandbox. Returns as soon as the start is accepted; progress on WS. */
+        post: operations["SandboxController_start"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandboxes/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a running sandbox, keeping its instance and workspace */
+        post: operations["SandboxController_stop"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sandboxes/{id}/exec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run one non-interactive command in a sandbox (TTY goes over WS) */
+        post: operations["SandboxController_exec"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sandboxes/{id}/runtimes/{rt}/tasks": {
         parameters: {
             query?: never;
@@ -739,6 +790,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/access-passcode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 启用 / 重新生成 / 关闭访问口令。enable+regenerate 一次性返回 16 位明文，此后只存 hash；重新生成不影响已通过的 session */
+        put: operations["SystemController_setAccessPasscode"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/resources": {
         parameters: {
             query?: never;
@@ -878,6 +946,14 @@ export interface components {
             version: number;
             failureCode?: string;
             failureMessage?: string;
+        };
+        ExecInSandboxDto: {
+            command: string;
+        };
+        ExecResultResponseDto: {
+            stdout: string;
+            stderr: string;
+            exitCode: number;
         };
         DestroySandboxDto: {
             keepVolume?: boolean;
@@ -1256,6 +1332,14 @@ export interface components {
                 noProxy?: string;
             } | null;
             publicBaseUrl?: string | null;
+        };
+        AccessPasscodeRequestDto: {
+            /** @enum {string} */
+            action: "enable" | "regenerate" | "disable";
+        };
+        AccessPasscodeResponseDto: {
+            enabled: boolean;
+            passcode?: string;
         };
         SystemResourcesResponseDto: {
             cpu: {
@@ -1790,6 +1874,73 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    SandboxController_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxResponseDto"];
+                };
+            };
+        };
+    };
+    SandboxController_stop: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxResponseDto"];
+                };
+            };
+        };
+    };
+    SandboxController_exec: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecInSandboxDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecResultResponseDto"];
+                };
             };
         };
     };
@@ -2477,6 +2628,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemSettingsResponseDto"];
+                };
+            };
+        };
+    };
+    SystemController_setAccessPasscode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccessPasscodeRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessPasscodeResponseDto"];
                 };
             };
         };
