@@ -29,6 +29,7 @@ vi.mock('@/hooks/sandbox/useSandboxEventsSocket', () => ({
 import { WorkbenchContainer } from '@/containers/workbench/WorkbenchContainer';
 import { useAppStore } from '@/stores';
 import type { ProjectDto } from '@/types/project';
+import type { InitStatusDto } from '@/types/system';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
@@ -472,5 +473,109 @@ describe('WS 基址', () => {
     // ⚠️ 分开断言：上一句在默认值是 `ws://…` 时会红，但如果哪天有人改成别的
     // 非空字面量（比如 '/'），只看 toBe('') 说不出「问题是它绝对了」。
     expect(eventsSocket.lastBase).not.toMatch(/^wss?:\/\//);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// ⑤ 离线模式的跨页影响（F21-8 §4 / §9.1 #16、#17 / P21-8 §7 置灰清单）
+// ————————————————————————————————————————————————————————————————
+describe('WorkbenchContainer · 离线模式下的 [+ 新任务]', () => {
+  const OFFLINE_STATUS: InitStatusDto = {
+    initialized: true,
+    lastConnectivityCheck: [
+      { target: 'api.openai.com', ok: false, hint: '连接超时', modelApi: true },
+      { target: 'api.anthropic.com', ok: false, hint: '连接超时', modelApi: true },
+      // ⚠️ 镜像仓库通着 —— 离线判定只看模型 API 那一半。
+      { target: 'ghcr.io', ok: true, latencyMs: 6, modelApi: false },
+    ],
+    lastConnectivityCheckAt: '2026-08-29T16:11:34.000Z',
+  };
+
+  function mockInitStatus(body: InitStatusDto): void {
+    server.use(http.get(`${API_BASE}/api/system/init-status`, () => HttpResponse.json(body)));
+  }
+
+  /**
+   * ⭐ 判定与 🔴 横幅**同源**（`useOfflineMode`）。分成两份各算各的时，界面上会出现
+   * "红条说 Agent 不可用、而 [+ 新任务] 照样能点" —— 用户点进去、填完指令，在最后一步才撞墙。
+   *
+   * 变异：把 `newTaskDisabledReason` 里的 `offline.disabledReason ??` 去掉 ⇒ 本例红。
+   */
+  it('⭐ 离线且项目已就绪 ⇒ 入口仍然置灰，且给出离线那句话', async () => {
+    mockInitStatus(OFFLINE_STATUS);
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /新任务/ })).toBeDisabled();
+    });
+    const entry = screen.getByRole('button', { name: /新任务/ });
+    expect(entry).toHaveAttribute('title', '离线模式：需连接网络才能发起任务');
+    // ⛔ **只置灰不隐藏**（P21-8 §7）：配好网络后不该需要重装才能重新看到入口。
+    expect(entry).toBeInTheDocument();
+  });
+
+  /**
+   * ⭐ 离线的理由**排在"先选中项目"之前**：换哪个项目都发不出去，
+   * 让用户照着"先选中一个项目"去点、点完发现还是灰的，是把他支使了一趟。
+   */
+  it('⭐ 离线 + 未选中项目 ⇒ 说的是离线，不是「先在左侧选中一个项目」', async () => {
+    mockInitStatus(OFFLINE_STATUS);
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    const entry = await screen.findByRole('button', { name: /新任务/ });
+    await waitFor(() => {
+      expect(entry).toHaveAttribute('title', '离线模式：需连接网络才能发起任务');
+    });
+  });
+
+  /**
+   * ⭐ 否定断言：**只有模型 API 全挂才算离线**。只有镜像仓库不可达时 Agent 一直好好的，
+   * 把它也算进去会让一台内网镜像站没配好的机器彻底发不出任务。
+   *
+   * 变异：把 `connectivityVerdict` 里 `filter(r => r.modelApi)` 去掉 ⇒ 本例红。
+   */
+  it('⭐ 只有镜像仓库不可达（partial）⇒ 入口照常可点', async () => {
+    mockInitStatus({
+      ...OFFLINE_STATUS,
+      lastConnectivityCheck: [
+        { target: 'api.openai.com', ok: true, latencyMs: 351, modelApi: true },
+        { target: 'api.anthropic.com', ok: true, latencyMs: 1925, modelApi: true },
+        { target: 'ghcr.io', ok: false, hint: '内网镜像站未配置', modelApi: false },
+      ],
+    });
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /新任务/ })).toBeEnabled();
+    });
+  });
+
+  /**
+   * ⭐ `init-status` 读不到时 ⛔ **不许**把入口置灰成"离线模式"——那是一句更好看的谎：
+   * 真正的原因是后端没起来（横幅那边会如实说），而这里若报"需连接网络"，
+   * 用户会去查一个没有问题的网络。判定缺席 ⇒ 回落到既有的两条理由。
+   */
+  it('⭐ `init-status` 500 ⇒ 入口**不因离线而置灰**（选中就绪项目后照常可点）', async () => {
+    server.use(
+      http.get(`${API_BASE}/api/system/init-status`, () =>
+        HttpResponse.json({ code: 'INTERNAL', message: '炸了', retryable: true }, { status: 500 }),
+      ),
+    );
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /新任务/ })).toBeEnabled();
+    });
   });
 });

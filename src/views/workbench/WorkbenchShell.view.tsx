@@ -61,7 +61,7 @@ export function WorkbenchShellView({
   overlaySlot,
 }: WorkbenchShellProps) {
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
+    <div className="flex h-full flex-col bg-background text-foreground">
       <header className="flex h-12 items-center gap-3 border-b border-border px-4">
         <span className="font-semibold">Agent 管理平台</span>
         <span className="text-xs text-muted-foreground" data-testid="health-label">
@@ -159,7 +159,7 @@ export function WorkbenchShellView({
         </aside>
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {/* min-h-0 + overflow-hidden 缺一不可：flex 项默认 `min-height:auto`，
-              终端内容一高就把 h-screen 撑破，页面出现整页滚动条、xterm 的 fit
+              终端内容一高就把外层高度撑破，页面出现整页滚动条、xterm 的 fit
               又按失控高度算行数 ⇒ 一大片空黑。终端自己有 scrollback，不需要页面滚。 */}
           {terminalSlot}
         </main>

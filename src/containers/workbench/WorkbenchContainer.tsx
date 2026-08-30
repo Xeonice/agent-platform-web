@@ -18,6 +18,7 @@ import { useSandboxEventsSocket } from '@/hooks/sandbox/useSandboxEventsSocket';
 import { useRuntimeAuthSync } from '@/hooks/credential/useRuntimeAuthSync';
 import { useEscapeKey } from '@/hooks/_shared/useEscapeKey';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
+import { useOfflineMode } from '@/hooks/system/useGlobalBanner';
 import { useAppStore } from '@/stores';
 import { WorkbenchShellView } from '@/views/workbench/WorkbenchShell.view';
 import { ModalShellView } from '@/views/common/ModalShell.view';
@@ -50,6 +51,8 @@ const EMPTY_TASKS: Sandbox[] = [];
 
 export function WorkbenchContainer() {
   const health = useHealth();
+  // 离线模式（F21-8 §4「本页唯一持续影响其他页面的输出」）：只读缓存，不发请求。
+  const offline = useOfflineMode();
   const projects = useProjects();
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
   const router = useRouter();
@@ -156,11 +159,17 @@ export function WorkbenchContainer() {
    * 工作区还不存在，建出来的沙箱没有 /workspace 可挂。
    */
   const newTaskDisabledReason =
-    selectedProject === null
+    // ⚠️ **离线排在最前**（P21-8 §7 置灰清单）：另外两条是"换个项目就能发起"，
+    //    而离线时换哪个项目都发不出去。把它排在后面，用户会照着"先选中一个项目"
+    //    去点，选完发现按钮还是灰的，而理由换成了一句他刚刚照做过的话。
+    //    ⚠️ 判定与 🔴 横幅**同源**（`useOfflineMode`）：分开各算一份时，会出现
+    //    "红条说 Agent 不可用、[+ 新任务] 照样能点"。
+    offline.disabledReason ??
+    (selectedProject === null
       ? '先在左侧选中一个项目'
       : !selectedReady
         ? '项目尚未就绪（克隆完成后可发起）'
-        : undefined;
+        : undefined);
 
   const mainContent = ((): React.ReactNode => {
     if (selectedProject !== null && selectedReady) {
