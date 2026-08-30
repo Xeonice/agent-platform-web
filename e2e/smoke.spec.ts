@@ -1,6 +1,14 @@
 import { test, expect } from '@playwright/test';
 import type { SandboxDto, SandboxProviderCapabilities } from '../src/types/sandbox';
 import type { RuntimeDto } from '../src/types/runtimeCredential';
+import { stubInitialized } from './initGate';
+
+// F21-8 §2：`AppBootGate` 挂在根布局上 ⇒ 每个用例挂载时都会先读一次
+// `GET /api/system/init-status`。不 stub 它就等于让这些用例依赖"CI 里恰好没有后端"
+// （见 `initGate.ts` 的说明）。
+test.beforeEach(async ({ page }) => {
+  await stubInitialized(page);
+});
 
 /**
  * provider 能力位 fixture（默认全开，按需覆盖）。

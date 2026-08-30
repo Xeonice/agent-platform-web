@@ -1,6 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { SandboxProviderCapabilities } from '../src/types/sandbox';
 import type { RuntimeDto } from '../src/types/runtimeCredential';
+import { stubInitialized } from './initGate';
+
+// F21-8 §2：`AppBootGate` 挂在根布局上 ⇒ 每个用例挂载时都会先读一次
+// `GET /api/system/init-status`。不 stub 它就等于让这些用例依赖"CI 里恰好没有后端"
+// （见 `initGate.ts` 的说明）。
+test.beforeEach(async ({ page }) => {
+  await stubInitialized(page);
+});
 
 // S5 Task 发起链路（mock 边界，12 §4.2 用例组 C 切片）：
 //   ① 任务指令随 POST /api/sandboxes 提交；
