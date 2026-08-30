@@ -10,7 +10,7 @@ export interface SettingsLayoutProps {
 
 export function SettingsLayoutView({ menu, children }: SettingsLayoutProps) {
   return (
-    <div className="flex h-screen w-full bg-background text-foreground">
+    <div className="flex h-full w-full bg-background text-foreground">
       {menu}
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl p-6">{children}</div>

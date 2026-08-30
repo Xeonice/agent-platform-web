@@ -115,6 +115,20 @@ export interface UiSlice {
   pendingProjectCreate: PendingProjectCreate | null;
   setPendingProjectCreate: (pending: PendingProjectCreate | null) => void;
 
+  // —— 全局横幅 [重新检测] → 系统状态页的一次性指向（不 persist）——
+  /**
+   * 「进了系统状态页就自动跑一轮诊断」的**瞬时意图位**（F21-5 §2 从横幅 [诊断] 进入）。
+   *
+   * ⚠️ **绝不 persist**：它是一次点击的意图，不是用户偏好。落盘之后每一次冷启动打开
+   * 系统状态页都会自动发起一轮 3×5s 的出网探测，而没有任何人点过任何东西。
+   *
+   * ⚠️ 生产方（`GlobalBannerContainer`）与消费方（`useSystemStatus`）**同一轮落地**——
+   * 与 `currentModal` 那两个死值的教训同源（见文件头）。
+   */
+  diagnoseAutorunRequested: boolean;
+  requestDiagnoseAutorun: () => void;
+  clearDiagnoseAutorun: () => void;
+
   // —— 横幅抑制记录（persist：仅抑制记录）——
   bannerDismissedToday: Record<string, string>;
   /** 记下"选中的这条已进入终态"的时刻;**已经有戳就不覆盖**(理由见字段注释)。 */
@@ -177,6 +191,14 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
   pendingProjectCreate: null,
   setPendingProjectCreate: (pending): void => {
     set({ pendingProjectCreate: pending });
+  },
+
+  diagnoseAutorunRequested: false,
+  requestDiagnoseAutorun: (): void => {
+    set({ diagnoseAutorunRequested: true });
+  },
+  clearDiagnoseAutorun: (): void => {
+    set({ diagnoseAutorunRequested: false });
   },
 
   bannerDismissedToday: {},

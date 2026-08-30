@@ -23,6 +23,7 @@ import {
   getResources,
 } from '@/services/api/system.service';
 import { systemKeys } from '@/hooks/system/useAuditStream';
+import { useAppStore } from '@/stores';
 import {
   applyDiagnoseCheck,
   applyDiagnoseDone,
@@ -37,6 +38,25 @@ export const SYSTEM_STALE_MS = 15_000;
 export const SYSTEM_POLL_MS = 30_000;
 /** 15 §2.2：诊断结果跨路由保留半小时。 */
 export const DIAGNOSE_GC_MS = 30 * 60_000;
+
+/**
+ * 诊断结果缓存的**只读订阅口**。`enabled: false` ⇒ `queryFn` 永不执行；组件仍然订阅这个
+ * key，SSE 每 `setQueryData` 一次就重渲染一次。
+ *
+ * ⚠️ **抽成常量是为了让第二个订阅方（`useGlobalBanner`）用同一份选项**。同一个 queryKey
+ * 被两处用不同的 `gcTime` 声明时，缓存什么时候被回收取决于哪个观察者先卸载 —— 表现是
+ * 「从系统状态页跑完诊断、回工作台，横幅有时更新有时不更新」，而两次操作一模一样。
+ * ⛔ 第二个订阅方**只读不写**：诊断流的唯一所有者是本文件的 mutation（它有掐旧流的重入保护）。
+ */
+export const DIAGNOSE_CACHE_OPTIONS = {
+  queryKey: systemKeys.diagnose(),
+  queryFn: (): never => {
+    throw new Error('诊断结果只由 SSE 流写入缓存，不经 queryFn 拉取');
+  },
+  enabled: false,
+  staleTime: Infinity,
+  gcTime: DIAGNOSE_GC_MS,
+} as const;
 
 export interface UseSystemStatusResult {
   resources: SystemResourcesDto | undefined;
@@ -78,17 +98,8 @@ export function useSystemStatus(): UseSystemStatusResult {
     refetchInterval: SYSTEM_POLL_MS,
   });
 
-  // ——— 诊断结果：只读缓存的订阅口 ———
-  // `enabled: false` ⇒ `queryFn` 永不执行；组件仍然订阅这个 key，SSE 每写一次就重渲染一次。
-  const diagnoseCache = useQuery<DiagnoseRunState>({
-    queryKey: systemKeys.diagnose(),
-    queryFn: () => {
-      throw new Error('诊断结果只由 SSE 流写入缓存，不经 queryFn 拉取');
-    },
-    enabled: false,
-    staleTime: Infinity,
-    gcTime: DIAGNOSE_GC_MS,
-  });
+  // ——— 诊断结果：只读缓存的订阅口（选项见 `DIAGNOSE_CACHE_OPTIONS`）———
+  const diagnoseCache = useQuery<DiagnoseRunState>(DIAGNOSE_CACHE_OPTIONS);
 
   const diagnoseMutation = useMutation({
     // ⚠️ `retry: 0`：诊断是"用户点一下跑一轮"，自动重试会在他已经看到中断提示之后
@@ -155,6 +166,29 @@ export function useSystemStatus(): UseSystemStatusResult {
       },
     });
   }, [mutate]);
+
+  // ——— 全局横幅的 [重新检测] 落地点（F21-5 §2「从横幅 [诊断] 进入 → 自动开始诊断」）———
+  //
+  // ⚠️ **横幅自己不跑诊断**。它跑得起来（`system.service.ts` 的 `diagnose()` 谁都能调），
+  //    但那会造出**第二个写 `systemKeys.diagnose()` 的所有者** —— 而重入保护（掐掉旧流）
+  //    只存在于本文件那条 mutation 里，两条流并行时会把交错的脏结果写进同一个缓存。
+  //    何况在工作台点一下之后 5–15 秒内界面上什么都不会发生（八项结果流进一个没人渲染的缓存）。
+  //    ⇒ 横幅只**表达意图**（store 上一个瞬时位）+ 跳这一页，诊断仍然只有一个所有者。
+  //
+  // ⚠️ 用 store 而不是 `?autorun=1`：F21-5 §2 把 query 参数标成「（可选）」。而 URL 那条要
+  //    `useSearchParams()`，在 App Router 的静态路由上必须额外套 Suspense 才能过 `next build` ——
+  //    为一个一次性的瞬时意图换来一个构建期陷阱不划算。代价是深链 `?autorun=1` 不生效，
+  //    但今天没有任何地方产出那种链接。
+  //
+  // ⚠️ **先清标志再跑**：反过来写时，`runDiagnose()` 引起的重渲染里标志还是 true，
+  //    effect 会再跑一轮（StrictMode 下必现）。
+  const autorunRequested = useAppStore((s) => s.diagnoseAutorunRequested);
+  const clearAutorun = useAppStore((s) => s.clearDiagnoseAutorun);
+  useEffect(() => {
+    if (!autorunRequested) return;
+    clearAutorun();
+    runDiagnose();
+  }, [autorunRequested, clearAutorun, runDiagnose]);
 
   const refetchResources = resources.refetch;
   const refetchProviders = providers.refetch;
