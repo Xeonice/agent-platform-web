@@ -12,6 +12,13 @@ describe('buildTasksSocketUri', () => {
     expect(buildTasksSocketUri('wss://example.com')).toBe('https://example.com/tasks');
     expect(buildTasksSocketUri('http://localhost:3001/')).toBe('http://localhost:3001/tasks');
   });
+
+  // ★ 同源档（生产默认）。空 base 是**正常配置**不是缺失：socket.io 对 `/` 开头的 uri
+  // 按相对路径解析，补上当前页面的 host 与协议 ⇒ 构建期不必知道运行时的 host。
+  // ⚠️ 少了这条，把 WorkbenchContainer 的默认值改回 `ws://localhost:3001` 全绿。
+  it('空 base ⇒ 同源相对路径', () => {
+    expect(buildTasksSocketUri('')).toBe('/tasks');
+  });
 });
 
 describe('buildTasksSocketQuery', () => {

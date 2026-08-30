@@ -18,8 +18,12 @@ vi.mock('next/navigation', () => ({
 
 // /events 是 socket.io 通道，jsdom 下没有可连的后端；本文件只测编排与弹层形态，
 // 故注入一个**什么都不做**的替身（DI 而不是 mock.module，12 §3.1.1）。
+const eventsSocket = vi.hoisted(() => ({ lastBase: undefined as string | undefined }));
 vi.mock('@/hooks/sandbox/useSandboxEventsSocket', () => ({
-  useSandboxEventsSocket: () => ({ connState: 'closed', attempt: 0 }),
+  useSandboxEventsSocket: (args: { base: string }) => {
+    eventsSocket.lastBase = args.base;
+    return { connState: 'closed', attempt: 0 };
+  },
 }));
 
 import { WorkbenchContainer } from '@/containers/workbench/WorkbenchContainer';
@@ -442,5 +446,31 @@ describe('WorkbenchContainer · 左侧任务树接真实列表', () => {
 
     await screen.findByRole('button', { name: /ProjectA/ });
     expect(screen.queryByRole('button', { name: /分析这个仓库/ })).not.toBeInTheDocument();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// WS 基址：同源（shared/11 §1.3）
+//
+// ⚠️ 这一条盯的是 `WorkbenchContainer` 里那个模块级默认值本身。在补它之前，把默认值
+// 从 `''` 改回 `'ws://localhost:3001'`，**1001 条测试一条都不红** —— 那个绝对地址就是
+// 这么被烤进生产 bundle 的（实测在 `chunks/app/page-*.js`，不是 mock 残留）。
+//
+// 为什么绝对地址在这里无解：它是**构建期**常量，而正确值取决于**运行时**访问者用的
+// host。烤 `ws://localhost:3100`，同事从局域网打开时它就去连同事自己机器的 3100。
+// 空串 ⇒ socket.io 按相对路径解析，补当前页面的 host 与协议（https 自动 wss），
+// 再由 next.config.mjs 的 `/socket.io` rewrite 转给后端。
+// ────────────────────────────────────────────────────────────────────────
+describe('WS 基址', () => {
+  it('默认走同源：传给 /events 通道的 base 是空串，不是任何绝对地址', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 0 })]);
+    mockSandboxes([]);
+    renderWorkbench();
+    await screen.findByRole('button', { name: /ProjectA/ });
+
+    expect(eventsSocket.lastBase).toBe('');
+    // ⚠️ 分开断言：上一句在默认值是 `ws://…` 时会红，但如果哪天有人改成别的
+    // 非空字面量（比如 '/'），只看 toBe('') 说不出「问题是它绝对了」。
+    expect(eventsSocket.lastBase).not.toMatch(/^wss?:\/\//);
   });
 });
