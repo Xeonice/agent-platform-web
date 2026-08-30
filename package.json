@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:storybook": "vitest run --config vitest.storybook.config.ts",
+    "check:openapi": "pnpm generate:api && git diff --exit-code src/types/generated/",
     "generate:api": "openapi-typescript ./openapi.json -o ./src/types/generated/openapi.d.ts && prettier --write ./src/types/generated/openapi.d.ts",
     "check:api-drift": "pnpm generate:api && git diff --exit-code src/types/generated/",
     "check:stories": "tsx scripts/check-story-coverage.ts",
