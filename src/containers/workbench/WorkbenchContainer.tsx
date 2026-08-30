@@ -29,7 +29,21 @@ import { NewProjectContainer } from '@/containers/project/NewProjectContainer';
 import { ProjectRecoveryContainer } from '@/containers/project/ProjectRecoveryContainer';
 import type { Project, Sandbox } from '@/types/domain';
 
-const WS_BASE_URL = process.env['NEXT_PUBLIC_WS_BASE_URL'] ?? 'ws://localhost:3001';
+/**
+ * WS 基址。**默认空串 = 同源**，与 `services/api/client.ts` 的 `API_BASE_URL` 对齐。
+ *
+ * 空串 ⇒ uri 形如 `/terminal`，socket.io 按相对路径解析：补上当前页面的 host 与
+ * 协议（`location.protocol` ⇒ https 页面自动 wss），再由 next.config.mjs 的
+ * `/socket.io` rewrite 转给后端。
+ *
+ * ⚠️ 此处**曾经**默认 `'ws://localhost:3001'`，那是开发期后端端口，被烤进生产
+ * bundle（实测在 `chunks/app/page-*.js` 里，不是 mock 残留）。绝对地址在这里是
+ * 无解的：它是构建期常量，而正确值取决于运行时访问者用的 host。
+ *
+ * ⚠️ `??` 只对 `undefined`/`null` 回落 —— `.env` 里写 `NEXT_PUBLIC_WS_BASE_URL=`
+ * 得到的是**空串**，会正常生效（这正是我们要的），不会掉回默认值。
+ */
+const WS_BASE_URL = process.env['NEXT_PUBLIC_WS_BASE_URL'] ?? '';
 
 /** 稳定引用：每次渲染新建 [] 会让 useMemo 依赖每次都变。 */
 const EMPTY_TASKS: Sandbox[] = [];
