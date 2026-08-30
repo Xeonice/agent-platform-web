@@ -1,4 +1,12 @@
 import { test, expect } from '@playwright/test';
+import { stubInitialized } from './initGate';
+
+// F21-8 §2：`AppBootGate` 挂在根布局上 ⇒ 每个用例挂载时都会先读一次
+// `GET /api/system/init-status`。不 stub 它就等于让这些用例依赖"CI 里恰好没有后端"
+// （见 `initGate.ts` 的说明）。
+test.beforeEach(async ({ page }) => {
+  await stubInitialized(page);
+});
 
 // S3 Git 私有仓凭证（mock 边界集成，12 §4.2）。REST 用 page.route（不启 MSW）。
 // 覆盖：① 配置 HTTPS Token（选来源→加 host→测试→保存）+ 掩码断言（只显尾号，全文无完整 token）；

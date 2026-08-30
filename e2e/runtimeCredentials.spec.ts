@@ -1,4 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
+import { stubInitialized } from './initGate';
+
+// F21-8 §2：`AppBootGate` 挂在根布局上 ⇒ 每个用例挂载时都会先读一次
+// `GET /api/system/init-status`。不 stub 它就等于让这些用例依赖"CI 里恰好没有后端"
+// （见 `initGate.ts` 的说明）。
+test.beforeEach(async ({ page }) => {
+  await stubInitialized(page);
+});
 
 // S4 Runtime 鉴权 UI（mock 边界集成，12 §4.2 用例组 B）。REST 用 page.route（不启 MSW）。
 // 覆盖：① device-code 分支展示 + 轮询；② setup-token 粘贴；③ api-key 保存（掩码）；④ 吊销确认文案含「重启/无法追回」。

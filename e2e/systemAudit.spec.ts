@@ -1,6 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { AuditEventDto, AuditListDto } from '../src/types/audit';
 import type { SystemProvidersDto, SystemResourcesDto } from '../src/types/system';
+import { stubInitialized } from './initGate';
+
+// F21-8 §2：`AppBootGate` 挂在根布局上 ⇒ 每个用例挂载时都会先读一次
+// `GET /api/system/init-status`。不 stub 它就等于让这些用例依赖"CI 里恰好没有后端"
+// （见 `initGate.ts` 的说明）。
+test.beforeEach(async ({ page }) => {
+  await stubInitialized(page);
+});
 
 // F21-5 §7.4（v1.1 场景 5–7）+ §9.2 VS-3 的真浏览器那一段。
 // REST 用 `page.route`（E2E 层**不启 MSW**，12 §4.1：Service Worker 会让请求对 page.route 不可见）。
