@@ -1,0 +1,14 @@
+# 契约漂移门禁（10 §2.1）—— CI 里 static-checks 那条的本地前置。
+#
+# 前端的生成类型是从 web/openapi.json 出的：json 更新了而生成物没重导，
+# typecheck / lint / test 全都是绿的（生成物自身自洽、只是旧），只有这条比对得出来。
+# ⚠️ 2026-08-31 真踩过：后端把 openapi.json cp 过来就结束，前端那侧被要求
+#    「不要动 openapi.json」，于是两边都没跑 generate:api，推上去才被 CI 拦下。
+set -e
+if ! pnpm check:openapi; then
+  echo ""
+  echo "⛔ src/types/generated/ 与 openapi.json 不同步，推送已拦下。"
+  echo "   check:openapi 已经重新生成好了 —— 工作区里现在就是正确的那份。"
+  echo "   下一步：git add src/types/generated && git commit（或 --amend），然后重推。"
+  exit 1
+fi
