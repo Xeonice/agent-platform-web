@@ -45,6 +45,13 @@ export interface ProjectInfoBarProps {
    * ⚠️ 它与「只读」不冲突：打开的是一个**管理面板**，本条上并不发生任何写操作。
    */
   onOpenRetainedVolumes?: () => void;
+  /**
+   * ⚙️ [自动化规则]（F21-7 §2）——与上面那条同样的处境：它本该住在 `ProjectMenuPanel`
+   * 的组头「⋯」菜单里，而那个侧弹层全仓至今不存在。先挂在这条项目级只读条上，
+   * 作用域仍是本条所指的项目，语义不歪。
+   * ⏳ `ProjectMenuPanel` 落地时两个入口一起搬走。
+   */
+  onOpenAutomations?: () => void;
 }
 
 /**
@@ -96,6 +103,7 @@ export function ProjectInfoBarView({
   onConfigureCredentials,
   onSync,
   onOpenRetainedVolumes,
+  onOpenAutomations,
 }: ProjectInfoBarProps) {
   const isEmptyProject = sourceType === 'empty';
   // 空项目「最后同步」显示的是**创建时间**（§9.2 表格最后一行）：它从来没同步过，
@@ -149,6 +157,20 @@ export function ProjectInfoBarView({
           }}
         >
           🎁 已保留卷
+        </Button>
+      )}
+
+      {onOpenAutomations !== undefined && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          data-testid="open-automations"
+          onClick={() => {
+            onOpenAutomations();
+          }}
+        >
+          ⚙️ 自动化规则
         </Button>
       )}
 

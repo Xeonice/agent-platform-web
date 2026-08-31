@@ -112,8 +112,16 @@ export interface UiSlice {
    * ① set 与 read 一起落地——`ProjectInfoBar.view` 的 [🎁 已保留卷] 经 `WorkbenchContainer`
    *    set，同一个 container 的 `overlaySlot` read 并渲染 `RetainedVolumesContainer`；
    * ② 是真 overlay（复用 `ModalShell.view`，与另外三个同一套形态）。
+   *
+   * ⚠️ `'automations'`（F21-7「⚙️ 自动化规则」）按**同样两个条件**加入：
+   * ① set 与 read 一起落地——`ProjectInfoBar.view` 的 [⚙️ 自动化规则] 经 `WorkbenchContainer`
+   *    set，同一个 container 的 `overlaySlot` read 并渲染 `AutomationsPanelContainer`；
+   * ② 是真 overlay（同样复用 `ModalShell.view`）。
+   *    ⚠️ 面板内部的「列表 ⇄ 详情 ⇄ 表单」是**视图切换，不是第二层弹层**
+   *    （P20 §8.4 modal 不堆叠 / F21-7 §2），所以这里仍然只需要一个取值。
    */
-  currentModal: 'createProject' | 'newTask' | 'registerImage' | 'retainedVolumes' | null;
+  currentModal:
+    'createProject' | 'newTask' | 'registerImage' | 'retainedVolumes' | 'automations' | null;
   setCurrentModal: (modal: UiSlice['currentModal']) => void;
 
   // —— Git 凭证回程暂存（不 persist）——

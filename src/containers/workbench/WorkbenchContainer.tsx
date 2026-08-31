@@ -29,6 +29,7 @@ import { SandboxTerminalContainer } from '@/containers/sandbox/SandboxTerminalCo
 import { NewProjectContainer } from '@/containers/project/NewProjectContainer';
 import { ProjectRecoveryContainer } from '@/containers/project/ProjectRecoveryContainer';
 import { RetainedVolumesContainer } from '@/containers/project/RetainedVolumesContainer';
+import { AutomationsPanelContainer } from '@/containers/project/AutomationsPanelContainer';
 import type { Project, Sandbox } from '@/types/domain';
 
 /**
@@ -159,6 +160,13 @@ export function WorkbenchContainer() {
   useEscapeKey(currentModal === 'retainedVolumes', closeModal);
   useModalFocus(currentModal === 'retainedVolumes', retainedModalRef);
 
+  // 「自动化规则」弹层同理。⚠️ 它内部还有列表/详情/表单三个视图，Esc 关的是**整个弹层**
+  // —— 面板内退回上一视图走的是 [返回列表] / [取消]，两条路不混（modal 不堆叠 ⇒
+  // Esc 也没有"退一层"的语义可退）。
+  const automationsModalRef = useRef<HTMLDivElement>(null);
+  useEscapeKey(currentModal === 'automations', closeModal);
+  useModalFocus(currentModal === 'automations', automationsModalRef);
+
   /**
    * [+ 新任务] 的可用性（§9.1 #33）。
    *
@@ -253,6 +261,11 @@ export function WorkbenchContainer() {
         onOpenRetainedVolumes={() => {
           setCurrentModal('retainedVolumes');
         }}
+        // ⚙️ 自动化规则（F21-7 §2）。归属同样是 `ProjectMenuPanel`，那个侧弹层仍未落地，
+        // 先与「已保留卷」并排挂在这条项目级只读条上。
+        onOpenAutomations={() => {
+          setCurrentModal('automations');
+        }}
       />
     );
 
@@ -294,6 +307,25 @@ export function WorkbenchContainer() {
               testId="modal-new-project"
             >
               <NewProjectContainer onProjectReady={handleProjectReady} onCancel={closeModal} />
+            </ModalShellView>
+          )}
+          {currentModal === 'automations' && selectedProject !== null && (
+            <ModalShellView
+              shellRef={automationsModalRef}
+              title="自动化规则"
+              subtitle={`在 ${selectedProject.name} 中`}
+              onClose={closeModal}
+              testId="modal-automations"
+            >
+              <AutomationsPanelContainer
+                projectId={selectedProject.id}
+                onOpenTask={(sandboxId) => {
+                  // F21-7 §5「[打开 Task]」：关面板 → 工作台选中该 Task。
+                  // 右侧渲染只读输出面板由 F21-1 负责，本页只负责跳转。
+                  setCurrentModal(null);
+                  setSelectedSandboxId(sandboxId);
+                }}
+              />
             </ModalShellView>
           )}
           {currentModal === 'retainedVolumes' && selectedProject !== null && (

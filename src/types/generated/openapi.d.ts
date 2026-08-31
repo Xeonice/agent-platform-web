@@ -772,6 +772,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a project's automation rules */
+        get: operations["ProjectAutomationController_list"];
+        put?: never;
+        /** Create an automation rule (timezone is snapshotted here) */
+        post: operations["ProjectAutomationController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/automations/webhook-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a sample webhook payload (same timeout + SSRF policy) */
+        post: operations["AutomationController_webhookTest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/automations/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one automation run */
+        get: operations["AutomationController_getRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/automations/runs/{runId}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a byte range of a run log (defaults to the trailing 64KB) */
+        get: operations["AutomationController_readRunLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/automations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an automation rule */
+        get: operations["AutomationController_get"];
+        /** Update a rule — omitting `timezone` keeps the snapshot (I-AUT-9) */
+        put: operations["AutomationController_update"];
+        post?: never;
+        /** Delete a rule (its run history cascades) */
+        delete: operations["AutomationController_remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/automations/{id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-enable a rule (clears failure count and the degraded flag) */
+        post: operations["AutomationController_enable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/automations/{id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable a rule */
+        post: operations["AutomationController_disable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/automations/{id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a rule’s run history, newest first (cursor) */
+        get: operations["AutomationController_listRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -1358,6 +1497,122 @@ export interface components {
                 };
             } | null;
             changed: boolean;
+        };
+        AutomationResponseDto: {
+            id: string;
+            projectId: string;
+            name: string;
+            description?: string;
+            runtime: string;
+            prompt: string;
+            /** @enum {string} */
+            scheduleKind: "hourly" | "daily" | "weekly";
+            scheduleConfig: {
+                minute?: number;
+                time?: string;
+                days?: number[];
+            };
+            timezone: string;
+            timeoutMinutes: number;
+            artifactRetentionDays: number;
+            webhookUrl?: string;
+            /** @enum {string} */
+            triggerOn: "failure" | "success" | "all";
+            enabled: boolean;
+            degraded: boolean;
+            consecutiveFailures: number;
+            lastTriggeredAt?: string;
+            nextTriggerAt?: string;
+            createdAt: string;
+            updatedAt: string;
+        };
+        CreateAutomationDto: {
+            name: string;
+            description?: string;
+            runtime: string;
+            prompt: string;
+            /** @enum {string} */
+            scheduleKind: "hourly" | "daily" | "weekly";
+            scheduleConfig: {
+                minute?: number;
+                time?: string;
+                days?: number[];
+            };
+            timezone: string;
+            timeoutMinutes: number;
+            artifactRetentionDays: number;
+            webhookUrl?: string;
+            /** @enum {string} */
+            triggerOn?: "failure" | "success" | "all";
+        };
+        WebhookTestRequestDto: {
+            url: string;
+        };
+        WebhookTestResultDto: {
+            ok: boolean;
+            /** @enum {string} */
+            errorCode?: "VALIDATION_FAILED" | "HOST_NOT_ALLOWED" | "TIMEOUT" | "UPSTREAM_UNAVAILABLE";
+            message: string;
+        };
+        AutomationRunResponseDto: {
+            id: string;
+            automationId: string;
+            sandboxId?: string;
+            /** @enum {string} */
+            status: "pending" | "running" | "success" | "failed" | "timeout" | "resource-exhausted" | "skipped" | "missed";
+            /** @enum {string} */
+            errorCode?: "PREVIOUS_RUNNING" | "AUTH_EXPIRED" | "RESOURCE_EXHAUSTED";
+            errorMessage?: string;
+            retryCount: number;
+            retryAt?: string;
+            triggeredAt: string;
+            startedAt?: string;
+            completedAt?: string;
+            durationMs?: number;
+            outputSummary?: string;
+            /** @enum {string} */
+            webhookStatus?: "sent" | "failed" | "skipped";
+        };
+        UpdateAutomationDto: {
+            name?: string;
+            description?: string;
+            runtime?: string;
+            prompt?: string;
+            /** @enum {string} */
+            scheduleKind?: "hourly" | "daily" | "weekly";
+            scheduleConfig?: {
+                minute?: number;
+                time?: string;
+                days?: number[];
+            };
+            timezone?: string;
+            timeoutMinutes?: number;
+            artifactRetentionDays?: number;
+            webhookUrl?: string;
+            /** @enum {string} */
+            triggerOn?: "failure" | "success" | "all";
+        };
+        PaginatedAutomationRunsDto: {
+            items: {
+                id: string;
+                automationId: string;
+                sandboxId?: string;
+                /** @enum {string} */
+                status: "pending" | "running" | "success" | "failed" | "timeout" | "resource-exhausted" | "skipped" | "missed";
+                /** @enum {string} */
+                errorCode?: "PREVIOUS_RUNNING" | "AUTH_EXPIRED" | "RESOURCE_EXHAUSTED";
+                errorMessage?: string;
+                retryCount: number;
+                retryAt?: string;
+                triggeredAt: string;
+                startedAt?: string;
+                completedAt?: string;
+                durationMs?: number;
+                outputSummary?: string;
+                /** @enum {string} */
+                webhookStatus?: "sent" | "failed" | "skipped";
+            }[];
+            hasMore: boolean;
         };
         InitStatusResponseDto: {
             initialized: boolean;
@@ -2673,6 +2928,322 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CheckImageUpdateResponseDto"];
                 };
+            };
+        };
+    };
+    ProjectAutomationController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponseDto"][];
+                };
+            };
+        };
+    };
+    ProjectAutomationController_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAutomationDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponseDto"];
+                };
+            };
+            /** @description unknown project */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AUTOMATION_LIMIT_REACHED — 20 rules per project (I-AUT-7) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AutomationController_webhookTest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookTestRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookTestResultDto"];
+                };
+            };
+        };
+    };
+    AutomationController_getRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRunResponseDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AutomationController_readRunLogs: {
+        parameters: {
+            query?: {
+                /** @description absent ⇒ the trailing `limit` bytes */
+                offset?: string;
+                /** @description default 65536, max 1048576 */
+                limit?: string;
+            };
+            header?: never;
+            path: {
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Raw log bytes as UTF-8 text */
+            200: {
+                headers: {
+                    /** @description first byte of this slice */
+                    "x-log-offset"?: number;
+                    /** @description total bytes on disk */
+                    "x-log-total"?: number;
+                    /** @description "true" when this slice reaches EOF */
+                    "x-log-eof"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AutomationController_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponseDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AutomationController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAutomationDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponseDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AutomationController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AutomationController_enable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponseDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AutomationController_disable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponseDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AutomationController_listRuns: {
+        parameters: {
+            query?: {
+                /** @description run id; returns strictly older ones */
+                before?: string;
+                /** @description default 20, max 100 */
+                limit?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedAutomationRunsDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

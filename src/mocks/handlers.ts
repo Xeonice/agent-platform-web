@@ -13,6 +13,7 @@
 import { http, HttpResponse } from 'msw';
 import type { ProjectDto } from '@/types/project';
 import type { RetainedVolumeDto } from '@/types/retainedVolume';
+import type { AutomationDto, AutomationRunDto } from '@/types/automation';
 import type { MaskedGitCredential, StoreGitCredentialResponse } from '@/types/gitCredential';
 import type {
   AuthChallenge,
@@ -221,6 +222,126 @@ function retainedVolumeDto(
     ...overrides,
   };
 }
+
+/**
+ * 一条自动化规则替身（10 §7.3 `AutomationDto` 逐字段抄写；12 §3.4：形状可以手写，值不能凭空）。
+ *
+ * ⚠️ `runtime` 从注册表常量取，不写字面量 —— 14 §10 那个 `runtime: 'shell'` 的坑同一处封堵。
+ * ⚠️ `timezone` 刻意给 `Asia/Shanghai` 这个**固定值**，而不是 `resolvedOptions().timeZone`：
+ *    替身若跟着本机时区走，「规则用的是快照时区、不是你的时区」这条语义在 dev/Storybook 里
+ *    就永远看不出差别，而那正是这一页最容易做错的地方（23 I-AUT-9）。
+ */
+function automationDto(
+  overrides: Partial<AutomationDto> & Pick<AutomationDto, 'id'>,
+): AutomationDto {
+  return {
+    projectId: 'proj-demo',
+    name: '每天凌晨数据分析',
+    runtime: RUNTIME_IDS.codex,
+    prompt: '汇总昨天的错误日志，输出一份 markdown 报告到 reports/。',
+    scheduleKind: 'daily',
+    scheduleConfig: { time: '08:00' },
+    timezone: 'Asia/Shanghai',
+    timeoutMinutes: 120,
+    artifactRetentionDays: 7,
+    enabled: true,
+    degraded: false,
+    consecutiveFailures: 0,
+    nextTriggerAt: new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
+    ...overrides,
+  };
+}
+
+/** 一条运行历史替身（10 §7.3 `AutomationRunDto` + 两处契约缺口字段，见 types/automation 文件头）。 */
+function automationRunDto(
+  overrides: Partial<AutomationRunDto> & Pick<AutomationRunDto, 'id'>,
+): AutomationRunDto {
+  return {
+    automationId: 'auto-1',
+    status: 'success',
+    retryCount: 0,
+    triggeredAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+    startedAt: new Date(Date.now() - 3600 * 1000).toISOString(),
+    durationMs: 72_000,
+    ...overrides,
+  };
+}
+
+/**
+ * dev 的规则集合：**八个 status 里能在列表上看见的四种规则态各一条**。
+ * 少了 🟡/🔴 两条，"降频"与"自动禁用"在 dev 下永远看不到，而它们正是这一页最复杂的分支。
+ */
+const AUTOMATION_FIXTURES: AutomationDto[] = [
+  automationDto({ id: 'auto-1' }),
+  automationDto({
+    id: 'auto-2',
+    name: '每周一日志备份',
+    scheduleKind: 'weekly',
+    scheduleConfig: { time: '03:00', days: [1] },
+    runtime: RUNTIME_IDS.claudeCode,
+  }),
+  automationDto({
+    id: 'auto-3',
+    name: '每小时内存检查',
+    scheduleKind: 'hourly',
+    scheduleConfig: { minute: 0 },
+    enabled: false,
+    nextTriggerAt: undefined,
+  }),
+  automationDto({
+    id: 'auto-4',
+    name: '每日报表',
+    degraded: true,
+    consecutiveFailures: 4,
+  }),
+  automationDto({
+    id: 'auto-5',
+    name: '夜间回归',
+    enabled: false,
+    degraded: true,
+    consecutiveFailures: 11,
+    nextTriggerAt: undefined,
+  }),
+];
+
+/**
+ * dev 的运行历史：**八个 status 全部出现至少一次**。
+ * ⚠️ 这不是凑数 —— 这一页界面的全部难点就是"让用户分清 failed / skipped / missed /
+ *    resource-exhausted 是四件不同的事"，替身里少哪一个，对应的分支在 dev 下就没人看过。
+ */
+const AUTOMATION_RUN_FIXTURES: AutomationRunDto[] = [
+  automationRunDto({
+    id: 'run-1',
+    status: 'success',
+    sandboxId: 'sbx-demo',
+    webhookStatus: 'skipped',
+  }),
+  automationRunDto({
+    id: 'run-2',
+    status: 'failed',
+    durationMs: 15_000,
+    outputSummary: 'Error: ENOENT reports/\n  at writeReport (index.ts:42)',
+    sandboxId: 'sbx-demo',
+    webhookStatus: 'sent',
+  }),
+  automationRunDto({
+    id: 'run-3',
+    status: 'timeout',
+    durationMs: 7_200_000,
+    sandboxId: 'sbx-demo',
+  }),
+  automationRunDto({ id: 'run-4', status: 'skipped', errorCode: 'AUTH_EXPIRED' }),
+  automationRunDto({ id: 'run-5', status: 'skipped', errorCode: 'PREVIOUS_RUNNING' }),
+  automationRunDto({ id: 'run-6', status: 'missed' }),
+  automationRunDto({
+    id: 'run-7',
+    status: 'resource-exhausted',
+    retryCount: 3,
+    retryAt: new Date(Date.now() + 24 * 60 * 1000).toISOString(),
+  }),
+  automationRunDto({ id: 'run-8', status: 'running', durationMs: undefined }),
+  automationRunDto({ id: 'run-9', status: 'pending', durationMs: undefined }),
+];
 
 /**
  * 生成一份 SandboxResponseDto。
@@ -1185,6 +1306,83 @@ export const handlers = [
       },
     });
   }),
+
+  // —— 自动化（F21-7 / 10 §6.5 的 7 条 + webhook-test）——
+  // ⚠️ 后端这条切片正在并行实现，openapi.json 里还没有它们 ⇒ **手写形状**，
+  //    依据是 10 §7.3 的 automation 契约块逐字段抄写（12 §3.4）。
+  http.get(`${API_BASE}/api/projects/:id/automations`, ({ params }) =>
+    HttpResponse.json(
+      AUTOMATION_FIXTURES.map((rule) => ({ ...rule, projectId: String(params['id']) })),
+    ),
+  ),
+  http.post(`${API_BASE}/api/projects/:id/automations`, async ({ params, request }) => {
+    const body: unknown = await request.json().catch(() => ({}));
+    return HttpResponse.json(
+      automationDto({
+        id: `auto-${String(Date.now())}`,
+        projectId: String(params['id']),
+        ...(typeof body === 'object' && body !== null ? (body as Partial<AutomationDto>) : {}),
+      }),
+      { status: 201 },
+    );
+  }),
+  http.put(`${API_BASE}/api/automations/:id`, async ({ params, request }) => {
+    const body: unknown = await request.json().catch(() => ({}));
+    return HttpResponse.json(
+      automationDto({
+        id: String(params['id']),
+        ...(typeof body === 'object' && body !== null ? (body as Partial<AutomationDto>) : {}),
+      }),
+    );
+  }),
+  http.delete(`${API_BASE}/api/automations/:id`, () => new HttpResponse(null, { status: 204 })),
+  http.post(`${API_BASE}/api/automations/:id/enable`, ({ params }) =>
+    // enable 同时清零失败计数并解降频（03 §8.4）——替身也照做，
+    // 否则前端的乐观更新与"真"响应对不上，而对不上的那一版才是错的。
+    HttpResponse.json(
+      automationDto({
+        id: String(params['id']),
+        enabled: true,
+        degraded: false,
+        consecutiveFailures: 0,
+      }),
+    ),
+  ),
+  http.post(`${API_BASE}/api/automations/:id/disable`, ({ params }) =>
+    HttpResponse.json(
+      automationDto({ id: String(params['id']), enabled: false, nextTriggerAt: undefined }),
+    ),
+  ),
+  http.get(`${API_BASE}/api/automations/:id/runs`, ({ params, request }) => {
+    // 游标替身：`before` 缺席 = 第一页；带 `before` = 严格早于那条（与后端同语义）。
+    const url = new URL(request.url);
+    const before = url.searchParams.get('before');
+    const limit = Number.parseInt(url.searchParams.get('limit') ?? '20', 10);
+    const all = AUTOMATION_RUN_FIXTURES.map((run) => ({
+      ...run,
+      automationId: String(params['id']),
+    }));
+    const start = before === null ? 0 : all.findIndex((r) => r.id === before) + 1;
+    const slice = all.slice(start, start + limit);
+    return HttpResponse.json({
+      items: slice,
+      hasMore: start + limit < all.length,
+    });
+  }),
+
+  http.get(`${API_BASE}/api/automations/runs/:runId`, ({ params }) =>
+    HttpResponse.json(
+      automationRunDto({
+        id: String(params['runId']),
+        outputSummary: '…最后 1KB 输出…',
+        sandboxId: 'sbx-demo',
+      }),
+    ),
+  ),
+  http.post(
+    `${API_BASE}/api/automations/webhook-test`,
+    () => new HttpResponse(null, { status: 204 }),
+  ),
 
   // Git 凭证（F21-3 §8）：dev 打通「凭证页 → 配置 HTTPS Token → 测试 → 保存」链路。明文永不回读。
   http.get(`${API_BASE}/api/credentials`, () =>
