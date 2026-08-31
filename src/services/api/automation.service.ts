@@ -13,6 +13,7 @@ import {
   AutomationListSchema,
   AutomationRunDtoSchema,
   AutomationRunPageSchema,
+  WebhookTestResultSchema,
 } from '@/types/automation.schema';
 import { RUNS_PAGE_SIZE } from '@/types/automation';
 import type {
@@ -167,6 +168,19 @@ export async function getAutomationRun(runId: string): Promise<AutomationRunDto>
  * ★ **必须由后端代发，前端不能自己 fetch 那个 URL**：浏览器发出去会带上用户的 cookie/来源，
  *   会被 CORS 拦掉，而且完全绕过了后端那套 SSRF 判定——测试通过了不代表真投递能通。
  */
+/**
+ * `POST /api/automations/webhook-test`。
+ *
+ * ⚠️⚠️ **它总是回 200，成败在 body 的 `ok` 里** —— 后端 controller 上就写着
+ * `@HttpCode(200)`，理由是「不该让 HTTP 层去解释一个不是它的失败」（投递失败是
+ * 目标端的事，不是这次调用的事）。
+ *
+ * ⛔ 所以**只 `ensureOk` 是不够的**：上一版就是那么写的，返回 `Promise<void>`、
+ * 响应体一个字节没读 ⇒ SSRF 谓词拒绝（`HOST_NOT_ALLOWED`）、连不上
+ * （`UPSTREAM_UNAVAILABLE`）、10s 超时（`TIMEOUT`）**全都被渲染成绿勾「已送达」**。
+ * 用户据此保存规则，而这条规则唯一的通知渠道是死的 —— P21-7 §7「webhook 的全部
+ * 价值就在我不在的时候」在那条路上被完全抵消。
+ */
 export async function testWebhook(url: string): Promise<void> {
   const response = await fetch(`${apiOrigin()}/api/automations/webhook-test`, {
     method: 'POST',
@@ -175,4 +189,17 @@ export async function testWebhook(url: string): Promise<void> {
     body: JSON.stringify({ url }),
   });
   await ensureOk(response);
+  const result = await parseOrThrow(response, WebhookTestResultSchema);
+  if (!result.ok) {
+    // 复用同一条错误通道：调用方的 onError 已经会把 message 显示出来。
+    throw new ApiErrorException(
+      {
+        code: result.errorCode ?? 'UPSTREAM_UNAVAILABLE',
+        message: result.message,
+        retryable: result.errorCode !== 'HOST_NOT_ALLOWED',
+        sideEffectFree: true,
+      },
+      200,
+    );
+  }
 }

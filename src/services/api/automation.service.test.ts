@@ -61,6 +61,9 @@ describe('automation.service · 基本读写', () => {
           enabled: true,
           degraded: false,
           consecutiveFailures: 0,
+          triggerOn: 'failure',
+          createdAt: '2026-08-01T00:00:00Z',
+          updatedAt: '2026-08-01T00:00:00Z',
         });
       }),
     );
@@ -96,6 +99,9 @@ describe('⭐⭐ 凭据策略：每个请求都必须带 credentials: include（
         enabled: true,
         degraded: false,
         consecutiveFailures: 0,
+        triggerOn: 'failure',
+        createdAt: '2026-08-01T00:00:00Z',
+        updatedAt: '2026-08-01T00:00:00Z',
       });
     };
   }
@@ -130,7 +136,8 @@ describe('⭐⭐ 凭据策略：每个请求都必须带 credentials: include（
       }),
       http.post(`${BASE}/api/automations/webhook-test`, ({ request }) => {
         seen['webhookTest'] = request.credentials;
-        return new HttpResponse(null, { status: 204 });
+        // ⚠️ 这个端点**总是 200**，成败在 body 的 ok 里（不是 204 空体）。
+        return HttpResponse.json({ ok: true, message: '目标返回 200' });
       }),
     );
 
@@ -166,6 +173,36 @@ describe('⭐⭐ 凭据策略：每个请求都必须带 credentials: include（
     for (const [name, credentials] of Object.entries(seen)) {
       expect(credentials, `${name} 少带了 credentials`).toBe('include');
     }
+  });
+});
+
+describe('⭐⭐ webhook-test：它总是 200，成败在 body 的 ok 里', () => {
+  /**
+   * ⚠️ 上一版 `testWebhook` 只 `ensureOk` ⇒ SSRF 拒绝 / 连不上 / 超时**全被渲染成
+   * 绿勾「已送达」**，用户据此保存规则，而那条规则唯一的通知渠道是死的。
+   * 光看 HTTP status 在这个端点上永远是 200 —— 这条用例钉的就是「必须读 body」。
+   */
+  it('ok:false（HOST_NOT_ALLOWED）⇒ 抛，而不是当成功', async () => {
+    server.use(
+      http.post(`${BASE}/api/automations/webhook-test`, () =>
+        HttpResponse.json(
+          { ok: false, errorCode: 'HOST_NOT_ALLOWED', message: '目标地址指向内网，已拒绝。' },
+          { status: 200 },
+        ),
+      ),
+    );
+    await expect(testWebhook('http://169.254.169.254/x')).rejects.toThrow(
+      '目标地址指向内网，已拒绝。',
+    );
+  });
+
+  it('ok:true ⇒ 正常通过', async () => {
+    server.use(
+      http.post(`${BASE}/api/automations/webhook-test`, () =>
+        HttpResponse.json({ ok: true, message: '目标返回 200' }, { status: 200 }),
+      ),
+    );
+    await expect(testWebhook('https://example.com/hook')).resolves.toBeUndefined();
   });
 });
 
@@ -228,7 +265,7 @@ describe('⭐ testWebhook 由后端代发', () => {
       http.post(`${BASE}/api/automations/webhook-test`, async ({ request }) => {
         const body: unknown = await request.json();
         expect(body).toEqual({ url: 'https://evil.example.com/hook' });
-        return new HttpResponse(null, { status: 204 });
+        return HttpResponse.json({ ok: true, message: '目标返回 200' });
       }),
     );
     await testWebhook('https://evil.example.com/hook');

@@ -69,7 +69,7 @@ export function draftFromDto(dto: AutomationDto): AutomationDraft {
         : 7,
     webhookEnabled: dto.webhookUrl !== undefined && dto.webhookUrl !== '',
     webhookUrl: dto.webhookUrl ?? '',
-    triggerOn: dto.triggerOn ?? 'failure',
+    triggerOn: dto.triggerOn,
   };
 }
 

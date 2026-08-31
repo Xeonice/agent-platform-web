@@ -247,6 +247,9 @@ function automationDto(
     enabled: true,
     degraded: false,
     consecutiveFailures: 0,
+    triggerOn: 'failure',
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-08-01T00:00:00Z',
     nextTriggerAt: new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
     ...overrides,
   };
@@ -1381,7 +1384,8 @@ export const handlers = [
   ),
   http.post(
     `${API_BASE}/api/automations/webhook-test`,
-    () => new HttpResponse(null, { status: 204 }),
+    // ⚠️ 总是 200，成败在 body 的 ok 里（后端 @HttpCode(200)）—— 不是 204 空体。
+    () => HttpResponse.json({ ok: true, message: '目标返回 200' }),
   ),
 
   // Git 凭证（F21-3 §8）：dev 打通「凭证页 → 配置 HTTPS Token → 测试 → 保存」链路。明文永不回读。

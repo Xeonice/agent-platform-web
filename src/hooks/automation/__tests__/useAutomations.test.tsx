@@ -34,6 +34,9 @@ function rule(overrides: Partial<AutomationDto> & Pick<AutomationDto, 'id'>): Au
     enabled: true,
     degraded: false,
     consecutiveFailures: 0,
+    triggerOn: 'failure',
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-08-01T00:00:00Z',
     ...overrides,
   };
 }
@@ -348,9 +351,8 @@ describe('webhook 测试连接', () => {
   it('成功 → phase ok；失败 → phase error 且带人话', async () => {
     server.use(
       http.get(`${BASE}/api/projects/:id/automations`, () => HttpResponse.json([])),
-      http.post(
-        `${BASE}/api/automations/webhook-test`,
-        () => new HttpResponse(null, { status: 204 }),
+      http.post(`${BASE}/api/automations/webhook-test`, () =>
+        HttpResponse.json({ ok: true, message: '目标返回 200' }),
       ),
     );
     const { result } = renderHook(() => useAutomations('p'), { wrapper: makeWrapper() });

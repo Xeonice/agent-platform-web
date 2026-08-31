@@ -1,15 +1,15 @@
 // 自动化规则领域类型（F21-7 / 10 §6.5 + §7.1/§7.3 / 13 §2.7）。
 //
-// ⚠️ **形状在这一轮是手写的，这是被迫的、不是偷懒。** 7 个 automation 端点由后端并行实现中，
-// `openapi.json` 里还没有它们，`components['schemas']` 里因此一个 automation 类型都取不到。
-// 做法与 `types/retainedVolume.ts` 上一轮完全一致（那批也是"后端并行、前端先行"）：
+// **形状来自生成物**，与全站其它 REST 类型同源。
 //
-//  1. 现在：zod schema 手写，形状逐字抄自 **10 §7.1/§7.3 的契约块**（不是凭空造）；
-//  2. 后端重导 openapi 之后：加一行
-//         export type AutomationDto = components['schemas']['AutomationResponseDto'];
-//     并在每个 schema 后面挂 `satisfies z.ZodType<AutomationDto>`；
-//  3. ★ 那一行 `satisfies` 才是真正的锁：手写 schema 与生成类型一旦漂移，**编译期**就红，
-//     不必等谁记得手动同步。在它到位之前，本文件的形状**没有任何编译期保护**。
+// ⚠️ 上一版是手写的（当时后端并行实现中、`openapi.json` 里还没有这些端点），文件头列了
+// 三步待办；后端重导之后本轮补齐了第 2、3 步：类型改指 `components['schemas'][...]`，
+// 每个 zod schema 挂 `satisfies z.ZodType<T>`。
+//
+// ⭐ **那道 `satisfies` 不是形式**：上锁当场就抓出两个已经漂掉的地方 ——
+// `errorCode` 的取值前端只写了 2 个而契约有 3 个（少的那个 `RESOURCE_EXHAUSTED` 会让
+// **整页运行历史解析失败、变成一句错误消息**），以及 webhook-test 的响应体前端从没读过。
+// 两个都是「手写形状 + 无编译期保护」的必然产物，不是谁不小心。
 //
 // ⚠️ zod 不会因为生成类型到位就删掉——两者各管一头（retainedVolume.ts 文件头同一论证）：
 // 生成类型是编译期兜底，zod 是运行时兜底（真实响应与契约不符时当场炸，而不是把 `undefined`
@@ -35,6 +35,8 @@
  * 判据在 P21-7 §4 的计数口径：**只有 `failed`（含 `timeout`）计入连续失败**。
  * 界面上的区分见 `lib/automation/formatRunOutcome`。
  */
+import type { components } from '@/types/generated/openapi';
+
 export const AUTOMATION_RUN_STATUSES = [
   'pending',
   'running',
@@ -48,8 +50,19 @@ export const AUTOMATION_RUN_STATUSES = [
 export type AutomationRunStatus = (typeof AUTOMATION_RUN_STATUSES)[number];
 
 /** `skipped` 的两种原因（03 §8.2 决策表第 1/2 行）。⏳ 契约暂缺，见文件头。 */
-export const AUTOMATION_SKIP_REASONS = ['PREVIOUS_RUNNING', 'AUTH_EXPIRED'] as const;
-export type AutomationSkipReason = (typeof AUTOMATION_SKIP_REASONS)[number];
+// ⭐ **从契约推导，不手抄** —— 上一版手写了两个值，而契约有三个
+// （少的是 `RESOURCE_EXHAUSTED`：决策表行 3 重试 5 次仍拿不到资源的终态，03 §8.2）。
+// zod 的 `.optional()` 放过缺席、**放不过多一个合法取值** ⇒ 那种 run 一出现就让整页
+// 运行历史解析失败、显示 0 行。手抄 enum 在这里是不可接受的。
+export type AutomationSkipReason = NonNullable<
+  components['schemas']['AutomationRunResponseDto']['errorCode']
+>;
+/** zod 要一个运行时数组；⚠️ 与上面的类型由 `Exact<>` 锁死，漏一个值编译期就红。 */
+export const AUTOMATION_SKIP_REASONS = [
+  'PREVIOUS_RUNNING',
+  'AUTH_EXPIRED',
+  'RESOURCE_EXHAUSTED',
+] as const satisfies readonly AutomationSkipReason[];
 
 export const WEBHOOK_STATUSES = ['sent', 'failed', 'skipped'] as const;
 export type WebhookStatus = (typeof WEBHOOK_STATUSES)[number];
@@ -98,57 +111,9 @@ export interface AutomationScheduleConfig {
   days?: number[];
 }
 
-export interface AutomationDto {
-  id: string;
-  projectId: string;
-  name: string;
-  description?: string;
-  runtime: string;
-  prompt: string;
-  scheduleKind: ScheduleKind;
-  scheduleConfig: AutomationScheduleConfig;
-  /**
-   * IANA 时区，**规则创建时快照**（23 I-AUT-9 / 03 §8.1）。
-   * ⛔ 编辑其它字段时不隐式重传（见 `lib/automation/automationPayload`）。
-   */
-  timezone: string;
-  timeoutMinutes: number;
-  artifactRetentionDays: number;
-  webhookUrl?: string;
-  triggerOn?: TriggerOn;
-  enabled: boolean;
-  /** 连续失败 ≥3 后的「每日重试一次」态（03 §8.4）。 */
-  degraded: boolean;
-  consecutiveFailures: number;
-  /** UTC ISO；规则从未算过下一次（刚禁用/刚建）时缺席。 */
-  nextTriggerAt?: string;
-}
+export type AutomationDto = components['schemas']['AutomationResponseDto'];
 
-export interface AutomationRunDto {
-  id: string;
-  automationId: string;
-  status: AutomationRunStatus;
-  /** `resource-exhausted` 时的「已排队 n/5」里的 n。重试**不产生新 run 行**（03 §8.2）。 */
-  retryCount: number;
-  retryAt?: string;
-  /**
-   * ★ **这次触发的时刻，必有** —— 运行历史那一列显示的就是它。
-   *
-   * ⚠️ 别用 `startedAt` 当"这次什么时候的"：`skipped` / `missed` 根本没有「开始执行」
-   * 那一刻（13 §2.7.2 里 `started_at` 可空），而这两类恰恰最需要时间——
-   * 「什么时候错过的」正是用户要看的东西。
-   */
-  triggeredAt: string;
-  /** 真正开始跑的时刻。⚠️ `skipped` / `missed` / `pending` 缺席。 */
-  startedAt?: string;
-  durationMs?: number;
-  outputSummary?: string;
-  webhookStatus?: WebhookStatus;
-  /** ⏳ 契约暂缺（见文件头）。缺席时两种 skipped 只能显示同一句话。 */
-  errorCode?: AutomationSkipReason;
-  /** ⏳ 契约暂缺（见文件头）。缺席时 [打开 Task] 不渲染，而不是渲染一个点了没反应的按钮。 */
-  sandboxId?: string;
-}
+export type AutomationRunDto = components['schemas']['AutomationRunResponseDto'];
 
 /** 分页信封（10 §7.2：**只有 automation runs 用它**，其余列表端点返回裸数组）。 */
 export interface AutomationRunPage {

@@ -42,6 +42,9 @@ function rule(overrides: Partial<AutomationDto> & Pick<AutomationDto, 'id'>): Au
     enabled: true,
     degraded: false,
     consecutiveFailures: 0,
+    triggerOn: 'failure',
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-08-01T00:00:00Z',
     ...overrides,
   };
 }

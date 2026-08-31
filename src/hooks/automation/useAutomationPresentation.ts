@@ -46,7 +46,7 @@ export function useAutomationPresentation(dto: AutomationDto | undefined): Autom
         value:
           dto.webhookUrl === undefined || dto.webhookUrl === ''
             ? '未启用'
-            : `${dto.webhookUrl} · ${TRIGGER_TEXT[dto.triggerOn ?? 'failure'] ?? '仅失败'}`,
+            : `${dto.webhookUrl} · ${TRIGGER_TEXT[dto.triggerOn] ?? '仅失败'}`,
       },
       { label: '连续失败', value: `${String(dto.consecutiveFailures)} 次` },
     ];

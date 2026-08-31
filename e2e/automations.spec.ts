@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { stubInitialized } from './initGate';
+import type { AutomationDto } from '../src/types/automation';
 
 // F21-7 §7.4 的本页独有场景（用 mock 边界跑真实链路，12 §4）：
 //   ① 项目级入口 → 侧弹层打开，标题带作用域项目名；
@@ -28,6 +29,10 @@ const PROJECT = {
   createdAt: new Date().toISOString(),
 };
 
+// ⭐ `satisfies AutomationDto` 不是装饰：这条 fixture 少了 `triggerOn` / `createdAt` /
+// `updatedAt` 三个契约必填字段，运行时被 zod 挡下 ⇒ 列表**一项都不渲染**，5 条用例连锁红。
+// 手写 fixture 与契约漂移，跟 `types/automation.ts` 上一版是同一个病；这里也上同一把锁，
+// 契约再变时**编译期**就红，不必等 e2e 跑到红再回头猜。
 const RULE = {
   id: 'auto-1',
   projectId: 'proj-auto',
@@ -45,7 +50,10 @@ const RULE = {
   degraded: false,
   consecutiveFailures: 0,
   nextTriggerAt: '2026-09-01T00:00:00.000Z',
-};
+  triggerOn: 'failure',
+  createdAt: '2026-08-01T00:00:00.000Z',
+  updatedAt: '2026-08-01T00:00:00.000Z',
+} satisfies AutomationDto;
 
 async function stubBase(page: Page): Promise<void> {
   await page.route('**/api/health', (route) => route.fulfill({ json: {} }));

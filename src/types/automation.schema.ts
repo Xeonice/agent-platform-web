@@ -54,13 +54,17 @@ export const AutomationDtoSchema = z.object({
   timeoutMinutes: z.number(),
   artifactRetentionDays: z.number(),
   webhookUrl: z.string().optional(),
-  triggerOn: z.enum(TRIGGER_ON_OPTIONS).optional(),
+  triggerOn: z.enum(TRIGGER_ON_OPTIONS),
   enabled: z.boolean(),
   /** 连续失败 ≥3 后的「每日重试一次」态（03 §8.4）。 */
   degraded: z.boolean(),
   consecutiveFailures: z.number(),
+  /** 上一次触发的时刻；从未触发过时缺席。 */
+  lastTriggeredAt: z.string().optional(),
   /** UTC ISO；规则从未算过下一次（刚禁用/刚建）时缺席。 */
   nextTriggerAt: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const AutomationListSchema = z.array(AutomationDtoSchema);
@@ -79,10 +83,33 @@ export const AutomationRunDtoSchema = z.object({
   durationMs: z.number().optional(),
   outputSummary: z.string().optional(),
   webhookStatus: z.enum(WEBHOOK_STATUSES).optional(),
-  /** ⏳ 契约暂缺（见文件头）。缺席时两种 skipped 只能显示同一句话。 */
+  /**
+   * ⭐ **三个取值，不是两个。** 上一版手抄成 `['PREVIOUS_RUNNING','AUTH_EXPIRED']`，
+   * 漏了 `RESOURCE_EXHAUSTED`（决策表行 3 重试 5 次仍拿不到资源的终态，03 §8.2）。
+   * ⚠️ zod 的 `.optional()` 放过**缺席**、放不过**多一个合法取值** ⇒ 那种 run 一出现，
+   * `parseOrThrow` 直接抛，**整页运行历史变成一句错误消息、0 行**，连同页里另外
+   * 19 条正常记录一起消失。一次本该降级显示的事故被升级成了整页不可用。
+   */
   errorCode: z.enum(AUTOMATION_SKIP_REASONS).optional(),
-  /** ⏳ 契约暂缺（见文件头）。缺席时 [打开 Task] 不渲染，而不是渲染一个点了没反应的按钮。 */
+  /** `failed` 行唯一能说清「为什么挂了」的字段。 */
+  errorMessage: z.string().optional(),
+  completedAt: z.string().optional(),
   sandboxId: z.string().optional(),
+});
+
+/**
+ * `POST /api/automations/webhook-test` 的响应。
+ *
+ * ⚠️ **它总是 HTTP 200**，成败在 `ok` 里（后端 controller 的 `@HttpCode(200)`：
+ * 投递失败是目标端的事，不该让 HTTP 层去解释）。⛔ 调用方只看 status 会把
+ * SSRF 拒绝 / 连不上 / 超时全渲染成「已送达」。
+ */
+export const WebhookTestResultSchema = z.object({
+  ok: z.boolean(),
+  errorCode: z
+    .enum(['VALIDATION_FAILED', 'HOST_NOT_ALLOWED', 'TIMEOUT', 'UPSTREAM_UNAVAILABLE'])
+    .optional(),
+  message: z.string(),
 });
 
 /** 分页信封（10 §7.2：**只有 automation runs 用它**，其余列表端点返回裸数组）。 */
