@@ -28,6 +28,7 @@ import { ProjectInfoBarView } from '@/views/project/ProjectInfoBar.view';
 import { SandboxTerminalContainer } from '@/containers/sandbox/SandboxTerminalContainer';
 import { NewProjectContainer } from '@/containers/project/NewProjectContainer';
 import { ProjectRecoveryContainer } from '@/containers/project/ProjectRecoveryContainer';
+import { RetainedVolumesContainer } from '@/containers/project/RetainedVolumesContainer';
 import type { Project, Sandbox } from '@/types/domain';
 
 /**
@@ -152,6 +153,12 @@ export function WorkbenchContainer() {
   const projectModalRef = useRef<HTMLDivElement>(null);
   useModalFocus(currentModal === 'createProject', projectModalRef);
 
+  // 「已保留卷」弹层同样要 Esc 与焦点陷阱——少给一个，这个弹层就成了"能打开、关不掉"
+  // （它里面全是链接与按钮，键盘用户会被困住）。
+  const retainedModalRef = useRef<HTMLDivElement>(null);
+  useEscapeKey(currentModal === 'retainedVolumes', closeModal);
+  useModalFocus(currentModal === 'retainedVolumes', retainedModalRef);
+
   /**
    * [+ 新任务] 的可用性（§9.1 #33）。
    *
@@ -241,6 +248,11 @@ export function WorkbenchContainer() {
         onSync={() => {
           syncProject.sync(selectedProject.id);
         }}
+        // 🎁 已保留卷（F21-6 §3.3）。⏳ 归属上属于 `ProjectMenuPanel`，那个侧弹层尚未落地，
+        // 先挂在这条项目级只读条上（见 `ProjectInfoBar.view` 里该 prop 的注释）。
+        onOpenRetainedVolumes={() => {
+          setCurrentModal('retainedVolumes');
+        }}
       />
     );
 
@@ -273,16 +285,32 @@ export function WorkbenchContainer() {
         </>
       }
       overlaySlot={
-        currentModal !== 'createProject' ? null : (
-          <ModalShellView
-            shellRef={projectModalRef}
-            title="新建项目"
-            onClose={closeModal}
-            testId="modal-new-project"
-          >
-            <NewProjectContainer onProjectReady={handleProjectReady} onCancel={closeModal} />
-          </ModalShellView>
-        )
+        <>
+          {currentModal === 'createProject' && (
+            <ModalShellView
+              shellRef={projectModalRef}
+              title="新建项目"
+              onClose={closeModal}
+              testId="modal-new-project"
+            >
+              <NewProjectContainer onProjectReady={handleProjectReady} onCancel={closeModal} />
+            </ModalShellView>
+          )}
+          {currentModal === 'retainedVolumes' && selectedProject !== null && (
+            <ModalShellView
+              shellRef={retainedModalRef}
+              title="已保留卷"
+              subtitle={`在 ${selectedProject.name} 中`}
+              onClose={closeModal}
+              testId="modal-retained-volumes"
+            >
+              <RetainedVolumesContainer
+                projectId={selectedProject.id}
+                projectName={selectedProject.name}
+              />
+            </ModalShellView>
+          )}
+        </>
       }
     />
   );

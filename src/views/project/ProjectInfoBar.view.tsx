@@ -36,6 +36,15 @@ export interface ProjectInfoBarProps {
   syncNeedsCredentials?: boolean;
   onConfigureCredentials?: () => void;
   onSync: () => void;
+  /**
+   * 🎁 [已保留卷]（F21-6 §3.3）——**它本该住在 `ProjectMenuPanel` 里**，而那个侧弹层
+   * 全仓至今不存在（组头「⋯」也不存在）。这条只读条是今天**唯一**已经落地的项目级落点，
+   * 所以入口先挂在这里：功能是项目级的、位置是项目级的，语义不歪。
+   * ⏳ `ProjectMenuPanel` 落地时，把这个 prop 连同按钮整段搬过去（那时这条只读条回到纯只读）。
+   *
+   * ⚠️ 它与「只读」不冲突：打开的是一个**管理面板**，本条上并不发生任何写操作。
+   */
+  onOpenRetainedVolumes?: () => void;
 }
 
 /**
@@ -86,6 +95,7 @@ export function ProjectInfoBarView({
   syncNeedsCredentials = false,
   onConfigureCredentials,
   onSync,
+  onOpenRetainedVolumes,
 }: ProjectInfoBarProps) {
   const isEmptyProject = sourceType === 'empty';
   // 空项目「最后同步」显示的是**创建时间**（§9.2 表格最后一行）：它从来没同步过，
@@ -125,6 +135,20 @@ export function ProjectInfoBarView({
           }}
         >
           {syncing ? '同步中…' : '重新同步'}
+        </Button>
+      )}
+
+      {onOpenRetainedVolumes !== undefined && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          data-testid="open-retained-volumes"
+          onClick={() => {
+            onOpenRetainedVolumes();
+          }}
+        >
+          🎁 已保留卷
         </Button>
       )}
 

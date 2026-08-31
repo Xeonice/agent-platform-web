@@ -12,6 +12,7 @@
 //     所有 handler 的取值都从它派生，`handlers.test.ts` 再从外部把这条不变量钉住。
 import { http, HttpResponse } from 'msw';
 import type { ProjectDto } from '@/types/project';
+import type { RetainedVolumeDto } from '@/types/retainedVolume';
 import type { MaskedGitCredential, StoreGitCredentialResponse } from '@/types/gitCredential';
 import type {
   AuthChallenge,
@@ -193,6 +194,30 @@ function projectDto(overrides: Partial<ProjectDto> & Pick<ProjectDto, 'id' | 'na
     // updatedAt 在契约里是**必填**（不是可选）——fixture 比契约宽松就会让
     // 「最后同步」那一格的降级分支在测试里永远走不到真实形状。
     updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+const MB = 1024 * 1024;
+
+/**
+ * 生成一条 RetainedVolumeDto（10 §7.3）。
+ *
+ * ⚠️ **两个大小刻意给成一个数量级之外的差**（实测本仓 web 工作区：磁盘 1.0 GB / tar 14 MB，
+ * 差 70 倍；数字在 10 §6「保留卷的打包口径」表里，⚠️ 那里写的出处 03 §7.7 并没有这组数）。dev/Storybook 里如果这两个数只差一点点，"只显示一个就够了"这个
+ * 错误决定在替身上**看不出任何问题**——而那正是这个界面最容易犯的错（10 §6 打包口径）。
+ */
+function retainedVolumeDto(
+  overrides: Partial<RetainedVolumeDto> & Pick<RetainedVolumeDto, 'id'>,
+): RetainedVolumeDto {
+  return {
+    projectId: 'proj-demo',
+    sandboxId: 'sbx-demo',
+    source: 'manual-destroy',
+    retainedAt: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+    retainUntil: new Date(Date.now() + 27 * 24 * 3600 * 1000).toISOString(),
+    diskBytes: 1024 * MB,
+    downloadBytes: 14 * MB,
     ...overrides,
   };
 }
@@ -1125,6 +1150,41 @@ export const handlers = [
     ),
   ),
   http.delete(`${API_BASE}/api/projects/:id`, () => new HttpResponse(null, { status: 204 })),
+
+  // —— 保留卷（F21-6 §3.3 / 10 §7.3；三端点统一在 `/api/retained-volumes` 前缀下，审计 P2-5）——
+  // ⚠️ 后端这条切片正在并行实现，openapi.json 里还没有它们 ⇒ 这里是**手写形状**，
+  //    依据是 10 §7.3 的 `RetainedVolumeDto` 逐字段抄写（12 §3.4：形状可以手写，值不能凭空）。
+  http.get(`${API_BASE}/api/retained-volumes`, ({ request }) => {
+    const projectId = new URL(request.url).searchParams.get('projectId') ?? 'proj-demo';
+    return HttpResponse.json([
+      retainedVolumeDto({ id: 'rv-1', projectId }),
+      retainedVolumeDto({
+        id: 'rv-2',
+        projectId,
+        // 弱引用断掉的那条：sandbox 记录已归档，卷仍可管理（10 §7.3）。
+        sandboxId: undefined,
+        source: 'automation-artifact',
+        retainUntil: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+        diskBytes: 320 * MB,
+        downloadBytes: 3 * MB,
+      }),
+    ]);
+  }),
+  http.delete(
+    `${API_BASE}/api/retained-volumes/:id`,
+    () => new HttpResponse(null, { status: 204 }),
+  ),
+  // tar 流：dev 下给一段占位字节 + 精确 Content-Length（浏览器进度条靠的就是它，10 §6）。
+  http.get(`${API_BASE}/api/retained-volumes/:id/archive`, ({ params }) => {
+    const body = new Uint8Array(1024);
+    return new HttpResponse(body, {
+      headers: {
+        'content-type': 'application/x-tar',
+        'content-length': String(body.byteLength),
+        'content-disposition': `attachment; filename="${String(params['id'])}.tar"`,
+      },
+    });
+  }),
 
   // Git 凭证（F21-3 §8）：dev 打通「凭证页 → 配置 HTTPS Token → 测试 → 保存」链路。明文永不回读。
   http.get(`${API_BASE}/api/credentials`, () =>

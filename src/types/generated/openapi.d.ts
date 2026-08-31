@@ -224,6 +224,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/retained-volumes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List retained workspace volumes (cleaned-up ones excluded) */
+        get: operations["RetainedVolumeController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retained-volumes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a retained volume now (the record stays, for audit) */
+        delete: operations["RetainedVolumeController_remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/retained-volumes/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the whole retained volume as an uncompressed tar stream */
+        get: operations["RetainedVolumeController_archive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sandboxes": {
         parameters: {
             query?: never;
@@ -914,6 +965,17 @@ export interface components {
         DeleteProjectDto: {
             keepBaseline?: boolean;
         };
+        RetainedVolumeResponseDto: {
+            id: string;
+            projectId: string;
+            sandboxId?: string;
+            /** @enum {string} */
+            source: "manual-destroy" | "automation-artifact";
+            retainedAt: string;
+            retainUntil: string;
+            diskBytes: number;
+            downloadBytes: number;
+        };
         CreateSandboxDto: {
             projectId: string;
             branch?: string;
@@ -946,6 +1008,13 @@ export interface components {
             version: number;
             failureCode?: string;
             failureMessage?: string;
+            health?: {
+                /** @enum {string} */
+                state: "healthy" | "unhealthy" | "unknown" | "starting";
+                lastCheckedAt: string;
+                message?: string;
+                consecutiveFailures: number;
+            };
         };
         ExecInSandboxDto: {
             command: string;
@@ -1782,6 +1851,82 @@ export interface operations {
             };
             /** @description the project is not ready (or has no remote) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RetainedVolumeController_list: {
+        parameters: {
+            query?: {
+                projectId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetainedVolumeResponseDto"][];
+                };
+            };
+        };
+    };
+    RetainedVolumeController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unknown id, or already cleaned up (I-RV-2) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RetainedVolumeController_archive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Uncompressed tar bytes (application/x-tar) */
+            200: {
+                headers: {
+                    /** @description Exact archive size in bytes. It is computable BEFORE the first byte is sent precisely because the archive is not compressed — that is what keeps the browser's native download progress bar working. */
+                    "content-length": number;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unknown id, already cleaned up, or gone from disk */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

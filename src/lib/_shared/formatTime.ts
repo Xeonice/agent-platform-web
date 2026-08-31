@@ -25,3 +25,31 @@ export function formatRelativePast(iso: string | undefined, now: number): string
   if (elapsed < DAY_MS) return `${String(Math.floor(elapsed / HOUR_MS))} 小时前`;
   return `${String(Math.floor(elapsed / DAY_MS))} 天前`;
 }
+
+/** `remainingWholeDays` 的结论：`expired` 与 `days===0` 是两件事，见下。 */
+export interface RemainingDays {
+  /** 到点了（`iso` 已在过去或正好是现在）。清理是后台任务，到点与真删之间有窗口。 */
+  expired: boolean;
+  /** **整数天向下取整**（P21-5 §6）。`expired` 为真时恒为 0。 */
+  days: number;
+}
+
+/**
+ * 「还剩几天」的**唯一**取整实现（P21-5 §6：整数天向下取整、不足 1 天单独说）。
+ *
+ * 它被两处消费：系统状态卡的「最早的成果还需 N 天清理」（`lib/system/resourceModel`）与
+ * 项目菜单里每个保留卷自己的倒计时（`lib/project/retainedVolumeModel`）。两处的**句子**
+ * 不同、**规则**必须相同——各写一份 `Math.floor(ms / DAY)` 的话，哪天产品把口径改成
+ * 「向上取整」，改一处漏一处，两个界面会对同一个卷说出不同的天数。
+ *
+ * ⚠️ **`expired` 与 `days===0` 必须分开**：前者是「早就该清了，正在等后台任务」，后者是
+ * 「今天之内会清」。合成一个会让已过期的卷显示「不足 1 天」，用户以为还来得及下载。
+ * 无法解析（空串 / 非法日期）返回 `undefined`，调用方据此**不渲染**倒计时，而不是渲染 NaN。
+ */
+export function remainingWholeDays(iso: string, now: Date): RemainingDays | undefined {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return undefined;
+  const remainMs = at - now.getTime();
+  if (remainMs <= 0) return { expired: true, days: 0 };
+  return { expired: false, days: Math.floor(remainMs / DAY_MS) };
+}

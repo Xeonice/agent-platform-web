@@ -279,6 +279,73 @@ describe('WorkbenchContainer · 新建项目的分支输入', () => {
 });
 
 // ————————————————————————————————————————————————————————————————
+// ⑤ 🎁 已保留卷（F21-6 §3.3；⏳ 归属 `ProjectMenuPanel`，那个侧弹层尚未落地）
+// ————————————————————————————————————————————————————————————————
+describe('WorkbenchContainer · 已保留卷入口', () => {
+  /**
+   * 入口 + 弹层一起验：`currentModal` 的取值只有"set 与 read 一起落地"才算数
+   * （createUiSlice 文件头那条纪律——只在类型里存在的取值比没有更坏）。
+   *
+   * 变异：把 `ProjectInfoBar.view` 的 [🎁 已保留卷] 按钮删掉、或把
+   * `overlaySlot` 里 `retainedVolumes` 那个分支去掉 ⇒ 本例变红。
+   */
+  it('选中项目 ⇒ 只读条上有 [🎁 已保留卷]，点开是 overlay 弹层', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    server.use(http.get(`${API_BASE}/api/retained-volumes`, () => HttpResponse.json([])));
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
+    fireEvent.click(await screen.findByTestId('open-retained-volumes'));
+
+    const modal = await screen.findByTestId('modal-retained-volumes');
+    expect(modal).toHaveAttribute('role', 'dialog');
+    expect(modal).toHaveAttribute('aria-modal', 'true');
+    expect(within(modal).getByTestId('retained-volumes-panel')).toBeInTheDocument();
+  });
+
+  /** 打得开就必须关得掉：这个弹层里全是链接与按钮，键盘用户会被困住。 */
+  it('Esc 关闭已保留卷弹层', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    server.use(http.get(`${API_BASE}/api/retained-volumes`, () => HttpResponse.json([])));
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
+    fireEvent.click(await screen.findByTestId('open-retained-volumes'));
+    await screen.findByTestId('modal-retained-volumes');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByTestId('modal-retained-volumes')).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * ⭐ 否定性：**没选中项目时不该有这个入口**——保留卷是按项目过滤的
+   * （`GET /api/retained-volumes?projectId=`），没有项目就没有可问的问题。
+   */
+  it('未选中项目 ⇒ 只读条不存在，入口自然也不存在', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    renderWorkbench();
+
+    await screen.findByRole('button', { name: /ProjectA/ });
+    expect(screen.queryByTestId('project-info-bar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('open-retained-volumes')).not.toBeInTheDocument();
+  });
+
+  /** 弹层同一时刻只有一个（modal 不堆叠，F21-6 §2）。 */
+  it('开着已保留卷时不会同时渲染新建项目弹层', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    server.use(http.get(`${API_BASE}/api/retained-volumes`, () => HttpResponse.json([])));
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
+    fireEvent.click(await screen.findByTestId('open-retained-volumes'));
+    await screen.findByTestId('modal-retained-volumes');
+    expect(screen.queryByTestId('modal-new-project')).not.toBeInTheDocument();
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
 // ④ 项目只读条 + [重新同步]（F21-6 §9.2/§9.3）
 // ————————————————————————————————————————————————————————————————
 describe('WorkbenchContainer · 项目只读条', () => {
