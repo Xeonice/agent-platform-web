@@ -107,8 +107,13 @@ export interface UiSlice {
    * ⚠️ `'registerImage'` 本轮**连 set 带 read 一起**加了回来（理由见文件头）：
    * `hooks/image/useImages.ts` set，`containers/image/ImagesContainer.tsx` read 并渲染
    * `RegisterImageModal.view`。`'wizard'` 没有回来——它今天仍然没有产出方。
+   *
+   * ⚠️ `'retainedVolumes'`（F21-6 §3.3「🎁 已保留卷」）按**同样两个条件**加入：
+   * ① set 与 read 一起落地——`ProjectInfoBar.view` 的 [🎁 已保留卷] 经 `WorkbenchContainer`
+   *    set，同一个 container 的 `overlaySlot` read 并渲染 `RetainedVolumesContainer`；
+   * ② 是真 overlay（复用 `ModalShell.view`，与另外三个同一套形态）。
    */
-  currentModal: 'createProject' | 'newTask' | 'registerImage' | null;
+  currentModal: 'createProject' | 'newTask' | 'registerImage' | 'retainedVolumes' | null;
   setCurrentModal: (modal: UiSlice['currentModal']) => void;
 
   // —— Git 凭证回程暂存（不 persist）——

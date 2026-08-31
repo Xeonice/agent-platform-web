@@ -11,6 +11,7 @@
 // `{cpu:10%, ram:20%, disk:98%}` 必须是 `critical`：平均会把它算成健康，而那恰恰是最该
 // 拦住新建 Task 的时刻。后端没有这个字段（它按维度出结论，不下整体判断），所以这一步
 // 没有第二个来源。
+import { remainingWholeDays } from '@/lib/_shared/formatTime';
 import type {
   ResourceGaugeModel,
   ResourceLevel,
@@ -74,21 +75,23 @@ export function formatBytes(bytes: number): string {
   return `${String(round1(bytes / divisor))} ${unit}`;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 /**
  * 保留卷倒计时（P21-5 §6）：**整数天向下取整**，不足 1 天说「不足 1 天」。
  *
  * ⚠️ 已过期（`expiresAt` 在过去）说「即将清理」而不是负数天——FIFO 清理是后台任务，
  * 到点与真正删掉之间有窗口，报「还需 -1 天」会让用户以为界面坏了。
+ *
+ * ⚠️ **取整规则本身不在这里**，在 `lib/_shared/formatTime` 的 `remainingWholeDays`：
+ * 项目菜单里每个保留卷各自的倒计时（`lib/project/retainedVolumeModel`）说的是另一句话，
+ * 但必须是同一个规则。本函数只负责把结论包成这张卡要的那句话。
  */
 export function formatRetainedCountdown(expiresAtIso: string, now: Date): string | undefined {
-  const expiresAt = Date.parse(expiresAtIso);
-  if (Number.isNaN(expiresAt)) return undefined;
-  const remainMs = expiresAt - now.getTime();
-  if (remainMs <= 0) return '最早的成果即将清理';
-  const days = Math.floor(remainMs / DAY_MS);
-  return days < 1 ? '最早的成果不足 1 天后清理' : `最早的成果还需 ${String(days)} 天清理`;
+  const remaining = remainingWholeDays(expiresAtIso, now);
+  if (remaining === undefined) return undefined;
+  if (remaining.expired) return '最早的成果即将清理';
+  return remaining.days < 1
+    ? '最早的成果不足 1 天后清理'
+    : `最早的成果还需 ${String(remaining.days)} 天清理`;
 }
 
 function retainedModel(dto: SystemResourcesDto, now: Date): RetainedVolumeModel {
