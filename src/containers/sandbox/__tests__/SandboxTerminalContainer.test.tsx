@@ -1343,3 +1343,118 @@ describe('SandboxTerminalContainer · 分支选择器', () => {
     });
   });
 });
+
+/**
+ * ★ 深链可寻址（F21-2 §2.1）在**容器一侧**的那一半：那句「刷新后指令未保留」。
+ *
+ * URL 的读写在 `hooks/_shared/useDeepLinkModal`（有自己的一组测试）；这里只管一件事——
+ * **深链带出来的弹窗要明说指令没保住，站内点开的不许出现这句**。
+ *
+ * ⚠️ 为什么这句非有不可（裁决一）：指令是敏感上下文（15 §3.5），它只活在本容器的局部
+ * state，既不进 URL 也不进 localStorage ⇒ 深链**不可能**把它恢复回来。用户看见弹窗还在，
+ * 会默认自己写的东西也还在——静默比"弹窗刷新即关闭"更糟，后者至少是诚实的。
+ */
+describe('SandboxTerminalContainer · 深链进入的指令提示（F21-2 §2.1）', () => {
+  const NOTICE = '刷新后指令未保留，请重新输入';
+
+  /** 进站 URL（`useState` 初值读的就是它）。 */
+  function enterAt(url: string): void {
+    window.history.replaceState(null, '', url);
+  }
+
+  beforeEach(() => {
+    enterAt('/');
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+  });
+  afterEach(() => {
+    enterAt('/');
+  });
+
+  /**
+   * 变异：把 `promptNotice` 那一行传参删掉（或把 `openedFromDeepLink` 写死 false）⇒ 本例变红。
+   */
+  it('深链进入（?new=1&project= 指着本项目）⇒ 指令框下有那句灰字，且输入框是空的', async () => {
+    enterAt('/?new=1&project=proj-1');
+    renderContainer();
+
+    const notice = await screen.findByTestId('prompt-deeplink-notice');
+    expect(notice).toHaveTextContent(NOTICE);
+    expect(await screen.findByLabelText('任务指令（可选）')).toHaveValue('');
+  });
+
+  /**
+   * 变异：把 `openedFromDeepLink` 写死 true（或改成每帧读 URL）⇒ 本例变红。
+   * 「每帧读 URL」这个变异特别值得防：弹窗一打开 URL 上就有参数了，站内点开会在下一帧
+   * 翻成 true，那句灰字就会到处乱冒——而它说的是**假话**（什么都没丢）。
+   */
+  it('站内点开（URL 干净）⇒ **不出**这句', async () => {
+    renderContainer();
+
+    await screen.findByLabelText('任务指令（可选）');
+    expect(screen.queryByTestId('prompt-deeplink-notice')).not.toBeInTheDocument();
+  });
+
+  /**
+   * 深链指着**别的**项目（切项目时旧参数可能还没抹掉）⇒ 不该给本项目挂这句。
+   * 变异：把判据里的 `?.projectId === projectId` 改成"只要有参数就算"⇒ 本例变红。
+   */
+  it('URL 上的 project 指着别的项目 ⇒ 不出这句', async () => {
+    enterAt('/?new=1&project=someone-else');
+    renderContainer();
+
+    await screen.findByLabelText('任务指令（可选）');
+    expect(screen.queryByTestId('prompt-deeplink-notice')).not.toBeInTheDocument();
+  });
+
+  /**
+   * 关掉再重开就是**站内点开**了，不该还挂着那句（这次没有任何东西丢失）。
+   * 变异：删掉那条「弹窗关上就把 `openedFromDeepLink` 置回 false」的 effect ⇒ 本例变红。
+   */
+  it('深链弹窗关掉后重新点开 ⇒ 这句不再出现', async () => {
+    enterAt('/?new=1&project=proj-1');
+    renderContainer();
+    await screen.findByTestId('prompt-deeplink-notice');
+
+    act(() => {
+      useAppStore.getState().setCurrentModal(null);
+    });
+    act(() => {
+      useAppStore.getState().setCurrentModal('newTask');
+    });
+
+    await screen.findByLabelText('任务指令（可选）');
+    expect(screen.queryByTestId('prompt-deeplink-notice')).not.toBeInTheDocument();
+  });
+
+  /**
+   * ⭐ **安全红线**（§2.1「安全红线」那行 + 完成判据 4）：`initialPrompt` 永远不进 URL。
+   *
+   * 深链把弹窗恢复出来了，于是"顺手也把指令恢复一下"是这一期最容易犯的错——而指令
+   * 可能含仓库路径、内部系统名、业务上下文，URL 会被复制、被分享、被写进浏览器历史
+   * 与服务端访问日志，比 localStorage 更糟。
+   *
+   * 变异：在 `onInitialPromptChange` 里往 URL 写一次（例如
+   * `window.history.replaceState(null, '', '?prompt=' + value)`）⇒ 本例变红。
+   */
+  it('⭐ 深链打开后输入指令 ⇒ window.location 不含指令内容（也不进 store / localStorage）', async () => {
+    enterAt('/?new=1&project=proj-1');
+    renderContainer();
+
+    const textarea = await screen.findByLabelText('任务指令（可选）');
+    fireEvent.change(textarea, { target: { value: '分析 /srv/internal-repo 的架构并输出摘要' } });
+    expect(textarea).toHaveValue('分析 /srv/internal-repo 的架构并输出摘要');
+
+    expect(window.location.search).not.toContain('internal-repo');
+    expect(window.location.href).not.toContain('internal-repo');
+    // 深链**只带得动**这两个键；其余一律不许出现。
+    expect([...new URLSearchParams(window.location.search).keys()].sort()).toEqual([
+      'new',
+      'project',
+    ]);
+    expect(JSON.stringify(useAppStore.getState())).not.toContain('internal-repo');
+    expect(globalThis.localStorage.getItem('agent-platform-ui') ?? '').not.toContain(
+      'internal-repo',
+    );
+  });
+});

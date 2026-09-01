@@ -95,7 +95,16 @@ export interface UiSlice {
   setTerminalFontSize: (size: number) => void;
 
   // —— 瞬时 UI 指向（不 persist）——
+  /**
+   * 组头「⋯」指向的项目（F21-6 §5「组头「⋯」→ 侧弹层」）。
+   *
+   * ⚠️ **与 `selectedProjectId` 语义分离、绝不复用**：打开 B 的项目菜单**不改**当前
+   * 工作项目（§9.2 VS-2 步骤 1）。此前这个字段只有声明、没有 setter，全仓无人写——
+   * 与文件头那条「只在类型里存在的取值比没有更坏」是同一个病；本轮 set 与 read
+   * 一起落地（`WorkbenchContainer` set，同一个 container 的 `overlaySlot` read）。
+   */
   selectedProjectForMenu: string | null;
+  setSelectedProjectForMenu: (projectId: string | null) => void;
   /**
    * 当前打开的**弹层**。三个取值都是真 overlay（`role=dialog` + `fixed inset-0 z-50 … bg-black/60`,
    * 与 `ConfirmDialog.view` 同一套形态），名字自此兑现。
@@ -119,9 +128,26 @@ export interface UiSlice {
    * ② 是真 overlay（同样复用 `ModalShell.view`）。
    *    ⚠️ 面板内部的「列表 ⇄ 详情 ⇄ 表单」是**视图切换，不是第二层弹层**
    *    （P20 §8.4 modal 不堆叠 / F21-7 §2），所以这里仍然只需要一个取值。
+   *
+   * ⚠️ `'projectMenu'`（F21-6 §10「项目菜单整块」）按**同样两个条件**加入：
+   * ① set 与 read 一起落地——`ProjectGroupHeader.view` 的组头「⋯」→ `ProjectGroupMenu.view`
+   *    经 `WorkbenchContainer` set（连同 `selectedProjectForMenu`），同一个 container 的
+   *    `overlaySlot` read 并渲染 `ProjectMenuContainer`；
+   * ② 是真 overlay（同样复用 `ModalShell.view`）。
+   *    ⚠️ 面板内的「详情 ⇄ 删除确认」同样是**视图切换，不是第二层弹层**：
+   *    `DeleteProjectConfirm.view` 就地渲染在面板内，不再叠一层 `fixed inset-0`
+   *    （理由见该 view 的文件头）。
+   *    ⚠️ 「已保留卷」/「自动化规则」两个入口本轮从 `ProjectInfoBar` 搬进本面板，
+   *    点它们是 `currentModal` **换值**（本面板随之关闭），仍然不堆叠。
    */
   currentModal:
-    'createProject' | 'newTask' | 'registerImage' | 'retainedVolumes' | 'automations' | null;
+    | 'createProject'
+    | 'newTask'
+    | 'registerImage'
+    | 'retainedVolumes'
+    | 'automations'
+    | 'projectMenu'
+    | null;
   setCurrentModal: (modal: UiSlice['currentModal']) => void;
 
   // —— Git 凭证回程暂存（不 persist）——
@@ -196,6 +222,10 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
   },
 
   selectedProjectForMenu: null,
+  setSelectedProjectForMenu: (projectId): void => {
+    // ⛔ 刻意**不动** selectedProjectId：两位分开正是 §9.2 VS-2 步骤 1 要的。
+    set({ selectedProjectForMenu: projectId });
+  },
   currentModal: null,
   setCurrentModal: (modal): void => {
     set({ currentModal: modal });

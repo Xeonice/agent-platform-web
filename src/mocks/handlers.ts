@@ -1273,6 +1273,18 @@ export const handlers = [
       },
     ),
   ),
+  /** 取消进行中的克隆（**保留项目**，F21-6 §10.6 第 2 条）：后端把它转回 failed。 */
+  http.post(`${API_BASE}/api/projects/:id/cancel-clone`, ({ params }) =>
+    HttpResponse.json(
+      projectDto({
+        id: String(params['id']),
+        name: '已取消克隆',
+        sourceType: 'git',
+        cloneStatus: 'failed',
+      }),
+      { status: 200 },
+    ),
+  ),
   http.delete(`${API_BASE}/api/projects/:id`, () => new HttpResponse(null, { status: 204 })),
 
   // —— 保留卷（F21-6 §3.3 / 10 §7.3；三端点统一在 `/api/retained-volumes` 前缀下，审计 P2-5）——

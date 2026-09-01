@@ -75,12 +75,41 @@ function renderWorkbench(): void {
   render(<WorkbenchContainer />, { wrapper: Wrapper });
 }
 
+/**
+ * 组头「⋯」→ [项目菜单…] → 侧弹层（F21-6 §10）。
+ *
+ * ⚠️ 这条路本轮才存在：在它之前组头是一个纯按钮，删除项目 / 已保留卷 / 自动化
+ * 三个入口要么没有、要么借挂在项目只读条上（§10.1 / §10.2 C）。
+ */
+function groupHeaderOf(projectName: string): HTMLElement {
+  const header = screen
+    .getAllByTestId('project-group-header')
+    .find((el) => el.textContent.includes(projectName));
+  if (header === undefined) throw new Error(`找不到项目组头：${projectName}`);
+  return header;
+}
+
+/** 组头「⋯」→ 下拉菜单。 */
+async function openGroupMenu(projectName: string): Promise<HTMLElement> {
+  await screen.findAllByTestId('project-group-header');
+  fireEvent.click(within(groupHeaderOf(projectName)).getByTestId('project-group-menu-trigger'));
+  return screen.findByTestId('project-group-menu');
+}
+
+/** 组头「⋯」→ [项目菜单…] → 侧弹层。 */
+async function openProjectMenu(projectName: string): Promise<HTMLElement> {
+  const menu = await openGroupMenu(projectName);
+  fireEvent.click(within(menu).getByTestId('group-menu-open-panel'));
+  return screen.findByTestId('modal-project-menu');
+}
+
 beforeEach(() => {
   cleanup();
   nav.push.mockClear();
   useAppStore.getState().setSelectedProjectId(null);
   useAppStore.getState().setSelectedSandboxId(null);
   useAppStore.getState().setCurrentModal(null);
+  useAppStore.getState().setSelectedProjectForMenu(null);
   server.use(
     http.get(`${API_BASE}/api/projects/:id/branches`, () => HttpResponse.json(['main', 'develop'])),
   );
@@ -279,28 +308,43 @@ describe('WorkbenchContainer · 新建项目的分支输入', () => {
 });
 
 // ————————————————————————————————————————————————————————————————
-// ⑤ 🎁 已保留卷（F21-6 §3.3；⏳ 归属 `ProjectMenuPanel`，那个侧弹层尚未落地）
+// ⑤ 🎁 已保留卷（F21-6 §3.3）—— ★ 2026-09-01 入口**已从只读条搬进项目菜单**（§10.2 C）
 // ————————————————————————————————————————————————————————————————
 describe('WorkbenchContainer · 已保留卷入口', () => {
   /**
    * 入口 + 弹层一起验：`currentModal` 的取值只有"set 与 read 一起落地"才算数
    * （createUiSlice 文件头那条纪律——只在类型里存在的取值比没有更坏）。
    *
-   * 变异：把 `ProjectInfoBar.view` 的 [🎁 已保留卷] 按钮删掉、或把
-   * `overlaySlot` 里 `retainedVolumes` 那个分支去掉 ⇒ 本例变红。
+   * ★ 本轮改了**入口位置**：组头「⋯」→ [项目菜单…] → [🎁 已保留卷]（§10.7 集成 ⑥）。
+   * 变异：把 `ProjectMenuPanel.view` 的 [🎁 已保留卷] 按钮删掉、或把 `overlaySlot` 里
+   * `retainedVolumes` 那个分支去掉 ⇒ 本例变红。
    */
-  it('选中项目 ⇒ 只读条上有 [🎁 已保留卷]，点开是 overlay 弹层', async () => {
+  it('组头「⋯」→ 项目菜单里有 [🎁 已保留卷]，点开是 overlay 弹层', async () => {
     mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
     server.use(http.get(`${API_BASE}/api/retained-volumes`, () => HttpResponse.json([])));
     renderWorkbench();
 
-    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
-    fireEvent.click(await screen.findByTestId('open-retained-volumes'));
+    const panel = await openProjectMenu('ProjectA');
+    fireEvent.click(within(panel).getByTestId('open-retained-volumes'));
 
     const modal = await screen.findByTestId('modal-retained-volumes');
     expect(modal).toHaveAttribute('role', 'dialog');
     expect(modal).toHaveAttribute('aria-modal', 'true');
     expect(within(modal).getByTestId('retained-volumes-panel')).toBeInTheDocument();
+  });
+
+  /**
+   * ⭐ 否定性搬家断言：只读条**回到纯只读**——那两个入口不许再出现在它上面（§10.4 判据 2）。
+   * 变异：把 `ProjectInfoBar.view` 的按钮加回去 ⇒ 本例变红。
+   */
+  it('项目只读条上不再有 [🎁 已保留卷] / [⚙️ 自动化规则]（回到纯只读）', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
+    const bar = await screen.findByTestId('project-info-bar');
+    expect(within(bar).queryByTestId('open-retained-volumes')).not.toBeInTheDocument();
+    expect(within(bar).queryByTestId('open-automations')).not.toBeInTheDocument();
   });
 
   /** 打得开就必须关得掉：这个弹层里全是链接与按钮，键盘用户会被困住。 */
@@ -309,8 +353,8 @@ describe('WorkbenchContainer · 已保留卷入口', () => {
     server.use(http.get(`${API_BASE}/api/retained-volumes`, () => HttpResponse.json([])));
     renderWorkbench();
 
-    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
-    fireEvent.click(await screen.findByTestId('open-retained-volumes'));
+    const panel = await openProjectMenu('ProjectA');
+    fireEvent.click(within(panel).getByTestId('open-retained-volumes'));
     await screen.findByTestId('modal-retained-volumes');
 
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -320,10 +364,10 @@ describe('WorkbenchContainer · 已保留卷入口', () => {
   });
 
   /**
-   * ⭐ 否定性：**没选中项目时不该有这个入口**——保留卷是按项目过滤的
+   * ⭐ 否定性：**菜单没打开时不该有这个入口**——保留卷是按项目过滤的
    * （`GET /api/retained-volumes?projectId=`），没有项目就没有可问的问题。
    */
-  it('未选中项目 ⇒ 只读条不存在，入口自然也不存在', async () => {
+  it('未打开项目菜单 ⇒ 入口不存在', async () => {
     mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
     renderWorkbench();
 
@@ -332,15 +376,16 @@ describe('WorkbenchContainer · 已保留卷入口', () => {
     expect(screen.queryByTestId('open-retained-volumes')).not.toBeInTheDocument();
   });
 
-  /** 弹层同一时刻只有一个（modal 不堆叠，F21-6 §2）。 */
-  it('开着已保留卷时不会同时渲染新建项目弹层', async () => {
+  /** 弹层同一时刻只有一个（modal 不堆叠，F21-6 §2）：换值 ⇒ 项目菜单随之关闭。 */
+  it('开着已保留卷时，项目菜单与新建项目弹层都不在场', async () => {
     mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
     server.use(http.get(`${API_BASE}/api/retained-volumes`, () => HttpResponse.json([])));
     renderWorkbench();
 
-    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
-    fireEvent.click(await screen.findByTestId('open-retained-volumes'));
+    const panel = await openProjectMenu('ProjectA');
+    fireEvent.click(within(panel).getByTestId('open-retained-volumes'));
     await screen.findByTestId('modal-retained-volumes');
+    expect(screen.queryByTestId('modal-project-menu')).not.toBeInTheDocument();
     expect(screen.queryByTestId('modal-new-project')).not.toBeInTheDocument();
   });
 });
@@ -644,5 +689,285 @@ describe('WorkbenchContainer · 离线模式下的 [+ 新任务]', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /新任务/ })).toBeEnabled();
     });
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// ⑥ 项目菜单整块（F21-6 §10）：组头「⋯」→ 菜单 → 侧弹层 → 删除
+//
+// 这一节存在的理由不是"多几条用例"：`DELETE /api/projects/:id` 端点一直都在、级联语义
+// 早就定义好了，而在此之前用户**在界面上够不着**——唯一的删除途径是自己拼 URL 打 API
+// （§10.1）。下面每一条都对着 §10.7 的一行。
+// ————————————————————————————————————————————————————————————————
+describe('WorkbenchContainer · 项目菜单与删除', () => {
+  /** ① 组头「⋯」→ 菜单打开。变异：把 `ProjectGroupHeader.view` 的 ⋯ 按钮删掉 ⇒ 红。 */
+  it('组头「⋯」打开下拉菜单；[项目菜单…] 打开侧弹层（overlay）', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 5 })]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    const panel = await openProjectMenu('ProjectA');
+    expect(panel).toHaveAttribute('role', 'dialog');
+    expect(panel).toHaveAttribute('aria-modal', 'true');
+    expect(within(panel).getByTestId('project-meta-section')).toHaveTextContent('ProjectA');
+  });
+
+  /**
+   * ⭐ §9.2 VS-2 步骤 1 / §7.3「组头菜单不改上下文」：
+   * 当前项目为 A，点 B 的「⋯」→ `selectedProjectForMenu==='p2'` 且 `selectedProjectId` 仍是 'p1'。
+   *
+   * 变异：把 `handleOpenProjectMenu` 里改成顺手 `setSelectedProjectId(projectId)` ⇒ 本例变红。
+   */
+  it('打开 B 的项目菜单 ⇒ 当前工作项目仍是 A（两位语义分离）', async () => {
+    mockProjects([
+      projectDto({ id: 'p1', name: 'ProjectA' }),
+      projectDto({ id: 'p2', name: 'ProjectB' }),
+    ]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
+    await waitFor(() => {
+      expect(useAppStore.getState().selectedProjectId).toBe('p1');
+    });
+
+    await openProjectMenu('ProjectB');
+    expect(useAppStore.getState().selectedProjectForMenu).toBe('p2');
+    expect(useAppStore.getState().selectedProjectId).toBe('p1');
+  });
+
+  /**
+   * ⭐ §10.6 第 3 条：运行中任务警示读**真数据**（沙箱列表实际状态），
+   * 0 与 2 必须长得不一样。变异：把 `DeleteProjectConfirm` 那两个分支合成一句
+   *「可能有正在运行的任务」⇒ 本例与下一例同时变红。
+   */
+  it('[删除] → 二次确认：级联句 + 运行中任务数（读沙箱真实状态）', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 5 })]);
+    mockSandboxes([
+      { id: 's1', projectId: 'p1', name: 'T1', status: 'running', waitingInput: false },
+      { id: 's2', projectId: 'p1', name: 'T2', status: 'idle', waitingInput: true },
+      { id: 's3', projectId: 'p1', name: 'T3', status: 'stopped', waitingInput: false },
+      // 别的项目的运行中任务**不许**被算进来。
+      { id: 's4', projectId: 'p2', name: 'T4', status: 'running', waitingInput: false },
+    ]);
+    renderWorkbench();
+
+    const panel = await openProjectMenu('ProjectA');
+    fireEvent.click(within(panel).getByTestId('project-delete-entry'));
+
+    expect(await screen.findByTestId('delete-cascade-copy')).toHaveTextContent(
+      '将删除该项目下 5 个 Task 及其数据卷（保留的成果卷除外），不可逆。',
+    );
+    expect(screen.getByTestId('delete-running-warning')).toHaveTextContent(
+      '含 2 个运行中任务将被强制停止',
+    );
+  });
+
+  it('没有运行中任务 ⇒ 明说「当前没有运行中的任务」，而不是沉默', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 1 })]);
+    mockSandboxes([
+      { id: 's3', projectId: 'p1', name: 'T3', status: 'stopped', waitingInput: false },
+    ]);
+    renderWorkbench();
+
+    const panel = await openProjectMenu('ProjectA');
+    fireEvent.click(within(panel).getByTestId('project-delete-entry'));
+    expect(await screen.findByTestId('delete-running-warning')).toHaveTextContent(
+      '当前没有运行中的任务',
+    );
+  });
+
+  /** ② [删除] → 确认 → 真的发出 `DELETE /api/projects/:id`。 */
+  it('确认 ⇒ 发出 DELETE /api/projects/:id 并关闭弹层', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    mockSandboxes([]);
+    const deleted: string[] = [];
+    server.use(
+      http.delete(`${API_BASE}/api/projects/:id`, ({ params }) => {
+        deleted.push(String(params['id']));
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderWorkbench();
+
+    const panel = await openProjectMenu('ProjectA');
+    fireEvent.click(within(panel).getByTestId('project-delete-entry'));
+    fireEvent.click(await screen.findByTestId('delete-confirm'));
+
+    await waitFor(() => {
+      expect(deleted).toEqual(['p1']);
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('modal-project-menu')).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * ⭐ §10.7 集成 ③ / 变异点之一：**409 不许被处理成静默关闭**。
+   * 变异：把 `ProjectMenuContainer` 的 `onError` 改成 `onDeleted(projectId)`（即关掉弹层）
+   * ⇒ 本例变红（弹层不在了、原因也没人说）。
+   */
+  it('后端 409（有运行中任务）⇒ 弹层留在原地并显示原因，⛔ 不静默关闭', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 2 })]);
+    mockSandboxes([
+      { id: 's1', projectId: 'p1', name: 'T1', status: 'running', waitingInput: false },
+    ]);
+    server.use(
+      http.delete(`${API_BASE}/api/projects/:id`, () =>
+        HttpResponse.json(
+          {
+            code: 'CONFLICT',
+            message: '该项目仍有运行中的任务，请先停止后再删除。',
+            retryable: false,
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderWorkbench();
+
+    const panel = await openProjectMenu('ProjectA');
+    fireEvent.click(within(panel).getByTestId('project-delete-entry'));
+    fireEvent.click(await screen.findByTestId('delete-confirm'));
+
+    expect(await screen.findByTestId('delete-error')).toHaveTextContent(
+      '该项目仍有运行中的任务，请先停止后再删除。',
+    );
+    expect(screen.getByTestId('modal-project-menu')).toBeInTheDocument();
+    // 本地状态没被"乐观"改动：树里那一项还在。
+    expect(screen.getAllByTestId('project-group-header')).toHaveLength(1);
+  });
+
+  /**
+   * ⭐ §10.6 第 1 条 / 变异点之二：**删除当前选中项目 ⇒ 选中态清空、主区回引导态**。
+   * ⛔ 不许留一个指向已删项目的 `selectedProjectId`（它是 persist 的）。
+   *
+   * 变异：把 `useDeleteProject` 里清选中的分支删掉 ⇒ 本例变红。
+   */
+  it('删除当前选中项目 ⇒ 选中态清空、主区回引导态（不是白屏）', async () => {
+    let projects = [
+      projectDto({ id: 'p1', name: 'ProjectA' }),
+      projectDto({ id: 'p2', name: 'ProjectB' }),
+    ];
+    server.use(http.get(`${API_BASE}/api/projects`, () => HttpResponse.json(projects)));
+    mockSandboxes([]);
+    server.use(
+      http.delete(`${API_BASE}/api/projects/:id`, ({ params }) => {
+        projects = projects.filter((p) => p.id !== String(params['id']));
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderWorkbench();
+
+    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
+    await waitFor(() => {
+      expect(useAppStore.getState().selectedProjectId).toBe('p1');
+    });
+
+    const panel = await openProjectMenu('ProjectA');
+    fireEvent.click(within(panel).getByTestId('project-delete-entry'));
+    fireEvent.click(await screen.findByTestId('delete-confirm'));
+
+    await waitFor(() => {
+      expect(useAppStore.getState().selectedProjectId).toBeNull();
+    });
+    expect(useAppStore.getState().selectedSandboxId).toBeNull();
+    expect(await screen.findByText('选择左侧项目，或新建一个项目开始。')).toBeInTheDocument();
+  });
+
+  /**
+   * ⭐ §10.7 集成 ⑤ / 变异点之三：failed 态菜单 [重试克隆] 与恢复面板 [重试]
+   * **命中同一个 hook** —— 断言只发一次 `retry-clone`。
+   *
+   * 变异：让 `ProjectGroupMenuView` 的 `onRetryClone` 自己再发一次 `retry-clone`
+   *（"两份实现"那个病）⇒ 请求数变 2，本例变红。
+   */
+  it('failed 组头菜单 [重试克隆] 只发一次 retry-clone（与恢复面板同一个 hook）', async () => {
+    mockProjects([
+      projectDto({ id: 'p1', name: 'FailedProject', cloneStatus: 'failed', taskCount: 0 }),
+    ]);
+    mockSandboxes([]);
+    let retryCount = 0;
+    server.use(
+      http.post(`${API_BASE}/api/projects/:id/retry-clone`, ({ params }) => {
+        retryCount += 1;
+        return HttpResponse.json(
+          projectDto({ id: String(params['id']), name: 'FailedProject', cloneStatus: 'cloning' }),
+          { status: 202 },
+        );
+      }),
+    );
+    renderWorkbench();
+
+    const menu = await openGroupMenu('FailedProject');
+    fireEvent.click(within(menu).getByTestId('group-menu-retry-clone'));
+
+    await waitFor(() => {
+      expect(retryCount).toBe(1);
+    });
+    // 再等一拍，确认没有第二处实现补发。
+    await waitFor(() => {
+      expect(retryCount).toBe(1);
+    });
+  });
+
+  /**
+   * §10.6 第 2 条：cloning 态菜单里 [取消克隆（保留项目）] 与 [删除项目…] **分开且文案不像**。
+   * 变异：把取消项去掉、或把它的文案改成「删除克隆」⇒ 本例变红。
+   */
+  it('cloning 项目：取消克隆与删除是两项，文案不像', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'CloningProject', cloneStatus: 'cloning' })]);
+    mockSandboxes([]);
+    let cancelled = 0;
+    server.use(
+      http.post(`${API_BASE}/api/projects/:id/cancel-clone`, ({ params }) => {
+        cancelled += 1;
+        return HttpResponse.json(
+          projectDto({ id: String(params['id']), name: 'CloningProject', cloneStatus: 'failed' }),
+        );
+      }),
+    );
+    renderWorkbench();
+
+    const menu = await openGroupMenu('CloningProject');
+    expect(within(menu).getByTestId('group-menu-cancel-clone')).toHaveTextContent(
+      '取消克隆（保留项目）',
+    );
+    expect(within(menu).getByTestId('group-menu-delete')).toHaveTextContent('删除项目…');
+
+    fireEvent.click(within(menu).getByTestId('group-menu-cancel-clone'));
+    await waitFor(() => {
+      expect(cancelled).toBe(1);
+    });
+  });
+
+  /** cloning 态的删除确认要说清「先取消克隆」（§10.6 第 2 条）。 */
+  it('cloning 项目的删除确认含「先取消克隆」，并指向另一条路', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'CloningProject', cloneStatus: 'cloning' })]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    const menu = await openGroupMenu('CloningProject');
+    fireEvent.click(within(menu).getByTestId('group-menu-delete'));
+
+    const note = await screen.findByTestId('delete-cloning-note');
+    expect(note).toHaveTextContent('先取消克隆');
+    expect(note).toHaveTextContent('取消克隆（保留项目）');
+  });
+
+  /** 顶部指示器：只读 + 定位，⛔ 没有下拉（§9.1 #2 否定性验收）。 */
+  it('顶部指示器显示当前项目名，点击只做树内定位展开', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    expect(await screen.findByTestId('current-project-indicator')).toHaveTextContent('未选择项目');
+    fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
+    expect(await screen.findByTestId('current-project-indicator')).toHaveTextContent('ProjectA');
+
+    useAppStore.getState().toggleProjectFold('p1');
+    fireEvent.click(screen.getByTestId('locate-current-project'));
+    expect(useAppStore.getState().taskListFolds['p1']).toBe(false);
+    expect(useAppStore.getState().selectedProjectId).toBe('p1');
   });
 });

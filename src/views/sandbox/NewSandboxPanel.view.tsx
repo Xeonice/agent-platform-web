@@ -115,6 +115,14 @@ export interface NewSandboxPanelProps {
   /** 当前输入值（container 局部 state；绝不来自 store）。 */
   initialPrompt: string;
   onInitialPromptChange: (value: string) => void;
+  /**
+   * 指令框下的一行灰字。**只在从深链进入时出现**（F21-2 §2.1 裁决一）：
+   * 深链恢复的是「弹窗打开 + 项目上下文」，**不是用户输入** —— 指令是敏感上下文
+   * （15 §3.5），既不进 URL 也不进 localStorage，刷新后必然拿不回来。
+   * ⛔ 这件事不许静默：用户看见弹窗还在，会默认自己写的东西也还在，
+   * 那比弹窗直接关掉更糟。站内点开时不传这个 prop（那时没有任何东西丢失）。
+   */
+  promptNotice?: string;
 }
 
 export function NewSandboxPanelView({
@@ -145,6 +153,7 @@ export function NewSandboxPanelView({
   rejectionMessage,
   initialPrompt,
   onInitialPromptChange,
+  promptNotice,
 }: NewSandboxPanelProps) {
   const loadFailed = providersErrorMessage !== undefined && providersErrorMessage !== '';
   const noProviders = !loadingProviders && !loadFailed && hostProvider === undefined;
@@ -390,6 +399,17 @@ export function NewSandboxPanelView({
           {String(promptLength)}/{String(INITIAL_PROMPT_MAX_LENGTH)}
           {promptTooLong ? ' —— 已超出上限，请精简后再发起' : ''}
         </p>
+        {/* 深链进入时的一行灰字（见 prop 注释）。`role="status"` 而非 `alert`：
+            这是一句说明，不是错误——它不该打断屏幕阅读器正在念的东西。 */}
+        {promptNotice !== undefined && promptNotice !== '' && (
+          <p
+            data-testid="prompt-deeplink-notice"
+            role="status"
+            className="mt-1 text-xs text-muted-foreground"
+          >
+            {promptNotice}
+          </p>
+        )}
       </div>
 
       {/* ⚠️ 这两条**语义相反**（"确定没落库" vs "不知道有没有落库"），却渲染成同一种节点，

@@ -8,6 +8,8 @@ import {
   createProject,
   retryClone,
   convertToEmpty,
+  cancelClone,
+  deleteProject,
   listProjectBranches,
   syncProject,
 } from '@/services/api/project.service';
@@ -76,6 +78,51 @@ describe('project.service（10 §7）', () => {
       ),
     );
     await expect(convertToEmpty('p1')).rejects.toBeInstanceOf(ApiErrorException);
+  });
+
+  /**
+   * ⭐ **三条路两两不同、不可互换**（§7.1 service ④ 的同一条纪律，本轮补上 cancel-clone）：
+   * `cancel-clone` 停下克隆、**项目保留**；`DELETE` 连项目一起删（cloning 态后端会先取消再删）。
+   * 路径写混了不会有任何编译错误，而后果是"我只想取消，结果项目没了"。
+   */
+  it('cancel-clone 打的是 /cancel-clone，且与 DELETE 是两条不同的路', async () => {
+    const hits: string[] = [];
+    server.use(
+      http.post(`${API_BASE}/api/projects/:id/cancel-clone`, ({ request, params }) => {
+        hits.push(`POST ${new URL(request.url).pathname}`);
+        return HttpResponse.json({
+          id: String(params['id']),
+          name: 'p',
+          sourceType: 'git',
+          cloneStatus: 'failed',
+          cloneErrorCode: null,
+          taskCount: 0,
+          createdAt: new Date().toISOString(),
+        });
+      }),
+      http.delete(`${API_BASE}/api/projects/:id`, ({ request }) => {
+        hits.push(`DELETE ${new URL(request.url).pathname}`);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    const project = await cancelClone('p1');
+    expect(project.cloneStatus).toBe('failed');
+    await deleteProject('p1');
+
+    expect(hits).toEqual(['POST /api/projects/p1/cancel-clone', 'DELETE /api/projects/p1']);
+  });
+
+  it('DELETE /api/projects/:id 失败 → 抛 ApiErrorException（⛔ 不当成删掉了）', async () => {
+    server.use(
+      http.delete(`${API_BASE}/api/projects/:id`, () =>
+        HttpResponse.json(
+          { code: 'CONFLICT', message: '该项目仍有运行中的任务', retryable: false },
+          { status: 409 },
+        ),
+      ),
+    );
+    await expect(deleteProject('p1')).rejects.toMatchObject({ httpStatus: 409 });
   });
 
   it('retry-clone 401 → 抛 ApiErrorException（承载信封，供解锁门）', async () => {
