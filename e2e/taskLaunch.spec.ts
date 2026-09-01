@@ -380,16 +380,21 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
   });
 
   /**
-   * ② **两个弹窗形态对称**（§9.1 #2）：都是 overlay（role=dialog）、Esc 都能关、都不改路由。
+   * ② **两个弹窗形态对称**（§9.1 #2）：都是 overlay（role=dialog）、Esc 都能关、**都不占 path**。
+   *
+   * ⚠️ 判据本轮从「URL 一个字都不变」收窄成「**path** 不变」：F21-2 §2.1 给「新建任务」
+   * 加了深链可寻址（`/?new=1&project=<id>`），它是 **query**、不是新路由段——弹层仍然
+   * 不占 path，「后退 = 关弹窗」也仍然成立。「新建项目」没有深链，URL 一个字都不该变。
    *
    * 变异：把「新建项目」改回 return 成主区内容（去掉 ModalShell）⇒ 本例变红。
    */
-  test('② 新建项目 / 新建任务：都是 overlay、Esc 都能关、都不改路由', async ({ page }) => {
+  test('② 新建项目 / 新建任务：都是 overlay、Esc 都能关、都不占 path', async ({ page }) => {
     await stubBase(page);
     await page.goto('/');
     const url = page.url();
+    const path = new URL(url).pathname;
 
-    // —— 新建项目 ——
+    // —— 新建项目（不占路由，也没有深链参数）——
     await page.getByRole('button', { name: /新建项目/ }).click();
     const projectModal = page.getByTestId('modal-new-project');
     await expect(projectModal).toBeVisible();
@@ -400,15 +405,18 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
     await page.keyboard.press('Escape');
     await expect(projectModal).toHaveCount(0);
 
-    // —— 新建任务 ——
+    // —— 新建任务（占 query、不占 path）——
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
     await page.getByTestId('new-task-entry').click();
     const taskModal = page.getByTestId('modal-new-task');
     await expect(taskModal).toBeVisible();
     await expect(taskModal).toHaveAttribute('aria-modal', 'true');
-    expect(page.url()).toBe(url);
+    await expect.poll(() => new URL(page.url()).search).toBe('?new=1&project=proj-e2e');
+    expect(new URL(page.url()).pathname).toBe(path);
     await page.keyboard.press('Escape');
     await expect(taskModal).toHaveCount(0);
+    // 关掉 ⇒ 参数一并消失（URL 回到干净态）。
+    await expect.poll(() => page.url()).toBe(url);
   });
 
   /**
@@ -592,5 +600,87 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
 
     await bar.getByRole('button', { name: '重新同步' }).click();
     await expect.poll(() => syncHits).toBe(1);
+  });
+  /**
+   * ⑥ **深链直接访问**（F21-2 §2.1 完成判据 1）：`/?new=1&project=<id>` 进来就是
+   * 「弹窗开着 + 项目上下文正确 + 指令框空 + 明说一句指令没保住」。
+   *
+   * ⚠️ 这条 e2e 是**落点**的看守：读初值挂在 `app/page.tsx` 的 `NewTaskDeepLinkContainer`
+   * 上，而不是文档原本写的 `SandboxTerminalContainer` —— 后者要等项目选中才渲染，
+   * 而收到链接的人本地根本没有选中项目。把 hook 挪回容器里 ⇒ 本例立刻变红（弹窗不开）。
+   *
+   * 变异：删掉 `<NewTaskDeepLinkContainer />` 或消费 effect 里的 `setCurrentModal('newTask')`
+   * ⇒ 本例变红。
+   */
+  test('⑥ 深链 /?new=1&project=X → 弹窗开着、项目上下文正确、指令框空且明说未保留', async ({
+    page,
+  }) => {
+    await stubBase(page);
+    await page.goto('/?new=1&project=proj-e2e');
+
+    const modal = page.getByTestId('modal-new-task');
+    await expect(modal).toBeVisible();
+    // 项目上下文跟着深链走（左侧树也选中了它）。
+    await expect(modal.getByText(/在「E2E 发起项目」中发起/)).toBeVisible();
+    // 指令**没有**被恢复——它只在容器局部 state（15 §3.5），深链带不动。
+    await expect(page.getByLabel('任务指令（可选）')).toHaveValue('');
+    // ⛔ 但不许静默：必须明说一句，否则用户以为自己写的东西还在。
+    await expect(page.getByTestId('prompt-deeplink-notice')).toHaveText(
+      '刷新后指令未保留，请重新输入',
+    );
+  });
+
+  /**
+   * ⑦ **站内点开 ⇒ URL 出现参数；浏览器后退 ⇒ 弹窗关闭且回到干净 URL**
+   *（§2.1 完成判据 2），外加⭐**安全红线**：指令永远不进 URL。
+   *
+   * 变异 A：删掉 URL 同步那条 effect 的 `pushState` ⇒ 前半变红。
+   * 变异 B：删掉 popstate 监听 ⇒ 「后退关弹窗」变红。
+   * 变异 C ⭐：在写 URL 时多带一个指令键（`?prompt=…`）⇒ 最后那条断言变红。
+   */
+  test('⑦ 站内点开 → URL 可分享；后退 → 关弹窗；⭐ 指令绝不进 URL', async ({ page }) => {
+    await stubBase(page);
+    await page.goto('/');
+    const clean = page.url();
+
+    await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+    await openNewTaskModal(page);
+    // 站内点开也把 URL 变成**可分享**的那一个（这正是这一期的价值：发同事 / 存书签）。
+    await expect.poll(() => new URL(page.url()).search).toBe('?new=1&project=proj-e2e');
+    // 站内点开**不出**那句灰字：什么都没丢，说"未保留"是句假话。
+    await expect(page.getByTestId('prompt-deeplink-notice')).toHaveCount(0);
+
+    // ⭐ 打了一半的指令**不进 URL**（它可能含仓库路径与内部系统名；URL 会被复制、
+    //    进浏览器历史、进服务端访问日志，比 localStorage 更糟）。
+    await page.getByLabel('任务指令（可选）').fill(PROMPT);
+    await expect(page.getByLabel('任务指令（可选）')).toHaveValue(PROMPT);
+    expect(page.url()).not.toContain('internal-repo');
+    expect([...new URL(page.url()).searchParams.keys()].sort()).toEqual(['new', 'project']);
+
+    // 后退 = 关弹窗（弹层不占 path，这条语义是 query 方案白拿的）。
+    await page.goBack();
+    await expect(page.getByTestId('modal-new-task')).toHaveCount(0);
+    await expect.poll(() => page.url()).toBe(clean);
+  });
+
+  /**
+   * ⑧ **深链指向不存在/已删的项目**（§2.1 完成判据 3）：不开弹窗、不报错崩页，
+   * 回落到工作台常态。
+   *
+   * 变异：删掉消费 effect 里的 `if (project === undefined) return;` ⇒ 本例变红
+   *（要么弹窗开了，要么开出一个没有项目上下文的空壳）。
+   */
+  test('⑧ 深链 project 指向不存在的项目 ⇒ 不开弹窗，工作台常态', async ({ page }) => {
+    await stubBase(page);
+    await page.goto('/?new=1&project=ghost-project');
+
+    // 工作台正常渲染（没崩、没红字），只是没有弹窗。
+    await expect(page.getByLabel('项目分组任务树')).toBeVisible();
+    await expect(page.getByTestId('modal-new-task')).toHaveCount(0);
+    // 失效参数被抹掉：留着只会让刷新一次次去撞同一个不存在的项目。
+    await expect.poll(() => new URL(page.url()).search).toBe('');
+    // 入口还在，用户选个项目就能正常发起。
+    await page.getByRole('button', { name: /E2E 发起项目/ }).click();
+    await expect(page.getByTestId('new-task-entry')).toBeEnabled();
   });
 });

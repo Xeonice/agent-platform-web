@@ -11,9 +11,9 @@ import type { AutomationDto } from '../src/types/automation';
 //      是最容易被顺手读进请求体的东西）；
 //   ④ 八个 run status 在真实 DOM 上分得开，且只有 failed/timeout 计入连续失败。
 //
-// ⚠️ §7.4 还列了「组头「⋯」→ [⚙️ 自动化规则]」与「MVP 入口禁用态」两条：
-//    `ProjectMenuPanel`（组头「⋯」）全仓不存在，入口现挂在项目只读条上（见交付报告），
-//    所以这里按**已落地的入口**写；「禁用态 + v1.1 角标」那条更不适用——这一轮就是把它做出来。
+// ★ 2026-09-01：§7.4 的「组头「⋯」→ [⚙️ 自动化规则]」这条**已经成立**——
+//    `ProjectMenuPanel` 随 F21-6 §10 落地，入口从项目只读条搬了进去，`openPanel` 随之改写。
+//    「MVP 入口禁用态 + v1.1 角标」那条仍不适用（这一轮就是把它做出来的）。
 
 test.beforeEach(async ({ page }) => {
   await stubInitialized(page);
@@ -77,10 +77,21 @@ async function stubBase(page: Page): Promise<void> {
   );
 }
 
-/** 打开自动化侧弹层（入口今天在项目只读条上，见交付报告的入口偏离说明）。 */
+/**
+ * 打开自动化侧弹层。
+ *
+ * ★ 2026-09-01：入口**已从项目只读条搬进 `ProjectMenuPanel`**（F21-6 §10.2 C）——
+ * 组头「⋯」→ [项目菜单…] → [⚙️ 自动化规则]。这正是 F21-7 §7.4 原本就写着的那条路
+ *（「组头「⋯」→ [⚙️ 自动化规则]」），此前 `ProjectMenuPanel` 不存在才退到只读条上。
+ */
 async function openPanel(page: Page): Promise<void> {
   await page.goto('/');
-  await page.getByRole('button', { name: /E2E 自动化项目/ }).click();
+  await page
+    .getByTestId('project-group-header')
+    .filter({ hasText: 'E2E 自动化项目' })
+    .getByTestId('project-group-menu-trigger')
+    .click();
+  await page.getByTestId('group-menu-open-panel').click();
   await page.getByTestId('open-automations').click();
   await expect(page.getByTestId('modal-automations')).toBeVisible();
 }

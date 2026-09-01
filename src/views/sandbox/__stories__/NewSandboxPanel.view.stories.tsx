@@ -172,6 +172,16 @@ export const RuntimeUnchosen: Story = {
   args: { runtime: '' },
 };
 
+/**
+ * **从深链进来的那一份**（F21-2 §2.1）：`/?new=1&project=<id>` 恢复的是「弹窗打开 +
+ * 项目上下文」，**不是用户输入** —— 指令是敏感上下文（15 §3.5），既不进 URL 也不进
+ * localStorage，刷新必然拿不回来。⛔ 所以要**明说**一句，不许静默：用户看见弹窗还在，
+ * 会默认自己写的东西也还在，那比弹窗直接关掉更糟。站内点开时**不传**这个 prop。
+ */
+export const FromDeepLink: Story = {
+  args: { initialPrompt: '', promptNotice: '刷新后指令未保留，请重新输入' },
+};
+
 /** 8000 上限：超限就地红字计数 + 禁用发起（P21-2 §6）。 */
 export const InitialPromptTooLong: Story = {
   args: { initialPrompt: 'x'.repeat(8001) },

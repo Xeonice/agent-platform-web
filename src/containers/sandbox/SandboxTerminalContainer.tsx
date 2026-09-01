@@ -20,7 +20,7 @@
 // 而后端注册表里只有 codex / claude-code ⇒ 从这个入口建的沙箱**必然**死在 `unknown runtime 'shell'`。
 // 类型层拦不住（契约是 `runtime: z.string().min(1)`，开放集**故意**不收窄），
 // 正确的防线只有"注册表驱动 UI + 前端不出现任何字面量默认值"这一条 —— 就是本文件现在的形状。
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProviders } from '@/hooks/sandbox/useProviders';
@@ -30,6 +30,7 @@ import { useSandboxRestore } from '@/hooks/sandbox/useSandboxRestore';
 import { useTerminalSocketConfig } from '@/hooks/terminal/useTerminalSocketConfig';
 import { useProjectBranches } from '@/hooks/project/useProjectBranches';
 import { useEscapeKey } from '@/hooks/_shared/useEscapeKey';
+import { readNewTaskDeepLink } from '@/hooks/_shared/useDeepLinkModal';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
 import { useAppStore } from '@/stores';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
@@ -41,6 +42,12 @@ import { SandboxLifecycleContainer } from '@/containers/sandbox/SandboxLifecycle
 import { HeadlessTaskContainer } from '@/containers/task/HeadlessTaskContainer';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
 import type { ProjectSourceType } from '@/types/project';
+
+/**
+ * 深链进来时挂在指令框下的那句话（F21-2 §2.1）。⛔ 不许省：深链恢复的是「弹窗打开 +
+ * 项目上下文」，**不是用户输入**——不说这一句，用户会以为自己写的指令也还在。
+ */
+const DEEP_LINK_PROMPT_NOTICE = '刷新后指令未保留，请重新输入';
 
 /** 已创建的任务：id + **后端派生的**默认任务名（前端不再自己从 prompt 派生一份，T-1）。 */
 interface CreatedTask {
@@ -99,6 +106,32 @@ export function SandboxTerminalContainer({
   // 弹层开关（真 overlay，不再是"沙箱为空时的兜底渲染"，§N.0）。入口在工作台 [+ 新任务]。
   const currentModal = useAppStore((s) => s.currentModal);
   const setCurrentModal = useAppStore((s) => s.setCurrentModal);
+  /**
+   * 这一次的弹窗是**深链带出来的**，还是站内点开的？（F21-2 §2.1 裁决一）
+   *
+   * 判据是「本容器挂载的那一刻，URL 上的 `?new=1&project=` 正指着**我这个项目**」：
+   *   · 深链进入 —— `useNewTaskDeepLink` 先把项目选中、把弹窗打开，容器随之挂载，
+   *     这时 URL 上的参数还在 ⇒ true；
+   *   · 站内点开 —— 容器在用户选中项目时就已经挂载（早于点 [＋ 新任务]），
+   *     那一刻 URL 是干净的 ⇒ false。参数是点开之后才被 hook 写上去的，追不回来。
+   * 比较 `projectId` 是必需的：切项目时旧弹窗的参数可能还没被抹掉，不比对就会误判。
+   *
+   * ⚠️ 只读一次（`useState` 初值），**不是每帧读 URL**：弹窗一打开 URL 就有参数了，
+   * 每帧读的话站内点开也会在下一帧翻成 true，那句灰字就会到处乱冒。
+   */
+  const [openedFromDeepLink, setOpenedFromDeepLink] = useState<boolean>(
+    () =>
+      typeof window !== 'undefined' &&
+      readNewTaskDeepLink(window.location.search)?.projectId === projectId,
+  );
+  // 弹窗一旦关上，这次"深链会话"就结束了：之后在同一个容器上重新点开 [＋ 新任务]
+  // 属于**站内点开**，不该再挂那句「刷新后指令未保留」。
+  const modalWasOpen = useRef(currentModal === 'newTask');
+  useEffect(() => {
+    const open = currentModal === 'newTask';
+    if (modalWasOpen.current && !open) setOpenedFromDeepLink(false);
+    modalWasOpen.current = open;
+  }, [currentModal]);
   // 刷新恢复：selectedSandboxId 是 persist 白名单里的字段（15 §3.5），刷新后还在；
   // 本次会话已有 task 时不发这个请求（内存里的状态更新）。
   const persistedSandboxId = useAppStore((s) => s.selectedSandboxId);
@@ -329,6 +362,10 @@ export function SandboxTerminalContainer({
           }
           initialPrompt={initialPrompt}
           onInitialPromptChange={setInitialPrompt}
+          // 深链把弹窗与项目上下文恢复回来了，**但指令没有**（它只在这个容器的局部
+          // state 里，既不进 URL 也不进 localStorage，15 §3.5）。所以要**明说**一句——
+          // 用户看见弹窗还在，会默认自己写的东西也还在。站内点开时不给这句。
+          {...(openedFromDeepLink ? { promptNotice: DEEP_LINK_PROMPT_NOTICE } : {})}
           // —— 分支选择器（§N.1）——
           // 空项目**整块不渲染**（没有 git，谈不上分支）；加载失败只降级、不拦创建。
           showBranchPicker={isGitProject}

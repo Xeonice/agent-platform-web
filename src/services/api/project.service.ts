@@ -56,6 +56,24 @@ export async function convertToEmpty(id: string): Promise<ProjectDto> {
 }
 
 /**
+ * POST /api/projects/{id}/cancel-clone → 200 ProjectResponseDto（取消进行中的克隆，**项目保留**）。
+ *
+ * ⚠️ **与 `deleteProject` 是两件事，别混**（F21-6 §10.6 第 2 条）：这条只是停下克隆、
+ * 把项目留在树里（后端转 `failed`，用户可以再 [重试克隆] 或 [改为空项目]）；
+ * 而对 `cloning` 项目调 DELETE，后端会**先取消克隆再把项目一起删掉**。
+ * 两个动作在菜单里必须分开，文案也不能像。
+ */
+export async function cancelClone(id: string): Promise<ProjectDto> {
+  const { data, error, response } = await apiClient.POST('/api/projects/{id}/cancel-clone', {
+    params: { path: { id } },
+  });
+  if (!response.ok || data === undefined) {
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
+  }
+  return data;
+}
+
+/**
  * GET /api/projects/{id}/branches → `string[]`。
  *
  * ⚠️ **不触网、不需要凭证**：完整克隆（03 §7.2★）之后后端读的是**本地**引用

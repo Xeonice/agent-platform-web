@@ -6,6 +6,11 @@
 // ⚠️ **只读**：改远端、切默认分支、重新 clone 都**不在这条上**。它回答的是
 // "我在拿什么代码干活"，不是项目管理。唯一的动作是 [重新同步]（§9.3，仅 `ready` 态）。
 //
+// ★ 2026-09-01（F21-6 §10.2 C）：[🎁 已保留卷] / [⚙️ 自动化规则] 两个入口**已搬进
+// `ProjectMenuPanel`**（组头「⋯」→ 项目菜单）。它们当初挂在这条上是 `ProjectMenuPanel`
+// 不存在时的权宜之计（两处 ⏳ 注释随之删除）。这条自此**回到纯只读 + 一个 [重新同步]**。
+// ⛔ 别再往这儿加项目级管理入口——那正是"只读条慢慢长成项目菜单"的第一步。
+//
 // ⚠️ 一个刻意不做呈现的语义（§9.3）：同步只更新**基线**，已有 Task 的工作区一律不动
 //（它们是当时的写时复制副本）。于是同一项目下的两个 Task 可能跑在不同代码上，而界面上
 // 看不出来 —— 这是**有意识留下的缺口**，不是遗漏；本轮只用「最后同步」这一格让
@@ -36,22 +41,6 @@ export interface ProjectInfoBarProps {
   syncNeedsCredentials?: boolean;
   onConfigureCredentials?: () => void;
   onSync: () => void;
-  /**
-   * 🎁 [已保留卷]（F21-6 §3.3）——**它本该住在 `ProjectMenuPanel` 里**，而那个侧弹层
-   * 全仓至今不存在（组头「⋯」也不存在）。这条只读条是今天**唯一**已经落地的项目级落点，
-   * 所以入口先挂在这里：功能是项目级的、位置是项目级的，语义不歪。
-   * ⏳ `ProjectMenuPanel` 落地时，把这个 prop 连同按钮整段搬过去（那时这条只读条回到纯只读）。
-   *
-   * ⚠️ 它与「只读」不冲突：打开的是一个**管理面板**，本条上并不发生任何写操作。
-   */
-  onOpenRetainedVolumes?: () => void;
-  /**
-   * ⚙️ [自动化规则]（F21-7 §2）——与上面那条同样的处境：它本该住在 `ProjectMenuPanel`
-   * 的组头「⋯」菜单里，而那个侧弹层全仓至今不存在。先挂在这条项目级只读条上，
-   * 作用域仍是本条所指的项目，语义不歪。
-   * ⏳ `ProjectMenuPanel` 落地时两个入口一起搬走。
-   */
-  onOpenAutomations?: () => void;
 }
 
 /**
@@ -102,8 +91,6 @@ export function ProjectInfoBarView({
   syncNeedsCredentials = false,
   onConfigureCredentials,
   onSync,
-  onOpenRetainedVolumes,
-  onOpenAutomations,
 }: ProjectInfoBarProps) {
   const isEmptyProject = sourceType === 'empty';
   // 空项目「最后同步」显示的是**创建时间**（§9.2 表格最后一行）：它从来没同步过，
@@ -143,34 +130,6 @@ export function ProjectInfoBarView({
           }}
         >
           {syncing ? '同步中…' : '重新同步'}
-        </Button>
-      )}
-
-      {onOpenRetainedVolumes !== undefined && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          data-testid="open-retained-volumes"
-          onClick={() => {
-            onOpenRetainedVolumes();
-          }}
-        >
-          🎁 已保留卷
-        </Button>
-      )}
-
-      {onOpenAutomations !== undefined && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          data-testid="open-automations"
-          onClick={() => {
-            onOpenAutomations();
-          }}
-        >
-          ⚙️ 自动化规则
         </Button>
       )}
 

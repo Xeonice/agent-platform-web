@@ -10,7 +10,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useHealth } from '@/hooks/_shared/useHealth';
-import { useProjects, projectKeys } from '@/hooks/project/useProjects';
+import {
+  useProjects,
+  projectKeys,
+  useCancelClone,
+  describeProjectActionError,
+} from '@/hooks/project/useProjects';
+import { useProjectRecovery } from '@/hooks/project/useProjectRecovery';
 import { useSyncProject } from '@/hooks/project/useProjectBranches';
 import { useProjectTaskTree } from '@/hooks/project/useProjectTaskTree';
 import { useSandboxes, sandboxListKeys } from '@/hooks/sandbox/useSandboxes';
@@ -29,6 +35,8 @@ import { SandboxTerminalContainer } from '@/containers/sandbox/SandboxTerminalCo
 import { NewProjectContainer } from '@/containers/project/NewProjectContainer';
 import { ProjectRecoveryContainer } from '@/containers/project/ProjectRecoveryContainer';
 import { RetainedVolumesContainer } from '@/containers/project/RetainedVolumesContainer';
+import { ProjectMenuContainer } from '@/containers/project/ProjectMenuContainer';
+import { ProjectGroupMenuView } from '@/views/project/ProjectGroupMenu.view';
 import { AutomationsPanelContainer } from '@/containers/project/AutomationsPanelContainer';
 import type { Project, Sandbox } from '@/types/domain';
 
@@ -63,6 +71,9 @@ export function WorkbenchContainer() {
   const selectedSandboxId = useAppStore((s) => s.selectedSandboxId);
   const currentModal = useAppStore((s) => s.currentModal);
   const setCurrentModal = useAppStore((s) => s.setCurrentModal);
+  const selectedProjectForMenu = useAppStore((s) => s.selectedProjectForMenu);
+  const setSelectedProjectForMenu = useAppStore((s) => s.setSelectedProjectForMenu);
+  const expandProject = useAppStore((s) => s.expandProject);
   const taskListFolds = useAppStore((s) => s.taskListFolds);
   const { reportRestError, reportUnauthorized } = useReportUnauthorized();
   const queryClient = useQueryClient();
@@ -94,6 +105,11 @@ export function WorkbenchContainer() {
   // 建流程内确认就绪的项目（clone done / 转空），绕过列表 staleTime 的短暂过期读。
   const [readyProjectId, setReadyProjectId] = useState<string | null>(null);
 
+  // 组头「⋯」下拉当前开在哪个项目上（**瞬时 UI**，不进 store：它连一次刷新都不该活过）。
+  const [groupMenuProjectId, setGroupMenuProjectId] = useState<string | null>(null);
+  // 从组头菜单的 [删除项目…] 进面板时，直接落在删除确认视图上（同一个确认组件）。
+  const [menuOpensOnDelete, setMenuOpensOnDelete] = useState(false);
+
   // 项目列表 401 → 弹解锁门（健康探针 passcode-exempt 不受影响）。
   useEffect(() => {
     if (projects.error) reportRestError(projects.error);
@@ -123,6 +139,11 @@ export function WorkbenchContainer() {
   const selectedReady =
     selectedProject?.cloneStatus === 'ready' || selectedProjectId === readyProjectId;
 
+  // 组头「⋯」/ 侧弹层指向的项目。**与 selectedProject 是两位**（§9.2 VS-2 步骤 1：
+  // 打开 B 的菜单不改当前工作项目）。侧弹层里的已保留卷 / 自动化都以它为作用域。
+  const groupMenuProject = projects.data?.find((p) => p.id === groupMenuProjectId) ?? null;
+  const menuProject = projects.data?.find((p) => p.id === selectedProjectForMenu) ?? null;
+
   const healthLabel =
     health.data !== undefined
       ? `后端健康（HTTP ${String(health.data.status)}）`
@@ -133,6 +154,7 @@ export function WorkbenchContainer() {
   const handleSelectProject = (projectId: string): void => {
     setReadyProjectId(null); // 手动切换：就绪判定回到列表口径
     setSelectedProjectId(projectId);
+    setGroupMenuProjectId(null);
     setCurrentModal(null);
   };
 
@@ -143,8 +165,52 @@ export function WorkbenchContainer() {
     void queryClient.invalidateQueries({ queryKey: projectKeys.all() });
   };
 
+  /**
+   * failed 态三出口里的前两项（[重试克隆] / [改为空项目]）。
+   *
+   * ⚠️ **就是恢复面板用的那一个 hook**（§10.2 A 2026-09-01 裁决）：`useProjectRecovery`
+   * 已经把 retry / convertToEmpty / busy / actionError / guidance 统一好了，菜单接上它
+   * 是接线，不是重构。⛔ 全仓只许有一处持有 `retry-clone` —— 菜单自己再发一次，
+   * 一次点击就会打出两个请求，两处的乐观回退还会互相覆盖。
+   */
+  const groupMenuRecovery = useProjectRecovery({
+    projectId: groupMenuProjectId,
+    errorCode: groupMenuProject?.cloneErrorCode,
+    onConverted: (projectId) => {
+      setGroupMenuProjectId(null);
+      handleProjectReady(projectId);
+    },
+  });
+  // 取消克隆（**保留项目**）。与删除是两条路，文案也不能像（§10.6 第 2 条）。
+  const cancelClone = useCancelClone();
+
+  // 菜单里唯一一处可见错误：恢复动作（retry/convert）与取消克隆共用一格。
+  const groupMenuActionError: string | undefined =
+    groupMenuRecovery.actionError ??
+    (cancelClone.isError ? describeProjectActionError(cancelClone.error) : undefined);
+
+  /** 组头「⋯」：再点一次收起（没有第二个"关闭菜单"的入口，别让用户找不着北）。 */
+  const handleOpenGroupMenu = (projectId: string): void => {
+    setGroupMenuProjectId((current) => (current === projectId ? null : projectId));
+  };
+
+  /**
+   * 组头「⋯」→ 项目菜单侧弹层（§5）。
+   * ⚠️ 只置 `selectedProjectForMenu`，**不改 `selectedProjectId`** —— 看 B 的项目菜单
+   * 不该把我正在干活的上下文从 A 搬走。
+   */
+  const handleOpenProjectMenu = (projectId: string, confirmDelete: boolean): void => {
+    setGroupMenuProjectId(null);
+    setMenuOpensOnDelete(confirmDelete);
+    setSelectedProjectForMenu(projectId);
+    setCurrentModal('projectMenu');
+  };
+
   const closeModal = (): void => {
     setCurrentModal(null);
+    // 弹层关了，指向也就没有意义了（这一位不 persist，留着只会让下一次打开闪一帧旧项目）。
+    setSelectedProjectForMenu(null);
+    setMenuOpensOnDelete(false);
   };
   // Esc 关「新建项目」弹层（「新建任务」那一个由 SandboxTerminalContainer 自己管——
   // 它的 busy 判据是那边的 mutation.isPending）。
@@ -166,6 +232,17 @@ export function WorkbenchContainer() {
   const automationsModalRef = useRef<HTMLDivElement>(null);
   useEscapeKey(currentModal === 'automations', closeModal);
   useModalFocus(currentModal === 'automations', automationsModalRef);
+
+  // 「项目菜单」弹层同理。⚠️ 面板内的「详情 ⇄ 删除确认」也是**视图切换**，Esc 关的是
+  // 整个弹层——删除确认取消走的是面板内的 [取消]。
+  const projectMenuModalRef = useRef<HTMLDivElement>(null);
+  useEscapeKey(currentModal === 'projectMenu', closeModal);
+  useModalFocus(currentModal === 'projectMenu', projectMenuModalRef);
+
+  // 组头「⋯」下拉：Esc 收起。它不是弹层（没有遮罩、不夺焦点），所以只接 Esc 这一条。
+  useEscapeKey(groupMenuProjectId !== null, () => {
+    setGroupMenuProjectId(null);
+  });
 
   /**
    * [+ 新任务] 的可用性（§9.1 #33）。
@@ -228,6 +305,9 @@ export function WorkbenchContainer() {
    * 项目只读条（F21-6 §9.2）：主区**顶部**一条，不新开页面。
    * 只回答"我在拿什么代码干活"——改远端 / 切默认分支都**不在这条上**；唯一的动作是 [重新同步]。
    *
+   * ★ [🎁 已保留卷] / [⚙️ 自动化规则] 已搬进 `ProjectMenuPanel`（组头「⋯」→ 项目菜单，
+   * F21-6 §10.2 C）。这条自此回到**纯只读**。
+   *
    * ⏳ 四个字段（repoUrl / repoBranch / baselineSizeBytes / updatedAt）等后端契约同步；
    * 缺席时逐格降级为 `—`，**条本身照常渲染**（见 types/project.ts 的说明）。
    */
@@ -256,16 +336,6 @@ export function WorkbenchContainer() {
         onSync={() => {
           syncProject.sync(selectedProject.id);
         }}
-        // 🎁 已保留卷（F21-6 §3.3）。⏳ 归属上属于 `ProjectMenuPanel`，那个侧弹层尚未落地，
-        // 先挂在这条项目级只读条上（见 `ProjectInfoBar.view` 里该 prop 的注释）。
-        onOpenRetainedVolumes={() => {
-          setCurrentModal('retainedVolumes');
-        }}
-        // ⚙️ 自动化规则（F21-7 §2）。归属同样是 `ProjectMenuPanel`，那个侧弹层仍未落地，
-        // 先与「已保留卷」并排挂在这条项目级只读条上。
-        onOpenAutomations={() => {
-          setCurrentModal('automations');
-        }}
       />
     );
 
@@ -283,6 +353,41 @@ export function WorkbenchContainer() {
         setCurrentModal('newTask');
       }}
       newTaskDisabledReason={newTaskDisabledReason}
+      currentProjectName={selectedProject?.name ?? null}
+      // 指示器点击 = **只做树内定位展开**（§5）：不开下拉、不承载创建/管理入口。
+      onLocateCurrentProject={() => {
+        if (selectedProjectId !== null) expandProject(selectedProjectId);
+      }}
+      openMenuProjectId={groupMenuProjectId}
+      onOpenGroupMenu={handleOpenGroupMenu}
+      groupMenuSlot={
+        groupMenuProject === null ? undefined : (
+          <ProjectGroupMenuView
+            projectName={groupMenuProject.name}
+            cloneStatus={groupMenuProject.cloneStatus}
+            busy={groupMenuRecovery.busy || cancelClone.isPending}
+            {...(groupMenuActionError === undefined ? {} : { actionError: groupMenuActionError })}
+            onOpenPanel={() => {
+              handleOpenProjectMenu(groupMenuProject.id, false);
+            }}
+            // ⚠️ 这两个直接是恢复面板那一个 hook 的方法（§10.2 A），⛔ 不在这里另发请求。
+            onRetryClone={groupMenuRecovery.retry}
+            onConvertToEmpty={groupMenuRecovery.convertToEmpty}
+            onCancelClone={() => {
+              // ⛔ 不乐观收起菜单：失败了要在原地把原因说出来（与删除 409 同一条纪律）。
+              cancelClone.mutate(groupMenuProject.id, {
+                onSuccess: () => {
+                  setGroupMenuProjectId(null);
+                },
+              });
+            }}
+            onRequestDelete={() => {
+              // 删除确认只有一处实现：进同一个侧弹层，直接落在确认视图上。
+              handleOpenProjectMenu(groupMenuProject.id, true);
+            }}
+          />
+        )
+      }
       selectedTaskId={selectedSandboxId}
       onSelectTask={(taskId) => {
         // 点任务要同时定位到它所属项目：主区的终端挂在 selectedProject 上，
@@ -309,16 +414,45 @@ export function WorkbenchContainer() {
               <NewProjectContainer onProjectReady={handleProjectReady} onCancel={closeModal} />
             </ModalShellView>
           )}
-          {currentModal === 'automations' && selectedProject !== null && (
+          {currentModal === 'projectMenu' && menuProject !== null && (
+            <ModalShellView
+              shellRef={projectMenuModalRef}
+              title="项目菜单"
+              subtitle={menuProject.name}
+              onClose={closeModal}
+              testId="modal-project-menu"
+            >
+              <ProjectMenuContainer
+                projectId={menuProject.id}
+                projectName={menuProject.name}
+                cloneStatus={menuProject.cloneStatus}
+                taskCount={menuProject.taskCount}
+                createdAt={menuProject.createdAt}
+                initialConfirmingDelete={menuOpensOnDelete}
+                onOpenRetainedVolumes={() => {
+                  // modal 不堆叠：换 `currentModal` 的值，本面板随之关闭（§10.5）。
+                  setCurrentModal('retainedVolumes');
+                }}
+                onOpenAutomations={() => {
+                  setCurrentModal('automations');
+                }}
+                onDeleted={() => {
+                  // 选中态的清理在 `useDeleteProject` 里（§10.6 第 1 条）：这里只负责关面板。
+                  closeModal();
+                }}
+              />
+            </ModalShellView>
+          )}
+          {currentModal === 'automations' && menuProject !== null && (
             <ModalShellView
               shellRef={automationsModalRef}
               title="自动化规则"
-              subtitle={`在 ${selectedProject.name} 中`}
+              subtitle={`在 ${menuProject.name} 中`}
               onClose={closeModal}
               testId="modal-automations"
             >
               <AutomationsPanelContainer
-                projectId={selectedProject.id}
+                projectId={menuProject.id}
                 onOpenTask={(sandboxId) => {
                   // F21-7 §5「[打开 Task]」：关面板 → 工作台选中该 Task。
                   // 右侧渲染只读输出面板由 F21-1 负责，本页只负责跳转。
@@ -328,18 +462,15 @@ export function WorkbenchContainer() {
               />
             </ModalShellView>
           )}
-          {currentModal === 'retainedVolumes' && selectedProject !== null && (
+          {currentModal === 'retainedVolumes' && menuProject !== null && (
             <ModalShellView
               shellRef={retainedModalRef}
               title="已保留卷"
-              subtitle={`在 ${selectedProject.name} 中`}
+              subtitle={`在 ${menuProject.name} 中`}
               onClose={closeModal}
               testId="modal-retained-volumes"
             >
-              <RetainedVolumesContainer
-                projectId={selectedProject.id}
-                projectName={selectedProject.name}
-              />
+              <RetainedVolumesContainer projectId={menuProject.id} projectName={menuProject.name} />
             </ModalShellView>
           )}
         </>

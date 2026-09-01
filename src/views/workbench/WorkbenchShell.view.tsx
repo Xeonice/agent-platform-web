@@ -2,6 +2,8 @@
 import type { ReactNode } from 'react';
 import type { ProjectGroup } from '@/types/domain';
 import { Button } from '@/components/ui/button';
+import { ProjectGroupHeaderView } from '@/views/project/ProjectGroupHeader.view';
+import { CurrentProjectIndicatorView } from '@/views/project/CurrentProjectIndicator.view';
 
 export interface WorkbenchShellProps {
   groups: ProjectGroup[];
@@ -31,20 +33,25 @@ export interface WorkbenchShellProps {
    * 放在**最后**：overlay 自己是 `fixed inset-0 z-50`，DOM 顺序决定堆叠时谁在上。
    */
   overlaySlot?: ReactNode;
+
+  // —— 项目菜单整块（F21-6 §10）——
+  /** 当前项目名（顶栏指示器；未选中给 null）。 */
+  currentProjectName?: string | null;
+  /** 指示器点击 = **只做树内定位展开**（§5），⛔ 不是下拉、不承载管理入口。 */
+  onLocateCurrentProject?: () => void;
+  /** 组头「⋯」当前展开的是哪个项目的菜单（null = 都没开）。 */
+  openMenuProjectId?: string | null;
+  onOpenGroupMenu?: (projectId: string) => void;
+  /**
+   * 组头菜单本体：由 container 渲染 `ProjectGroupMenu.view` 并接上
+   * **同一个** `useProjectRecovery`（§10.2 A）。本层只负责把它插在正确的组头下。
+   */
+  groupMenuSlot?: ReactNode;
 }
 
-/** clone 徽标：cloning→克隆中(黄) / failed→克隆失败(红) / ready→无（就绪不打扰）。 */
-function CloneBadge({ cloneStatus }: { cloneStatus: ProjectGroup['cloneStatus'] }) {
-  if (cloneStatus === 'cloning') {
-    return (
-      <span className="rounded bg-yellow-500/15 px-1 text-[10px] text-yellow-300">克隆中</span>
-    );
-  }
-  if (cloneStatus === 'failed') {
-    return <span className="rounded bg-red-500/15 px-1 text-[10px] text-red-300">克隆失败</span>;
-  }
-  return null;
-}
+// ⚠️ 组头（含 clone 徽标与「⋯」）本轮抽成了 `ProjectGroupHeader.view`（F21-6 §10.5）：
+// 它是**项目**的组件，不是工作台骨架的一部分，而"组头上有没有管理入口"这件事
+// 恰恰是这一期要改的（在此之前组头是纯按钮，删除项目在界面上够不着）。
 
 export function WorkbenchShellView({
   groups,
@@ -59,6 +66,11 @@ export function WorkbenchShellView({
   onNewTask,
   newTaskDisabledReason,
   overlaySlot,
+  currentProjectName = null,
+  onLocateCurrentProject,
+  openMenuProjectId = null,
+  onOpenGroupMenu,
+  groupMenuSlot,
 }: WorkbenchShellProps) {
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
@@ -67,6 +79,13 @@ export function WorkbenchShellView({
         <span className="text-xs text-muted-foreground" data-testid="health-label">
           {healthLabel}
         </span>
+        {/* 当前项目指示器（F21-6 §3）：只读 + 点击树内定位，⛔ 无下拉（§9.1 #2 否定性验收）。 */}
+        <CurrentProjectIndicatorView
+          projectName={currentProjectName}
+          onLocate={() => {
+            onLocateCurrentProject?.();
+          }}
+        />
         {/*
          * 顶栏设置入口（P20 §8.2「工作台 → 凭证/镜像/系统：顶栏 ⚙️ 设置菜单」）。
          *
@@ -96,19 +115,22 @@ export function WorkbenchShellView({
           <nav className="flex-1 overflow-auto p-2" aria-label="项目分组任务树">
             {groups.map((group) => (
               <section key={group.projectId} className="mb-2">
-                <button
-                  type="button"
-                  aria-current={selectedProjectId === group.projectId || undefined}
-                  className={
-                    'flex w-full items-center gap-2 rounded px-1 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted ' +
-                    (selectedProjectId === group.projectId ? 'bg-muted text-foreground' : '')
-                  }
-                  onClick={() => onSelectProject?.(group.projectId)}
-                >
-                  <span className="truncate">{group.projectName}</span>
-                  <span className="text-muted-foreground">· {group.taskCount}</span>
-                  <CloneBadge cloneStatus={group.cloneStatus} />
-                </button>
+                <ProjectGroupHeaderView
+                  projectId={group.projectId}
+                  projectName={group.projectName}
+                  taskCount={group.taskCount}
+                  cloneStatus={group.cloneStatus}
+                  selected={selectedProjectId === group.projectId}
+                  onSelect={(projectId) => {
+                    onSelectProject?.(projectId);
+                  }}
+                  onOpenMenu={(projectId) => {
+                    onOpenGroupMenu?.(projectId);
+                  }}
+                  {...(openMenuProjectId === group.projectId && groupMenuSlot !== undefined
+                    ? { menuSlot: groupMenuSlot }
+                    : {})}
+                />
                 {!group.collapsed &&
                   (group.tasks.length === 0 ? (
                     <p className="px-1 py-1 text-xs text-muted-foreground">

@@ -96,7 +96,11 @@ test.describe('F21-8 §4 离线模式：全局横幅 + 发起入口置灰', () =
     await page.getByTestId('banner-action-offline').click();
     await expect(page).toHaveURL(/\/settings\/system$/);
     // 诊断只有一个所有者：它在这一页跑，界面上看得见（⛔ 不是在工作台后台悄悄跑）。
-    expect(diagnoseFromWorkbench).toBeGreaterThan(0);
+    //
+    // ⚠️ 必须 `expect.poll`：URL 变了只说明路由到了，那一发诊断请求是系统状态页**挂载之后**
+    // 才发出的。裸 `expect(...)` 在这里是一场赛跑——实测在整套并行跑时会零星红一次
+    //（单跑这条 spec 从不红），而它钉的行为其实完全正常。
+    await expect.poll(() => diagnoseFromWorkbench).toBeGreaterThan(0);
   });
 
   test('关闭是显式动作，关掉之后横幅不再出现（🔴 不自动收起也不自己弹回来）', async ({ page }) => {
