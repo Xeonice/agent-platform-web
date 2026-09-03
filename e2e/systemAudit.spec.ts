@@ -1,7 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { AuditEventDto, AuditListDto } from '../src/types/audit';
 import type { SystemProvidersDto, SystemResourcesDto } from '../src/types/system';
+import type { MaskedGitCredential } from '../src/types/gitCredential';
+import type { RuntimeDto } from '../src/types/runtimeCredential';
 import { stubInitialized } from './initGate';
+import { stubHealth, type ErrorEnvelope } from './fixtures';
 
 // F21-8 §2：`AppBootGate` 挂在根布局上 ⇒ 每个用例挂载时都会先读一次
 // `GET /api/system/init-status`。不 stub 它就等于让这些用例依赖"CI 里恰好没有后端"
@@ -96,7 +99,7 @@ const SYSTEM_PROVIDERS: SystemProvidersDto = {
 
 test.describe('F21-5 审计流', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+    await stubHealth(page);
     await page.route('**/api/system/resources', (route) => route.fulfill({ json: RESOURCES }));
     await page.route('**/api/system/providers', (route) =>
       route.fulfill({ json: SYSTEM_PROVIDERS }),
@@ -104,9 +107,15 @@ test.describe('F21-5 审计流', () => {
   });
 
   test('设置菜单可进入系统状态页，审计区渲染人话 summary（不是 JSON 串）', async ({ page }) => {
-    await page.route('**/api/credentials?*', (route) => route.fulfill({ json: [] }));
-    await page.route('**/api/credentials', (route) => route.fulfill({ json: [] }));
-    await page.route('**/api/runtimes', (route) => route.fulfill({ json: [] }));
+    await page.route('**/api/credentials?*', (route) =>
+      route.fulfill({ json: [] satisfies MaskedGitCredential[] }),
+    );
+    await page.route('**/api/credentials', (route) =>
+      route.fulfill({ json: [] satisfies MaskedGitCredential[] }),
+    );
+    await page.route('**/api/runtimes', (route) =>
+      route.fulfill({ json: [] satisfies RuntimeDto[] }),
+    );
     await routeAudit(page, (q) =>
       q.has('since') ? { items: [], hasMore: false } : { items: [ev(1200)], hasMore: false },
     );
@@ -236,7 +245,7 @@ test.describe('F21-5 审计流', () => {
           message: '导出失败：磁盘空间不足',
           retryable: true,
           sideEffectFree: true,
-        }),
+        } satisfies ErrorEnvelope),
       }),
     );
 

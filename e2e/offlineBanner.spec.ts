@@ -1,6 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { InitStatusDto } from '../src/types/system';
+import type { InitStatusDto, SystemSettingsDto } from '../src/types/system';
+import type { ProjectDto } from '../src/types/project';
+import type { SandboxDto } from '../src/types/sandbox';
 import { INITIALIZED_STATUS, stubInitialized } from './initGate';
+import { stubHealth, type ErrorEnvelope } from './fixtures';
 
 // F21-8 §4「离线模式的跨页影响」+ §7.4 补充场景 3 + §9.1 #16/#17。
 // REST 用 `page.route`（E2E 层不启 MSW，12 §4.1）。
@@ -20,24 +23,26 @@ const OFFLINE_STATUS: InitStatusDto = {
   lastConnectivityCheckAt: '2026-08-29T16:11:34.000Z',
 };
 
+/** ⭐ `updatedAt` 是 `ProjectResponseDto` 的必填字段，这条 fixture 此前缺它（29 §3.2）。 */
+const OFFLINE_PROJECT = {
+  id: 'proj-offline',
+  name: '离线项目',
+  sourceType: 'empty',
+  cloneStatus: 'ready',
+  cloneErrorCode: null,
+  taskCount: 0,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+} satisfies ProjectDto;
+
 async function stubWorkbench(page: Page, status: InitStatusDto): Promise<void> {
   await page.route('**/api/system/init-status', (route) => route.fulfill({ json: status }));
-  await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
-  await page.route('**/api/sandboxes*', (route) => route.fulfill({ json: [] }));
+  await stubHealth(page);
+  await page.route('**/api/sandboxes*', (route) =>
+    route.fulfill({ json: [] satisfies SandboxDto[] }),
+  );
   await page.route('**/api/projects', (route) =>
-    route.fulfill({
-      json: [
-        {
-          id: 'proj-offline',
-          name: '离线项目',
-          sourceType: 'empty',
-          cloneStatus: 'ready',
-          cloneErrorCode: null,
-          taskCount: 0,
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    }),
+    route.fulfill({ json: [OFFLINE_PROJECT] satisfies ProjectDto[] }),
   );
 }
 
@@ -87,7 +92,7 @@ test.describe('F21-8 §4 离线模式：全局横幅 + 发起入口置灰', () =
       diagnoseFromWorkbench += 1;
       await route.fulfill({
         status: 500,
-        json: { code: 'INTERNAL', message: 'x', retryable: true },
+        json: { code: 'INTERNAL', message: 'x', retryable: true } satisfies ErrorEnvelope,
       });
     });
     await page.goto('/');
@@ -129,7 +134,7 @@ test.describe('F21-8 §4 离线模式：全局横幅 + 发起入口置灰', () =
           initialized: false,
           accessPasscodeEnabled: false,
           version: { platform: 'e2e', node: 'v22' },
-        },
+        } satisfies SystemSettingsDto,
       }),
     );
     await page.goto('/');

@@ -40,6 +40,40 @@ import type {
   SystemResourcesDto,
   SystemSettingsDto,
 } from '@/types/system';
+import type { AutomationRunPage } from '@/types/automation';
+import type { GitTestResult } from '@/types/gitCredential';
+import type { components, operations } from '@/types/generated/openapi';
+
+// ————————————————————————————————————————————————————————————————
+// 三处**契约里没有具名前端别名**的响应形状。都从生成物派生，⛔ 不手写一份平行的：
+// 手写等于把这三处退回"裸字面量"——只是换了个地方裸着（29 §3.2）。
+//
+// ⚠️ 这里不能 import `services/api/apiError` 里那个同名别名：eslint-boundaries 对
+// `mock` 只放行 `type` 与 `mock`（`eslint.config.js` 的 `{ from: 'mock', allow: [...] }`），
+// 而那条规则是对的——替身一旦 import 生产代码，就再也抓不出生产代码的 bug。
+// 两处别名指向**同一个** `components['schemas']['ErrorEnvelope']`，不是两份定义。
+// ————————————————————————————————————————————————————————————————
+
+/** 全站错误信封（10 §6.8 / §7.5）。 */
+type ErrorEnvelope = components['schemas']['ErrorEnvelope'];
+
+/**
+ * `POST /api/automations/webhook-test` 的响应。**总是 HTTP 200**，成败在 `ok` 里
+ * —— 这正是 29 §1.2 那三次事故里的第二次（前端从没读过这个 body，
+ * `200 + {ok:false}` 被当成功）。
+ */
+type WebhookTestResult = components['schemas']['WebhookTestResultDto'];
+
+/** `GET /api/projects/:id/branches` → `string[]`（契约里是内联 schema，无具名 DTO）。 */
+type BranchListDto =
+  operations['ProjectController_listBranches']['responses'][200]['content']['application/json'];
+
+/**
+ * `GET /api/health` 的**契约响应没有 body**（`content?: never`），而 openapi-fetch 默认按
+ * JSON 解析 ⇒ 替身必须给一段合法 JSON。`Record<string, never>` 把这件事说清楚：
+ * 空对象是**刻意**的，不是"忘了填字段"——将来谁往里加一个键，编译期就会拦住他去改契约。
+ */
+const HEALTH_BODY: Record<string, never> = {};
 
 const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
@@ -1200,7 +1234,7 @@ const AUDIT_EVENTS: AuditEventDto[] = Array.from({ length: 300 }, (_, i) => audi
 export const handlers = [
   // liveness probe：真实契约 GET /api/health 无响应体 schema，getHealth 只读 response.ok/status。
   // 返回空 JSON（openapi-fetch 默认按 json 解析，须是合法 JSON），body 内容不被读取。
-  http.get(`${API_BASE}/api/health`, () => HttpResponse.json({}, { status: 200 })),
+  http.get(`${API_BASE}/api/health`, () => HttpResponse.json(HEALTH_BODY, { status: 200 })),
 
   // 口令解锁（11 §3.1）：dev 无口令门，直接 204 成功（真实 cookie 由后端 set）。
   http.post(`${API_BASE}/api/access/unlock`, () => new HttpResponse(null, { status: 204 })),
@@ -1222,7 +1256,7 @@ export const handlers = [
           baselineSizeBytes: 47_185_920,
           updatedAt: isoIn(-2 * HOUR),
         }),
-      ],
+      ] satisfies ProjectDto[],
       { status: 200 },
     ),
   ),
@@ -1232,7 +1266,7 @@ export const handlers = [
    * **不触网、不需要凭证** —— 后端读的是完整克隆下来的**本地**引用（`git branch -r`）。
    */
   http.get(`${API_BASE}/api/projects/:id/branches`, () =>
-    HttpResponse.json(['main', 'develop', 'feature/branch-picker']),
+    HttpResponse.json(['main', 'develop', 'feature/branch-picker'] satisfies BranchListDto),
   ),
 
   /** ⏳ 重新同步基线（F21-6 §9.3）：仅 ready 态；dev 简化为 204。 */
@@ -1304,7 +1338,7 @@ export const handlers = [
         diskBytes: 320 * MB,
         downloadBytes: 3 * MB,
       }),
-    ]);
+    ] satisfies RetainedVolumeDto[]);
   }),
   http.delete(
     `${API_BASE}/api/retained-volumes/:id`,
@@ -1327,7 +1361,9 @@ export const handlers = [
   //    依据是 10 §7.3 的 automation 契约块逐字段抄写（12 §3.4）。
   http.get(`${API_BASE}/api/projects/:id/automations`, ({ params }) =>
     HttpResponse.json(
-      AUTOMATION_FIXTURES.map((rule) => ({ ...rule, projectId: String(params['id']) })),
+      AUTOMATION_FIXTURES.map(
+        (rule) => ({ ...rule, projectId: String(params['id']) }) satisfies AutomationDto,
+      ),
     ),
   ),
   http.post(`${API_BASE}/api/projects/:id/automations`, async ({ params, request }) => {
@@ -1382,7 +1418,7 @@ export const handlers = [
     return HttpResponse.json({
       items: slice,
       hasMore: start + limit < all.length,
-    });
+    } satisfies AutomationRunPage);
   }),
 
   http.get(`${API_BASE}/api/automations/runs/:runId`, ({ params }) =>
@@ -1397,12 +1433,12 @@ export const handlers = [
   http.post(
     `${API_BASE}/api/automations/webhook-test`,
     // ⚠️ 总是 200，成败在 body 的 ok 里（后端 @HttpCode(200)）—— 不是 204 空体。
-    () => HttpResponse.json({ ok: true, message: '目标返回 200' }),
+    () => HttpResponse.json({ ok: true, message: '目标返回 200' } satisfies WebhookTestResult),
   ),
 
   // Git 凭证（F21-3 §8）：dev 打通「凭证页 → 配置 HTTPS Token → 测试 → 保存」链路。明文永不回读。
   http.get(`${API_BASE}/api/credentials`, () =>
-    HttpResponse.json([gitCredentialDto({ id: 'gc-demo' })]),
+    HttpResponse.json([gitCredentialDto({ id: 'gc-demo' })] satisfies MaskedGitCredential[]),
   ),
   http.post(`${API_BASE}/api/credentials/git`, async ({ request }) => {
     const body: unknown = await request.json().catch(() => ({}));
@@ -1414,7 +1450,10 @@ export const handlers = [
     };
     return HttpResponse.json(saved, { status: 201 });
   }),
-  http.post(`${API_BASE}/api/credentials/git/test`, () => HttpResponse.json({ ok: true })),
+  http.post(`${API_BASE}/api/credentials/git/test`, () =>
+    // ⚠️ `ok:false` 时契约还有 `errorCode`/`message`；成功路径只有 `ok` 一个必填字段。
+    HttpResponse.json({ ok: true } satisfies GitTestResult),
+  ),
   http.delete(`${API_BASE}/api/credentials/git/:id`, () => new HttpResponse(null, { status: 204 })),
 
   // Runtime 注册表 + 凭证聚合（F21-3 §4）。同一份数组同时喂「凭证页 runtime 分区」与「建沙箱的 runtime 单选」。
@@ -1428,7 +1467,11 @@ export const handlers = [
     if (known === undefined) {
       // 后端对未注册的 runtime 是 404（runtime-application.service：`unknown runtime '<id>'`）。
       return HttpResponse.json(
-        { code: 'NOT_FOUND', message: `unknown runtime '${id}'`, retryable: false },
+        {
+          code: 'NOT_FOUND',
+          message: `unknown runtime '${id}'`,
+          retryable: false,
+        } satisfies ErrorEnvelope,
         { status: 404 },
       );
     }
@@ -1560,7 +1603,7 @@ export const handlers = [
           { name: 'patch.diff', size: 131072, modifiedAt: new Date().toISOString() },
         ],
       }),
-    ]),
+    ] satisfies AgentTaskDto[]),
   ),
 
   // 单条详情（前端当前不用它，列表已是权威来源；保留以便联调时直接打）。
@@ -1690,7 +1733,7 @@ export const handlers = [
           message: '启用请改用 POST /api/images/:id/activate',
           retryable: false,
           sideEffectFree: true,
-        },
+        } satisfies ErrorEnvelope,
         { status: 400 },
       );
     }
@@ -1729,7 +1772,7 @@ export const handlers = [
           message: '请求参数 since 与 before 互斥',
           retryable: false,
           sideEffectFree: true,
-        },
+        } satisfies ErrorEnvelope,
         { status: 400 },
       );
     }
@@ -1831,7 +1874,7 @@ export const auditExportFailureHandler = http.get(`${API_BASE}/api/system/audit/
       message: '导出失败：磁盘空间不足',
       retryable: true,
       sideEffectFree: true,
-    },
+    } satisfies ErrorEnvelope,
     { status: 500 },
   ),
 );

@@ -1,5 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
 import { stubInitialized } from './initGate';
+import { stubHealth } from './fixtures';
+import type { MaskedGitCredential } from '../src/types/gitCredential';
+import type {
+  AuthChallenge,
+  AuthStatusResponse,
+  RuntimeCredentialResult,
+  RuntimeDto,
+} from '../src/types/runtimeCredential';
 
 // F21-8 §2：`AppBootGate` 挂在根布局上 ⇒ 每个用例挂载时都会先读一次
 // `GET /api/system/init-status`。不 stub 它就等于让这些用例依赖"CI 里恰好没有后端"
@@ -13,44 +21,44 @@ test.beforeEach(async ({ page }) => {
 
 const FULL_KEY = 'sk-SUPERSECRETapikeyABCDEFGHIJKLMNOPqrstuvwx';
 
-/** 通用桩：health + git 空列表 + runtimes（codex 帐号授权生效 / claude-code 未配置）。 */
+/** runtime 注册表：codex 帐号授权生效 / claude-code 未配置。 */
+const RUNTIMES = [
+  {
+    id: 'codex',
+    displayName: 'Codex',
+    vendor: 'OpenAI',
+    authMethods: ['oauth-device', 'api-key'],
+    credentialStatus: 'active',
+    maskedIdentifier: 'a***@gmail.com',
+    expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+    activeAuthMethod: 'account',
+    credentials: [
+      {
+        credentialId: 'rc-codex-account',
+        mode: 'account',
+        maskedIdentifier: 'a***@gmail.com',
+        status: 'ok',
+        expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+      },
+    ],
+  },
+  {
+    id: 'claude-code',
+    displayName: 'Claude Code',
+    vendor: 'Anthropic',
+    authMethods: ['setup-token', 'api-key'],
+    credentialStatus: 'none',
+    credentials: [],
+  },
+] satisfies RuntimeDto[];
+
+/** 通用桩：health + git 空列表 + runtimes。 */
 async function stubBase(page: Page): Promise<void> {
-  await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
-  await page.route('**/api/credentials?*', (route) => route.fulfill({ status: 200, json: [] }));
-  await page.route('**/api/runtimes', (route) =>
-    route.fulfill({
-      status: 200,
-      json: [
-        {
-          id: 'codex',
-          displayName: 'Codex',
-          vendor: 'OpenAI',
-          authMethods: ['oauth-device', 'api-key'],
-          credentialStatus: 'active',
-          maskedIdentifier: 'a***@gmail.com',
-          expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
-          activeAuthMethod: 'account',
-          credentials: [
-            {
-              credentialId: 'rc-codex-account',
-              mode: 'account',
-              maskedIdentifier: 'a***@gmail.com',
-              status: 'ok',
-              expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
-            },
-          ],
-        },
-        {
-          id: 'claude-code',
-          displayName: 'Claude Code',
-          vendor: 'Anthropic',
-          authMethods: ['setup-token', 'api-key'],
-          credentialStatus: 'none',
-          credentials: [],
-        },
-      ],
-    }),
+  await stubHealth(page);
+  await page.route('**/api/credentials?*', (route) =>
+    route.fulfill({ status: 200, json: [] satisfies MaskedGitCredential[] }),
   );
+  await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
 }
 
 test.describe('S4 Runtime 鉴权 UI', () => {
@@ -66,11 +74,16 @@ test.describe('S4 Runtime 鉴权 UI', () => {
           verificationUrl: 'https://openai.com/device',
           expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
           instructions: '',
-        },
+        } satisfies AuthChallenge,
       }),
     );
     await page.route('**/api/runtimes/*/auth/status*', (route) =>
-      route.fulfill({ json: { status: 'success', maskedIdentifier: 'a***@gmail.com' } }),
+      route.fulfill({
+        json: {
+          status: 'success',
+          maskedIdentifier: 'a***@gmail.com',
+        } satisfies AuthStatusResponse,
+      }),
     );
 
     await page.goto('/settings/credentials');
@@ -93,14 +106,18 @@ test.describe('S4 Runtime 鉴权 UI', () => {
           kind: 'paste-prompt',
           verificationUrl: 'https://claude.ai/setup-token',
           instructions: '在浏览器完成授权后，复制授权码粘贴回来。',
-        },
+        } satisfies AuthChallenge,
       }),
     );
     let completed = false;
     await page.route('**/api/runtimes/*/auth/complete', (route) => {
       completed = true;
+      // ⭐ **契约里 `MaskedCredentialResultResponseDto` 只有 `maskedIdentifier` 一个字段。**
+      //    此前这里还回了一个 `activeAuthMethod` —— 替身比真后端**多**给一个键。
+      //    今天没人读它所以一直绿着；哪天有人写 `res.activeAuthMethod`，e2e 照绿而
+      //    真后端上是 `undefined`。`satisfies` 连"多一个字段"一起挡（超额属性检查）。
       return route.fulfill({
-        json: { maskedIdentifier: 'a***@gmail.com', activeAuthMethod: 'account' },
+        json: { maskedIdentifier: 'a***@gmail.com' } satisfies RuntimeCredentialResult,
       });
     });
 
@@ -117,7 +134,8 @@ test.describe('S4 Runtime 鉴权 UI', () => {
   test('③ api-key：[添加 API Key] → 密码遮罩输入 → 保存；全文无完整 key', async ({ page }) => {
     await stubBase(page);
     await page.route('**/api/runtimes/*/credentials/secret', (route) =>
-      route.fulfill({ json: { maskedIdentifier: 'sk-...uvwx', activeAuthMethod: 'api-key' } }),
+      // 同上：`activeAuthMethod` 不在契约的这条响应里（生效模式走 PUT /auth-mode）。
+      route.fulfill({ json: { maskedIdentifier: 'sk-...uvwx' } satisfies RuntimeCredentialResult }),
     );
 
     await page.goto('/settings/credentials');
