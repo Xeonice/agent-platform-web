@@ -1,6 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { stubInitialized } from './initGate';
-import type { AutomationDto } from '../src/types/automation';
+import { stubHealth } from './fixtures';
+import type { AutomationDto, AutomationRunDto, AutomationRunPage } from '../src/types/automation';
+import type { ProjectDto } from '../src/types/project';
+import type { SandboxProviderDto } from '../src/types/sandbox';
+import type { RuntimeDto } from '../src/types/runtimeCredential';
 
 // F21-7 §7.4 的本页独有场景（用 mock 边界跑真实链路，12 §4）：
 //   ① 项目级入口 → 侧弹层打开，标题带作用域项目名；
@@ -19,6 +23,8 @@ test.beforeEach(async ({ page }) => {
   await stubInitialized(page);
 });
 
+// ⭐ 与下面的 `RULE` 同一把锁：`updatedAt` 是 `ProjectResponseDto` 的**必填**字段，
+//    这条 fixture 此前缺它（29 §3.2）。
 const PROJECT = {
   id: 'proj-auto',
   name: 'E2E 自动化项目',
@@ -27,7 +33,26 @@ const PROJECT = {
   cloneErrorCode: null,
   taskCount: 0,
   createdAt: new Date().toISOString(),
-};
+  updatedAt: new Date().toISOString(),
+} satisfies ProjectDto;
+
+/** 本页不看档位能力，`isDefault` 那一项都没有 ⇒ 空 registry 即可（形状仍然上锁）。 */
+const PROVIDERS = [] satisfies SandboxProviderDto[];
+
+const RUNTIMES = [
+  {
+    id: 'codex',
+    displayName: 'Codex',
+    vendor: 'OpenAI',
+    authMethods: ['api-key'],
+    credentialStatus: 'active',
+    maskedIdentifier: 'a***@example.com',
+    credentials: [],
+  },
+] satisfies RuntimeDto[];
+
+/** 运行历史的空页（分页信封只有 automation runs 用，10 §7.2）。 */
+const EMPTY_RUNS = { items: [], hasMore: false } satisfies AutomationRunPage;
 
 // ⭐ `satisfies AutomationDto` 不是装饰：这条 fixture 少了 `triggerOn` / `createdAt` /
 // `updatedAt` 三个契约必填字段，运行时被 zod 挡下 ⇒ 列表**一项都不渲染**，5 条用例连锁红。
@@ -56,25 +81,10 @@ const RULE = {
 } satisfies AutomationDto;
 
 async function stubBase(page: Page): Promise<void> {
-  await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+  await stubHealth(page);
   await page.route('**/api/projects', (route) => route.fulfill({ status: 200, json: [PROJECT] }));
-  await page.route('**/api/providers', (route) => route.fulfill({ status: 200, json: [] }));
-  await page.route('**/api/runtimes', (route) =>
-    route.fulfill({
-      status: 200,
-      json: [
-        {
-          id: 'codex',
-          displayName: 'Codex',
-          vendor: 'OpenAI',
-          authMethods: ['api-key'],
-          credentialStatus: 'active',
-          maskedIdentifier: 'a***@example.com',
-          credentials: [],
-        },
-      ],
-    }),
-  );
+  await page.route('**/api/providers', (route) => route.fulfill({ status: 200, json: PROVIDERS }));
+  await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
 }
 
 /**
@@ -100,7 +110,7 @@ test.describe('F21-7 自动化规则面板', () => {
   test('入口打开侧弹层，标题带作用域项目名；列表显示下次触发时间与时区', async ({ page }) => {
     await stubBase(page);
     await page.route('**/api/projects/*/automations', (route) =>
-      route.fulfill({ status: 200, json: [RULE] }),
+      route.fulfill({ status: 200, json: [RULE] satisfies AutomationDto[] }),
     );
 
     await openPanel(page);
@@ -115,20 +125,21 @@ test.describe('F21-7 自动化规则面板', () => {
 
   test('新建规则 → 列表出现该规则且显示下次触发时间', async ({ page }) => {
     await stubBase(page);
+    const CREATED_RULE = { ...RULE, id: 'auto-new', name: '夜间回归' } satisfies AutomationDto;
     let created = false;
     await page.route('**/api/projects/*/automations', async (route) => {
       if (route.request().method() === 'POST') {
         created = true;
-        await route.fulfill({ status: 201, json: { ...RULE, id: 'auto-new', name: '夜间回归' } });
+        await route.fulfill({ status: 201, json: CREATED_RULE });
         return;
       }
       await route.fulfill({
         status: 200,
-        json: created ? [{ ...RULE, id: 'auto-new', name: '夜间回归' }] : [],
+        json: (created ? [CREATED_RULE] : []) satisfies AutomationDto[],
       });
     });
     await page.route('**/api/automations/*/runs*', (route) =>
-      route.fulfill({ status: 200, json: { items: [], hasMore: false } }),
+      route.fulfill({ status: 200, json: EMPTY_RUNS }),
     );
 
     await openPanel(page);
@@ -149,10 +160,10 @@ test.describe('F21-7 自动化规则面板', () => {
   test('⭐ 只改 prompt 保存 → PUT 请求体的键集合不含 timezone（I-AUT-9）', async ({ page }) => {
     await stubBase(page);
     await page.route('**/api/projects/*/automations', (route) =>
-      route.fulfill({ status: 200, json: [RULE] }),
+      route.fulfill({ status: 200, json: [RULE] satisfies AutomationDto[] }),
     );
     await page.route('**/api/automations/*/runs*', (route) =>
-      route.fulfill({ status: 200, json: { items: [], hasMore: false } }),
+      route.fulfill({ status: 200, json: EMPTY_RUNS }),
     );
 
     let putKeys: string[] = [];
@@ -186,28 +197,38 @@ test.describe('F21-7 自动化规则面板', () => {
   }) => {
     await stubBase(page);
     await page.route('**/api/projects/*/automations', (route) =>
-      route.fulfill({ status: 200, json: [RULE] }),
+      route.fulfill({ status: 200, json: [RULE] satisfies AutomationDto[] }),
     );
-    const statuses = [
-      { id: 'r1', status: 'success' },
-      { id: 'r2', status: 'failed' },
-      { id: 'r3', status: 'timeout' },
-      { id: 'r4', status: 'skipped', errorCode: 'AUTH_EXPIRED' },
-      { id: 'r5', status: 'skipped', errorCode: 'PREVIOUS_RUNNING' },
-      { id: 'r6', status: 'missed' },
-      { id: 'r7', status: 'resource-exhausted', retryCount: 3 },
-      { id: 'r8', status: 'running' },
-    ].map((r) => ({
-      automationId: 'auto-1',
-      retryCount: 0,
-      triggeredAt: '2026-08-31T00:00:00.000Z',
-      startedAt: '2026-08-31T00:00:00.000Z',
-      ...r,
-    }));
+    // ⭐ `satisfies AutomationRunDto[]` 挂在**展开之后**的结果上：挂在展开之前那八项上
+    //    只锁得住 `id`/`status`，而漏掉必填字段的恰恰是共同部分（`automationId` /
+    //    `retryCount` / `triggeredAt`）。
+    const statuses = (
+      [
+        { id: 'r1', status: 'success' },
+        { id: 'r2', status: 'failed' },
+        { id: 'r3', status: 'timeout' },
+        { id: 'r4', status: 'skipped', errorCode: 'AUTH_EXPIRED' },
+        { id: 'r5', status: 'skipped', errorCode: 'PREVIOUS_RUNNING' },
+        { id: 'r6', status: 'missed' },
+        { id: 'r7', status: 'resource-exhausted', retryCount: 3 },
+        { id: 'r8', status: 'running' },
+        // `as const` 把八个 status 收成字面量类型：不加的话它们会被拓宽成 `string`，
+        // 于是"写错一个状态名"这件事又变回静默通过。
+      ] as const
+    ).map(
+      (r) =>
+        ({
+          automationId: 'auto-1',
+          retryCount: 0,
+          triggeredAt: '2026-08-31T00:00:00.000Z',
+          startedAt: '2026-08-31T00:00:00.000Z',
+          ...r,
+        }) satisfies AutomationRunDto,
+    );
     await page.route('**/api/automations/*/runs*', (route) =>
       route.fulfill({
         status: 200,
-        json: { items: statuses, hasMore: false },
+        json: { items: statuses, hasMore: false } satisfies AutomationRunPage,
       }),
     );
 
@@ -239,7 +260,7 @@ test.describe('F21-7 自动化规则面板', () => {
   test('面板内列表 ⇄ 表单是视图切换，DOM 里始终只有一层 dialog', async ({ page }) => {
     await stubBase(page);
     await page.route('**/api/projects/*/automations', (route) =>
-      route.fulfill({ status: 200, json: [RULE] }),
+      route.fulfill({ status: 200, json: [RULE] satisfies AutomationDto[] }),
     );
 
     await openPanel(page);

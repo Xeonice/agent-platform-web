@@ -26,6 +26,16 @@ import {
   WEBHOOK_STATUSES,
 } from '@/types/automation';
 
+/**
+ * ⭐ **`.datetime()` 不是洁癖，它是在消费一条刚变强的契约。**
+ *
+ * 后端契约里这些字段已从裸 `z.string()` 收成 `IsoInstantSchema`
+ * （openapi 上是 `"format": "date-time"`）——平台只发 `toISOString()` 的 UTC 瞬时。
+ * ⚠️ 生成类型救不了这一层：`format` 在 `openapi.d.ts` 里只落成一行注释，`createdAt`
+ * 仍然是 `string`，`'not-a-date'` 编译期照样过。⇒ 契约的这一半只有写在这里才有人执行。
+ */
+const isoInstant = z.string().datetime();
+
 const timeSchema = z.string().regex(/^\d{2}:\d{2}$/, 'time 必须是 HH:MM');
 
 export const AutomationScheduleConfigSchema = z.object({
@@ -53,18 +63,19 @@ export const AutomationDtoSchema = z.object({
   timezone: z.string(),
   timeoutMinutes: z.number(),
   artifactRetentionDays: z.number(),
-  webhookUrl: z.string().optional(),
+  /** 后端出站保证是绝对 http/https URL（`WebhookTarget` 在域里把关，openapi `format: uri`）。 */
+  webhookUrl: z.string().url().optional(),
   triggerOn: z.enum(TRIGGER_ON_OPTIONS),
   enabled: z.boolean(),
   /** 连续失败 ≥3 后的「每日重试一次」态（03 §8.4）。 */
   degraded: z.boolean(),
   consecutiveFailures: z.number(),
   /** 上一次触发的时刻；从未触发过时缺席。 */
-  lastTriggeredAt: z.string().optional(),
+  lastTriggeredAt: isoInstant.optional(),
   /** UTC ISO；规则从未算过下一次（刚禁用/刚建）时缺席。 */
-  nextTriggerAt: z.string().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  nextTriggerAt: isoInstant.optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
 });
 
 export const AutomationListSchema = z.array(AutomationDtoSchema);
@@ -75,11 +86,11 @@ export const AutomationRunDtoSchema = z.object({
   status: z.enum(AUTOMATION_RUN_STATUSES),
   /** `resource-exhausted` 时的「已排队 n/5」里的 n。重试**不产生新 run 行**（03 §8.2）。 */
   retryCount: z.number(),
-  retryAt: z.string().optional(),
+  retryAt: isoInstant.optional(),
   /** 必有 —— 运行历史显示的就是它（skipped/missed 也有）。 */
-  triggeredAt: z.string(),
+  triggeredAt: isoInstant,
   /** ⚠️ skipped / missed / pending 缺席。 */
-  startedAt: z.string().optional(),
+  startedAt: isoInstant.optional(),
   durationMs: z.number().optional(),
   outputSummary: z.string().optional(),
   webhookStatus: z.enum(WEBHOOK_STATUSES).optional(),
@@ -93,7 +104,7 @@ export const AutomationRunDtoSchema = z.object({
   errorCode: z.enum(AUTOMATION_SKIP_REASONS).optional(),
   /** `failed` 行唯一能说清「为什么挂了」的字段。 */
   errorMessage: z.string().optional(),
-  completedAt: z.string().optional(),
+  completedAt: isoInstant.optional(),
   sandboxId: z.string().optional(),
 });
 

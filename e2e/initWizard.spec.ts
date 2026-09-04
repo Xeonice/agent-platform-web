@@ -1,6 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { InitStatusDto, SystemResourcesDto, SystemSettingsDto } from '../src/types/system';
+import type { ProjectDto } from '../src/types/project';
+import type { SandboxDto } from '../src/types/sandbox';
+import type { RuntimeDto } from '../src/types/runtimeCredential';
 import { INITIALIZED_STATUS } from './initGate';
+import type { DiagnoseServerFrame } from '../src/types/sse-protocol';
+import { HEALTH_BODY } from './fixtures';
 
 // F21-8 §7.4（本页独有补充场景 1/2/3 的可测部分）+ §9.2 VS-1 的真浏览器那一段。
 // REST 用 `page.route`（E2E 层**不启 MSW**，12 §4.1：Service Worker 会让请求对 page.route 不可见）。
@@ -39,8 +44,15 @@ const RESOURCES: SystemResourcesDto = {
   activeTasks: 0,
 };
 
-function sse(obj: Record<string, unknown>): string {
-  return `event: ${String(obj['event'])}\ndata: ${JSON.stringify(obj)}\n\n`;
+/**
+ * 把一帧写成真的 SSE 段（`event:` 行 + `data:` 行 + 空行）。
+ *
+ * ⭐ 参数从 `Record<string, unknown>` 收成 `DiagnoseServerFrame`（29 §3.2）：那个宽签名
+ * 让"少一个必填字段 / 用一个不存在的 check id / 写错 status"全都静默通过，而 SSE 帧是
+ * **手抄跨仓**的一份（`sse-protocol.ts` 的 `SSE_PROTOCOL_CANONICAL` 就是为它加的门禁）。
+ */
+function sse(frame: DiagnoseServerFrame): string {
+  return `event: ${frame.event}\ndata: ${JSON.stringify(frame)}\n\n`;
 }
 
 const DIAGNOSE_BODY = [
@@ -79,11 +91,11 @@ async function routeInitApis(page: Page, opts: RouteOpts = {}): Promise<{ initCa
     await route.fulfill({
       json: state.initialized
         ? INITIALIZED_STATUS
-        : {
+        : ({
             initialized: false,
             lastConnectivityCheck: ONLINE,
             lastConnectivityCheckAt: '2026-08-29T16:11:34.000Z',
-          },
+          } satisfies InitStatusDto),
     });
   });
   await page.route('**/api/system/settings', async (route) => {
@@ -106,16 +118,18 @@ async function routeInitApis(page: Page, opts: RouteOpts = {}): Promise<{ initCa
   });
   // 工作台在放行之后会去拉这些；给空数据，让"工作台真的挂起来了"这件事可断言。
   await page.route('**/api/projects*', async (route) => {
-    await route.fulfill({ json: [] });
+    await route.fulfill({ json: [] satisfies ProjectDto[] });
   });
   await page.route('**/api/sandboxes*', async (route) => {
-    await route.fulfill({ json: [] });
+    await route.fulfill({ json: [] satisfies SandboxDto[] });
   });
   await page.route('**/api/runtimes*', async (route) => {
-    await route.fulfill({ json: [] });
+    await route.fulfill({ json: [] satisfies RuntimeDto[] });
   });
+  // ⚠️ `GET /api/health` 的契约响应**没有 body**（`content?: never`）——此前这里回的
+  // `{ status: 'ok' }` 是替身自己造的一个字段，真后端上根本不存在（12 §3.4：值不能凭空）。
   await page.route('**/api/health*', async (route) => {
-    await route.fulfill({ json: { status: 'ok' } });
+    await route.fulfill({ json: HEALTH_BODY });
   });
 
   return state;

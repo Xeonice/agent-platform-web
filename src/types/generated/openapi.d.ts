@@ -1055,6 +1055,7 @@ export interface components {
         AuditListResponseDto: {
             items: {
                 seq: number;
+                /** Format: date-time */
                 at: string;
                 /** @enum {string} */
                 category: "sandbox" | "project" | "credential" | "image" | "system";
@@ -1095,10 +1096,12 @@ export interface components {
             /** @enum {string|null} */
             cloneErrorCode: "CLONE_FAILED_PERMISSION" | "CLONE_FAILED_NETWORK" | "TIMEOUT" | "INTERRUPTED" | "DISK_INSUFFICIENT" | null;
             taskCount: number;
+            /** Format: date-time */
             createdAt: string;
             repoUrl?: string;
             repoBranch?: string;
             baselineSizeBytes?: number;
+            /** Format: date-time */
             updatedAt: string;
         };
         DeleteProjectDto: {
@@ -1110,7 +1113,9 @@ export interface components {
             sandboxId?: string;
             /** @enum {string} */
             source: "manual-destroy" | "automation-artifact";
+            /** Format: date-time */
             retainedAt: string;
+            /** Format: date-time */
             retainUntil: string;
             diskBytes: number;
             downloadBytes: number;
@@ -1189,7 +1194,9 @@ export interface components {
             }[];
             /** @enum {string} */
             errorCode?: "TASK_FAILED" | "TASK_KILLED" | "TASK_TIMED_OUT" | "SANDBOX_GONE" | "RESUME_FAILED" | "UNKNOWN_RUNTIME" | "IMAGE_PULL_FAILED" | "IMAGE_DIGEST_GONE" | "RESOURCE_EXHAUSTED" | "NOT_FOUND" | "ALREADY_EXISTS" | "TIMEOUT" | "PERMISSION_DENIED" | "INVALID_STATE" | "PROVIDER_UNAVAILABLE" | "UNSUPPORTED_CAPABILITY" | "INTERNAL";
+            /** Format: date-time */
             startedAt: string;
+            /** Format: date-time */
             finishedAt?: string;
         };
         ProviderResponseDto: {
@@ -1219,9 +1226,12 @@ export interface components {
                 host: string;
                 keyType: string;
                 fingerprint: string;
+                /** Format: date-time */
                 firstSeenAt: string;
             }[];
+            /** Format: date-time */
             lastUsedAt?: string | null;
+            /** Format: date-time */
             createdAt: string;
         };
         CreateGitCredentialDto: {
@@ -1275,6 +1285,7 @@ export interface components {
             /** @enum {string} */
             credentialStatus: "none" | "active" | "expiring" | "expired";
             maskedIdentifier?: string;
+            /** Format: date-time */
             expiresAt?: string;
             /** @enum {string} */
             activeAuthMethod?: "account" | "api-key";
@@ -1285,7 +1296,9 @@ export interface components {
                 maskedIdentifier: string;
                 /** @enum {string} */
                 status: "ok" | "expiring" | "expired";
+                /** Format: date-time */
                 expiresAt?: string;
+                /** Format: date-time */
                 lastUsedAt?: string;
             }[];
         };
@@ -1299,8 +1312,10 @@ export interface components {
             method: "oauth-device" | "setup-token" | "api-key" | "access-token-paste";
             /** @enum {string} */
             kind: "url" | "device-code" | "paste-prompt";
+            /** Format: uri */
             verificationUrl?: string;
             userCode?: string;
+            /** Format: date-time */
             expiresAt?: string;
             instructions: string;
         };
@@ -1369,7 +1384,9 @@ export interface components {
                 }[];
                 cmdOverride?: string[];
             } | null;
+            /** Format: date-time */
             registeredAt: string;
+            /** Format: date-time */
             resolvedAt: string;
         };
         RegisterImageDto: {
@@ -1414,7 +1431,9 @@ export interface components {
                     }[];
                     cmdOverride?: string[];
                 } | null;
+                /** Format: date-time */
                 registeredAt: string;
+                /** Format: date-time */
                 resolvedAt: string;
             };
             validation: {
@@ -1477,6 +1496,7 @@ export interface components {
         CheckImageUpdateResponseDto: {
             current: {
                 digest: string;
+                /** Format: date-time */
                 resolvedAt: string;
             };
             upstream: {
@@ -1515,15 +1535,20 @@ export interface components {
             timezone: string;
             timeoutMinutes: number;
             artifactRetentionDays: number;
+            /** Format: uri */
             webhookUrl?: string;
             /** @enum {string} */
             triggerOn: "failure" | "success" | "all";
             enabled: boolean;
             degraded: boolean;
             consecutiveFailures: number;
+            /** Format: date-time */
             lastTriggeredAt?: string;
+            /** Format: date-time */
             nextTriggerAt?: string;
+            /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
             updatedAt: string;
         };
         CreateAutomationDto: {
@@ -1564,9 +1589,13 @@ export interface components {
             errorCode?: "PREVIOUS_RUNNING" | "AUTH_EXPIRED" | "RESOURCE_EXHAUSTED";
             errorMessage?: string;
             retryCount: number;
+            /** Format: date-time */
             retryAt?: string;
+            /** Format: date-time */
             triggeredAt: string;
+            /** Format: date-time */
             startedAt?: string;
+            /** Format: date-time */
             completedAt?: string;
             durationMs?: number;
             outputSummary?: string;
@@ -1603,9 +1632,13 @@ export interface components {
                 errorCode?: "PREVIOUS_RUNNING" | "AUTH_EXPIRED" | "RESOURCE_EXHAUSTED";
                 errorMessage?: string;
                 retryCount: number;
+                /** Format: date-time */
                 retryAt?: string;
+                /** Format: date-time */
                 triggeredAt: string;
+                /** Format: date-time */
                 startedAt?: string;
+                /** Format: date-time */
                 completedAt?: string;
                 durationMs?: number;
                 outputSummary?: string;
@@ -1616,6 +1649,7 @@ export interface components {
         };
         InitStatusResponseDto: {
             initialized: boolean;
+            /** Format: date-time */
             initializedAt?: string;
             lastConnectivityCheck?: {
                 target: string;
@@ -1624,6 +1658,7 @@ export interface components {
                 hint?: string;
                 modelApi: boolean;
             }[];
+            /** Format: date-time */
             lastConnectivityCheckAt?: string;
         };
         InitRequestDto: {
@@ -1643,6 +1678,7 @@ export interface components {
             };
             publicBaseUrl?: string;
             accessPasscodeEnabled: boolean;
+            /** Format: date-time */
             accessPasscodeUpdatedAt?: string;
             version: {
                 platform: string;
@@ -1696,6 +1732,7 @@ export interface components {
                 percentOfDisk: number;
                 /** @enum {string} */
                 level: "ok" | "warn" | "critical";
+                /** Format: date-time */
                 oldestExpiresAt?: string;
                 truncated: boolean;
             };

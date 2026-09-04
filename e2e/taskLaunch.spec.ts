@@ -1,7 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { SandboxProviderCapabilities } from '../src/types/sandbox';
+import type {
+  SandboxDto,
+  SandboxProviderCapabilities,
+  SandboxProviderDto,
+} from '../src/types/sandbox';
 import type { RuntimeDto } from '../src/types/runtimeCredential';
+import type { ProjectDto } from '../src/types/project';
+import type { AgentTaskDto } from '../src/types/task';
 import { stubInitialized } from './initGate';
+import { stubHealth, type BranchListDto, type ErrorEnvelope } from './fixtures';
 
 // F21-8 §2：`AppBootGate` 挂在根布局上 ⇒ 每个用例挂载时都会先读一次
 // `GET /api/system/init-status`。不 stub 它就等于让这些用例依赖"CI 里恰好没有后端"
@@ -49,7 +56,7 @@ function providerCaps(
  * runtime」的概念（04 §8），不选就发不出去——不 mock 的话面板停在「后端未注册任何
  * runtime」，按钮一直 disabled，测试只会超时在一次点击上，看不出真正的原因。
  */
-const RUNTIMES: RuntimeDto[] = [
+const RUNTIMES = [
   {
     id: 'codex',
     displayName: 'Codex',
@@ -64,7 +71,28 @@ const RUNTIMES: RuntimeDto[] = [
     maskedIdentifier: 'a***@example.com',
     credentials: [],
   },
-];
+] satisfies RuntimeDto[];
+
+/**
+ * 一个 ready 的 empty 项目（不需要分支选择器的那三条用例用它）。
+ *
+ * ⭐ `updatedAt` 是 `ProjectResponseDto` 的**必填**字段，此前三处内联 fixture 都缺它
+ * （29 §3.2）。抽成一份具名常量顺带消掉了那三份逐字复制。
+ */
+const EMPTY_PROJECT = {
+  id: 'proj-e2e',
+  name: 'E2E 发起项目',
+  sourceType: 'empty',
+  cloneStatus: 'ready',
+  cloneErrorCode: null,
+  taskCount: 0,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+} satisfies ProjectDto;
+
+const DEFAULT_PROVIDERS = [
+  { name: 'aio', capabilities: providerCaps(), isDefault: true },
+] satisfies SandboxProviderDto[];
 
 const PROMPT = '分析 /srv/internal-repo 的架构并输出摘要';
 
@@ -80,8 +108,13 @@ async function openNewTaskModal(page: Page): Promise<void> {
   await expect(page.getByTestId('modal-new-task')).toBeVisible();
 }
 
-/** 一个 ready 的 git 项目（分支选择器要它是 git 项目才渲染）。 */
-function gitProject(): Record<string, unknown> {
+/**
+ * 一个 ready 的 git 项目（分支选择器要它是 git 项目才渲染）。
+ *
+ * ⭐ 返回类型此前是 `Record<string, unknown>` —— 那等于**主动**放弃了这份 fixture 的
+ * 全部编译期约束（29 §3.2：⛔ 不另造一套）。
+ */
+function gitProject(): ProjectDto {
   return {
     id: 'proj-e2e',
     name: 'E2E 发起项目',
@@ -99,28 +132,12 @@ function gitProject(): Record<string, unknown> {
 
 test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进度卡', () => {
   test('填指令 → 提交 → 进度卡按展示序渲染；localStorage 无指令残留', async ({ page }) => {
-    await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+    await stubHealth(page);
     await page.route('**/api/projects', (route) =>
-      route.fulfill({
-        status: 200,
-        json: [
-          {
-            id: 'proj-e2e',
-            name: 'E2E 发起项目',
-            sourceType: 'empty',
-            cloneStatus: 'ready',
-            cloneErrorCode: null,
-            taskCount: 0,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }),
+      route.fulfill({ status: 200, json: [EMPTY_PROJECT] satisfies ProjectDto[] }),
     );
     await page.route('**/api/providers', (route) =>
-      route.fulfill({
-        status: 200,
-        json: [{ name: 'aio', capabilities: providerCaps(), isDefault: true }],
-      }),
+      route.fulfill({ status: 200, json: DEFAULT_PROVIDERS }),
     );
     await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
 
@@ -137,6 +154,9 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           id: 'sb-e2e-launch',
           projectId: 'proj-e2e',
           runtime: 'codex',
+          // ⭐ `provider` 是 `SandboxResponseDto` 的**必填**字段，此前这三条沙箱 fixture
+          //    都缺它（29 §3.2）——恰好前端这条路径不读它才没红。
+          provider: 'aio',
           // `creating` = 技术上"建实例/拉镜像"，展示上应点亮**第 2 格「拉取镜像」**。
           status: 'creating',
           headless: false,
@@ -146,7 +166,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           version: 1,
           // 后端派生的默认任务名（前端直接用）。
           name: '分析 /srv/internal-repo 的…',
-        },
+        } satisfies SandboxDto,
       });
     });
 
@@ -193,28 +213,12 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
   test('门口拒绝（后端标 sideEffectFree）→ 就地提示改配置，不出"重新创建"失败卡', async ({
     page,
   }) => {
-    await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+    await stubHealth(page);
     await page.route('**/api/projects', (route) =>
-      route.fulfill({
-        status: 200,
-        json: [
-          {
-            id: 'proj-e2e',
-            name: 'E2E 发起项目',
-            sourceType: 'empty',
-            cloneStatus: 'ready',
-            cloneErrorCode: null,
-            taskCount: 0,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }),
+      route.fulfill({ status: 200, json: [EMPTY_PROJECT] satisfies ProjectDto[] }),
     );
     await page.route('**/api/providers', (route) =>
-      route.fulfill({
-        status: 200,
-        json: [{ name: 'aio', capabilities: providerCaps(), isDefault: true }],
-      }),
+      route.fulfill({ status: 200, json: DEFAULT_PROVIDERS }),
     );
     await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
     await page.route('**/api/sandboxes', (route) =>
@@ -227,7 +231,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           // ⚠️ 前端判据读的就是这个字段（不是 409）。去掉它 ⇒ 保守读法把这次拒绝
           // 渲染成失败卡，下面的 `未创建任何任务` 断言当场红 —— 这正是它该有的样子。
           sideEffectFree: true,
-        },
+        } satisfies ErrorEnvelope,
       }),
     );
 
@@ -245,28 +249,12 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
   });
 
   test('刷新后仍能看到失败原因：DTO 的 failureCode/failureMessage 是救命稻草', async ({ page }) => {
-    await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+    await stubHealth(page);
     await page.route('**/api/projects', (route) =>
-      route.fulfill({
-        status: 200,
-        json: [
-          {
-            id: 'proj-e2e',
-            name: 'E2E 发起项目',
-            sourceType: 'empty',
-            cloneStatus: 'ready',
-            cloneErrorCode: null,
-            taskCount: 0,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }),
+      route.fulfill({ status: 200, json: [EMPTY_PROJECT] satisfies ProjectDto[] }),
     );
     await page.route('**/api/providers', (route) =>
-      route.fulfill({
-        status: 200,
-        json: [{ name: 'aio', capabilities: providerCaps(), isDefault: true }],
-      }),
+      route.fulfill({ status: 200, json: DEFAULT_PROVIDERS }),
     );
     await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
     await page.route('**/api/sandboxes', (route) =>
@@ -276,6 +264,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           id: 'sb-e2e-refresh',
           projectId: 'proj-e2e',
           runtime: 'codex',
+          provider: 'aio',
           name: '会失败的任务',
           status: 'starting',
           headless: false,
@@ -283,7 +272,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           idleTimeoutSec: 1800,
           waitingInput: false,
           version: 1,
-        },
+        } satisfies SandboxDto,
       }),
     );
     // 刷新后这条 DTO 是唯一的真相来源：状态已 failed，且带码 + 自由文本细节。
@@ -294,6 +283,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           id: 'sb-e2e-refresh',
           projectId: 'proj-e2e',
           runtime: 'codex',
+          provider: 'aio',
           name: '会失败的任务',
           status: 'failed',
           headless: false,
@@ -303,7 +293,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           version: 2,
           failureCode: 'IMAGE_CONTRACT_VIOLATION',
           failureMessage: 'command -v tmux exited 1',
-        },
+        } satisfies SandboxDto,
       }),
     );
 
@@ -333,20 +323,20 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
 // ————————————————————————————————————————————————————————————————
 test.describe('★ 新建任务：入口、弹层形态、分支、建完后的形态', () => {
   /** 四条新用例的共同 stub（都要一个 ready 的 git 项目 + 两个 registry）。 */
-  async function stubBase(page: Page, branches: string[] = ['main', 'develop', 'feature/x']) {
-    await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+  async function stubBase(page: Page, branches: BranchListDto = ['main', 'develop', 'feature/x']) {
+    await stubHealth(page);
     await page.route('**/api/projects', (route) =>
-      route.fulfill({ status: 200, json: [gitProject()] }),
+      route.fulfill({ status: 200, json: [gitProject()] satisfies ProjectDto[] }),
     );
     await page.route('**/api/projects/*/branches', (route) =>
-      route.fulfill({ status: 200, json: branches }),
+      route.fulfill({ status: 200, json: branches satisfies BranchListDto }),
     );
     await page.route('**/api/providers', (route) =>
       route.fulfill({
         status: 200,
         json: [
           { name: 'aio', capabilities: providerCaps({ headlessTask: true }), isDefault: true },
-        ],
+        ] satisfies SandboxProviderDto[],
       }),
     );
     await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
@@ -449,7 +439,7 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
           idleTimeoutSec: 1800,
           waitingInput: false,
           version: 1,
-        },
+        } satisfies SandboxDto,
       });
     });
 
@@ -483,18 +473,15 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
    * 变异：把 `showBranchPicker={isGitProject}` 改成恒 true ⇒ 本例变红。
    */
   test('③b 空项目 ⇒ 弹窗内没有分支选择器', async ({ page }) => {
-    await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+    await stubHealth(page);
     await page.route('**/api/projects', (route) =>
       route.fulfill({
         status: 200,
-        json: [{ ...gitProject(), sourceType: 'empty', repoUrl: undefined }],
+        json: [{ ...gitProject(), sourceType: 'empty', repoUrl: undefined }] satisfies ProjectDto[],
       }),
     );
     await page.route('**/api/providers', (route) =>
-      route.fulfill({
-        status: 200,
-        json: [{ name: 'aio', capabilities: providerCaps(), isDefault: true }],
-      }),
+      route.fulfill({ status: 200, json: DEFAULT_PROVIDERS }),
     );
     await page.route('**/api/runtimes', (route) => route.fulfill({ status: 200, json: RUNTIMES }));
 
@@ -532,7 +519,7 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
           idleTimeoutSec: 1800,
           waitingInput: false,
           version: 1,
-        },
+        } satisfies SandboxDto,
       }),
     );
     // 这个沙箱下已经有一条**跑完的**任务 ⇒ 面板该是只读详情。
@@ -552,7 +539,7 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
             startedAt: '2026-08-22T00:00:00.000Z',
             finishedAt: '2026-08-22T00:03:21.000Z',
           },
-        ],
+        ] satisfies AgentTaskDto[],
       }),
     );
 

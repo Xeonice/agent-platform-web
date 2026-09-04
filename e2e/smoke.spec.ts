@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
-import type { SandboxDto, SandboxProviderCapabilities } from '../src/types/sandbox';
+import type {
+  SandboxDto,
+  SandboxProviderCapabilities,
+  SandboxProviderDto,
+} from '../src/types/sandbox';
 import type { RuntimeDto } from '../src/types/runtimeCredential';
+import type { ProjectDto } from '../src/types/project';
 import { stubInitialized } from './initGate';
+import { stubHealth } from './fixtures';
 
 // F21-8 §2：`AppBootGate` 挂在根布局上 ⇒ 每个用例挂载时都会先读一次
 // `GET /api/system/init-status`。不 stub 它就等于让这些用例依赖"CI 里恰好没有后端"
@@ -57,6 +63,28 @@ const RUNTIMES: RuntimeDto[] = [
   runtimeDto({ id: 'acme-agent', displayName: 'Acme Agent' }),
 ];
 
+/**
+ * ⭐ `satisfies ProjectDto` 不是装饰（29 §3.2）：这条 fixture 此前少了契约必填的
+ * `updatedAt`——只是这条用例恰好不看「最后同步」那一格才没被发现。
+ */
+const PROJECT = {
+  id: 'proj-e2e',
+  name: 'E2E 冒烟项目',
+  sourceType: 'empty',
+  cloneStatus: 'ready',
+  cloneErrorCode: null,
+  taskCount: 0,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+} satisfies ProjectDto;
+
+/** provider registry：`isDefault` 恰好一项（与后端同语义）。 */
+const PROVIDERS = [
+  { name: 'aio', capabilities: providerCaps(), isDefault: true },
+  { name: 'boxlite', capabilities: providerCaps({ snapshot: false }), isDefault: false },
+  { name: 'acme', capabilities: providerCaps({ volumeMount: false }), isDefault: false },
+] satisfies SandboxProviderDto[];
+
 const SANDBOX: SandboxDto = {
   id: 'sb-e2e',
   projectId: 'proj-e2e',
@@ -79,25 +107,10 @@ const SANDBOX: SandboxDto = {
 // 真·浏览器→真后端 socket.io echo 的贯通，留待后端 daemon 起来后联调；帧收发/socketSessionKey 由 ptySocket 单测覆盖。
 test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => {
   test('选 ready 项目 → 选 provider → 新建沙箱 → 终端挂载 + 连接态展示', async ({ page }) => {
-    await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+    await stubHealth(page);
 
     // 项目列表返回一个 ready 项目（ProjectResponseDto；不含 repoUrl），使项目树里有一项可选并可建沙箱。
-    await page.route('**/api/projects', (route) =>
-      route.fulfill({
-        status: 200,
-        json: [
-          {
-            id: 'proj-e2e',
-            name: 'E2E 冒烟项目',
-            sourceType: 'empty',
-            cloneStatus: 'ready',
-            cloneErrorCode: null,
-            taskCount: 0,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }),
-    );
+    await page.route('**/api/projects', (route) => route.fulfill({ status: 200, json: [PROJECT] }));
 
     // provider registry（GET /api/providers → ProviderResponseDto[]）：e2e 跑生产构建
     // （不启 MSW），故显式 stub。默认档由数组项的 isDefault 标记（无顶层字段）。
@@ -105,14 +118,7 @@ test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => 
     // 「运行档位」单选已删，界面上根本不列 provider。三项留着是为了让下面那条
     // 「单选组不存在」的断言有分量：registry 里有几项跟界面上出不出现选项，已经解耦了。
     await page.route('**/api/providers', (route) =>
-      route.fulfill({
-        status: 200,
-        json: [
-          { name: 'aio', capabilities: providerCaps(), isDefault: true },
-          { name: 'boxlite', capabilities: providerCaps({ snapshot: false }), isDefault: false },
-          { name: 'acme', capabilities: providerCaps({ volumeMount: false }), isDefault: false },
-        ],
-      }),
+      route.fulfill({ status: 200, json: PROVIDERS }),
     );
 
     // runtime 同样由服务端 registry 驱动（GET /api/runtimes）：值取后端两个内置 adapter 的真实 id

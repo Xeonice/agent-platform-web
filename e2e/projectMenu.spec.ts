@@ -1,5 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import { stubInitialized } from './initGate';
+import { stubHealth, type ErrorEnvelope } from './fixtures';
+import type { ProjectDto } from '../src/types/project';
+import type { SandboxDto } from '../src/types/sandbox';
 
 // F21-6 §10.7 e2e 行：组头「⋯」→ 菜单 → [删除] → 确认 → 树上该项目消失。
 //
@@ -20,53 +23,81 @@ const PROJECT_A = {
   taskCount: 2,
   createdAt: '2026-08-01T00:00:00.000Z',
   updatedAt: '2026-08-01T00:00:00.000Z',
-};
+} satisfies ProjectDto;
 
-const PROJECT_B = { ...PROJECT_A, id: 'proj-b', name: 'E2E 菜单项目B', taskCount: 0 };
+const PROJECT_B = {
+  ...PROJECT_A,
+  id: 'proj-b',
+  name: 'E2E 菜单项目B',
+  taskCount: 0,
+} satisfies ProjectDto;
 
-/** 两条运行中 + 一条已停：警示句里那个数只有读真数据才会是 2。 */
+/**
+ * 两条运行中 + 一条已停：警示句里那个数只有读真数据才会是 2。
+ *
+ * ⭐ `satisfies SandboxDto[]` 当场补出了**五个契约必填字段**（`runtime` / `provider` /
+ * `headless` / `timeoutMinutes` / `idleTimeoutSec`）——这三条 fixture 此前只有前端恰好会读
+ * 的那六个键。少的那五个今天没人读，所以它一直绿着；而"替身比契约窄"正是 29 §1.2
+ * 第三次事故（e2e fixture 缺 3 个必填字段）的同一个形状。
+ */
 const SANDBOXES = [
   {
     id: 'sbx-1',
     projectId: 'proj-a',
+    runtime: 'codex',
+    provider: 'aio',
     name: '任务一',
     status: 'running',
+    headless: false,
+    timeoutMinutes: 120,
+    idleTimeoutSec: 1800,
     waitingInput: false,
     version: 1,
   },
   {
     id: 'sbx-2',
     projectId: 'proj-a',
+    runtime: 'codex',
+    provider: 'aio',
     name: '任务二',
+    // ⚠️ `idle` 是契约里真实存在的状态（`SandboxResponseDto.status` 十二态之一），
+    //    不是随手写的——`waitingInput:true` 与它一起构成"等用户输入"那一档。
     status: 'idle',
+    headless: false,
+    timeoutMinutes: 120,
+    idleTimeoutSec: 1800,
     waitingInput: true,
     version: 1,
   },
   {
     id: 'sbx-3',
     projectId: 'proj-a',
+    runtime: 'codex',
+    provider: 'aio',
     name: '任务三',
     status: 'stopped',
+    headless: false,
+    timeoutMinutes: 120,
+    idleTimeoutSec: 1800,
     waitingInput: false,
     version: 1,
   },
-];
+] satisfies SandboxDto[];
 
 test.beforeEach(async ({ page }) => {
   await stubInitialized(page);
 });
 
-/** 项目列表由一个可变数组驱动：删除后要能真的从列表里消失（这正是本文件要看的）。 */
-interface ProjectFixture {
-  id: string;
-  name: string;
-  [key: string]: unknown;
-}
-
-async function stubWorkbench(page: Page, state: { projects: ProjectFixture[] }): Promise<void> {
-  await page.route('**/api/health', (route) => route.fulfill({ json: {} }));
+/**
+ * 项目列表由一个可变数组驱动：删除后要能真的从列表里消失（这正是本文件要看的）。
+ *
+ * ⭐ 此前这里是一个 `{ id; name; [key: string]: unknown }` 的**自造**接口 —— 索引签名
+ * 让任何形状都能塞进来，等于把锁拆了。改成契约类型本身（29 §3.2：⛔ 不另造一套）。
+ */
+async function stubWorkbench(page: Page, state: { projects: ProjectDto[] }): Promise<void> {
+  await stubHealth(page);
   await page.route('**/api/projects', (route) =>
-    route.fulfill({ status: 200, json: state.projects }),
+    route.fulfill({ status: 200, json: state.projects satisfies ProjectDto[] }),
   );
   // ⚠️ 沙箱列表**跟着项目走**：后端删项目是级联的，被删项目的 Task 不会再出现在列表里。
   // 替身若一直原样返回，`selectProjectTaskTree` 会把它们收进「未分组」组——那是**替身**
@@ -75,7 +106,9 @@ async function stubWorkbench(page: Page, state: { projects: ProjectFixture[] }):
   await page.route('**/api/sandboxes*', (route) =>
     route.fulfill({
       status: 200,
-      json: SANDBOXES.filter((s) => state.projects.some((p) => p.id === s.projectId)),
+      json: SANDBOXES.filter((s) =>
+        state.projects.some((p) => p.id === s.projectId),
+      ) satisfies SandboxDto[],
     }),
   );
 }
@@ -175,7 +208,7 @@ test.describe('F21-6 项目菜单整块（含删除入口）', () => {
           code: 'CONFLICT',
           message: '该项目仍有运行中的任务，请先停止后再删除。',
           retryable: false,
-        },
+        } satisfies ErrorEnvelope,
       });
     });
 

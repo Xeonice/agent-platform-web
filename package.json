@@ -23,6 +23,7 @@
     "generate:api": "openapi-typescript ./openapi.json -o ./src/types/generated/openapi.d.ts && prettier --write ./src/types/generated/openapi.d.ts",
     "check:api-drift": "pnpm generate:api && git diff --exit-code src/types/generated/",
     "check:stories": "tsx scripts/check-story-coverage.ts",
+    "check:mock-contracts": "tsx scripts/check-mock-contract-anchoring.ts",
     "storybook": "storybook dev -p 6006 --no-open",
     "build-storybook": "storybook build",
     "e2e": "playwright test",

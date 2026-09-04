@@ -20,6 +20,14 @@ import { z } from 'zod';
  */
 export const RETAINED_VOLUME_SOURCES = ['manual-destroy', 'automation-artifact'] as const;
 
+/**
+ * ⭐ **`.datetime()` 不是洁癖，它是在消费一条刚变强的契约。**
+ *
+ * 后端契约里这些字段已从裸 `z.string()` 收成 `IsoInstantSchema`
+ * （openapi 上是 `"format": "date-time"`）——平台只发 `toISOString()` 的 UTC 瞬时。
+ * ⚠️ 生成类型救不了这一层：`format` 在 `openapi.d.ts` 里只落成一行注释，`createdAt`
+ * 仍然是 `string`，`'not-a-date'` 编译期照样过。⇒ 契约的这一半只有写在这里才有人执行。
+ */
 export const RetainedVolumeDtoSchema = z.object({
   /** uuid v7 —— **就是 DELETE 与下载用的那个 id**（10 §7.3）。 */
   id: z.string(),
@@ -27,9 +35,9 @@ export const RetainedVolumeDtoSchema = z.object({
   /** 来源 Task。⚠️ 弱引用：sandbox 记录归档后置 undefined，卷仍可管理（10 §7.3）。 */
   sandboxId: z.string().optional(),
   source: z.enum(RETAINED_VOLUME_SOURCES),
-  retainedAt: z.string(),
+  retainedAt: z.string().datetime(),
   /** 到点由 VolumeReaper 清理（3/7/30 天）。倒计时口径见 P21-5 §6。 */
-  retainUntil: z.string(),
+  retainUntil: z.string().datetime(),
   /** 宿主目录实占（reflink 之后可能远小于逻辑大小）。**清理决策看它。** */
   diskBytes: z.number(),
   /** 打包后的 tar 字节数 —— 与 `Content-Length` 同一个数。**下载预期看它。** */

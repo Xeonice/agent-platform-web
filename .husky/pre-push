@@ -4,11 +4,53 @@
 # typecheck / lint / test 全都是绿的（生成物自身自洽、只是旧），只有这条比对得出来。
 # ⚠️ 2026-08-31 真踩过：后端把 openapi.json cp 过来就结束，前端那侧被要求
 #    「不要动 openapi.json」，于是两边都没跑 generate:api，推上去才被 CI 拦下。
+# ⚠️ 「本地检查必须对齐 CI」（09 §2.3）—— 这条纪律是踩出来的，同一个「本地没跑、
+#    推上去才被 CI 拦」的坑吃过多次；2026-09-04 又中一次（agent 中断没跑 format）。
+#    下面四道加起来 ~13 秒，全部对应 CI `static-checks` job 里的步骤。
 set -e
+
+if ! pnpm format:check; then
+  echo ""
+  echo "⛔ 有文件没过 Prettier，推送已拦下。"
+  echo "   下一步：pnpm format && git add -A && git commit --amend --no-edit"
+  exit 1
+fi
+
+if ! pnpm lint; then
+  echo ""
+  echo "⛔ ESLint 未通过（含 07 §3 的六条分层铁律），推送已拦下。"
+  exit 1
+fi
+
+if ! pnpm typecheck; then
+  echo ""
+  echo "⛔ tsc 未通过，推送已拦下。"
+  exit 1
+fi
+
+if ! pnpm check:stories; then
+  echo ""
+  echo "⛔ 有 view 缺配套 story（12 §2.5），推送已拦下。"
+  exit 1
+fi
+
 if ! pnpm check:openapi; then
   echo ""
   echo "⛔ src/types/generated/ 与 openapi.json 不同步，推送已拦下。"
   echo "   check:openapi 已经重新生成好了 —— 工作区里现在就是正确的那份。"
   echo "   下一步：git add src/types/generated && git commit（或 --amend），然后重推。"
+  exit 1
+fi
+
+# 替身契约锚定门禁（29 §3.2）—— 同样是 typecheck 抓不到的东西，约 1 秒。
+#
+# ⚠️ 为什么本地也要拦：上一轮把 133 处响应体**人工**补到 100% 锚定，而这个仓的历史
+#    反复证明人工补齐的东西会悄悄退化（21-4 那 64 个 ⏳ 整体失效了半年没人发现）。
+#    只在 CI 拦意味着「推上去才知道」，而本仓的纪律是本地检查对齐 CI（09 §2.3）。
+if ! pnpm check:mock-contracts; then
+  echo ""
+  echo "⛔ 有替身响应体没有锚在契约类型上，推送已拦下。"
+  echo "   给值加 satisfies XxxDto，或抽成有返回类型的 helper。"
+  echo "   确实不该锚定的，在同行/上一行写 // contract-exempt: <理由>。"
   exit 1
 fi
