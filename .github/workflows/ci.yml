@@ -19,7 +19,7 @@ env:
 jobs:
   # 第 1 道门：最快最便宜的检查最先失败
   static-checks:
-    name: static-checks (typecheck · lint · prettier · stories · openapi-drift)
+    name: static-checks (typecheck · lint · prettier · stories · mock-contracts · openapi-drift)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +40,8 @@ jobs:
       - run: pnpm format:check
       - name: story 覆盖强制（12 §2.5）
         run: pnpm check:stories
+      - name: 替身响应锚定契约类型（29 §3.2 第三条）
+        run: pnpm check:mock-contracts
 
   # 第 2 道门（并行）：单测
   unit-tests:
