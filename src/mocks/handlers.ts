@@ -2020,7 +2020,7 @@ const DIAGNOSE_FRAMES: readonly DiagnoseServerFrame[] = [
     event: 'start',
     checks: [
       { id: 'container-runtime', label: '容器运行时可达' },
-      { id: 'dev-kvm', label: '/dev/kvm 可用（boxlite 微 VM）' },
+      { id: 'dev-kvm', label: '微 VM 档位（boxlite）可用' },
       { id: 'disk-space', label: '磁盘余量（DATA_ROOT）' },
       { id: 'port-conflict', label: '端口占用' },
       { id: 'outbound-network', label: '外网连通（模型 API / 镜像仓库）' },
@@ -2041,9 +2041,10 @@ const DIAGNOSE_FRAMES: readonly DiagnoseServerFrame[] = [
   {
     event: 'check',
     id: 'dev-kvm',
-    label: '/dev/kvm 可用（boxlite 微 VM）',
+    label: '微 VM 档位（boxlite）可用',
     status: 'ok',
-    summary: '/dev/kvm 存在且当前用户可读写',
+    summary:
+      'Hypervisor.framework 就绪（Apple Silicon · Darwin 25.5.0）—— 微 VM 档位（boxlite）可用，且是这台机器的默认档。⛔ 它不需要 Docker，也不需要任何守护进程',
     durationMs: 6,
   },
   {
