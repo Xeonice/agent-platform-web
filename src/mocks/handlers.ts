@@ -134,6 +134,15 @@ const HOUR = 60 * 60 * 1000;
  *               （传给 `DockerContainerBackend` 构造器的 `capabilities`）
  *  · boxlite —— `api/.../infrastructure/providers/boxlite/boxlite-sandbox.provider.ts`
  *
+ * ⭐ **上面这句「逐位抄自」曾经是假的，而且没有任何东西发现得了**（2026-09-04）：
+ * aio 的 `updateResources` / `pauseResume` / `watchEvents` 与 boxlite 的 `watchEvents`
+ * 四位都写着 `true`，后端四处声明的都是 `false`。全仓 typecheck / lint / 1362 unit /
+ * 400 storybook / 44 e2e / `check:mock-contracts` / `docs:check` 11 门 / 6 条契约 e2e
+ * **全绿** —— 因为这四位今天没有任何 UI 读（见 `types/sandbox.ts` 的能力位注释），
+ * 形状又完全合法。**「依据写在注释里」＝没有依据。**
+ * ⇒ 现已由主仓 `scripts/check-fixture-values.mjs`（M1）逐位对着后端源码机检，
+ * 判据与维护方式见 29 §3.7。改这里的任何一位之前，先去那两个 provider 类看一眼。
+ *
  * ⚠️ 两个内置 provider 的 `headlessTask` **现在都是 true**（S6 已落地）。此前这里给
  * boxlite 留 `false`，注释说"这样『档位不支持无头 → 入口置灰 + 原因』在 dev 里也看得见"——
  * 那句话本身就不成立：替身里每个沙箱 DTO 的 `provider` 都是 `DEFAULT_PROVIDER_NAME`，
@@ -146,10 +155,10 @@ const PROVIDER_REGISTRY: readonly SandboxProviderDto[] = [
     capabilities: {
       spawnTty: true,
       volumeMount: true,
-      updateResources: true,
-      pauseResume: true,
+      updateResources: false,
+      pauseResume: false,
       snapshot: false,
-      watchEvents: true,
+      watchEvents: false,
       headlessTask: true,
     },
     isDefault: DEFAULT_PROVIDER_NAME === PROVIDER_NAMES.aio,
@@ -162,7 +171,7 @@ const PROVIDER_REGISTRY: readonly SandboxProviderDto[] = [
       updateResources: false,
       pauseResume: false,
       snapshot: false,
-      watchEvents: true,
+      watchEvents: false,
       headlessTask: true,
     },
     isDefault: DEFAULT_PROVIDER_NAME === PROVIDER_NAMES.boxlite,
