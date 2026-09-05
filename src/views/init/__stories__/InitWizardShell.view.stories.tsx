@@ -6,11 +6,12 @@ import type { InitStepKey, InitStepModel } from '@/types/init';
 // ⚠️ story 位于 `src/views/` 下，被 boundaries 归类为 `view` 元素 ⇒ **不能 import `lib/`**。
 // 所以这里手搭 model（与 `lib/system/initWizardModel.ts::initSteps` 同形），
 // 那条派生逻辑自己的用例在 `lib/system/__tests__/initWizardModel.test.ts`。
-const ORDER: InitStepKey[] = ['connectivity', 'proxy', 'preset-image', 'resource'];
+const ORDER: InitStepKey[] = ['connectivity', 'proxy', 'preset-image', 'subscription', 'resource'];
 const LABEL: Record<InitStepKey, string> = {
   connectivity: '出网检测',
   proxy: '代理配置',
   'preset-image': '沙箱镜像',
+  subscription: '订阅配置',
   resource: '资源确认',
 };
 function steps(current: InitStepKey, proxyActive: boolean): InitStepModel[] {

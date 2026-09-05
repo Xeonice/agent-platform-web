@@ -1,3 +1,4 @@
+import type { RuntimeDto } from '@/types/runtimeCredential';
 // 初始化向导（F21-8）的视图模型。wire DTO 一律从 `types/system.ts` 借（那边全是生成物
 // 的别名），本文件只写 **view 吃得下的形状**。
 //
@@ -174,11 +175,19 @@ export interface ResourceConfirmModel {
 // 向导骨架
 // ————————————————————————————————————————————————————————————————
 
-export type InitStepKey = 'connectivity' | 'proxy' | 'preset-image' | 'resource';
+export type InitStepKey =
+  | 'connectivity'
+  | 'proxy'
+  | 'preset-image'
+  // ⛔ **v1.2 新增**（P21-8 §2 Step 4）。前三步问的都是「这台机器行不行」与「平台自己
+  //    备齐了没有」；agent 要跑起来还差**用户自己的模型帐号** —— 少了它，八项诊断可以
+  //    全绿、镜像可以就绪，而第一个任务照样发不出去。
+  | 'subscription'
+  | 'resource';
 
 export interface InitStepModel {
   key: InitStepKey;
-  /** 1..4。 */
+  /** 1..5。 */
   ordinal: number;
   label: string;
   /** 这一步在本次流程里是否会出现（Step2 只在检测有失败项时展开）。 */
@@ -193,4 +202,32 @@ export interface ProxyFormValues {
   httpProxy: string;
   httpsProxy: string;
   noProxy: string;
+}
+
+// ————————————————————————————————————————————————————————————————
+// Step4 · 订阅配置（P21-8 §2）
+// ————————————————————————————————————————————————————————————————
+
+/** 一个 runtime 在这一步的状态。⚠️ `expiring` 归入可用 —— 它现在还能跑，不是拦路的理由。 */
+export type SubscriptionRuntimeState = 'ready' | 'expired' | 'none';
+
+export interface SubscriptionRuntimeModel {
+  id: string;
+  displayName: string;
+  state: SubscriptionRuntimeState;
+  /** 已配置时的掩码身份（`a***@gmail.com` / `sk-...ab12`）。⛔ 永不回显明文。 */
+  maskedIdentifier?: string;
+  /** 这个 runtime 支持哪些方式（`getAuthMethods()` 下发，前端不自造枚举）。 */
+  methods: RuntimeDto['authMethods'];
+}
+
+export interface SubscriptionStepModel {
+  runtimes: SubscriptionRuntimeModel[];
+  /** 至少一个可用 ⇒ 这一步过了。 */
+  ready: boolean;
+  /**
+   * 未就绪时那句必须说出口的话。
+   * ⚠️ 与 Step 3 同一条口径：向导其余步骤放行后功能都是可用的，这两步例外。
+   */
+  blockedText?: string;
 }

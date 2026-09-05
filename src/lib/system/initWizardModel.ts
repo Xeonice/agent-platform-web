@@ -26,10 +26,16 @@ import type {
 import type { SystemResourcesDto, UpdateSystemSettingsDto } from '@/types/system';
 
 // ————————————————————————————————————————————————————————————————
-// 四步指示
+// 五步指示
 // ————————————————————————————————————————————————————————————————
 
-const STEP_ORDER: readonly InitStepKey[] = ['connectivity', 'proxy', 'preset-image', 'resource'];
+const STEP_ORDER: readonly InitStepKey[] = [
+  'connectivity',
+  'proxy',
+  'preset-image',
+  'subscription',
+  'resource',
+];
 
 const STEP_LABEL: Readonly<Record<InitStepKey, string>> = {
   connectivity: '出网检测',
@@ -37,6 +43,11 @@ const STEP_LABEL: Readonly<Record<InitStepKey, string>> = {
   // ⚠️ 镜像排在资源之前是刻意的（P21-8 §2）：它依赖出网/代理（要拉镜像），而它的体积
   //    （约 13GB）又是资源池那一步的主要输入 —— 顺序反过来，磁盘评估就少算了最大的一块。
   'preset-image': '沙箱镜像',
+  // ⚠️ 订阅排在镜像之后、资源之前是刻意的（P21-8 §2）：它是整个向导里**唯一需要用户
+  //    离开这个页面去别处操作**的一步。放在平台能自己搞定的事全部落定之后 —— 否则用户
+  //    人在授权页、这边镜像还在拉，回来发现**设备码已经过期**（codex 的码 15 分钟）。
+  //    ⛔ 让有时限的凭证跨过一个分钟级的等待，是拿用户的时间去赌。
+  subscription: '订阅配置',
   resource: '资源确认',
 };
 

@@ -221,8 +221,8 @@ describe('阻塞语义：无 [取消]、无 Esc 逃逸（§2，全局 Esc 规则
   });
 });
 
-describe('四步走完 → 放行（§9.2 VS-1 步骤 3/6/7）', () => {
-  it('⭐ 出网全通过 ⇒ 跳过代理步；走完 Step3/Step4 ⇒ 工作台出现、向导卸载', async () => {
+describe('五步走完 → 放行（§9.2 VS-1 步骤 3/6/7）', () => {
+  it('⭐ 出网全通过 ⇒ 跳过代理步；走完 Step3/4/5 ⇒ 工作台出现、向导卸载', async () => {
     serve();
     renderGate();
     await screen.findByTestId('init-wizard');
@@ -237,6 +237,10 @@ describe('四步走完 → 放行（§9.2 VS-1 步骤 3/6/7）', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+    // Step4 订阅配置（v1.2 新增）：默认替身里凭证已配好 ⇒ [下一步]，不是 [稍后配置]。
+    await screen.findByTestId('subscription-setup');
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+
     await screen.findByTestId('resource-confirm');
 
     fireEvent.click(await screen.findByRole('button', { name: '确认，开始使用' }));
@@ -257,6 +261,8 @@ describe('四步走完 → 放行（§9.2 VS-1 步骤 3/6/7）', () => {
     await screen.findByTestId('init-wizard');
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
     await screen.findByTestId('preset-image-check');
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+    await screen.findByTestId('subscription-setup');
     fireEvent.click(screen.getByRole('button', { name: '下一步' }));
     fireEvent.click(await screen.findByRole('button', { name: '确认，开始使用' }));
 
