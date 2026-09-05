@@ -1207,7 +1207,8 @@ export interface components {
             artifacts: {
                 name: string;
                 size: number;
-                modifiedAt: string;
+                /** Format: date-time */
+                modifiedAt?: string;
             }[];
             /** @enum {string} */
             errorCode?: "TASK_FAILED" | "TASK_KILLED" | "TASK_TIMED_OUT" | "SANDBOX_GONE" | "RESUME_FAILED" | "UNKNOWN_RUNTIME" | "IMAGE_PULL_FAILED" | "IMAGE_DIGEST_GONE" | "RESOURCE_EXHAUSTED" | "NOT_FOUND" | "ALREADY_EXISTS" | "TIMEOUT" | "PERMISSION_DENIED" | "INVALID_STATE" | "PROVIDER_UNAVAILABLE" | "UNSUPPORTED_CAPABILITY" | "INTERNAL";

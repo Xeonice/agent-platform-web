@@ -791,8 +791,11 @@ export function useImageManager(): ImagesManager {
       return;
     }
     const imageConfig: ImageConfigInput = {
-      // ⚠️ secret 行的 value 保持 `''` = **保持不变**（后端 I-IMG-5）。原值从来没有进过 props，
-      // 所以这里也拿不到、也不需要拿。
+      // ⚠️ secret 行的 value 保持 `''` = **保持不变**（后端 I-IMG-5）。
+      // ⛔ **原注释写的是「原值从来没有进过 props，所以这里也拿不到」—— 那句话曾经是假的**：
+      //    `envRowsFromConfig` 原样搬了入站 value，后端漏掩码时它就进来了，然后从这里
+      //    原样发回去。现在它是真的：那个函数把 secret 行的 value 钉成 `''`，
+      //    不管后端发来什么（`imageManifestCards.ts`）。
       env: envDraft.rows.map((r) => ({ key: r.key, value: r.value, secret: r.secret })),
     };
     saveConfigMutation.mutate(

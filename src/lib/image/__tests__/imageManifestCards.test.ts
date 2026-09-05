@@ -261,6 +261,24 @@ describe('groupManifestsByImage', () => {
 });
 
 describe('envRowsFromConfig / envSummary', () => {
+  it('⛔ **后端漏掩码时前端也不搬那份值** —— 不依赖「后端记得掩码」（2026-09-05 修）', () => {
+    // 此前是 `value: entry.value` 原样搬：后端掩码正确时表现完全正常，而**后端一旦漏掩码**
+    // （一条新写的查询忘了走脱敏、一次回归、一个第三方 provider 的实现），密文就会进模型、
+    // 进 DOM、再被 `saveEnv` 原样发回去 —— 掩码从此只是一层显示效果。
+    // ⇒ 这一格由前端自己钉成 `''`，代价是零（那个位置本来就该是空的）。
+    const rows = envRowsFromConfig({
+      env: [
+        { key: 'LOG_LEVEL', value: 'info', secret: false },
+        // 夹具故意模拟「后端漏掩码」：secret 行带着明文过来。
+        { key: 'MY_SECRET', value: 'super-secret-plaintext', secret: true },
+      ],
+    });
+    expect(rows[1]!.value).toBe('');
+    expect(JSON.stringify(rows)).not.toContain('super-secret-plaintext');
+    // 非 secret 行照常原样带过来 —— 别把这条纪律扩大成「所有值都清空」。
+    expect(rows[0]!.value).toBe('info');
+  });
+
   /**
    * ★ 后端把已存 secret 的 value 掩码成 `''`（I-IMG-5），而空 value 在入站方向的含义是
    * **保持不变**。两者对上了 ⇒ `secretStored:true` ⇒ 输入框渲染空 + 「保持不变，输入即覆盖」，

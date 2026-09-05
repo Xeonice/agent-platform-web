@@ -28,7 +28,10 @@ export function useTaskOutcomeView(input: {
       artifacts: artifacts.map((a) => ({
         name: a.name,
         sizeLabel: formatArtifactSize(a.size),
-        modifiedAt: a.modifiedAt,
+        // ⛔ 后端给不出 mtime 时**字段缺席**（不是空串，api 侧 2026-09-05 改）。
+        //    ⇒ 在这里翻译成一句人话，而不是把 `undefined` 漏给视图渲染成一片空白
+        //    ——用户分不清「这个文件没有时间戳」与「这一格坏了」。
+        modifiedAt: a.modifiedAt ?? '时间未知',
       })),
     }),
     [exit, errorCode, artifacts],

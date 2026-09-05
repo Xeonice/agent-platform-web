@@ -363,37 +363,38 @@ test.describe('F21-4 镜像管理 · VS-2 secret 红线（真实浏览器文档 
     });
   });
 
-  // ⛔⛔ **已知缺陷，用 `test.fail()` 记录，不是用删断言掩盖。**
+  // ── 这条曾经是一笔挂着的账（`test.fail()`），2026-09-05 修好 ────────────────────
   //
-  // `test.fail()` 的语义是「这条现在应当红」：它红 ⇒ CI 绿（缺陷仍在，账还挂着）；
-  // 有人把缺陷修了 ⇒ 这条转绿 ⇒ Playwright 反过来判 **failed**（"expected to fail"），
-  // 修的人当场被提示把这行注解摘掉。⇒ 缺口既不会拖红 CI，也不会被悄悄忘掉。
+  // **缺陷**：P21-4 §10.2 / F21-4 §9.2 VS-2 写的是「原值不进 props、不进 DOM」，而
+  // `envRowsFromConfig()` 把后端回来的 `entry.value` 逐字放进了 `EnvVarRowModel.value`，
+  // 只是 `EnvVarEditor.view` 渲染时用 `masked ? '' : row.value` 遮住了它 ——
+  // **掩码只发生在显示层**。`saveEnv()` 拼请求体读的就是那份原值，于是
+  // 「直接保存 ⇒ 传空 value」当时成立**只是因为后端按 I-IMG-5 回了 `''`**。
   //
-  // ── 缺陷本身（VS-2 步骤 3/4 的前半句在实现上不成立）────────────────────────────
-  // P21-4 §10.2 / F21-4 §9.2 VS-2 写的是「**原值不进 props**、不进 DOM」，而
-  // `envRowsFromConfig()` 把后端回来的 `entry.value` **逐字放进了 `EnvVarRowModel.value`**，
-  // 只是 `EnvVarEditor.view` 渲染时用 `masked ? '' : row.value` 把它遮住了 ——
-  // **掩码只发生在显示层**。于是 `useImages.saveEnv()` 拼请求体时读的 `r.value` 是那份原值，
-  // 「直接保存 ⇒ 传空 value（= 保持不变）」今天成立**只是因为后端按 I-IMG-5 回了 `''`**。
+  // ⚠️ **为什么 container 那条同名用例看不见它**（§7.3「直接保存 ⇒ 请求体传空 value」）：
+  // 它的夹具用的是后端掩码后的 `''`，于是「前端传了空」与「后端本来就给的空」在那条用例里
+  // **不可区分**，断言恒真。⇒ 本条把夹具换成「**后端漏掩码**」，两者才分得开。
+  // **这才是这条 e2e 存在的全部理由**，摘掉 `test.fail()` 之后它更要留着。
   //
-  // ⚠️ 这也正是**为什么 container 那条同名用例（§7.3「直接保存 ⇒ 请求体传空 value」）看不见它**：
-  // 它的夹具用的是后端掩码后的 `''`，于是"前端传了空"与"后端本来就给的空"两件事在那条
-  // 用例里**不可区分**，断言恒真。本条把夹具换成"后端漏掩码"，两者才分得开。
+  // **修法**（落在 `lib/image/imageManifestCards.ts`）：`envRowsFromConfig` 对 secret 行
+  // 把 value 钉成 `''`，**不管后端发来什么** —— 前端不再依赖「后端记得掩码」。
+  // 代价是零（那个位置本来就该是空的），收益是这条链上少一个「大家都对才安全」的耦合。
   //
-  // ⇒ 修法（归实现侧，测试 agent 不动）：`saveEnv()` 对 `secretStored === true` 的行发 `''`，
-  //   或 `envRowsFromConfig()` 干脆不把 secret 的 value 放进模型。顺带把 `saveEnv` 里
-  //   「原值从来没有进过 props，所以这里也拿不到」那句注释改掉——它今天是**假的**。
-  test('⑤b 后端若漏掩码，前端会把密文原样回传（已知缺陷：掩码只在显示层）', async ({ page }) => {
-    // ⚠️ 写在**用例体内第一行**：写在 describe 作用域会把整个 describe 都标成"应当红"，
-    // 连上面那条真绿的 ⑤ 一起被反转。
-    test.fail();
+  // ⛔ **谁把那行改回 `entry.value`，这条会立刻红。**
+  test('⭐ 后端漏掩码时，前端**也不把密文回传**（2026-09-05 修好，此前是已知缺陷）', async ({
+    page,
+  }) => {
+    // ⚠️ 本条此前带 `test.fail()`：前端原样搬入站 value，后端一漏掩码密文就往返一圈。
+    //    修法落在 `envRowsFromConfig`——secret 行的 value 钉成 `''`，**不管后端发来什么**。
+    //    ⛔ 摘掉 `test.fail()` 之后它必须真绿；若哪天有人把那行改回 `entry.value`，
+    //    这条会立刻红——这正是它当初被写下来的理由。
     const { patch } = await openEnvEditor(page);
     await expect(page.getByTestId('env-var-editor').getByLabel('变量值 2')).toHaveValue('');
 
     await page.getByRole('button', { name: '保存运行参数' }).click();
     await expect(page.getByText('运行参数已保存')).toBeVisible();
 
-    // 期望：secret 行传空 = 保持不变（VS-2 步骤 4）。实际：原封不动把密文发了回去。
+    // secret 行传空 = 保持不变（VS-2 步骤 4）。夹具里后端**故意漏了掩码**，而出站仍是空。
     expect(patch()).toEqual({
       imageConfig: {
         env: [

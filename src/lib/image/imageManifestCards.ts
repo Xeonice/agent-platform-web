@@ -192,19 +192,34 @@ export function groupManifestsByImage(list: readonly ImageManifestDto[]): ImageC
  * ⚠️ **后端把已存 secret 的 value 掩码成 `''`**（I-IMG-5：密文都不回读，更别说明文），
  * 而空 value 在**入站**方向的含义是「保持不变」。两者对上了，于是 `secretStored` 就是
  * "这一行的 secret 是库里已经有的" —— 用户不动它、原样提交，就是一次无操作，而不是清空。
+ *
+ * ── ⛔ 但**不能靠后端记得掩码**（2026-09-05 修，e2e VS-2 ⑤b）─────────────────
+ * 上一版这里是 `value: entry.value` —— 原样搬。它在后端掩码正确时表现完全正常，而后端
+ * **一旦漏掩码**（一条新写的查询忘了走脱敏、一次回归、一个第三方 provider 的实现），
+ * 密文就会进模型、进 DOM、再被 `saveEnv` **原样发回去**。掩码从此只是一层显示效果。
+ *
+ * ⚠️ **这类缺陷的特征是「平时看不出来」**：它需要另一侧先出错才显形，而那时它放大的是
+ * 别人的错误。⇒ 前端自己把 secret 的 value 钉成 `''`，**不管后端发来什么**。
+ * 代价是零：那个位置本来就该是空的；收益是这条链上少一个「大家都对才安全」的耦合。
  */
 export function envRowsFromConfig(config: ImageConfigDto | null): EnvVarRowModel[] {
   return (config?.env ?? []).map((entry, index) => ({
     // 行 id 与下标解耦：删掉第 2 行之后，第 3 行的 React key 不能跟着变成 2。
     id: `env-${String(index)}`,
     key: entry.key,
-    value: entry.value,
+    // ⛔ secret 行的 value **一律丢弃**，不信任入站值（见上）。
+    value: entry.secret ? '' : entry.value,
     secret: entry.secret,
     secretStored: entry.secret,
   }));
 }
 
-/** 卡面上的环境变量摘要：`LOG_LEVEL=info · MY_SECRET=***`。secret **一律掩码，原值不进 DOM**。 */
+/**
+ * 卡面上的环境变量摘要：`LOG_LEVEL=info · MY_SECRET=***`。secret **一律掩码，原值不进 DOM**。
+ *
+ * ⚠️ 这里本来就没读 `entry.value`（secret 分支直接给 `***`）—— 与上面那条同一条纪律，
+ * 只是它当初写对了。留这句注释是为了下一个人**别把它"简化"成读 value 再截断**。
+ */
 export function envSummary(config: ImageConfigDto | null): string {
   return (config?.env ?? [])
     .map((entry) => `${entry.key}=${entry.secret ? '***' : entry.value}`)
