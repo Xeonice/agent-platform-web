@@ -24,13 +24,20 @@ import { apiClient, API_BASE_URL } from '@/services/api/client';
 import { ApiErrorException, toApiError } from '@/services/api/apiError';
 import { toAuditWireQuery, AUDIT_PAGE_LIMIT, type AuditCursor } from '@/lib/audit/auditStream';
 import { reportError } from '@/lib/_shared/reportError';
-import { DiagnoseServerFrameSchema, SSE_DIAGNOSE_SCHEMA_HASH } from '@/types/sse-protocol';
+import {
+  DiagnoseServerFrameSchema,
+  ProvisionServerFrameSchema,
+  SSE_DIAGNOSE_SCHEMA_HASH,
+} from '@/types/sse-protocol';
 import type { AuditFilters, AuditListDto } from '@/types/audit';
 import type {
   DiagnoseCheckFrame,
   DiagnoseDoneFrame,
   DiagnoseServerFrame,
   DiagnoseStartFrame,
+  ProvisionDoneFrame,
+  ProvisionServerFrame,
+  ProvisionStageFrame,
 } from '@/types/sse-protocol';
 import type {
   InitRequestDto,
@@ -340,4 +347,107 @@ function dispatchDiagnoseFrame(frame: DiagnoseServerFrame, cb: DiagnoseCallbacks
       cb.onDone(frame);
       return;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 预制镜像搬运（P21-8 §2 ⇒ 新判据）
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ProvisionCallbacks {
+  onStage: (frame: ProvisionStageFrame) => void;
+  onDone: (frame: ProvisionDoneFrame) => void;
+}
+
+/**
+ * 让平台把预制镜像搬到位，逐阶段回调。
+ *
+ * ⚠️ **409 要在读流之前抛出来。** 后端刻意在开流前判可行性（开了流状态码就只剩 200），
+ * 这一侧必须对称：`response.ok` 为假时读的是 JSON 错误信封，而不是流。
+ * ⛔ 直接进 `getReader()` 会把一份错误信封当成 SSE 解析 —— 结果是一条永远等不到
+ * `done` 的流，界面上表现为「点了没反应」。
+ */
+export async function provisionPresetImage(
+  cb: ProvisionCallbacks,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/system/preset-image/provision`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { Accept: 'text/event-stream' },
+    ...(signal === undefined ? {} : { signal }),
+  });
+
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => undefined);
+    throw new ApiErrorException(toApiError(body, response.status), response.status);
+  }
+
+  const body = response.body;
+  if (body === null) throw new DiagnoseStreamAborted();
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let sawDone = false;
+
+  try {
+    while (!sawDone) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      // ⚠️ 与 `diagnose` 同一条：只在看到空行分隔符时才解析。一帧被 TCP 切成两段是常态，
+      //    按 chunk 解析会把半个 JSON 喂给 parser —— 随机丢帧，且本机复现不了。
+      let sep = buffer.indexOf('\n\n');
+      while (sep !== -1) {
+        const raw = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        const frame = parseProvisionFrame(raw);
+        if (frame !== null) {
+          if (frame.event === 'stage') cb.onStage(frame);
+          else {
+            cb.onDone(frame);
+            sawDone = true;
+            break;
+          }
+        }
+        sep = buffer.indexOf('\n\n');
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => undefined);
+  }
+
+  if (!sawDone) throw new DiagnoseStreamAborted();
+}
+
+/**
+ * 一段 SSE 记录 → 一帧搬运帧。**认不出来就丢掉这一帧，不掀桌子**（与诊断同一条）。
+ *
+ * ⚠️ 只读 `data:` 行的 JSON，不读 `event:` 行 —— 两者刻意重复，而这条消费路径用的是前者
+ * （后端 `SseWriter` 的注释解释了为什么两个都发）。
+ */
+export function parseProvisionFrame(raw: string): ProvisionServerFrame | null {
+  const data = raw
+    .split('\n')
+    .map((line) => line.replace(/\r$/, ''))
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice('data:'.length).trimStart())
+    .join('\n');
+  if (data === '') return null;
+
+  let json: unknown;
+  try {
+    json = JSON.parse(data);
+  } catch {
+    reportError('搬运 SSE 帧不是合法 JSON', { raw });
+    return null;
+  }
+  // ⛔ **schema 校验，不是类型断言。** 断言只让 TypeScript 闭嘴，运行期一个字节都没查 ——
+  //    而这条流来自网络。与 `parseDiagnoseFrame` 同一条。
+  const parsed = ProvisionServerFrameSchema.safeParse(json);
+  if (!parsed.success) {
+    reportError('搬运 SSE 帧不符合契约，已跳过该帧', { raw });
+    return null;
+  }
+  return parsed.data;
 }

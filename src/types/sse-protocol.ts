@@ -153,6 +153,52 @@ export type DiagnoseServerFrame = z.infer<typeof DiagnoseServerFrameSchema>;
  *
  * 格式：`通道:帧名{字段,可选字段?},…|枚举名:值,…`。
  */
+/** 搬运阶段的闭集 —— 与后端 `PROVISION_STAGES` 同源，界面按它画进度格。 */
+export const PROVISION_STAGE_NAMES = ['plan', 'fetch', 'verify', 'load', 'register'] as const;
+export type ProvisionStageName = (typeof PROVISION_STAGE_NAMES)[number];
+
+/**
+ * 搬运流的一帧。
+ *
+ * ⚠️ **`progress: null` 是有意义的取值，⛔ 不是 0。** docker 的进度帧不一定带 `total`，
+ * 后端如实回 `null`；界面读到它要画**不确定态**（转圈）。把它当 0 会渲染出一个停在 0%
+ * 不动的进度条 —— 与「卡死了」在观感上完全一致，而它其实正在正常推进。
+ */
+export const ProvisionStageFrameSchema = z.object({
+  event: z.literal('stage'),
+  stage: z.enum(PROVISION_STAGE_NAMES),
+  status: z.enum(['running', 'ok', 'failed', 'skipped']),
+  message: z.string(),
+  // ⚠️ `.nullable()` 而不是 `.optional()`：`null` 是**有含义的取值**（"给不出"），
+  //    而缺席意味着后端漏发了这个字段 —— 两者不该被同一条 schema 抹平。
+  progress: z.number().nullable(),
+});
+export type ProvisionStageFrame = z.infer<typeof ProvisionStageFrameSchema>;
+
+/**
+ * 收尾帧。
+ *
+ * ⚠️ **失败也有这一帧，不是静静断开**：断开在界面看来与网络抖动无法区分，而两者的
+ * 下一步不同（重试 vs 去看 `error` 说的是哪一阶段）。
+ */
+export const ProvisionDoneFrameSchema = z.object({
+  event: z.literal('done'),
+  ok: z.boolean(),
+  error: z.string().optional(),
+});
+export type ProvisionDoneFrame = z.infer<typeof ProvisionDoneFrameSchema>;
+
+/**
+ * ⚠️ **用 schema 校验而不是类型断言**（与 `DiagnoseServerFrameSchema` 同一条）：
+ * 断言只是让 TypeScript 闭嘴，运行期一个字节都没检查 —— 而这条流的来源是网络。
+ * schema 顺带承担了「认不出来就丢掉这一帧」那条纪律的落点。
+ */
+export const ProvisionServerFrameSchema = z.discriminatedUnion('event', [
+  ProvisionStageFrameSchema,
+  ProvisionDoneFrameSchema,
+]);
+export type ProvisionServerFrame = z.infer<typeof ProvisionServerFrameSchema>;
+
 export const SSE_PROTOCOL_CANONICAL =
   'diagnose.server:start{checks[{id,label}],timeoutMs},' +
   'check{id,label,status,summary,hint?,step?,errorCode?,detail?,durationMs},' +
@@ -162,7 +208,11 @@ export const SSE_PROTOCOL_CANONICAL =
   'outbound-network,ws-loopback,data-root-fs,preset-image|' +
   'diagnose.preset-image.steps:config,registry,lineage,registration,staged|' +
   'diagnose.preset-image.codes:PRESET_IMAGE_NOT_CONFIGURED,PRESET_IMAGE_NOT_IN_REGISTRY,' +
-  'PRESET_IMAGE_NOT_PLATFORM_BUILT,PRESET_IMAGE_NOT_SEEDED';
+  'PRESET_IMAGE_NOT_PLATFORM_BUILT,PRESET_IMAGE_NOT_SEEDED|' +
+  'provision.server:stage{stage,status,message,progress},done{ok,error?}|' +
+  'provision.stages:plan,fetch,verify,load,register|' +
+  'provision.status:running,ok,failed,skipped|' +
+  'provision.codes:PRESET_IMAGE_NOT_PROVISIONABLE,PRESET_IMAGE_PROVISION_IN_FLIGHT';
 
 /**
  * 诊断流的 schema 版本，服务端随响应头 `X-Schema-Hash` 下发。

@@ -97,6 +97,29 @@ export interface PresetImageStepModel {
   /** 可复制的修复命令（优先用后端 `hint`：它带着这台机器上的真实取值）。 */
   fixCommand?: string;
   errorCode?: string;
+  /**
+   * 这一步**平台能不能自己动手**（2026-09-05 新增，P21-8 §2 ⇒ 新判据）。
+   *
+   * ⛔ **它存在的意义是让「给命令」退回到它该在的位置。** 此前第 2 步无论如何都渲染
+   * `fixCommand`（`docker build && docker push`），而实测里那张镜像的字节就躺在本机
+   * docker 库 —— 让用户重新 build 一遍已经有的东西。**平台能做而让用户去敲命令，
+   * 那不是指路，是把自己的活派给用户。**
+   *
+   * ⚠️ 有它时 ⇒ 渲染 [准备镜像] 按钮，**并且不再渲染 `fixCommand`**：两个都给等于
+   * 让用户在「点按钮」和「敲命令」之间选，而正确答案只有一个。
+   */
+  provision?: PresetImageProvisionOffer;
+}
+
+/** [准备镜像] 按钮要显示的全部信息 —— ⚠️ **按之前就要说清代价**（P21-8 §2）。 */
+export interface PresetImageProvisionOffer {
+  /** 从哪搬到哪，原样说出来，用户才对得上。 */
+  from: string;
+  to: string;
+  /** 搬多少字节；给不出就 `null` —— ⛔ 不许编一个数（后端同一条纪律）。 */
+  sizeBytes: number | null;
+  /** 一句人话：为什么这台机器上能自己搬。 */
+  why: string;
 }
 
 export interface PresetImageChainModel {

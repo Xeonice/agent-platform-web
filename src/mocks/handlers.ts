@@ -33,7 +33,7 @@ import type {
 } from '@/types/image';
 import type { AuditEventDto, AuditListDto } from '@/types/audit';
 import { SSE_DIAGNOSE_SCHEMA_HASH } from '@/types/sse-protocol';
-import type { DiagnoseServerFrame } from '@/types/sse-protocol';
+import type { DiagnoseServerFrame, ProvisionServerFrame } from '@/types/sse-protocol';
 import type {
   InitStatusDto,
   SystemProvidersDto,
@@ -1856,6 +1856,13 @@ export const handlers = [
   http.get(`${API_BASE}/api/system/providers`, () => HttpResponse.json(systemProvidersDto())),
 
   http.post(`${API_BASE}/api/system/diagnose`, () => diagnoseSseResponse(DIAGNOSE_FRAMES)),
+  // 预制镜像搬运（P21-8 §2 ⇒ 新判据）。
+  // ⚠️ **默认替身走「本机已有」那条**：fetch/verify/load 三步 `skipped` —— 这正是
+  //    2026-09-05 实测那台机器的形态，也是最容易写错的一格（把没发生的三步画成
+  //    「瞬间完成的 ✅」会让用户以为下载校验都做过了）。
+  http.post(`${API_BASE}/api/system/preset-image/provision`, () =>
+    provisionSseResponse(PROVISION_FRAMES),
+  ),
 ];
 
 function auditExportSuccess(): HttpResponse<Blob> {
@@ -2133,6 +2140,81 @@ const DIAGNOSE_FRAMES: readonly DiagnoseServerFrame[] = [
  * 替身少写 `event:` 行今天不会有人发现（本仓走后者），但它会让"照替身写的解析器"
  * 在换回 EventSource 的那天静默收不到任何东西。
  */
+/**
+ * 搬运流的默认替身帧。**取值镜像**：`message` 逐字取自 2026-09-05 真机那一轮
+ * （`preset-image-provisioner.ts` 的实际文案），⛔ 不自己编 —— 编出来的替身会让
+ * 「后端改了文案」这件事在前端测试里静默通过。
+ */
+export const PROVISION_FRAMES: readonly ProvisionServerFrame[] = [
+  {
+    event: 'stage',
+    stage: 'plan',
+    status: 'ok',
+    message:
+      "'localhost:5001/platform/sandbox:v2' 的字节已经在本机 docker 镜像库里，只是没推到 registry —— 平台自己推上去即可，不出网、不重建（本机 docker 镜像库 → localhost:5001）",
+    progress: null,
+  },
+  {
+    event: 'stage',
+    stage: 'fetch',
+    status: 'skipped',
+    message: '字节已在本机 docker 镜像库，无需下载',
+    progress: null,
+  },
+  {
+    event: 'stage',
+    stage: 'verify',
+    status: 'skipped',
+    message: '本机镜像不经过资产校验（它不是从清单来的）',
+    progress: null,
+  },
+  { event: 'stage', stage: 'load', status: 'skipped', message: '无需装载', progress: null },
+  {
+    event: 'stage',
+    stage: 'register',
+    status: 'running',
+    message: 'Pushing 9d6e6fb71054',
+    progress: 0.87,
+  },
+  {
+    event: 'stage',
+    stage: 'register',
+    status: 'running',
+    message: '已推送，正在注册进平台（解析 digest + 血统）…',
+    progress: null,
+  },
+  {
+    event: 'stage',
+    stage: 'register',
+    status: 'ok',
+    message: '已推送到 localhost:5001 并注册进平台 —— 重新诊断即可看到第 ⑧ 项转 ✅',
+    progress: null,
+  },
+  { event: 'done', ok: true },
+];
+
+export function provisionSseResponse(
+  frames: readonly ProvisionServerFrame[],
+): HttpResponse<ReadableStream<Uint8Array>> {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const frame of frames) {
+        controller.enqueue(
+          encoder.encode(`event: ${frame.event}\ndata: ${JSON.stringify(frame)}\n\n`),
+        );
+      }
+      controller.close();
+    },
+  });
+  return new HttpResponse(stream, {
+    headers: {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+    },
+  });
+}
+
 export function diagnoseSseResponse(
   frames: readonly DiagnoseServerFrame[],
 ): HttpResponse<ReadableStream<Uint8Array>> {

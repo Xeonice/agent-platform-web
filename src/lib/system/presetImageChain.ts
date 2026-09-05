@@ -23,6 +23,7 @@ import type {
   PresetImageChainModel,
   PresetImageStepModel,
   PresetImageStepState,
+  PresetImageProvisionOffer,
 } from '@/types/init';
 
 /** 这一步在检查什么（P21-5 §9A 那张表的第一列）。 */
@@ -114,7 +115,11 @@ export function presetImageChainModel(input: PresetImageChainInput): PresetImage
     // ⚠️ 链在前面停住时，后面几步是**没检查**，既不是"通过了"也不是"失败了"。
     //    把它们一起渲染成 ❌ 会让用户以为有五个问题要修，其实只有一个。
     if (i > reportedIndex) return { ...base, state: 'pending' };
-    const fix = fixCommandFor(step, frame);
+    const offer = provisionOfferOf(frame);
+    // ⛔ **能自己搬时不再给命令。** 两个都给等于让用户在「点按钮」和「敲命令」之间选，
+    //    而正确答案只有一个 —— 而且那条命令里的 `docker build` 会让他重新构建一遍
+    //    字节已经在本机的东西（2026-09-05 实测，P21-8 §2 ⇒ 新判据）。
+    const fix = offer === undefined ? fixCommandFor(step, frame) : undefined;
     return {
       ...base,
       state: reportedState,
@@ -125,6 +130,7 @@ export function presetImageChainModel(input: PresetImageChainInput): PresetImage
       //    `action` 回答的是"接下来要做什么"，而这一步已经没有接下来了。
       ...(reportedState === 'pass' ? {} : { action: STEP_ACTION[step] }),
       ...(fix === undefined ? {} : { fixCommand: fix }),
+      ...(offer === undefined ? {} : { provision: offer }),
       ...(frame.errorCode === undefined ? {} : { errorCode: frame.errorCode }),
     };
   });
@@ -136,6 +142,28 @@ export function presetImageChainModel(input: PresetImageChainInput): PresetImage
     steps,
     ready,
     ...(ready ? {} : { blockedText: BLOCKED_TEXT }),
+  };
+}
+
+/**
+ * 后端在 `detail.provision` 里带回来的搬运计划 → [准备镜像] 按钮要显示的东西。
+ *
+ * ⚠️ **`provisionable !== true` 一律返 undefined**，包括字段整个缺席（老后端）与
+ * 显式 false 两种。⛔ 不许把「读不到」当成「能搬」—— 那会渲染出一个点了必然失败的按钮，
+ * 而用户会以为是自己这台机器的问题。
+ */
+function provisionOfferOf(frame: DiagnoseCheckFrame): PresetImageProvisionOffer | undefined {
+  const d = frame.detail as { provision?: Record<string, unknown> } | undefined;
+  const p = d?.provision;
+  if (p?.['provisionable'] !== true) return undefined;
+  const size = p['sizeBytes'];
+  return {
+    from: typeof p['from'] === 'string' ? p['from'] : '（未知来源）',
+    to: typeof p['to'] === 'string' ? p['to'] : '（未知目标）',
+    // ⚠️ 只有真是数字才当数字 —— `null` 是「给不出」的合法取值，要原样传下去让界面画
+    //    不确定态；把它读成 0 会显示「0 MB」，那是撒谎。
+    sizeBytes: typeof size === 'number' ? size : null,
+    why: typeof p['why'] === 'string' ? p['why'] : '',
   };
 }
 

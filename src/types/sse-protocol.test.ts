@@ -170,18 +170,26 @@ describe('SSE_PROTOCOL_CANONICAL ↔ zod schema 自洽', () => {
     expect(parsed.success && parsed.data.errorCode).toBe('PRESET_IMAGE_SOMETHING_NEW_2027');
   });
 
-  it('五个段一个不少、且顺序固定（漏掉一段等于那一组取值没人对账）', () => {
+  it('九个段一个不少、且顺序固定（漏掉一段等于那一组取值没人对账）', () => {
     expect(SSE_PROTOCOL_CANONICAL.split('|').map((s) => s.slice(0, s.indexOf(':')))).toEqual([
       'diagnose.server',
       'diagnose.status',
       'diagnose.checks',
       'diagnose.preset-image.steps',
       'diagnose.preset-image.codes',
+      // 2026-09-05 新增：预制镜像搬运流（P21-8 §2 ⇒ 新判据）。
+      // ⚠️ 这四段与上面五段共用同一个 canonical，因为它们走**同一个 SSE 写出口**
+      //    （`SseWriter`）——两条流各持一份 canonical 会让「改帧形状必须两边同时改」
+      //    这条纪律出现一个只对其中一条生效的缺口。
+      'provision.server',
+      'provision.stages',
+      'provision.status',
+      'provision.codes',
     ]);
   });
 
-  it('长度与 api 侧一致（553 字符）——字面量被改动时最先响的一条', () => {
-    expect(SSE_PROTOCOL_CANONICAL).toHaveLength(553);
+  it('长度与 api 侧一致（795 字符）——字面量被改动时最先响的一条', () => {
+    expect(SSE_PROTOCOL_CANONICAL).toHaveLength(795);
   });
 
   it('schema hash 是钉死的字面量（它是告知不是门，但版本本身不许悄悄变）', () => {

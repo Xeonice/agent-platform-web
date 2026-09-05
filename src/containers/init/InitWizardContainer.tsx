@@ -9,6 +9,7 @@
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 import { useInitWizard } from '@/hooks/system/useInitWizard';
+import { usePresetImageProvision } from '@/hooks/system/usePresetImageProvision';
 import { InitWizardShellView } from '@/views/init/InitWizardShell.view';
 import { ConnectivityCheckView } from '@/views/init/ConnectivityCheck.view';
 import { ProxyConfigFormView } from '@/views/init/ProxyConfigForm.view';
@@ -19,6 +20,9 @@ import { InitErrorPanelView } from '@/views/init/InitErrorPanel.view';
 
 export function InitWizardContainer() {
   const w = useInitWizard();
+  // ⚠️ 搬完之后**重跑检查链**，而不是由 hook 自行宣布就绪 —— 结论的唯一出处是诊断第 ⑧ 项。
+  //    两个真相源会打架：hook 说成功了、检查链仍是红的，用户不知道该信谁。
+  const provision = usePresetImageProvision(w.recheck);
 
   // 与 F21-5 诊断项的 [复制] 同一套（§5）。
   const copyFix = useCallback((command: string) => {
@@ -109,7 +113,10 @@ export function InitWizardContainer() {
       <InitWizardShellView
         {...shell}
         title="第 3 步 · 沙箱镜像就绪"
-        description="平台自建的沙箱镜像备齐了没有。这一步排在资源确认之前是刻意的：它依赖出网/代理，而镜像体积（约 13GB）又是下一步磁盘评估的最大一块。"
+        // ⚠️ 原文写「镜像体积（约 13GB）」—— 那是**本地 build 产物**的体积，
+        //    而发布资产按档位是 0.43–2.07GB（P21-8 §2 前提②）。写死一个数会在两种
+        //    部署里各错一次，⇒ 只说"它是下一步磁盘评估的最大一块"这个不变的事实。
+        description="平台自建的沙箱镜像备齐了没有。这一步排在资源确认之前是刻意的：它依赖出网/代理，而镜像体积又是下一步磁盘评估的最大一块。"
         onNext={w.goNext}
         // ⚠️ **不阻塞**：未就绪也让走（§7A ③）。按钮上的字改成 [稍后配置，下一步]，
         //    后果由 footerNote 与卡片里的 ⚠️ 一起说清。
@@ -126,6 +133,12 @@ export function InitWizardContainer() {
           cooldownSec={w.recheckCooldownSec}
           onRecheck={w.recheck}
           onCopyFix={copyFix}
+          onProvision={provision.start}
+          isProvisioning={provision.isProvisioning}
+          {...(provision.statusText === undefined
+            ? {}
+            : { provisionStatusText: provision.statusText })}
+          {...(provision.error === undefined ? {} : { provisionError: provision.error })}
         />
       </InitWizardShellView>
     );
