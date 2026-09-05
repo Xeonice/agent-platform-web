@@ -7,6 +7,10 @@ import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { server } from '@/mocks/node';
 import { HeadlessTaskContainer } from '@/containers/task/HeadlessTaskContainer';
+// ⚠️ 顶部 `import * as` 而不是行内 `typeof import(...)`：仓库禁 `import()` 类型标注
+//    （`consistent-type-imports`）。⛔ 它同时也是给 `vi.mock` 的工厂用的**类型**来源 ——
+//    工厂里的 `importActual` 拿到的才是真品，这条 import 只贡献形状。
+import type * as TaskOutputPaneModule from '@/views/task/TaskOutputPane.view';
 import { OBJECT_URL_REVOKE_DELAY_MS } from '@/hooks/task/useAgentTask';
 import { abortError, installSaveFilePicker } from '@/mocks/saveFilePicker';
 import { useAppStore } from '@/stores';
@@ -22,6 +26,34 @@ const RUNTIME = 'codex';
  * 加上 400px overscan ⇒ 一屏最多 (480+400)/20 = 44 行。取 60 留足余量，同时仍然远小于几千条。
  */
 const VIRTUAL_ROW_BUDGET = 60;
+
+/**
+ * 输出面板的**渲染计数器** —— 「tick 不穿过 items.map」那条不变量的直接探针。
+ *
+ * ⚠️ **为什么要探针，而不是量耗时**：耗时是那件事的**后果**，会被机器速度、并行负载、GC
+ * 一起搅浑。本文件的这条用例曾经量耗时，结果是一条**只在 CI 忙的时候红**的用例
+ * （2026-09-05：并行跑别的测试时 7 轮错 1 次，单独跑 5/5 全绿）。⇒ 直接数渲染次数。
+ *
+ * ⚠️ **包在 `vi.mock` 里而不是往生产代码塞计数**：探针是测试的需要，不该让被测代码为它
+ * 长出一个字段 —— 那个字段在生产里永远是死代码，而且下一个人会以为它有用途。
+ */
+const renderProbe = { paneRenders: 0 };
+
+vi.mock('@/views/task/TaskOutputPane.view', async () => {
+  const actual = await vi.importActual<typeof TaskOutputPaneModule>(
+    '@/views/task/TaskOutputPane.view',
+  );
+  const Real = actual.TaskOutputPaneView;
+  return {
+    ...actual,
+    // ⚠️ 不加 `memo`：真品自己已经是 memo，这一层只在**真品确实被调用**时才自增。
+    //    在外面再包一层 memo 会把计数挡住，于是探针恒为 0 —— 一个永远绿的假断言。
+    TaskOutputPaneView: (props: Parameters<typeof Real>[0]) => {
+      renderProbe.paneRenders += 1;
+      return <Real {...props} />;
+    },
+  };
+});
 
 // ——— 可控 /tasks socket（模块级稳定引用，避免连接 effect 反复重建）———
 class MockTaskSocket implements TaskSocketLike {
@@ -1117,8 +1149,22 @@ describe('HeadlessTaskContainer · DTO 已终态但 exit 未到', () => {
 // ⑧ 每秒倒计时不再穿过输出列表（S6 review ⑤①）
 // ————————————————————————————————————————————————————————————————
 describe('HeadlessTaskContainer · 倒计时的重渲成本', () => {
-  /** 渲染一轮任务、灌 n 条正文，然后测 20 次「每秒 tick」的耗时（纳秒 → 毫秒）。 */
-  async function measureTickCost(n: number): Promise<number> {
+  /**
+   * 渲染一轮任务、灌 n 条正文，然后跑 20 次「每秒 tick」，**数输出面板被渲染了几次**。
+   *
+   * ⛔ **此前这里量的是墙钟耗时**（`vi.getRealSystemTime()` 前后差），断言是
+   * `expect(large).toBeLessThan(Math.max(small, 2) * 5)`。那个写法有两个毛病：
+   *
+   *  ① **它是代理指标，不是不变量本身。** 要钉的是「tick 不穿过 items.map」，而耗时只是
+   *     那件事的一个后果 —— 后果会被机器速度、并行负载、GC 一起搅浑。
+   *  ② **下限 2ms 在快机器上等于没有下限。** `small` 快到测不出时阈值只剩 10ms，jsdom
+   *     一抖就超。2026-09-05 实测：并行跑别的测试时 7 轮错 1 次（`expected 32 to be less
+   *     than 10`），单独跑 5/5 全绿 —— **一条只在 CI 忙的时候红的用例，比没有更糟**。
+   *
+   * ⇒ 改成数渲染次数：倒计时是叶子 ⇒ tick 时输出面板**一次都不该重渲**，与条目数无关。
+   * 这是那条不变量的**直接**表达，且不含任何时间量。
+   */
+  async function countPaneRendersDuringTicks(n: number): Promise<number> {
     cleanup();
     sockets = [];
     useAppStore.getState().setSelectedTaskId(null);
@@ -1149,26 +1195,28 @@ describe('HeadlessTaskContainer · 倒计时的重渲成本', () => {
     // 跟随态锚定末尾 ⇒ 最后一条一定在窗口里（"新输出必须看得见"没有被窗口化弄丢）。
     expect(screen.getByTestId('task-output-pane')).toHaveTextContent(`line ${String(n)} `);
 
-    // ⚠️ 计时必须用**真实**时钟：假定时器把 Date / performance / hrtime 全接管了，
-    // 用它们量出来的只会是"我们让假时钟走了多少毫秒"（恒等于 20000）。
-    const started = vi.getRealSystemTime();
+    // 从这一刻起数：先记下当前的渲染次数，跑完 20 次 tick 再看涨了多少。
+    // ⚠️ 用 DOM 节点的**同一性**判渲染会漏——React 重渲不换 DOM 节点。所以钉的是
+    //    `TaskStreamRow` 的调用次数，由 `__renderProbe` 在渲染时自增（见文件顶部）。
+    const before = renderProbe.paneRenders;
     for (let tick = 0; tick < 20; tick += 1) {
       // 每次 tick 单独 act ⇒ 单独一次提交，不被批处理成一次。
       act(() => {
         vi.advanceTimersByTime(1000);
       });
     }
-    return vi.getRealSystemTime() - started;
+    return renderProbe.paneRenders - before;
   }
 
-  it('tick 成本与条目数**无关**：倒计时是叶子，不穿过 items.map', async () => {
-    const small = await measureTickCost(5);
-    const large = await measureTickCost(2000);
+  it('⛔ tick **一次都不进输出面板**：倒计时是叶子，不穿过 items.map', async () => {
+    // 倒计时住在容器里时，每次 tick 的 `setNow` 都会让容器重渲、输出面板跟着走一遍
+    // `items.map`——一个跑 4 小时的任务要为「把 00 分改成 59 分」付 14400 次全量重渲。
+    // 抽成叶子之后 tick 根本不进这一层。
+    expect(await countPaneRendersDuringTicks(5)).toBe(0);
+  });
 
-    // 倒计时住在容器里时，每次 tick 都要把 2000 条重新走一遍 reconcile（实测 20 次 tick
-    // 从 ~0ms 涨到 ~58ms）。抽成叶子之后 tick 根本不进输出面板，两者同量级。
-    // 阈值 5 倍 + 一个绝对下限吸收 jsdom 噪声：修好时余量 ~20×，改坏时超出 ~2.3×。
-    expect(large).toBeLessThan(Math.max(small, 2) * 5);
+  it('⛔ 条目数不改变这个结论（2000 条与 5 条一样是 0）', async () => {
+    expect(await countPaneRendersDuringTicks(2000)).toBe(0);
   });
 });
 
