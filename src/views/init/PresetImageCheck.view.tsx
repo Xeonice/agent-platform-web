@@ -39,6 +39,12 @@ export interface PresetImageCheckProps {
   cooldownSec: number;
   onRecheck: () => void;
   onCopyFix: (command: string) => void;
+  /** [准备镜像] —— 平台自己把字节搬到位。 */
+  onProvision: () => void;
+  isProvisioning: boolean;
+  /** 当前阶段的一句话（`plan/fetch/verify/load/register`）。⛔ 失败在哪一步必须说得出。 */
+  provisionStatusText?: string;
+  provisionError?: string;
 }
 
 export function PresetImageCheckView({
@@ -47,6 +53,10 @@ export function PresetImageCheckView({
   cooldownSec,
   onRecheck,
   onCopyFix,
+  onProvision,
+  isProvisioning,
+  provisionStatusText,
+  provisionError,
 }: PresetImageCheckProps) {
   const cooling = cooldownSec > 0;
   return (
@@ -116,6 +126,54 @@ export function PresetImageCheckView({
                 className="whitespace-pre-wrap break-words text-xs text-muted-foreground"
               >
                 {s.action}
+              </span>
+            )}
+
+            {/* ⛔ 平台自己能搬时给按钮，**不给命令**（P21-8 §2 ⇒ 新判据）。
+                此前这里无论如何都渲染 `fixCommand`，而那条命令的第一半是
+                `docker build` —— 让用户重新构建一遍字节已经在本机的东西。 */}
+            {s.provision === undefined ? null : (
+              <span
+                data-testid={`preset-step-provision-${s.step}`}
+                className="flex flex-col gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-2"
+              >
+                <span className="text-xs text-muted-foreground">{s.provision.why}</span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isProvisioning}
+                    onClick={onProvision}
+                    data-testid="preset-provision-button"
+                  >
+                    {isProvisioning ? '准备中…' : '准备镜像'}
+                  </Button>
+                  {/* ⚠️ **按之前就把代价说清**：搬多少、从哪到哪。给不出体积时只说来源，
+                      ⛔ 不写「0 MB」——那是撒谎。 */}
+                  <span className="text-xs text-muted-foreground">
+                    {s.provision.from} → {s.provision.to}
+                    {s.provision.sizeBytes === null
+                      ? ''
+                      : ` · 约 ${String(Math.round(s.provision.sizeBytes / 1024 / 1024))} MB`}
+                  </span>
+                </span>
+                {provisionStatusText === undefined ? null : (
+                  <span
+                    data-testid="preset-provision-status"
+                    className="whitespace-pre-wrap break-words text-xs text-muted-foreground"
+                  >
+                    {provisionStatusText}
+                  </span>
+                )}
+                {provisionError === undefined ? null : (
+                  <span
+                    role="alert"
+                    data-testid="preset-provision-error"
+                    className="whitespace-pre-wrap break-words text-xs text-red-500"
+                  >
+                    ❌ {provisionError}
+                  </span>
+                )}
               </span>
             )}
 

@@ -1048,6 +1048,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/preset-image/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 把预制镜像搬到位（只搬不建）：本机 docker 库已有 ⇒ 直接推；发布资产清单命中 ⇒ 校验 sha256 后装载再推。搬不了返 409，已在搬返 409（两个码） */
+        post: operations["SystemController_provisionPresetImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3456,6 +3473,26 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description SSE 帧流：event: start / check / done。帧的 TypeScript 类型是手写的（两仓 sse-protocol.ts，B5 跨仓对账），openapi 只声明 content-type */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+        };
+    };
+    SystemController_provisionPresetImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE 帧流：event: stage（plan/fetch/verify/load/register）+ done。帧类型手写于两仓 sse-protocol.ts */
             200: {
                 headers: {
                     [name: string]: unknown;

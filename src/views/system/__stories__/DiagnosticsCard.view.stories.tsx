@@ -5,7 +5,7 @@ import type { DiagnosticItemModel, DiagnosticsCardModel } from '@/types/system';
 
 const EIGHT: DiagnosticItemModel[] = [
   { id: 'container-runtime', label: '容器运行时可达' },
-  { id: 'dev-kvm', label: '/dev/kvm 可用（boxlite 微 VM）' },
+  { id: 'dev-kvm', label: '微 VM 档位（boxlite）可用' },
   { id: 'disk-space', label: '磁盘余量（DATA_ROOT）' },
   { id: 'port-conflict', label: '端口占用' },
   { id: 'outbound-network', label: '外网连通（模型 API / 镜像仓库）' },

@@ -48,6 +48,8 @@ const meta: Meta<typeof PresetImageCheckView> = {
     cooldownSec: 0,
     onRecheck: fn(),
     onCopyFix: fn(),
+    onProvision: fn(),
+    isProvisioning: false,
   },
 };
 export default meta;
@@ -154,5 +156,84 @@ export const Aborted: Story = {
       ready: false,
       abortedText: '镜像检查中断：这一轮没有拿到结论，可点 [重新检测] 重跑。',
     },
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 第 2 步「能自己搬」（P21-8 §2 ⇒ 新判据，2026-09-05）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 第 2 步失败 + 平台够得着那些字节 ⇒ 给按钮，⛔ 不给命令。 */
+function provisionable() {
+  const c = chain('registry', 'fail');
+  const step = c.steps.find((s) => s.step === 'registry');
+  if (step !== undefined) {
+    delete step.fixCommand;
+    step.provision = {
+      from: '本机 docker 镜像库',
+      to: 'localhost:5001',
+      sizeBytes: null,
+      why: "'localhost:5001/platform/sandbox:v2' 的字节已经在本机 docker 镜像库里，只是没推到 registry —— 平台自己推上去即可，不出网、不重建",
+    };
+  }
+  return c;
+}
+
+export const Provisionable: Story = {
+  args: { model: provisionable() },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('preset-provision-button')).toBeVisible();
+    // ⛔ 能自己搬时**不许**还渲染那条 `docker build` 命令：两个都给等于让用户在
+    //    「点按钮」和「敲命令」之间选，而正确答案只有一个。
+    await expect(canvas.queryByText(/docker build/)).toBeNull();
+  },
+};
+
+export const ProvisionableWithSize: Story = {
+  args: {
+    model: (() => {
+      const c = provisionable();
+      const step = c.steps.find((s) => s.step === 'registry');
+      if (step?.provision !== undefined) {
+        step.provision = {
+          ...step.provision,
+          from: '发布资产 cap-boxlite-sandbox-v0.26.0-linux-arm64.oci.tar.zst',
+          sizeBytes: 430_725_526,
+        };
+      }
+      return c;
+    })(),
+  },
+  play: async ({ canvasElement }) => {
+    // ⚠️ **按之前就把代价说清**：多少字节、从哪到哪。
+    await expect(within(canvasElement).getByText(/411 MB/)).toBeVisible();
+  },
+};
+
+export const Provisioning: Story = {
+  args: {
+    model: provisionable(),
+    isProvisioning: true,
+    provisionStatusText: '推送到 registry：Pushing 9d6e6fb71054 · 87%',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('preset-provision-button')).toBeDisabled();
+    await expect(canvas.getByTestId('preset-provision-status')).toHaveTextContent('87%');
+  },
+};
+
+export const ProvisionFailed: Story = {
+  args: {
+    model: provisionable(),
+    provisionError: '校验 sha256 对不上：⛔ 已停在校验这一步，没有装载',
+    provisionStatusText: '校验 sha256：正在校验（411 MB）…',
+  },
+  play: async ({ canvasElement }) => {
+    // ⛔ 失败**在哪一步**必须看得出来 —— 五个阶段的下一步各不相同。
+    await expect(within(canvasElement).getByTestId('preset-provision-error')).toHaveTextContent(
+      '校验',
+    );
   },
 };
