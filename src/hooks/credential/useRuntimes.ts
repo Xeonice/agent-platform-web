@@ -17,12 +17,21 @@ export const runtimeAuthKeys = {
   session: (provider: string) => [...runtimeAuthKeys.all(), provider, 'session'] as const,
 };
 
+/**
+ * runtime 列表的查询选项。
+ *
+ * ⚠️ **抽成常量是为了让第二个消费方（初始化向导 Step4）用同一份**：同一个 queryKey 被两处
+ * 用不同的 `staleTime` 声明时，什么时候重取取决于哪个观察者先挂载 —— 表现是「在凭证页
+ * 授权完，回向导那一步还显示未配置，刷新一下又好了」。与 `DIAGNOSE_CACHE_OPTIONS` 同一条。
+ */
+export const RUNTIMES_QUERY_OPTIONS = {
+  queryKey: runtimeKeys.list(),
+  queryFn: listRuntimes,
+  staleTime: 60_000,
+} as const;
+
 export function useRuntimes(): UseQueryResult<RuntimeDto[]> {
-  return useQuery({
-    queryKey: runtimeKeys.list(),
-    queryFn: listRuntimes,
-    staleTime: 60_000,
-  });
+  return useQuery(RUNTIMES_QUERY_OPTIONS);
 }
 
 export function useRuntimeAuthStatus(provider: string, enabled = true): UseQueryResult<RuntimeDto> {

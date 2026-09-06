@@ -13,6 +13,7 @@ import { DeviceCodeAuthView } from '@/views/wizard/auth/DeviceCodeAuth.view';
 import { SetupTokenAuthView } from '@/views/wizard/auth/SetupTokenAuth.view';
 import { ApiKeyAuthView } from '@/views/wizard/auth/ApiKeyAuth.view';
 import type { RuntimeAuthMethod } from '@/types/runtimeCredential';
+import { useOpenAuthPage } from '@/hooks/credential/useOpenAuthPage';
 
 export interface AuthGateContainerProps {
   runtimeId: string;
@@ -112,6 +113,8 @@ function AuthBranchSlot({ runtimeId, method, onSuccess }: AuthBranchSlotProps) {
   // —— 凭证明文只在本层局部 state（提交即清空，绝不进 store/persist）——
   const [pasteCode, setPasteCode] = useState('');
   const [apiKeyValue, setApiKeyValue] = useState('');
+  // ⛔ 弹窗被拦要显形（F07 §6.2a ②）：静默当成开了，用户会盯着「等待授权中…」等到码过期。
+  const authPage = useOpenAuthPage();
 
   if (state.phase === 'success') {
     return <p className="text-xs text-green-400">✅ 配置完成</p>;
@@ -192,7 +195,18 @@ function AuthBranchSlot({ runtimeId, method, onSuccess }: AuthBranchSlotProps) {
         onCopy={() => {
           void navigator.clipboard.writeText(userCode);
         }}
-        onRefetchChallenge={flow.refetchChallenge}
+        onRefetchChallenge={() => {
+          // ⚠️ 换挑战时清掉上一次的结论 —— 否则旧的「浏览器拦了弹窗」会赖在新码旁边。
+          authPage.reset();
+          flow.refetchChallenge();
+        }}
+        // ⚠️ **直接挂在 onClick 上，中间不许有 await**：`openAuthPage` 内部第一句就是同步的
+        //    `window.open`，任何提前的等待都会让它失去用户手势、被浏览器拦掉（F07 §6.2a ①）。
+        onOpenAuthPage={() => {
+          authPage.open(verificationUrl, userCode);
+        }}
+        popupBlocked={authPage.popupBlocked}
+        codeCopied={authPage.codeCopied}
       />
     );
   }

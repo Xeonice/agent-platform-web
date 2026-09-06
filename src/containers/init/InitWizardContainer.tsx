@@ -6,10 +6,12 @@
 //    这是全局 Esc 分层规则（P20 §8.4）的**唯一例外**（F21-8 §2 阻塞语义）：向导是放行卡点，
 //    关掉它之后没有"回到哪里"—— `AppBootGate` 在 `initialized === false` 时压根不挂载工作台，
 //    所以逃逸出去只会得到一张白屏。⇒ 谁要在这里加 Esc/取消，请先回答"关掉之后用户看到什么"。
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { useInitWizard } from '@/hooks/system/useInitWizard';
 import { usePresetImageProvision } from '@/hooks/system/usePresetImageProvision';
+import { SubscriptionSetupView } from '@/views/init/SubscriptionSetup.view';
+import { AuthGateContainer } from '@/containers/credential/AuthGateContainer';
 import { InitWizardShellView } from '@/views/init/InitWizardShell.view';
 import { ConnectivityCheckView } from '@/views/init/ConnectivityCheck.view';
 import { ProxyConfigFormView } from '@/views/init/ProxyConfigForm.view';
@@ -23,6 +25,7 @@ export function InitWizardContainer() {
   // ⚠️ 搬完之后**重跑检查链**，而不是由 hook 自行宣布就绪 —— 结论的唯一出处是诊断第 ⑧ 项。
   //    两个真相源会打架：hook 说成功了、检查链仍是红的，用户不知道该信谁。
   const provision = usePresetImageProvision(w.recheck);
+  const [expandedRuntime, setExpandedRuntime] = useState<string | undefined>(undefined);
 
   // 与 F21-5 诊断项的 [复制] 同一套（§5）。
   const copyFix = useCallback((command: string) => {
@@ -144,10 +147,60 @@ export function InitWizardContainer() {
     );
   }
 
+  if (w.step === 'subscription') {
+    const model = w.subscription;
+    return (
+      <InitWizardShellView
+        {...shell}
+        title="第 4 步 · 订阅配置"
+        description="agent 用你自己的模型帐号跑。这一步排在最后一个准备项，是因为它是整个向导里唯一需要你离开本页去别处操作的一步 —— 而设备码只有 15 分钟。"
+        onNext={w.goNext}
+        // ⚠️ **不阻塞**（与 Step 3 同一条口径）：它们挡住的是同一件事——发起任务。
+        nextLabel={model?.ready === true ? '下一步' : '稍后配置，下一步'}
+        footerNote={
+          model?.ready === true
+            ? undefined
+            : '⚠️ 跳过后平台能进、项目能建，但在配好至少一个模型帐号之前无法发起任何任务。'
+        }
+      >
+        {w.subscriptionError ? (
+          <p role="alert" className="text-sm text-red-500">
+            读不到 runtime 列表 —— 无法判断凭证状态。可以先跳过，之后在凭证管理页配置。
+          </p>
+        ) : model === undefined ? (
+          <p className="text-sm text-muted-foreground">正在读取 runtime 列表…</p>
+        ) : (
+          <SubscriptionSetupView
+            model={model}
+            {...(expandedRuntime === undefined ? {} : { expandedRuntimeId: expandedRuntime })}
+            onExpand={setExpandedRuntime}
+            onCollapse={() => {
+              setExpandedRuntime(undefined);
+            }}
+            // ⛔ **同一个 `AuthGateContainer`**（F07 §6.1 第三处宿主）：两份「怎么算授权
+            //    成功」迟早对不上，而其中一份还管着运行期的凭证过期判定。
+            renderAuthPanel={(r) => (
+              <AuthGateContainer
+                runtimeId={r.id}
+                runtimeName={r.displayName}
+                methods={r.methods}
+                onSuccess={() => {
+                  // 成功后收起面板；状态由 runtimeKeys.list 的 invalidate 驱动刷新，
+                  // ⛔ 这里不自己改 model —— 两个真相源会打架。
+                  setExpandedRuntime(undefined);
+                }}
+              />
+            )}
+          />
+        )}
+      </InitWizardShellView>
+    );
+  }
+
   return (
     <InitWizardShellView
       {...shell}
-      title="第 4 步 · 资源池确认"
+      title="第 5 步 · 资源池确认"
       description="确认这台机器的资源规模。预留 15% 只影响调度上限，不影响水位进度条的分母。"
       // 最后一步的动作按钮在内容区里（[确认，开始使用]），壳上不再给 [下一步]。
     >

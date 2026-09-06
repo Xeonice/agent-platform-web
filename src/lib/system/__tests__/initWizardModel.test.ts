@@ -30,22 +30,36 @@ function resources(over: Partial<SystemResourcesDto> = {}): SystemResourcesDto {
   };
 }
 
-describe('四步指示与步进', () => {
+describe('五步指示与步进', () => {
   it('出网全通过 ⇒ 从 Step1 直接跳到 Step3（代理那一步不进流程）', () => {
     expect(nextStep('connectivity', false)).toBe('preset-image');
   });
 
-  it('出网有失败项 ⇒ Step1 → Step2 → Step3 → Step4', () => {
+  it('出网有失败项 ⇒ Step1 → Step2 → Step3 → Step4 → Step5', () => {
     expect(nextStep('connectivity', true)).toBe('proxy');
     expect(nextStep('proxy', true)).toBe('preset-image');
-    expect(nextStep('preset-image', true)).toBe('resource');
+    // ⚠️ 订阅排在镜像之后、资源之前（P21-8 §2）：它是唯一要用户离开本页的一步，
+    //    放在平台能自己搞定的事全部落定之后 —— 否则 15 分钟的设备码会跨过镜像拉取。
+    expect(nextStep('preset-image', true)).toBe('subscription');
+    expect(nextStep('subscription', true)).toBe('resource');
     expect(nextStep('resource', true)).toBeUndefined();
+  });
+
+  it('⛔ 订阅**不因为出网跳过代理而被跳过** —— 只有代理那一格是条件性的', () => {
+    expect(nextStep('preset-image', false)).toBe('subscription');
+    expect(nextStep('subscription', false)).toBe('resource');
   });
 
   it('⭐ 代理不进流程时它**仍然显示在指示条上**（标可跳过），只是不被走到', () => {
     // ⚠️ 隐藏它会让步数在检测结果变化时跳动（3 步变 4 步），用户不知道自己在第几步。
     const steps = initSteps('connectivity', false);
-    expect(steps.map((s) => s.key)).toEqual(['connectivity', 'proxy', 'preset-image', 'resource']);
+    expect(steps.map((s) => s.key)).toEqual([
+      'connectivity',
+      'proxy',
+      'preset-image',
+      'subscription',
+      'resource',
+    ]);
     expect(steps.find((s) => s.key === 'proxy')?.active).toBe(false);
   });
 

@@ -46,6 +46,9 @@ import {
   putSettings,
 } from '@/services/api/system.service';
 import { ApiErrorException } from '@/services/api/apiError';
+import { subscriptionStepModel } from '@/lib/system/subscriptionReadiness';
+import type { SubscriptionStepModel } from '@/types/init';
+import { RUNTIMES_QUERY_OPTIONS } from '@/hooks/credential/useRuntimes';
 import { systemKeys } from '@/hooks/system/useAuditStream';
 import { INIT_QUERY_OPTIONS } from '@/hooks/system/useInitGate';
 import {
@@ -121,6 +124,10 @@ export interface UseInitWizardResult {
 
   presetImage: PresetImageChainModel;
 
+  /** Step4 订阅配置。`undefined` = runtime 列表还没到。 */
+  subscription: SubscriptionStepModel | undefined;
+  subscriptionError: boolean;
+
   resource: ResourceConfirmModel | undefined;
   resourceError: boolean;
 
@@ -161,6 +168,17 @@ export function useInitWizard(): UseInitWizardResult {
     queryFn: getResources,
     staleTime: 15_000,
     enabled: step === 'resource',
+  });
+
+  // Step4「订阅配置」：runtime 列表 + 各自凭证状态（P21-8 §2）。
+  // ⚠️ **复用 `runtimeKeys.list()`，不另起一个 key**：凭证页与拦截面板用的是同一份缓存，
+  //    授权成功后它们的 invalidate 会顺带把这一步刷新 —— 另起一个 key 就得自己再接一次
+  //    失效链，而漏接的表现是「授权成功了，向导这一步还显示未配置」。
+  const runtimes = useQuery({
+    ...RUNTIMES_QUERY_OPTIONS,
+    // ⚠️ 提前一步开始取（`preset-image` 时就取）：这一步一进来就要显示状态，
+    //    等到进来才发请求会让列表闪一下空态。
+    enabled: step === 'subscription' || step === 'preset-image',
   });
 
   // ——— 一轮 `/diagnose`：Step1 与 Step3 共用同一条流（§5「不新增端点」）———
@@ -457,6 +475,9 @@ export function useInitWizard(): UseInitWizardResult {
     }, []),
 
     presetImage,
+
+    subscription: runtimes.data === undefined ? undefined : subscriptionStepModel(runtimes.data),
+    subscriptionError: runtimes.isError,
 
     resource: resourceConfirmModel(resources.data),
     resourceError: resources.isError,
