@@ -145,5 +145,9 @@ export interface TaskArtifactView {
   name: string;
   /** 已格式化的体积，如 "12.3 KB"。 */
   sizeLabel: string;
+  /**
+   * 文件 mtime 的**展示串**。⛔ **必填**——缺席在这一层已经被翻译成一句人话了
+   * （见 `useTaskOutcomeView`）。视图不该再判一次「有没有」。
+   */
   modifiedAt: string;
 }

@@ -689,6 +689,7 @@ describe('HeadlessTaskContainer · 终态', () => {
     });
     expect(within(outcome).getByTestId('task-exit-code')).toHaveTextContent('0');
     expect(within(outcome).getByText('2.0 KB')).toBeInTheDocument();
+    expect(within(outcome).getByText('2026-08-22T01:00:00Z')).toBeInTheDocument();
     expect(within(outcome).getByRole('button', { name: '下载' })).toBeEnabled();
   });
 
@@ -1148,6 +1149,28 @@ describe('HeadlessTaskContainer · DTO 已终态但 exit 未到', () => {
 // ————————————————————————————————————————————————————————————————
 // ⑧ 每秒倒计时不再穿过输出列表（S6 review ⑤①）
 // ————————————————————————————————————————————————————————————————
+describe('HeadlessTaskContainer · 产物的 mtime 可能缺席（api 2026-09-05 改）', () => {
+  it('⛔ 后端给不出 mtime ⇒ 显示「时间未知」，**不是一片空白**', async () => {
+    // 后端此前发空串，前端直接渲染 ⇒ 界面上一格空白，用户分不清「这个文件没有时间戳」
+    // 与「这一格渲染坏了」。⇒ 契约改成**缺席**，而缺席要在这一层翻译成一句人话。
+    mockList([]);
+    mockRun();
+    renderContainer();
+    await launch();
+    emitExit('succeeded', 0, {
+      sessionRef: 'sess-x',
+      // ⚠️ `modifiedAt` 整个缺席（不是空串）—— 这正是新契约允许的形态。
+      artifacts: [{ name: 'no-mtime.txt', size: 12 }],
+    });
+
+    const outcome = await screen.findByTestId('task-outcome');
+    await waitFor(() => {
+      expect(within(outcome).getByText('no-mtime.txt')).toBeInTheDocument();
+    });
+    expect(within(outcome).getByText('时间未知')).toBeInTheDocument();
+  });
+});
+
 describe('HeadlessTaskContainer · 倒计时的重渲成本', () => {
   /**
    * 渲染一轮任务、灌 n 条正文，然后跑 20 次「每秒 tick」，**数输出面板被渲染了几次**。
