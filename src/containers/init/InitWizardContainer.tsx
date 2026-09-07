@@ -7,7 +7,9 @@
 //    关掉它之后没有"回到哪里"—— `AppBootGate` 在 `initialized === false` 时压根不挂载工作台，
 //    所以逃逸出去只会得到一张白屏。⇒ 谁要在这里加 Esc/取消，请先回答"关掉之后用户看到什么"。
 import { useCallback, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { notifyRuntimeAuthConfigured } from '@/hooks/credential/useRuntimeAuthMutations';
 import { useInitWizard } from '@/hooks/system/useInitWizard';
 import { usePresetImageProvision } from '@/hooks/system/usePresetImageProvision';
 import { SubscriptionSetupView } from '@/views/init/SubscriptionSetup.view';
@@ -21,6 +23,8 @@ import { ResourceConfirmView } from '@/views/init/ResourceConfirm.view';
 import { InitErrorPanelView } from '@/views/init/InitErrorPanel.view';
 
 export function InitWizardContainer() {
+  // 授权成功后要刷新 runtime 状态 —— 见下面 `onSuccess` 那段。
+  const queryClient = useQueryClient();
   const w = useInitWizard();
   // ⚠️ 搬完之后**重跑检查链**，而不是由 hook 自行宣布就绪 —— 结论的唯一出处是诊断第 ⑧ 项。
   //    两个真相源会打架：hook 说成功了、检查链仍是红的，用户不知道该信谁。
@@ -185,8 +189,18 @@ export function InitWizardContainer() {
                 runtimeName={r.displayName}
                 methods={r.methods}
                 onSuccess={() => {
-                  // 成功后收起面板；状态由 runtimeKeys.list 的 invalidate 驱动刷新，
-                  // ⛔ 这里不自己改 model —— 两个真相源会打架。
+                  // ⛔ **三件事，缺一件用户就看不到自己成功了**（2026-09-07 实测）。
+                  //    此前这里**只做了收起面板**，而注释却写着「状态由 runtimeKeys.list
+                  //    的 invalidate 驱动刷新」—— 那个 invalidate 根本不在这里。
+                  //    真机结果：设备码授权成功、凭证已落库（后端 `CredentialStored`），
+                  //    而界面上面板无声无息地关掉了，**没有任何「配置完成」的提示**，
+                  //    行也不刷新。用户唯一能确认自己成功了的办法是刷新整个页面。
+                  //
+                  // ⚠️ 同一个代码库里就有对的那份（`useCredentials.ts` 的 `onAuthSuccess`）：
+                  //    invalidate + 收起 + toast，三件齐全。两处宿主对「怎么算授权成功」
+                  //    各写一遍，于是其中一份漏了两件事 —— 与 F07 §6.1 让两处共用同一个
+                  //    `AuthGateContainer` 是同一条纪律，只是这一层没跟上。
+                  notifyRuntimeAuthConfigured(queryClient, '凭证已配置');
                   setExpandedRuntime(undefined);
                 }}
               />

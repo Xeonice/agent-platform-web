@@ -114,13 +114,44 @@ describe('⛔ 不许合成一个红灯：每一步都有自己的下一步动作
     expect(model.steps[2]?.action).toContain('不是少做一步注册');
   });
 
-  it('未配置那一步要说清回落到内置默认会「必炸」并给出配置项', () => {
+  it('⭐ 配置那一步要给**按档**的配置项，且明说别动 SANDBOX_DEFAULT_IMAGE', () => {
+    // ⛔ 本条此前断言 `fixCommand` 含 `SANDBOX_DEFAULT_IMAGE=` —— 那是 2026-09-07 之前的
+    //    语义。现在出厂留空、平台按宿主档位自动选（darwin ⇒ boxlite，linux ⇒ aio），
+    //    **填那个总开关正好让自动选永远失效**，另一档的宿主会拿到不能互换的那张镜像。
+    //    ⇒ 走到这一步只剩「第三方 provider 没有发布镜像」一种情形，答案是按档配。
+    //
+    // MUTATION: 把 `FALLBACK_FIX.config` 改回 `SANDBOX_DEFAULT_IMAGE=…` ⇒ 本条红。
     const model = presetImageChainModel({
       phase: 'done',
       frame: frame({ status: 'fail', step: 'config' }),
     });
-    expect(model.steps[0]?.action).toContain('SANDBOX_DEFAULT_IMAGE');
-    expect(model.steps[0]?.fixCommand).toContain('SANDBOX_DEFAULT_IMAGE');
+    expect(model.steps[0]?.action).toContain('SANDBOX_<档位>_IMAGE');
+    expect(model.steps[0]?.action).toContain('别改 `SANDBOX_DEFAULT_IMAGE`');
+    expect(model.steps[0]?.fixCommand).toMatch(/SANDBOX_(AIO|BOXLITE)_IMAGE=/);
+    expect(model.steps[0]?.fixCommand, '⛔ 修复命令不许是那个会波及两档的总开关').not.toMatch(
+      /^SANDBOX_DEFAULT_IMAGE=/,
+    );
+  });
+
+  it('⭐ 未铺开那一步**不许自己报体积/耗时数字** —— 那是按档的，只有后端知道', () => {
+    // ⛔ 它曾写死「13GB 镜像实测冷启动约 190 秒」（aio 档的数字），而 macOS 默认档
+    //    boxlite 的镜像压缩后 0.3GB。2026-09-07 实测：这句就渲染在后端那句按档给出的
+    //    正确耗时正下方，同屏两个数字互相打架。
+    //
+    // MUTATION: 把 `STEP_ACTION.staged` 改回带 13GB / 190 秒那句 ⇒ 本条红。
+    const model = presetImageChainModel({
+      phase: 'done',
+      frame: frame({ status: 'info', step: 'staged' }),
+    });
+    const action = model.steps[4]?.action ?? '';
+    expect(action).toContain('不需要任何操作');
+    // ⚠️ 禁的是**首次铺开的代价**（体积 / 190 秒 / 数分钟）—— 那一项按档不同，只有后端
+    //    知道是哪一档。「之后每次 3–4 秒」是**稳态**耗时，两档一样，留着它是对的。
+    for (const banned of ['GB', '190', '数分钟']) {
+      expect(action, `耗时由后端按档说,这里出现 '${banned}' 就会与上一行打架`).not.toContain(
+        banned,
+      );
+    }
   });
 
   it('后端 `hint` **优先**于本地兜底命令（它带着这台机器上的真实取值）', () => {

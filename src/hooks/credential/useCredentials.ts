@@ -8,7 +8,7 @@ import { useRuntimes } from '@/hooks/credential/useRuntimes';
 import {
   useSetAuthMode,
   useRevokeRuntimeCredential,
-  invalidateRuntimeAuth,
+  notifyRuntimeAuthConfigured,
 } from '@/hooks/credential/useRuntimeAuthMutations';
 import {
   runtimeCardModel,
@@ -141,9 +141,9 @@ export function useCredentials(): CredentialsRuntimeManager {
   }, []);
 
   const onAuthSuccess = useCallback((): void => {
-    invalidateRuntimeAuth(queryClient);
+    // ⚠️ 刷新 + 提示走共用的那一份（向导也调它）—— 两处各写一遍时，向导那份漏了这两件事。
+    notifyRuntimeAuthConfigured(queryClient);
     setExpandedPanel(null);
-    toast.success('凭证已更新');
   }, [queryClient]);
 
   const switchMode = useCallback(

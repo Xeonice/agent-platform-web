@@ -1675,6 +1675,7 @@ export interface components {
                 latencyMs?: number;
                 hint?: string;
                 modelApi: boolean;
+                timedOut?: boolean;
             }[];
             /** Format: date-time */
             lastConnectivityCheckAt?: string;

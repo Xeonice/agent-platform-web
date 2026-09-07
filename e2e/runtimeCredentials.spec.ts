@@ -125,7 +125,9 @@ test.describe('S4 Runtime 鉴权 UI', () => {
     // Claude Code 帐号授权（未配置）
     await page.getByRole('button', { name: '帐号授权' }).first().click();
     await expect(page.getByText('打开授权链接 ↗')).toBeVisible();
-    await page.getByPlaceholder('粘贴从浏览器复制的授权码').fill('auth-code-xyz');
+    // ⚠️ placeholder 2026-09-07 改过：同机流程下回调页把码直接送进 CLI 的本地监听，
+    //    页面**根本不给码**，所以粘贴框降级成了「页面显示了码才需要填」的退路。
+    await page.getByPlaceholder('页面没给码就不用填').fill('auth-code-xyz');
     await page.getByRole('button', { name: '提交' }).click();
     await expect(page.getByText('凭证已更新')).toBeVisible();
     expect(completed).toBe(true);
