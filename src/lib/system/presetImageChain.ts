@@ -28,7 +28,10 @@ import type {
 
 /** 这一步在检查什么（P21-5 §9A 那张表的第一列）。 */
 const STEP_LABEL: Readonly<Record<PresetImageStep, string>> = {
-  config: '配置：`SANDBOX_DEFAULT_IMAGE` 配了没有',
+  // ⛔ 2026-09-07：这一步问的**不再是**「配了没有」。出厂 `SANDBOX_DEFAULT_IMAGE`
+  //    留空，平台按宿主档位自动选（darwin ⇒ boxlite，linux ⇒ aio）—— **没配才是
+  //    正确的出厂状态**。它现在问的是「这一档有没有一张可用的坐标」。
+  config: '配置：这一档该用哪张镜像（没配 = 平台按你的机器自动选）',
   registry: 'registry：配的那张镜像能不能解析到',
   lineage: '血统：它是不是平台自建的那一张（不是上游镜像）',
   registration: '注册：进没进平台、`validationStatus` 是不是 valid',
@@ -40,8 +43,15 @@ const STEP_LABEL: Readonly<Record<PresetImageStep, string>> = {
  * **用户下一步要做的事**——五步各不相同。这是 ⛔「不许合成一个红灯」那条纪律的落点。
  */
 const STEP_ACTION: Readonly<Record<PresetImageStep, string>> = {
+  // ⛔ **这一句此前叫人去填 `SANDBOX_DEFAULT_IMAGE`，而那正好会让按机器自动选永远
+  //    失效**（后端 `builtinImageRefFor` 判的就是「配了没有」）：另一档的宿主从此拿错
+  //    镜像，在建任务门口才撞 `IMAGE_PROVIDER_MISMATCH`。它还提到一个 `alpine:3.20`
+  //    兜底 —— 那个兜底后端早就不用了。**一条把人指向亲手关掉这条路的建议，比不给建议更贵。**
+  //
+  // ⚠️ 走到这一步只剩一种情形：默认档是第三方 provider，平台没有为它发布镜像。
+  //    ⇒ 按档配，不要动那个会波及两档的总开关。
   config:
-    '改配置：把 `SANDBOX_DEFAULT_IMAGE` 指向你自己构建并推上 registry 的那张平台镜像（形如 `<registry>/platform/sandbox:<tag>`）。不配它会回落到内置默认 `alpine:3.20` —— 那里面没有沙箱 API、没有 tmux、没有常驻进程，容器一退端口就空，必炸。',
+    '按档指定镜像：平台没有为当前默认档发布预制镜像（多半是自己注册的第三方 provider）。用 `SANDBOX_<档位>_IMAGE`（如 `SANDBOX_AIO_IMAGE` / `SANDBOX_BOXLITE_IMAGE`）指向那一档能用的镜像。⛔ 别改 `SANDBOX_DEFAULT_IMAGE` —— 它是两档共用的总开关，一填就让「按你的机器自动选」失效，另一档会拿到不能互换的那张。',
   registry:
     '把镜像推上去（或把地址改成推过的那个）：registry 里解析不到这张镜像，注册和拉取都无从谈起。',
   // ⚠️ 「注册也会被拒」这句不许省：不说清楚，用户会以为只是少做了一步注册，照着去注册再撞一次墙。
@@ -50,13 +60,18 @@ const STEP_ACTION: Readonly<Record<PresetImageStep, string>> = {
   registration:
     '重启平台：平台开机会自动播种（把配置里那张镜像注册进来并做验证）。重启后这一步会自己变绿。',
   // ⚠️ 这一句是**预期管理**不是问题报告（§7A ②）。
-  staged:
-    '不需要任何操作：第一个任务会自动把镜像铺开，需要数分钟（13GB 镜像实测冷启动约 190 秒），之后每次 3–4 秒。',
+  // ⛔ **不要在这里重复一个体积/耗时数字。** 它曾写死「13GB 镜像实测冷启动约 190 秒」，
+  //    而那是 aio 档的数字；macOS 默认档 boxlite 的镜像压缩后 **0.3GB**，差了一个数量级
+  //    还多。2026-09-07 实测：这句话就渲染在后端那句**按档给出的正确耗时**正下方，
+  //    同屏两个数字互相打架。⇒ 耗时由后端 `summary` 说（它知道是哪一档），这里只说
+  //    「不用做任何事」。
+  staged: '不需要任何操作：第一个任务会自动把镜像铺开（耗时见上一行），之后每次 3–4 秒。',
 };
 
 /** 后端没给 `hint` 时的兜底命令形态（③：⛔ 不覆盖后端那一句）。 */
 const FALLBACK_FIX: Readonly<Partial<Record<PresetImageStep, string>>> = {
-  config: 'SANDBOX_DEFAULT_IMAGE=<registry>/platform/sandbox:<tag>',
+  // ⚠️ 按档配 —— 与上面 `STEP_ACTION.config` 同一条：别给那个会波及两档的总开关。
+  config: 'SANDBOX_AIO_IMAGE=<registry>/<repo>:<tag>   # 或 SANDBOX_BOXLITE_IMAGE，按档配',
   registry: 'docker push <registry>/platform/sandbox:<tag>',
   lineage: 'bash scripts/build-sandbox-image.sh && docker push <registry>/platform/sandbox:<tag>',
 };

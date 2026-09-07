@@ -49,14 +49,26 @@ export function SetupTokenAuthView({
         打开授权链接 ↗
       </a>
 
+      {/*
+        ⭐ **自动回流才是主路**（2026-09-07 真机改）：`claude setup-token` 起了一个本地
+        监听，浏览器与平台同机时回调页把码直接送进去，页面只说「可以关闭此窗口」、
+        **不给码**。此前这里只有一个粘贴框，用户在浏览器里翻遍了也找不到码。
+        ⇒ 先说清楚「通常不用管下面」，再把粘贴框留成远端部署的退路。
+      */}
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        ⏳ 正在等浏览器把授权送回 —— <strong>通常不需要你做别的</strong>，完成后这里会自己变。
+      </p>
+
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">粘贴授权码（提交后自动清空）</span>
+        <span className="text-muted-foreground">
+          页面<strong>显示了授权码</strong>时才需要粘贴（浏览器与平台不在同一台机器时才会这样）
+        </span>
         <div className="flex gap-2">
           <input
             type={reveal ? 'text' : 'password'}
             name="setup-token-code"
             autoComplete="off"
-            placeholder="粘贴从浏览器复制的授权码"
+            placeholder="页面没给码就不用填"
             className="flex-1 rounded-md border border-border bg-transparent px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             value={code}
             disabled={submitting}

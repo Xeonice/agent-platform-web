@@ -33,7 +33,8 @@ import type { DiagnoseRunState, DiagnosticItemModel, DiagnosticsCardModel } from
 
 /** 预制镜像检查链五步各自在**检查什么**（P21-5 §9A 那张表的第二列）。 */
 const PRESET_IMAGE_STEP_TEXT: Readonly<Record<PresetImageStep, string>> = {
-  config: '检查链第 1 步 · 配置（SANDBOX_DEFAULT_IMAGE 配了没有）',
+  // ⛔ 2026-09-07：不再是「配了没有」—— 出厂留空、平台按机器自动选，没配才是正常。
+  config: '检查链第 1 步 · 配置（这一档该用哪张镜像）',
   registry: '检查链第 2 步 · registry（配的那张能不能解析到）',
   lineage: '检查链第 3 步 · 血统（是不是平台自建的那张，不是上游镜像）',
   registration: '检查链第 4 步 · 注册（进没进平台、是不是 valid）',

@@ -163,12 +163,25 @@ export function useRuntimeAuthFlow({
     dispatch({ type: 'RESET' });
   }, []);
 
-  // —— device-code 轮询：phase==='polling' 期间每 POLL_INTERVAL_MS 拉一次 status ——
-  const isPolling = state.branch === 'device-code' && state.phase === 'polling';
+  // —— 轮询 status：device-code 的 `polling`，以及 setup-token 的 `awaiting-paste` ——
+  //
+  // ⭐ **setup-token 也要轮询**（2026-09-07 真机补）。`claude setup-token` 会起一个本地
+  //    监听，浏览器授权后回调页把码**直接送进那个端口**，页面显示「成功，可以关闭此窗口」
+  //    —— 同机流程下**根本不显示码**，用户无从粘贴。后端现在会守着这条路自动落库
+  //    （`awaitSelfCompletion`），但**界面不轮询就永远不知道**，只会一直停在等粘贴。
+  //
+  // ⚠️ 粘贴那条路照留：浏览器与 helper 不在同一台机器时（真远端部署），回调页够不到
+  //    本地端口，那时页面才会显示码。⇒ 两条路并存，谁先到算谁。
+  const isPolling =
+    (state.branch === 'device-code' && state.phase === 'polling') ||
+    (state.branch === 'setup-token' && state.phase === 'awaiting-paste');
   const challengeRef =
-    state.branch === 'device-code' && state.phase === 'polling'
+    (state.branch === 'device-code' && state.phase === 'polling') ||
+    (state.branch === 'setup-token' && state.phase === 'awaiting-paste')
       ? state.challenge.challengeRef
       : null;
+  /** setup-token 分支只认 `success` —— 其余状态不许打断用户正在进行的粘贴。 */
+  const pollOnlyForSuccess = state.branch === 'setup-token';
 
   useEffect(() => {
     if (!isPolling || challengeRef === null) return;
@@ -183,6 +196,10 @@ export function useRuntimeAuthFlow({
                 ? { maskedIdentifier: res.maskedIdentifier }
                 : {}),
             });
+          } else if (pollOnlyForSuccess) {
+            // ⛔ setup-token：**只认成功**。这一支的轮询是「CLI 自己完成了没有」的旁路，
+            //    而用户此刻可能正在粘贴框里输入 —— 拿一个 expired/error 去改状态，
+            //    会把他正在做的事直接掐掉。真过期了，提交时自然会报。
           } else if (res.status === 'expired') {
             dispatch({ type: 'POLL_EXPIRED' });
           } else if (res.status === 'error') {
@@ -213,7 +230,7 @@ export function useRuntimeAuthFlow({
       clearInterval(timer);
       clearTimeout(hardStop);
     };
-  }, [isPolling, challengeRef, runtimeId, succeed]);
+  }, [isPolling, challengeRef, runtimeId, succeed, pollOnlyForSuccess]);
 
   // —— 倒计时 tick（device-code polling/expired 期间每秒刷新 now，驱动 secondsLeft 与归零转红）——
   const expiresAt =
