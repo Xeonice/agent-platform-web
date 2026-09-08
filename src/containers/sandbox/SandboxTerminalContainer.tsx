@@ -28,6 +28,7 @@ import { useRuntimes } from '@/hooks/credential/useRuntimes';
 import { useCreateSandbox, useCreateSandboxErrorView } from '@/hooks/sandbox/useCreateSandbox';
 import { useSandboxRestore } from '@/hooks/sandbox/useSandboxRestore';
 import { useTerminalSocketConfig } from '@/hooks/terminal/useTerminalSocketConfig';
+import { useActiveSandbox } from '@/hooks/sandbox/useActiveSandbox';
 import { useProjectBranches } from '@/hooks/project/useProjectBranches';
 import { useEscapeKey } from '@/hooks/_shared/useEscapeKey';
 import { readNewTaskDeepLink } from '@/hooks/_shared/useDeepLinkModal';
@@ -136,12 +137,31 @@ export function SandboxTerminalContainer({
   // 本次会话已有 task 时不发这个请求（内存里的状态更新）。
   const persistedSandboxId = useAppStore((s) => s.selectedSandboxId);
   const setSelectedSandboxId = useAppStore((s) => s.setSelectedSandboxId);
-  const restoreId = task === null ? persistedSandboxId : null;
+  /**
+   * ⛔ **选中态才是权威，本会话创建的那个 task 不许压过它**（2026-09-09 修）。
+   *
+   * ── 它修的是什么：同时开两个任务，切换时右侧完全不变 ────────────────────────
+   * 此前是 `restoreId = task === null ? persistedSandboxId : null` +
+   * `sandboxId = task?.id ?? …` —— 一旦**本会话创建过**任务，`task` 就非空，
+   * 于是 `sandboxId` 永远等于**最后创建的那一个**。而左侧列表的 `onSelectTask`
+   * 只写 store 里的 `selectedSandboxId`（WorkbenchContainer），压根到不了这里：
+   *
+   *   sandboxId 不变 ⇒ sessionId(`${sandboxId}:0`) 不变 ⇒ socketConfig 不变
+   *   ⇒ WS 不重连、xterm 实例不换 ⇒ **右侧一个字都不变**
+   *
+   * ⚠️ 实测形态：先起一个 codex、再起一个 claude code，之后点哪个任务都是同一屏。
+   * 界面上没有任何报错 —— 它看起来只是「没反应」，最难联想到「选中态被本地状态盖住了」。
+   *
+   * ⇒ `selectedSandboxId` 是唯一真相源。`task` 退回它本来的职责：为**刚创建的那个**
+   * 免掉一次 DTO 往返（名字/runtime/provider/headless 已经在创建响应里）。
+   * 所以只有它**就是当前选中那个**时才采用，否则一律走 restore 拉回来。
+   */
+  const { localTask, restoreId } = useActiveSandbox(persistedSandboxId, task);
   const restored = useSandboxRestore(restoreId, projectId);
-  const sandboxId = task?.id ?? (restored.notFound ? null : restoreId);
-  const taskName = task?.name ?? restored.name;
+  const sandboxId = localTask?.id ?? (restored.notFound ? null : restoreId);
+  const taskName = localTask?.name ?? restored.name;
   // 无头任务打给沙箱自己的 runtime（本会话取创建响应，刷新后取 DTO）。
-  const sandboxRuntime = task?.runtime ?? restored.runtime;
+  const sandboxRuntime = localTask?.runtime ?? restored.runtime;
   const socketConfig = useTerminalSocketConfig(wsBaseUrl, sandboxId);
 
   const providerList = providers.data ?? [];
@@ -399,7 +419,7 @@ export function SandboxTerminalContainer({
   // S6 能力位（headlessTask）判定：`SandboxResponseDto.provider` 已由后端补上 ⇒
   // **刷新后也能精确判定**，不再有"未知不置灰"的退化路径。
   // 仍可能为 null 的唯一情形：registry 还没加载完 / 该档位已从 registry 卸载。
-  const sandboxProvider = task?.provider ?? restored.provider;
+  const sandboxProvider = localTask?.provider ?? restored.provider;
   const headlessProvider =
     sandboxProvider === undefined
       ? undefined
@@ -420,7 +440,7 @@ export function SandboxTerminalContainer({
    * 模式是创建时**二选一**的（P20 §3.2「◉ 交互式终端 / ○ 无头任务」，`SandboxDto.headless`）。
    * 交互式沙箱的全部界面就是终端本身，底下不该再挂任何东西。
    */
-  const sandboxHeadless = task?.headless ?? restored.headless;
+  const sandboxHeadless = localTask?.headless ?? restored.headless;
 
   // sessionId 是前端标签身份（≠ 后端下发的 socketSessionKey，08 §11.1）；S1 单标签固定 :0。
   // 交给生命周期门：startup 展示进度、running 才开终端、failed 可重试。
