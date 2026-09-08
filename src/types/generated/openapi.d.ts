@@ -626,7 +626,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Store an api-key directly (short-circuit, no helper/pty) */
+        /** Store a pasted secret directly — api-key or access-token (no helper/pty) */
         post: operations["RuntimeController_submitSecret"];
         delete?: never;
         options?: never;
@@ -1299,7 +1299,8 @@ export interface components {
             id: string;
             displayName: string;
             vendor: string;
-            authMethods: (("oauth-device" | "setup-token") | "api-key")[];
+            authMethods: ("oauth-device" | "setup-token" | "api-key" | "access-token-paste")[];
+            apiKeyPrefix?: string;
             /** @enum {string} */
             credentialStatus: "none" | "active" | "expiring" | "expired";
             maskedIdentifier?: string;
@@ -1352,7 +1353,7 @@ export interface components {
         };
         SubmitSecretDto: {
             /** @enum {string} */
-            method: "api-key";
+            method: "api-key" | "access-token-paste";
             secret: string;
         };
         SetAuthModeDto: {

@@ -35,8 +35,16 @@ export const ENV_ROWS_MAX = 50;
 /**
  * 保留变量名（P21-4 §10.6 全量 + §10.4 前缀规则；技术 05 §4.1 为唯一权威）。
  * 防的是「绕过 Vault 用明文塞 key」，以及踩坏容器自身的 `PATH`/`HOME` 之类。
+ *
+ * ⚠️ **这是后端 `shared-kernel/src/domain/reserved-env.ts` 的镜像，不是一份独立主张。**
+ * 抄漏一项的后果不是"前端宽松一点"，而是本文件开头那句话的反面：前端说 OK、后端拒绝。
+ * 对账用例见 `__tests__/reservedEnvReconcile.test.ts`（它也写明了自己抓不到什么）。
+ *
+ * 多出来的四项（`GIT_PRIVATE_KEY` / 三个 `CODEX_*`）不是漂移：后端靠 `GIT_` / `CODEX_`
+ * **前缀**整体覆盖它们，两边的拦截结论一致，这里只是把最常被输入的几个写成明名。
  */
 export const RESERVED_ENV_KEYS: readonly string[] = [
+  // —— 凭证变量名本身 ——
   'ANTHROPIC_API_KEY',
   'CLAUDE_CODE_OAUTH_TOKEN',
   'OPENAI_API_KEY',
@@ -45,8 +53,14 @@ export const RESERVED_ENV_KEYS: readonly string[] = [
   'CODEX_CLIENT_SECRET',
   'GIT_PRIVATE_KEY',
   'SSH_PRIVATE_KEY',
-  'KUBECONFIG',
+  // —— 重定向类（05 §4.1 P1-2）：本身不含密文，却能把 CLI 指向另一个凭证目录 ——
+  // ⚠️ `CLAUDE_CONFIG_DIR` 曾经**只在后端有**：用户在 env 编辑器里输入它，前端一路绿灯、
+  //    提交时被后端 `ENV_NAME_RESERVED` 拒掉。它和 `CODEX_HOME`（被 `CODEX_` 前缀覆盖）、
+  //    `HOME` 是同一类——旁路凭证注入，不是"看起来吓人"的普通变量。
+  'CLAUDE_CONFIG_DIR',
   'HOME',
+  // —— 容器/基础设施自身 ——
+  'KUBECONFIG',
   'USER',
   'PATH',
   'PWD',

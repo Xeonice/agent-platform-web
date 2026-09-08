@@ -9,17 +9,25 @@
 // 才会带上 `acknowledgeOffline: true`；后端没有这个标记会回 409（`initialization.service.ts`）。
 // 这道门的作用是保证"Agent 将不可用"这句话**被说出来过**——⛔ 前端不许替用户默认填上它。
 //
-// ⚠️ 这里说的是**物理约束不是配置问题**：codex / claude code 必须能访问各自的模型 API。
-// 写成"请检查网络设置"会让用户在一台确实没有外网的机器上一直找自己的错。
+// ⚠️ **那句话本身不在这个文件里。** 它由 container 以 `verdictText` 传进来，出处只有一个：
+// `lib/system/connectivityVerdict.ts` 的 `VERDICT_TEXT.offline`（同一份也喂给全局离线横幅）。
+// 上一版在这里**又抄了一遍**，于是同一句话有两份复制、并且都点名了 codex / claude code
+// ——而 runtime 是开放注册表，那句点名在装了第三方 runtime 的平台上是错的。两份复制的代价
+// 不是多几行字，而是**改一处、漏一处**：向导里说的和横幅里说的会分叉，说的却是同一件事。
 import { Button } from '@/components/ui/button';
 
 export interface OfflineNoticeProps {
+  /**
+   * 离线结论那句话（`ConnectivityCheckModel.verdictText`，verdict 为 `offline` 时）。
+   * ⛔ 不要在本文件里造一句"更贴合本页"的替代文案 —— 见文件头。
+   */
+  verdictText: string;
   /** 已经点过 [继续]：改显示已确认态（⛔ 不消失——用户要能看见自己确认了什么）。 */
   acknowledged: boolean;
   onContinue: () => void;
 }
 
-export function OfflineNoticeView({ acknowledged, onContinue }: OfflineNoticeProps) {
+export function OfflineNoticeView({ verdictText, acknowledged, onContinue }: OfflineNoticeProps) {
   return (
     <section
       data-testid="offline-notice"
@@ -27,12 +35,9 @@ export function OfflineNoticeView({ acknowledged, onContinue }: OfflineNoticePro
       role="alert"
       className="flex flex-col gap-2 rounded-md border border-red-500/50 bg-red-500/5 p-3 text-sm"
     >
-      <p className="font-medium text-red-500">🔴 当前为离线环境，Agent 将不可用</p>
-      <p className="text-muted-foreground">
-        codex / claude code 必须能访问各自的模型 API —— 这是**物理约束，不是配置问题**，
-        平台无法绕开。项目管理、凭证与镜像配置、系统诊断等其余功能**照常可用**；
-        网络恢复后无需重装，回系统状态页重新检测即可。
-      </p>
+      <p className="font-medium text-red-500">🔴 {verdictText}</p>
+      {/* 只有这一句是本页独有的：它回答"那我现在装了，以后网通了怎么办"。 */}
+      <p className="text-muted-foreground">网络恢复后无需重装，回系统状态页重新检测即可。</p>
       {acknowledged ? (
         <p data-testid="offline-acknowledged" className="text-xs text-muted-foreground">
           ✅ 已确认以离线模式继续 —— 完成初始化后，工作台会常驻一条离线横幅，

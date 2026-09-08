@@ -114,6 +114,33 @@ describe('connectivityCheckModel', () => {
     expect(model.verdictText).toContain('物理约束');
     expect(model.verdictText).toContain('其余功能');
   });
+
+  /**
+   * ⛔ **三句结论一个 runtime 名字都不许出现。**
+   *
+   * runtime 是开放注册表（04 §3），第三方可以注册自己的 runtime。上一版这三句里写着
+   * 「codex / claude code 必须能访问各自的模型 API」—— 在一台只装了第三方 runtime 的机器上，
+   * 被点名的两个一个都不在场，用户读到的是一句与自己无关的话，还会以为平台只支持这两个。
+   *
+   * ⚠️ 断言写成**扫过全部三句**而不是只看 offline 那句：下一次有人往 `partial`（"模型 API
+   * 仍可达，Agent 可用"）里补一句"例如 codex …"时，只盯 offline 的用例是绿的。
+   *
+   * ⚠️ 这条只管**结论句**。逐行结果里的 `target`（`api.openai.com` 之类）是后端探测到的
+   * 网络目标、不是 runtime 名，照常渲染 —— 具体探到了什么由那张表自己说。
+   */
+  it('三句结论都不点名具体 runtime（开放注册表：点名的那句在第三方 runtime 上是错的）', () => {
+    const texts = [
+      connectivityCheckModel({ rows: [openai, anthropic, registry], fromHistory: false }, NOW),
+      connectivityCheckModel({ rows: [openai, down(registry)], fromHistory: false }, NOW),
+      connectivityCheckModel({ rows: [down(openai), down(anthropic)], fromHistory: false }, NOW),
+    ].map((m) => m.verdictText);
+
+    // 三种 verdict 都真的取到了（否则下面的否定断言可能只是"没跑到那一句"）。
+    expect(new Set(texts).size).toBe(3);
+    for (const text of texts) {
+      expect(text).not.toMatch(/codex|claude|anthropic|openai|gpt/iu);
+    }
+  });
 });
 
 describe('formatCheckedAt', () => {

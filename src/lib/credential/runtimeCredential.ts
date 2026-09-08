@@ -91,6 +91,7 @@ export function runtimeCardModel(
     status: runtime.credentialStatus,
     rows,
     hasAnyCredential: rows.some((r) => r.configured),
+    apiKeyPrefix: runtime.apiKeyPrefix,
   };
 }
 

@@ -85,6 +85,13 @@ export interface RuntimeCredentialCardModel {
   rows: AuthModeRow[];
   /** 是否任一模式已配置（否 → 简化「无凭证」态卡片）。 */
   hasAnyCredential: boolean;
+  /**
+   * 该 runtime 声明的 api-key 前缀（`RuntimeDto.apiKeyPrefix`，04 §3 ★3z）。
+   *
+   * ⚠️ 原样透传给 `AuthGateContainer`，**这一层同样不认识任何具体 runtime**。
+   * 缺席 ⇒ `lib/credential/authFlow.ts` 的过渡回落。
+   */
+  apiKeyPrefix?: string;
 }
 
 /** 参与吊销影响判定的最小 Task 形状（来自 sandboxKeys.list，Task 视角）。 */

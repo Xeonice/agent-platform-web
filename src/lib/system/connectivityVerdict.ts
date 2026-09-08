@@ -40,12 +40,31 @@ export function connectivityVerdict(rows: readonly ConnectivityResultDto[]): Con
   return 'partial';
 }
 
+/**
+ * 三句结论文案的**唯一**出处。
+ *
+ * ⚠️ **⛔ 这里不许出现具体 runtime 的名字。** 上一版写的是「codex / claude code 必须能访问
+ * 各自的模型 API」—— 而 runtime 是**开放注册表**（04 §3），第三方可以注册自己的 runtime。
+ * 在一台只装了第三方 runtime 的机器上，那句话点名的两个 runtime 一个都不在场，用户读到的
+ * 是一句与自己无关的话；更糟的是它会被当成"平台只支持这两个"。
+ *
+ * ⚠️ **为什么不改成"从接口取名字来渲染"**：诊断接口（`init-status.lastConnectivityCheck[]`
+ * 与 `/diagnose` 的 `outbound-network` 帧）逐条给的是 `{ target, ok, latencyMs, hint,
+ * modelApi }` —— `target` 是**网络目标**（`api.openai.com` / `ghcr.io`），响应里**没有任何
+ * runtime 身份**，也没有 target → runtime 的映射。硬把 target 当 runtime 名念出来，是拿
+ * 一个错误的枚举换掉另一个错误的枚举。⇒ 结论句只说不变的那条约束（"每个 runtime 都要够得着
+ * 自己的模型 API"），**具体探测到了哪些目标由逐行结果自己说**（`rowModel` 已经逐条渲染）。
+ *
+ * ⚠️ 这三句会被**两处**消费：向导第 1/2 步的 `ConnectivityCheck`，以及全局离线横幅
+ * （`globalBanner.ts` 直接取 `verdictText`）。离线告知面板（`OfflineNotice`）同样吃这一份
+ * —— 由 container 以 prop 传入，⛔ 不许在 view 里再抄一句（抄出来的那句迟早跟这句分叉）。
+ */
 const VERDICT_TEXT: Readonly<Record<ConnectivityVerdict, string>> = {
   ok: '出网正常：模型 API 与镜像仓库均可达。',
   // ⚠️ 这一句必须说清"哪一半好着"：用户看到黄灯的第一反应是"是不是 Agent 用不了了"。
   partial: '部分目标不可达 —— 模型 API 仍可达，Agent 可用；不可达的那几项按下方提示配置代理。',
   offline:
-    '当前为离线环境，Agent 将不可用 —— codex / claude code 必须能访问各自的模型 API，这是物理约束，不是配置问题。平台其余功能（项目管理、凭证与镜像配置、系统诊断）照常可用。',
+    '当前为离线环境，Agent 将不可用 —— 每个 runtime 都必须能访问自己的模型 API，这是物理约束，不是配置问题。平台其余功能（项目管理、凭证与镜像配置、系统诊断）照常可用。',
 };
 
 function rowModel(row: ConnectivityResultDto): ConnectivityRowModel {

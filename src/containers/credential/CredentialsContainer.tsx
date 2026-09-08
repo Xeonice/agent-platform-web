@@ -26,6 +26,7 @@ export function CredentialsContainer() {
           runtimeId={runtimeId}
           runtimeName={card.displayName}
           methods={methods}
+          apiKeyPrefix={card.apiKeyPrefix}
           initialMethod={m.expandedPanel.method}
           onSuccess={m.onAuthSuccess}
         />

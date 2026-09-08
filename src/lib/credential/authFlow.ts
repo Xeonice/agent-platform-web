@@ -8,10 +8,18 @@ export type AuthBranch = 'device-code' | 'setup-token' | 'api-key';
 
 /**
  * 方式 → 分支。
- * 入参仅接受 begin【方法】三值集（RuntimeAuthMethod = authMethods[number]）；**不要**把 challenge.method
- * 直接喂进来——后者是四值集（含 access-token-paste，openapi AuthChallengeResponseDto.method），
- * 未知值会被静默归类到 api-key 分支、配错鉴权方式（P2 契约漂移）。故对未知值显式 console.error 报错，
- * 而非静默兜底。
+ *
+ * ⚠️ **2026-09-08：`RuntimeAuthMethod` 已经是四值集。** 后端打通 `access-token-paste`
+ * 之后（04 §8 ★8a），`authMethods` 下发的就是完整闭集，本函数此前那句「入参仅接受三值集、
+ * 四值集不要喂进来」的前提**不再成立** —— 而 `access-token-paste` 会落进 `default`，
+ * 被 `console.error` + 静默归到 api-key 分支，正是那条注释自己说要防的「配错鉴权方式」。
+ *
+ * ⇒ 现在它有一条**显式**归并：`access-token-paste` 与 `api-key` 共用「粘贴一个字符串并直存」
+ * 这条交互（后端也把两者收在同一个 `submitSecret` 端点，`RUNTIME_SECRET_METHODS`）。
+ * ⛔ **但它们落库后的 `mode` 不同**（`api-key` → `api-key`；`access-token-paste` → `account`，
+ * 13 §2.5.1），所以**提交时必须带上真实 method**，不能因为共用分支就发 `'api-key'`。
+ *
+ * `default` 仍然保留：闭集将来再加值时，要的是一条响亮的报错而不是静默兜底。
  */
 export function branchOfMethod(method: RuntimeAuthMethod): AuthBranch {
   switch (method) {
@@ -19,13 +27,17 @@ export function branchOfMethod(method: RuntimeAuthMethod): AuthBranch {
       return 'device-code';
     case 'setup-token':
       return 'setup-token';
+    // `access-token-paste` 与 `api-key` 共用这一支（粘贴 → 直存同一条交互）；
+    // 区别只在提交时带的 method 与落库后的 mode，见上方注释。
     case 'api-key':
+    case 'access-token-paste':
       return 'api-key';
     default:
-      // 运行时不应到达（类型上 method 已收窄为 never）；到此说明调用方喂了 begin 三值集之外的值。
+      // 闭集加了新值而这里没跟 —— 要的是响亮报错，不是静默归到某一支。
+      // `String()` 在这里是必要的：四个值都被上面穷尽后，此处 `method` 的类型是 `never`。
       console.error(
-        `branchOfMethod: 未知鉴权方式「${String(method)}」——只接受 begin 三值集（oauth-device/setup-token/api-key），` +
-          `不要把 challenge.method（四值，含 access-token-paste）直接喂入。`,
+        `branchOfMethod: 未知鉴权方式「${String(method)}」——RUNTIME_AUTH_METHODS 加了新值而前端没跟，` +
+          `请补一条分支而不是让它落到这里。`,
       );
       return 'api-key';
   }
@@ -182,13 +194,40 @@ function apiKeyReducer(
   }
 }
 
-/** api-key 前缀（前端即时格式提示，权威判定在后端，07 §6.2）：Codex sk- / Claude Code sk-ant-。 */
-export function apiKeyExpectedPrefix(runtimeId: string): string {
-  return runtimeId === 'claude-code' ? 'sk-ant-' : 'sk-';
+// ————————————————————————————————————————————————————————————————
+// api-key 前缀提示（前端即时格式提示，权威判定始终在后端，07 §6.2）
+// ————————————————————————————————————————————————————————————————
+//
+// ⚠️ **前缀是 runtime 的属性，不是前端能推断的知识。** 这里曾经写着
+// `runtimeId === 'claude-code' ? 'sk-ant-' : 'sk-'` —— 全仓唯一一处拿 runtimeId 跟字面量比。
+// runtime 是**开放注册表**（04 §3），第三方注册的 runtime 全都掉进 `sk-` 那一支：
+// 用户粘一个完全合法的 key，输入框红边 + 「Key 应以 sk- 开头」，而 [保存并继续] 是**禁用**的
+// ——不是"提示错了"，是**根本提交不了**。
+//
+// ⇒ 现在由**调用方把前缀传进来**（后端 `RuntimeDto.apiKeyPrefix`，04 §3 ★3z 的 adapter
+//   自描述元数据）。下面那张内置表是**过渡回落**，不是新的权威。
+
+/**
+ * 期望前缀：**完全由 runtime 自己声明**（`RuntimeDto.apiKeyPrefix`，04 §3 ★3z）。
+ *
+ * ⚠️ **没声明 ⇒ 不提示前缀**，而不是猜一个。这是本函数唯一的两种情形，
+ * 也是 2026-09-08 那张过渡回落表被删掉之后剩下的全部逻辑 ——
+ * 那张表把 `claude-code → sk-ant-`、其余 `→ sk-` 写死在前端，
+ * 于是任何第三方 runtime 的合法 key 都会被判红边、且 [保存并继续] **禁用**。
+ *
+ * ⛔ **不要再引入任何按 runtimeId 分支的默认值。** 前缀是 vendor 事实，
+ * 只有 adapter 知道；前端猜错的代价是「合法凭证提交不了」，比不提示严重得多。
+ */
+export function apiKeyExpectedPrefix(apiKeyPrefix: string | undefined): string {
+  return apiKeyPrefix ?? '';
 }
 
-/** api-key 前缀是否匹配（仅格式提示；空串不提示）。 */
-export function apiKeyPrefixValid(runtimeId: string, key: string): boolean {
+/**
+ * 前缀是否匹配（仅格式提示；空串不提示）。
+ * ⚠️ 吃的是**已解析出的前缀**而不是 runtimeId：解析口径只有 `apiKeyExpectedPrefix` 一处，
+ * 否则"提示里说要 X 开头"与"按 Y 判红边"会各解析一次、迟早说两句不一样的话。
+ */
+export function apiKeyPrefixValid(expectedPrefix: string, key: string): boolean {
   if (key === '') return true;
-  return key.startsWith(apiKeyExpectedPrefix(runtimeId));
+  return key.startsWith(expectedPrefix);
 }

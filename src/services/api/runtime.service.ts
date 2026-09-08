@@ -11,6 +11,7 @@ import type {
   RuntimeSettings,
   RuntimeAuthMethod,
   RuntimeAuthMode,
+  SubmitSecretRequest,
 } from '@/types/runtimeCredential';
 
 /** GET /api/runtimes → 各 runtime 卡片元数据 + 凭证状态聚合 + 逐模式明细（主数据源，F21-3 §4）。 */
@@ -79,10 +80,22 @@ export async function completeAuth(
 }
 
 /** POST /api/runtimes/:rt/credentials/secret → 直存 api-key（body 字段名 method，不经 sandbox）。 */
-export async function saveSecret(rt: string, secret: string): Promise<RuntimeCredentialResult> {
+/**
+ * 直存一个粘贴来的密钥。
+ *
+ * ⚠️ **`method` 必须由调用方给，不能写死 `'api-key'`。** 后端把 `api-key` 与
+ * `access-token-paste` 收在同一个端点（`RUNTIME_SECRET_METHODS`），但**落库后的 mode 不同**
+ * （`api-key` → `api-key`；`access-token-paste` → `account`，13 §2.5.1）。写死会把一个
+ * 账号凭证存成 API Key 模式 —— 于是「帐号授权」卡片永远空着，而 `setAuthMode('account')` 会 409。
+ */
+export async function saveSecret(
+  rt: string,
+  secret: string,
+  method: SubmitSecretRequest['method'],
+): Promise<RuntimeCredentialResult> {
   const { data, error, response } = await apiClient.POST('/api/runtimes/{rt}/credentials/secret', {
     params: { path: { rt } },
-    body: { method: 'api-key', secret },
+    body: { method, secret },
   });
   if (!response.ok || data === undefined) {
     throw new ApiErrorException(toApiError(error, response.status), response.status);

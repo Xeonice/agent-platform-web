@@ -72,6 +72,9 @@ export function InitWizardContainer() {
         />
         {offline ? (
           <OfflineNoticeView
+            // 离线那句话只有一份出处（`lib/system/connectivityVerdict.ts`）——
+            // 全局离线横幅吃的也是这一份，view 里不再抄第二句。
+            verdictText={w.connectivity.verdictText}
             acknowledged={w.offlineAcknowledged}
             onContinue={w.acknowledgeOffline}
           />
@@ -107,6 +110,9 @@ export function InitWizardContainer() {
         />
         {offline ? (
           <OfflineNoticeView
+            // 离线那句话只有一份出处（`lib/system/connectivityVerdict.ts`）——
+            // 全局离线横幅吃的也是这一份，view 里不再抄第二句。
+            verdictText={w.connectivity.verdictText}
             acknowledged={w.offlineAcknowledged}
             onContinue={w.acknowledgeOffline}
           />
@@ -188,6 +194,7 @@ export function InitWizardContainer() {
                 runtimeId={r.id}
                 runtimeName={r.displayName}
                 methods={r.methods}
+                apiKeyPrefix={r.apiKeyPrefix}
                 onSuccess={() => {
                   // ⛔ **三件事，缺一件用户就看不到自己成功了**（2026-09-07 实测）。
                   //    此前这里**只做了收起面板**，而注释却写着「状态由 runtimeKeys.list
