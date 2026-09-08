@@ -320,6 +320,7 @@ export function SandboxTerminalContainer({
                 runtimeId={selectedRuntimeDto.id}
                 runtimeName={selectedRuntimeDto.displayName}
                 methods={selectedRuntimeDto.authMethods}
+                apiKeyPrefix={selectedRuntimeDto.apiKeyPrefix}
                 // 一次性语义文案只在"从未配置"那支出现;已过期是**再来一次**,那句
                 //「只需配置一次」在这里是假话(P20 §5.1 分支③走同一面板但说法不同)。
                 showOneTimeNotice={credentialStatus === 'none'}

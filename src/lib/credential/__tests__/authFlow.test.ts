@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   authFlowReducer,
   branchOfMethod,
@@ -157,15 +157,57 @@ describe('C · api-key：即时完成 / rejected', () => {
   });
 });
 
-describe('apiKeyPrefix（前缀格式提示）', () => {
-  it('Codex sk- / Claude Code sk-ant-', () => {
-    expect(apiKeyExpectedPrefix('codex')).toBe('sk-');
-    expect(apiKeyExpectedPrefix('claude-code')).toBe('sk-ant-');
+describe('branchOfMethod 对 access-token-paste 的归并', () => {
+  /**
+   * ⭐ 后端打通 `access-token-paste` 后，`RuntimeDto.authMethods` 下发的是**完整四值闭集**，
+   * 于是这个值会真的流到 `branchOfMethod`。此前它落进 `default`：`console.error` + 静默
+   * 归到 api-key 分支 —— 正是那段注释自己说要防的「配错鉴权方式」。
+   *
+   * ⛔ 现在它是一条**显式**归并（共用「粘贴 → 直存」交互），因此**不许再报错**。
+   */
+  it('归到 api-key 分支，且不报错（它是合法输入，不是未知值）', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(branchOfMethod('access-token-paste')).toBe('api-key');
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
+});
+
+describe('apiKeyPrefix（前缀格式提示）', () => {
+  /**
+   * ⭐ **主路径：前缀由 runtime 自己说了算。** 这条钉住的是"前端不再按 runtimeId 猜前缀"——
+   * 把 `apiKeyExpectedPrefix` 改回内部判断 runtimeId 时它红。
+   */
+  it('runtime 声明了前缀 ⇒ 原样用它', () => {
+    expect(apiKeyExpectedPrefix('xyz-')).toBe('xyz-');
+    // 第三方 runtime：以前一律掉进 `sk-`，合法 key 被标红且 [保存并继续] 禁用。
+    expect(apiKeyExpectedPrefix('acme_')).toBe('acme_');
+    expect(apiKeyPrefixValid(apiKeyExpectedPrefix('acme_'), 'acme_k1')).toBe(true);
+  });
+
+  /**
+   * ⭐ **缺席 ⇒ 不提示，不猜。** 过渡回落表已于 2026-09-08 随后端下发
+   * `RuntimeDto.apiKeyPrefix` 一并删除（04 §3 ★3z）。
+   *
+   * ⛔ 这条是**防复辟**的：任何人再往 lib 里塞一张 `{'claude-code': 'sk-ant-'}`
+   * 之类的默认表，第一行就红。前端猜错前缀的代价是「合法凭证根本提交不了」，
+   * 比不提示严重得多。
+   */
+  it('前缀缺席/空串 ⇒ 不提示前缀（⛔ 不按 runtimeId 猜）', () => {
+    expect(apiKeyExpectedPrefix(undefined)).toBe('');
+    expect(apiKeyExpectedPrefix('')).toBe('');
+    // 不提示 = 任何非空 key 都通过格式校验，不会出现假红边。
+    expect(apiKeyPrefixValid(apiKeyExpectedPrefix(undefined), 'sk-ant-real')).toBe(true);
+    expect(apiKeyPrefixValid(apiKeyExpectedPrefix(undefined), 'acme_whatever')).toBe(true);
+  });
+
   it('前缀不匹配 → false；空串不提示', () => {
-    expect(apiKeyPrefixValid('codex', 'oops')).toBe(false);
-    expect(apiKeyPrefixValid('codex', 'sk-abc')).toBe(true);
-    expect(apiKeyPrefixValid('claude-code', 'sk-abc')).toBe(false);
-    expect(apiKeyPrefixValid('codex', '')).toBe(true);
+    expect(apiKeyPrefixValid('sk-', 'oops')).toBe(false);
+    expect(apiKeyPrefixValid('sk-', 'sk-abc')).toBe(true);
+    expect(apiKeyPrefixValid('sk-ant-', 'sk-abc')).toBe(false);
+    expect(apiKeyPrefixValid('sk-', '')).toBe(true);
   });
 });

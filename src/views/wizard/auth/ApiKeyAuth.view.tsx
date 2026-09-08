@@ -46,7 +46,9 @@ export function ApiKeyAuthView({
           name="api-key"
           autoComplete="off"
           aria-invalid={!prefixValid}
-          placeholder={`${expectedPrefix}…`}
+          // 前缀为空 = 该 runtime 没声明前缀（04 §3 ★3z）⇒ 不拿前缀做提示，
+          // 否则 placeholder 会退化成一个光秃秃的「…」。
+          placeholder={expectedPrefix === '' ? '粘贴密钥' : `${expectedPrefix}…`}
           className={
             'rounded-md border bg-transparent px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ' +
             (prefixValid ? 'border-border' : 'border-red-400')

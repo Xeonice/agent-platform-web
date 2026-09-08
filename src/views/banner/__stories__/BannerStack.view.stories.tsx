@@ -8,7 +8,7 @@ const OFFLINE: GlobalBannerModel = {
   severity: 'blocking',
   title: '离线模式：Agent 不可用',
   description:
-    '当前为离线环境，Agent 将不可用 —— codex / claude code 必须能访问各自的模型 API，这是物理约束，不是配置问题。' +
+    '当前为离线环境，Agent 将不可用 —— 每个 runtime 都必须能访问自己的模型 API，这是物理约束，不是配置问题。' +
     '平台其余功能（项目管理、凭证与镜像配置、系统诊断）照常可用。（上次检测：2026-08-29 16:11:34（22 小时前））',
   actionLabel: '重新检测',
 };

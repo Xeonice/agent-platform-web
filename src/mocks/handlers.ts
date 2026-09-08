@@ -201,6 +201,9 @@ const RUNTIME_REGISTRY: readonly RuntimeDto[] = [
     displayName: DEFAULT_RUNTIME_LABEL,
     vendor: 'OpenAI',
     authMethods: ['oauth-device', 'api-key'],
+    // adapter 自描述的 key 前缀（04 §3 ★3z）——替身照真实后端申报，
+    // 前端才不用再拿 runtimeId 猜前缀。
+    apiKeyPrefix: 'sk-',
     credentialStatus: 'expiring',
     maskedIdentifier: 'a***@gmail.com',
     expiresAt: isoIn(6 * DAY),
@@ -222,6 +225,7 @@ const RUNTIME_REGISTRY: readonly RuntimeDto[] = [
     displayName: 'Claude Code',
     vendor: 'Anthropic',
     authMethods: ['setup-token', 'api-key'],
+    apiKeyPrefix: 'sk-ant-',
     credentialStatus: 'none',
     credentials: [],
   }),

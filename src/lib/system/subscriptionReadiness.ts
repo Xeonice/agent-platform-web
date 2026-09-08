@@ -32,6 +32,7 @@ export function subscriptionStepModel(runtimes: readonly RuntimeDto[]): Subscrip
     state: stateOf(r.credentialStatus),
     ...(r.maskedIdentifier === undefined ? {} : { maskedIdentifier: r.maskedIdentifier }),
     methods: r.authMethods,
+    apiKeyPrefix: r.apiKeyPrefix,
   }));
   const ready = models.some((m) => m.state === 'ready');
   return {

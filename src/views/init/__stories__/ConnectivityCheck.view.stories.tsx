@@ -95,7 +95,7 @@ export const Offline: Story = {
       ],
       verdict: 'offline',
       verdictText:
-        '当前为离线环境，Agent 将不可用 —— codex / claude code 必须能访问各自的模型 API，这是物理约束，不是配置问题。平台其余功能（项目管理、凭证与镜像配置、系统诊断）照常可用。',
+        '当前为离线环境，Agent 将不可用 —— 每个 runtime 都必须能访问自己的模型 API，这是物理约束，不是配置问题。平台其余功能（项目管理、凭证与镜像配置、系统诊断）照常可用。',
       fromHistory: false,
     }),
   },

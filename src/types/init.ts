@@ -219,6 +219,8 @@ export interface SubscriptionRuntimeModel {
   maskedIdentifier?: string;
   /** 这个 runtime 支持哪些方式（`getAuthMethods()` 下发，前端不自造枚举）。 */
   methods: RuntimeDto['authMethods'];
+  /** 该 runtime 声明的 api-key 前缀（`RuntimeDto.apiKeyPrefix`，04 §3 ★3z），原样透传。 */
+  apiKeyPrefix?: string;
 }
 
 export interface SubscriptionStepModel {

@@ -36,6 +36,12 @@ export interface AuthSuccess {
 export interface UseRuntimeAuthFlowArgs {
   runtimeId: string;
   method: RuntimeAuthMethod;
+  /**
+   * runtime 声明的 api-key 前缀（`RuntimeDto.apiKeyPrefix`，04 §3 ★3z）。
+   * ⚠️ 本 hook **不认识**任何具体 runtime：前缀是 runtime 的属性，由宿主原样传下来。
+   * 缺席 ⇒ **不提示前缀**（不猜）。见 `lib/credential/authFlow.ts`。
+   */
+  apiKeyPrefix?: string;
   /** 配置成功回调（掩码帐号）：container 负责 invalidate runtime 查询 + toast + 面板收起/进确认步。 */
   onSuccess?: (result: AuthSuccess) => void;
 }
@@ -82,6 +88,7 @@ function messageFromError(error: unknown, fallback: string): string {
 export function useRuntimeAuthFlow({
   runtimeId,
   method,
+  apiKeyPrefix,
   onSuccess,
 }: UseRuntimeAuthFlowArgs): RuntimeAuthFlow {
   const branch = branchOfMethod(method);
@@ -144,7 +151,9 @@ export function useRuntimeAuthFlow({
     (secret: string): void => {
       if (branch !== 'api-key') return;
       dispatch({ type: 'APIKEY_SUBMIT_START' });
-      void saveSecret(runtimeId, secret)
+      // ⚠️ 带**真实 method**（`api-key` 或 `access-token-paste`）——两者共用这条交互，
+      // 但落库后的 mode 不同（13 §2.5.1）。写死会把账号凭证存成 API Key 模式。
+      void saveSecret(runtimeId, secret, method === 'access-token-paste' ? method : 'api-key')
         .then((result) => {
           succeed(result);
         })
@@ -156,7 +165,7 @@ export function useRuntimeAuthFlow({
           });
         });
     },
-    [branch, runtimeId, succeed],
+    [branch, method, runtimeId, succeed],
   );
 
   const reset = useCallback((): void => {
@@ -261,11 +270,14 @@ export function useRuntimeAuthFlow({
     }
   }, [isPolling, expiresAt, secondsLeft]);
 
+  // 前缀解析只此一处：提示语与红边判定必须来自同一个值（见 `apiKeyPrefixValid` 的注释）。
+  const expectedPrefix = apiKeyExpectedPrefix(apiKeyPrefix);
+
   return {
     state,
     secondsLeft,
-    expectedPrefix: apiKeyExpectedPrefix(runtimeId),
-    isApiKeyPrefixValid: (key: string) => apiKeyPrefixValid(runtimeId, key),
+    expectedPrefix,
+    isApiKeyPrefixValid: (key: string) => apiKeyPrefixValid(expectedPrefix, key),
     begin,
     refetchChallenge,
     submitPaste,

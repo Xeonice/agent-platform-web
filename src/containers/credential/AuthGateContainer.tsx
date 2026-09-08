@@ -20,6 +20,16 @@ export interface AuthGateContainerProps {
   runtimeName: string;
   /** 可用鉴权方式（getAuthMethods 下发）。 */
   methods: RuntimeAuthMethod[];
+  /**
+   * 该 runtime 的 api-key 前缀（`RuntimeDto.apiKeyPrefix`，04 §3 ★3z）。
+   *
+   * ⚠️ **这一层不认识任何具体 runtime**：前缀是 runtime 自己声明的属性，宿主原样传下来即可。
+   * TODO(04 §3 ★3z): 后端把该字段加进 `RuntimeResponseDto` 后，三处宿主各补一行 ——
+   *   · `SandboxTerminalContainer`：`selectedRuntimeDto.apiKeyPrefix`（手里就是 DTO）；
+   *   · `InitWizardContainer` / `CredentialsContainer`：先把它带进各自的卡片视图模型。
+   * 在那之前缺席 ⇒ `lib/credential/authFlow.ts` 的过渡回落，行为与接线前一致。
+   */
+  apiKeyPrefix?: string;
   /** 初始选中方式（默认按当前生效模式；凭证页由具体入口指定）。 */
   initialMethod?: RuntimeAuthMethod;
   /** 拦截面板一次性语义文案（凭证页复用省略）。 */
@@ -40,6 +50,7 @@ export function AuthGateContainer({
   runtimeId,
   runtimeName,
   methods,
+  apiKeyPrefix,
   initialMethod,
   showOneTimeNotice,
   onOpenCredentials,
@@ -87,6 +98,7 @@ export function AuthGateContainer({
         key={currentMethod}
         runtimeId={runtimeId}
         method={currentMethod}
+        apiKeyPrefix={apiKeyPrefix}
         onSuccess={onSuccess}
       />
     </AuthGatePanelView>
@@ -96,11 +108,12 @@ export function AuthGateContainer({
 interface AuthBranchSlotProps {
   runtimeId: string;
   method: RuntimeAuthMethod;
+  apiKeyPrefix?: string;
   onSuccess?: (result: AuthSuccess) => void;
 }
 
-function AuthBranchSlot({ runtimeId, method, onSuccess }: AuthBranchSlotProps) {
-  const flow = useRuntimeAuthFlow({ runtimeId, method, onSuccess });
+function AuthBranchSlot({ runtimeId, method, apiKeyPrefix, onSuccess }: AuthBranchSlotProps) {
+  const flow = useRuntimeAuthFlow({ runtimeId, method, apiKeyPrefix, onSuccess });
   const { state } = flow;
 
   // 帐号授权类（device-code / setup-token）：进入即发起挑战（无前置，07 §6.2）。
