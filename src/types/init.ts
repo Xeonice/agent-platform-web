@@ -42,8 +42,15 @@ export interface ConnectivityRowModel {
   modelApi: boolean;
   /** `'模型 API'` / `'镜像仓库'`。 */
   kindText: string;
-  /** `'可达 · 351ms'` / `'不可达'`。 */
+  /** `'可达 · 351ms'` / `'不可达'` / `'未在预算内应答'`。 */
   stateText: string;
+  /**
+   * 这条是**超时**，不是够不着。
+   *
+   * ⚠️ 视图据此把图标从 ❌ 换成 ⏱ —— 「预算内没应答」与「连接被拒/解析不了」是两种
+   * 证据强度完全不同的事，而红叉会让用户直接去配代理（配了也不解决慢）。
+   */
+  timedOut?: boolean;
   /** 后端给的原因/建议，`ok` 时通常缺席。 */
   hint?: string;
 }
@@ -165,8 +172,9 @@ export interface ResourceConfirmModel {
   /** `'调度时预留 15%：RAM 可调度上限 27.2 GB、磁盘 24.8 GB'`。 */
   reservedText: string;
   /**
-   * 磁盘要按真实构成说（P21-8 §2，2026-08 实测）：预制镜像约 13GB、boxlite 的 rootfs
-   * 缓存实测 31GB、每个 Task 还有一份工作区副本。只报总量会让人以为宽裕。
+   * 磁盘要按真实构成说（P21-8 §2）：预制镜像、运行时的 rootfs 缓存、每个 Task 一份
+   * 工作区副本。只报总量会让人以为宽裕。⚠️ **具体量级按档给**（`diskCompositionFor`）——
+   * 13GB / 31GB 分别是 aio 与 boxlite 的数字，写死一个会在另一档上差一个数量级。
    */
   diskCompositionText: string;
 }
@@ -192,8 +200,16 @@ export interface InitStepModel {
   label: string;
   /** 这一步在本次流程里是否会出现（Step2 只在检测有失败项时展开）。 */
   active: boolean;
-  /** 已走过。 */
+  /**
+   * **这一步的目标真的达成了**。
+   *
+   * ⚠️ 语义从「已走过」收紧到「已达成」（2026-09-09 真机发现）：镜像只解析到、还没在
+   * 本机铺开时，指示条照样给第 3 步打 ✅ —— 而那一步的卡片同一屏上正写着「尚未在本机
+   * 铺开」。**指示条与卡片自相矛盾时，用户信的是那个更醒目的 ✅。**
+   */
   done: boolean;
+  /** 走过了但没达成（跳过 / 未就绪）—— 与"还没走到"要分得开。 */
+  skipped: boolean;
   current: boolean;
 }
 

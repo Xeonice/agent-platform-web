@@ -63,13 +63,16 @@ export function InitWizardShellView({
                 data-testid={`init-step-${s.key}`}
                 data-current={s.current ? 'true' : 'false'}
                 data-done={s.done ? 'true' : 'false'}
+                data-skipped={s.skipped ? 'true' : 'false'}
                 className={
                   s.current
                     ? 'rounded border border-primary px-2 py-1 font-medium text-primary'
                     : 'rounded border border-border px-2 py-1 text-muted-foreground'
                 }
               >
-                {s.done ? '✅ ' : ''}
+                {/* ⚠️ 三态要分得开：达成 ✅ / 走过没达成 ⚠️ / 还没走到（无标记）。
+                    两者共用"无标记"时，用户没法从指示条上看出自己跳过了什么。 */}
+                {s.done ? '✅ ' : s.skipped ? '⚠️ ' : ''}
                 {String(s.ordinal)}. {s.label}
                 {s.active ? '' : '（可跳过）'}
               </li>

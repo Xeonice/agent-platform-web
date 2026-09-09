@@ -47,6 +47,7 @@ import {
 } from '@/services/api/system.service';
 import { ApiErrorException } from '@/services/api/apiError';
 import { subscriptionStepModel } from '@/lib/system/subscriptionReadiness';
+import { useProviders } from '@/hooks/sandbox/useProviders';
 import type { SubscriptionStepModel } from '@/types/init';
 import { RUNTIMES_QUERY_OPTIONS } from '@/hooks/credential/useRuntimes';
 import { systemKeys } from '@/hooks/system/useAuditStream';
@@ -169,6 +170,10 @@ export function useInitWizard(): UseInitWizardResult {
     staleTime: 15_000,
     enabled: step === 'resource',
   });
+
+  // ⚠️ provider registry：Step5 的磁盘构成要按档说数字。`useProviders` 自带 staleTime 5min，
+  //    且工作台那边多半已经取过 —— 这里命中的是同一份缓存，不是一次额外请求。
+  const providers = useProviders();
 
   // Step4「订阅配置」：runtime 列表 + 各自凭证状态（P21-8 §2）。
   // ⚠️ **复用 `runtimeKeys.list()`，不另起一个 key**：凭证页与拦截面板用的是同一份缓存，
@@ -332,6 +337,16 @@ export function useInitWizard(): UseInitWizardResult {
   // Step2 只在出网有失败项时进入流程（P21-8 §2）。
   const proxyActive = connectivity.verdict !== 'ok';
 
+  // ⚠️ **档位从 registry 里的 `isDefault` 取，前端不留默认档常量**（同 `useProviders` 的口径）：
+  //    Step5 的磁盘构成要按档说数字，而"哪一档"只有后端知道（它按这台机器自动选）。
+  //    没回来就是 `undefined` —— `diskCompositionFor` 那时说构成不说量级，不猜一档。
+  const defaultTier = providers.data?.find((p) => p.isDefault)?.name;
+
+  // ⚠️ 提出来一份：指示条的 ✅ 判据与返回给 container 的模型**必须是同一个**。
+  //    在两处各算一次，迟早出现"卡片说没配、指示条说已配好"。
+  const subscription =
+    runtimes.data === undefined ? undefined : subscriptionStepModel(runtimes.data);
+
   // ——— ④ `PUT /settings`：只存配置。⛔ 这条 mutation 碰都不碰 `systemKeys.init()` ———
   const saveProxy = useMutation({
     retry: 0,
@@ -454,7 +469,12 @@ export function useInitWizard(): UseInitWizardResult {
 
   return {
     step,
-    steps: initSteps(step, proxyActive),
+    // ⚠️ 只喂**有判据**的那两步：镜像看「本机铺开了没有」，订阅看「配了至少一个没有」。
+    //    连通性与资源确认没有独立于"走到过"的目标，缺席即按位置算（见 `initSteps`）。
+    steps: initSteps(step, proxyActive, {
+      'preset-image': presetImage.ready,
+      subscription: subscription?.ready === true,
+    }),
     proxyActive,
 
     connectivity,
@@ -476,10 +496,10 @@ export function useInitWizard(): UseInitWizardResult {
 
     presetImage,
 
-    subscription: runtimes.data === undefined ? undefined : subscriptionStepModel(runtimes.data),
+    subscription,
     subscriptionError: runtimes.isError,
 
-    resource: resourceConfirmModel(resources.data),
+    resource: resourceConfirmModel(resources.data, defaultTier),
     resourceError: resources.isError,
 
     goNext,

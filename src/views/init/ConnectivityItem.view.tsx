@@ -19,11 +19,14 @@ export function ConnectivityItemView({ row, pending = false }: ConnectivityItemP
     <li
       data-testid={`connectivity-item-${row.id}`}
       data-ok={row.ok ? 'true' : 'false'}
+      data-timed-out={row.timedOut === true ? 'true' : 'false'}
       data-model-api={row.modelApi ? 'true' : 'false'}
       className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
     >
       <span className="flex flex-wrap items-center gap-2">
-        <span aria-hidden="true">{pending ? '⏳' : row.ok ? '✅' : '❌'}</span>
+        <span aria-hidden="true">
+          {pending ? '⏳' : row.ok ? '✅' : row.timedOut === true ? '⏱' : '❌'}
+        </span>
         <span className="font-medium">{row.target}</span>
         <span
           data-testid={`connectivity-kind-${row.id}`}
