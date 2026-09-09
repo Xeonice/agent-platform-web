@@ -69,6 +69,45 @@ describe('五步指示与步进', () => {
     expect(steps.find((s) => s.key === 'proxy')?.done).toBe(false);
   });
 
+  /**
+   * ⭐ **走过 ≠ 达成**（2026-09-09 真机发现）。
+   *
+   * ⛔ 上一版 `done: i < currentIndex` 是纯位置判定：镜像那一步只要点了
+   * [稍后配置，下一步] 就被打上 ✅ —— 而同一屏上那张卡片正写着「尚未在本机铺开」。
+   * **指示条与卡片矛盾时，用户信的是那个更醒目的 ✅**，于是他以为镜像备好了，
+   * 直到第一个任务卡在拉镜像上才发现。
+   *
+   * MUTATION: 把 `achieved[key] !== false` 去掉 ⇒ 第一条红。
+   */
+  it('⭐ 有判据的步：没达成就不许打 ✅，且要标成「走过没达成」', () => {
+    const image = initSteps('subscription', false, { 'preset-image': false }).find(
+      (s) => s.key === 'preset-image',
+    );
+    expect(image?.done).toBe(false);
+    expect(image?.skipped).toBe(true);
+  });
+
+  it('有判据的步达成了 ⇒ 照常 ✅', () => {
+    const image = initSteps('subscription', false, { 'preset-image': true }).find(
+      (s) => s.key === 'preset-image',
+    );
+    expect(image?.done).toBe(true);
+    expect(image?.skipped).toBe(false);
+  });
+
+  it('没判据的步（缺席）⇒ 仍按位置算 —— ⛔ 不要逼调用方为它编一个布尔值', () => {
+    const steps = initSteps('subscription', false, {});
+    expect(steps.find((s) => s.key === 'connectivity')?.done).toBe(true);
+  });
+
+  it('⛔ 还没走到的步既不是 done 也不是 skipped（混在一起就看不出跳过了什么）', () => {
+    const image = initSteps('connectivity', false, { 'preset-image': false }).find(
+      (s) => s.key === 'preset-image',
+    );
+    expect(image?.done).toBe(false);
+    expect(image?.skipped).toBe(false);
+  });
+
   it('已走过的步标 done、当前步标 current', () => {
     const steps = initSteps('preset-image', true);
     expect(steps.filter((s) => s.done).map((s) => s.key)).toEqual(['connectivity', 'proxy']);
@@ -98,6 +137,9 @@ describe('toProxyUpdate（`PUT /settings` 的三态请求体）', () => {
 });
 
 describe('Step4 资源确认', () => {
+  const noteOf = (m: ReturnType<typeof resourceConfirmModel>): string =>
+    m?.rows.find((r) => r.id === 'disk')?.noteText ?? '';
+
   it('预留 15% 只影响调度上限（分母仍是总容量，P21-8 §7）', () => {
     expect(schedulableBytes(16 * GB, 15)).toBeCloseTo(13.6 * GB, 0);
     const model = resourceConfirmModel(resources());
@@ -179,11 +221,44 @@ describe('Step4 资源确认', () => {
   });
 
   it('磁盘那行带真实构成说明（预制镜像 / rootfs 缓存 / 每 Task 副本）', () => {
-    const model = resourceConfirmModel(resources());
-    const note = model?.rows.find((r) => r.id === 'disk')?.noteText ?? '';
-    expect(note).toContain('13GB');
+    const note = noteOf(resourceConfirmModel(resources(), 'boxlite'));
+    expect(note).toContain('预制镜像');
     expect(note).toContain('rootfs');
     expect(note).toContain('工作区副本');
+  });
+
+  /**
+   * ⭐ **磁盘构成的数字必须按档说**（2026-09-09 真机发现）。
+   *
+   * ⛔ 上一版恒为「预制镜像约 13GB · boxlite 的 rootfs 缓存实测约 31GB」，而这条用例
+   * **钉的正是那个 13GB** —— 它把一个属于 aio 档的数字钉成了不变量。macOS 的默认档是
+   * boxlite（镜像铺开后约 1.3GB），差一个数量级，而这句话的全部用途就是帮人判断磁盘够不够。
+   *
+   * ⚠️ 现在钉的是**行为**（按档分岔、未知档不点数字），不是某一个字面量。
+   *
+   * MUTATION: 把 `diskCompositionFor` 改回恒定字符串 ⇒ 前两条红。
+   */
+  it('⭐ boxlite 档：说自己那一档的量级，⛔ 不许出现 aio 档的 13GB', () => {
+    const note = noteOf(resourceConfirmModel(resources(), 'boxlite'));
+    expect(note).toContain('1.3GB');
+    expect(note).not.toContain('13GB');
+  });
+
+  it('aio 档：给 13GB，且⛔ 不提「boxlite 的 rootfs 缓存」（那一档没有 boxlite）', () => {
+    const note = noteOf(resourceConfirmModel(resources(), 'aio'));
+    expect(note).toContain('13GB');
+    expect(note).not.toContain('boxlite');
+  });
+
+  it('⭐ 档位未知（providers 还没回来）⇒ 说构成不说量级，⛔ 不许挑一档当默认', () => {
+    const note = noteOf(resourceConfirmModel(resources()));
+    expect(note).toContain('预制镜像');
+    expect(note).not.toContain('GB');
+  });
+
+  it('两处用法同源：行内说明与 `diskCompositionText` 必须是同一句', () => {
+    const model = resourceConfirmModel(resources(), 'boxlite');
+    expect(model?.diskCompositionText).toBe(noteOf(model));
   });
 
   it('没有资源数据 ⇒ undefined（view 据此渲染"正在读取"，⛔ 不是 0%）', () => {

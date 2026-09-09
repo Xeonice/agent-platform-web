@@ -128,6 +128,73 @@ describe('connectivityCheckModel', () => {
    * ⚠️ 这条只管**结论句**。逐行结果里的 `target`（`api.openai.com` 之类）是后端探测到的
    * 网络目标、不是 runtime 名，照常渲染 —— 具体探到了什么由那张表自己说。
    */
+  /**
+   * ⭐ **`partial` 是两种情形，不是一种** —— 判据只是「模型 API 没有**全部**失败」。
+   *
+   * ⛔ 上一版这里是一句定值：「部分目标不可达 —— 模型 API 仍可达，Agent 可用」。
+   * 一个模型 API 挂掉、另一个还活着时**也是** partial ⇒ 那句话在屏幕上是**假的**：
+   * 用户看着 codex 的模型 API 报红，界面却告诉他「模型 API 仍可达，Agent 可用」。
+   * 2026-09-09 真机复现（用户质疑「这个怎么判断的，不太合理吧」）。
+   *
+   * MUTATION: 把 `partialText` 换回定值 ⇒ 本条红（第二个断言）。
+   */
+  it('⭐ partial：模型 API 挂了一个时，不许说「模型 API 仍可达，Agent 可用」', () => {
+    const onlyRegistry = connectivityCheckModel(
+      { rows: [openai, anthropic, down(registry)], fromHistory: false },
+      NOW,
+    ).verdictText;
+    const oneModelApi = connectivityCheckModel(
+      { rows: [down(openai), anthropic, registry], fromHistory: false },
+      NOW,
+    ).verdictText;
+
+    // 只有镜像仓库挂：可以说 Agent 可用 —— 这一半没变。
+    expect(onlyRegistry).toContain('Agent 可用');
+    expect(onlyRegistry).toContain('拉取新镜像');
+
+    // 挂的是模型 API：⛔ 不许再说「Agent 可用」，也不许说「模型 API 仍可达」。
+    expect(oneModelApi).not.toContain('Agent 可用');
+    expect(oneModelApi).not.toContain('模型 API 仍可达');
+    expect(oneModelApi).toContain('不是离线');
+    expect(oneModelApi).toContain('可能用不了');
+  });
+
+  /**
+   * ⭐ **超时 ≠ 够不着**，这一位后端一直给着（`timedOut`），是前端把两者压成了「不可达」。
+   *
+   * 实测同一台机器同一分钟内连 api.openai.com 的 TLS 握手在 **2346 / 2460 / 10245ms**
+   * 之间跳，而当时的单目标预算是 3500ms —— 判定是掷硬币，而屏幕上是一个红叉加「不可达」，
+   * 下一步还建议去配代理（配了也不解决慢）。
+   *
+   * MUTATION: `rowModel` 里去掉 `timedOut` 分支 ⇒ 本条红。
+   */
+  it('⭐ 逐行：timedOut 的那条说「未在预算内应答」，不说「不可达」', () => {
+    const timedOut: ConnectivityResultDto = { ...openai, ok: false, timedOut: true };
+    const refused: ConnectivityResultDto = { ...anthropic, ok: false };
+    const rows = connectivityCheckModel(
+      { rows: [timedOut, refused, registry], fromHistory: false },
+      NOW,
+    ).rows;
+
+    const slow = rows.find((r) => r.id === 'api.openai.com');
+    const dead = rows.find((r) => r.id === 'api.anthropic.com');
+    expect(slow?.stateText).toBe('未在预算内应答');
+    expect(slow?.timedOut).toBe(true);
+    // 镜像:另一条是真的够不着，措辞不能被一起改掉。
+    expect(dead?.stateText).toBe('不可达');
+    expect(dead?.timedOut).toBeUndefined();
+  });
+
+  /** 全部失败都是超时时，结论句也要把「这不等于连不上」说出来。 */
+  it('⭐ partial：失败全是超时 ⇒ 结论句必须带上「超时不等于连不上」', () => {
+    const text = connectivityCheckModel(
+      { rows: [{ ...openai, ok: false, timedOut: true }, anthropic, registry], fromHistory: false },
+      NOW,
+    ).verdictText;
+    expect(text).toContain('未在预算内应答');
+    expect(text).toContain('超时不等于连不上');
+  });
+
   it('三句结论都不点名具体 runtime（开放注册表：点名的那句在第三方 runtime 上是错的）', () => {
     const texts = [
       connectivityCheckModel({ rows: [openai, anthropic, registry], fromHistory: false }, NOW),

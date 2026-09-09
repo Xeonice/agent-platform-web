@@ -6,9 +6,10 @@
 //     建议，**仍可继续**（P21-8 §2）。把它做成 disabled 会让一台小机器根本装不起来，
 //     而产品明确说了它只是提醒。
 //
-//  ② **磁盘按真实构成说，不能只报总量**（P21-8 §2，2026-08 实测）：预制镜像约 13GB、
-//     boxlite 的 rootfs 缓存实测 31GB、每个 Task 还有一份工作区副本。「磁盘 200G ✅」
-//     会让人以为宽裕，而这三项是持续增长的。
+//  ② **磁盘按真实构成说，不能只报总量**（P21-8 §2，2026-08 实测）：预制镜像 + 运行时的
+//     rootfs 缓存 + 每个 Task 一份工作区副本。「磁盘 200G ✅」会让人以为宽裕，而这三项
+//     是持续增长的。⚠️ **量级按档说**，见 `diskCompositionFor` —— 13GB 是 aio 档的数字，
+//     照它去判 boxlite 档的磁盘会差一个数量级。
 //     ⇒ 判定用 **`availableBytes`（可用）** 而不是 `totalBytes`：一块 926GB、已用 96.8% 的
 //     盘只剩 29GB，报「926 GB ✅」正是文档点名要避免的那种谎。两个数都显示出来。
 //
@@ -41,7 +42,8 @@ const STEP_LABEL: Readonly<Record<InitStepKey, string>> = {
   connectivity: '出网检测',
   proxy: '代理配置',
   // ⚠️ 镜像排在资源之前是刻意的（P21-8 §2）：它依赖出网/代理（要拉镜像），而它的体积
-  //    （约 13GB）又是资源池那一步的主要输入 —— 顺序反过来，磁盘评估就少算了最大的一块。
+  //    又是资源池那一步的主要输入 —— 顺序反过来，磁盘评估就少算了最大的一块。
+  //    ⚠️ 别在这里写体积数字：它按档差一个数量级（`diskCompositionFor`）。
   'preset-image': '沙箱镜像',
   // ⚠️ 订阅排在镜像之后、资源之前是刻意的（P21-8 §2）：它是整个向导里**唯一需要用户
   //    离开这个页面去别处操作**的一步。放在平台能自己搞定的事全部落定之后 —— 否则用户
@@ -55,18 +57,37 @@ const STEP_LABEL: Readonly<Record<InitStepKey, string>> = {
  * Step2 只在**检测有失败项**时进入流程（P21-8 §2「检测失败时展开，否则可跳过」）。
  * `proxyActive` 为 false 时它仍然显示在指示条上（用户要看得到总共几步），但标成"可跳过"。
  */
-export function initSteps(current: InitStepKey, proxyActive: boolean): InitStepModel[] {
+export function initSteps(
+  current: InitStepKey,
+  proxyActive: boolean,
+  /**
+   * 每一步**自己的目标达成了没有**。缺席 = 这一步没有可判定的目标（如资源确认，
+   * 走到就是走完），按位置算。
+   *
+   * ⚠️ **不要把它做成"必填"**：那会逼调用方为没有目标的步编一个布尔值，而编出来的
+   * 那个值迟早变成第二份判定。
+   */
+  achieved: Partial<Record<InitStepKey, boolean>> = {},
+): InitStepModel[] {
   const currentIndex = STEP_ORDER.indexOf(current);
-  return STEP_ORDER.map((key, i) => ({
-    key,
-    ordinal: i + 1,
-    label: STEP_LABEL[key],
-    active: key === 'proxy' ? proxyActive : true,
+  return STEP_ORDER.map((key, i) => {
+    const visited = i < currentIndex;
     // ⚠️ **被跳过的步不打 ✅**（实测发现的）：出网全通过时代理那一步根本没被走到，
     //    给它一个「✅ 已完成」是句小谎——用户会以为自己配过代理了。
-    done: i < currentIndex && (key !== 'proxy' || proxyActive),
-    current: key === current,
-  }));
+    const inFlow = key !== 'proxy' || proxyActive;
+    // ⛔ **走过 ≠ 达成**（2026-09-09 真机发现）：镜像那一步只要点了 [稍后配置，下一步]
+    //    就会被标 ✅，而它的卡片同一屏上写着「尚未在本机铺开」。⇒ 有判据的步要看判据。
+    const done = visited && inFlow && achieved[key] !== false;
+    return {
+      key,
+      ordinal: i + 1,
+      label: STEP_LABEL[key],
+      active: key === 'proxy' ? proxyActive : true,
+      done,
+      skipped: visited && inFlow && !done,
+      current: key === current,
+    };
+  });
 }
 
 /** 下一步是谁。⚠️ 出网全通过时**跳过代理**（否则每台正常机器都要多点一次"跳过"）。 */
@@ -139,13 +160,39 @@ export function schedulableBytes(totalBytes: number, reservedPercent: number): n
   return totalBytes * (1 - reservedPercent / 100);
 }
 
-const DISK_COMPOSITION_TEXT =
-  '磁盘会被三样东西持续吃掉：预制镜像约 13GB · boxlite 的 rootfs 缓存实测约 31GB · 每个 Task 一份工作区副本。所以这里看的是**可用容量**，不是总量。';
+/**
+ * 磁盘构成那句 —— **按档说，别拿另一档的数字吓人**（2026-09-09 真机发现）。
+ *
+ * ⛔ 上一版恒为「预制镜像约 13GB · boxlite 的 rootfs 缓存实测约 31GB」。两半都会错：
+ *   · **13GB 是 aio 档**（本地 build 产物）的体积。macOS 默认档是 boxlite，它的镜像
+ *     铺开后约 1.3GB —— 差一个数量级，而这句话的**全部用途**就是帮人判断磁盘够不够。
+ *   · **「boxlite 的 rootfs 缓存」在 aio 档上根本不存在** —— 那一档没有 boxlite。
+ *
+ * ⚠️ 这与 `presetImageChain.ts` 的「⛔ 不要在这里重复一个体积/耗时数字」、后端
+ * `preset-image.check.ts` 的 `firstRunCost` / `stageHint` 是**同一条纪律**。本处是最后一个
+ * 漏网的 —— 讽刺的是那两处都在自己的注释里点名警告过这个数字。
+ *
+ * ⚠️ **档位未知时不点数字**（providers 还没回来 / 后端没给 `isDefault`）：说构成不说量级。
+ * ⛔ 不许随便挑一档当默认 —— 挑错的那一半就是今天这个 bug。
+ */
+export function diskCompositionFor(tier: string | undefined): string {
+  const tail = '所以这里看的是**可用容量**，不是总量。';
+  if (tier === 'boxlite') {
+    return `磁盘会被三样东西持续吃掉：预制镜像铺开后约 1.3GB（压缩 0.3GB）· boxlite 的 rootfs 缓存实测约 31GB · 每个 Task 一份工作区副本。${tail}`;
+  }
+  if (tier === undefined) {
+    return `磁盘会被三样东西持续吃掉：预制镜像 · 运行时的 rootfs 缓存 · 每个 Task 一份工作区副本。${tail}`;
+  }
+  return `磁盘会被三样东西持续吃掉：预制镜像约 13GB · 运行时的 rootfs 缓存 · 每个 Task 一份工作区副本。${tail}`;
+}
 
 export function resourceConfirmModel(
   dto: SystemResourcesDto | undefined,
+  /** 当前默认档（`GET /api/providers` 里 `isDefault` 的那项）。缺席 ⇒ 不点数字。 */
+  tier?: string,
 ): ResourceConfirmModel | undefined {
   if (dto === undefined) return undefined;
+  const diskComposition = diskCompositionFor(tier);
 
   const cpuLow = dto.cpu.cores < LOW_CPU_CORES;
   const ramLow = dto.ram.totalBytes < LOW_RAM_BYTES;
@@ -173,7 +220,7 @@ export function resourceConfirmModel(
       valueText: `可用 ${formatBytes(dto.disk.availableBytes)} / 总 ${formatBytes(dto.disk.totalBytes)}（已用 ${String(dto.disk.usedPercent)}%，${dto.disk.path}）`,
       level: dto.disk.level,
       low: diskLow,
-      noteText: DISK_COMPOSITION_TEXT,
+      noteText: diskComposition,
     },
   ];
 
@@ -202,6 +249,6 @@ export function resourceConfirmModel(
       `内存可调度上限 ${formatBytes(schedulableBytes(dto.ram.totalBytes, dto.disk.reservedPercent))}、` +
       `磁盘 ${formatBytes(schedulableBytes(dto.disk.totalBytes, dto.disk.reservedPercent))} —— ` +
       `磁盘还要与当前可用的 ${formatBytes(dto.disk.availableBytes)} 取小。`,
-    diskCompositionText: DISK_COMPOSITION_TEXT,
+    diskCompositionText: diskComposition,
   };
 }

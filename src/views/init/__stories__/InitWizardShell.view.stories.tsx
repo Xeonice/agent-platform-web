@@ -21,7 +21,10 @@ function steps(current: InitStepKey, proxyActive: boolean): InitStepModel[] {
     ordinal: i + 1,
     label: LABEL[key],
     active: key === 'proxy' ? proxyActive : true,
+    // ⚠️ 这份手搭 model 跟着 `initSteps` 的语义走：done = **达成**，skipped = 走过没达成。
+    //    story 只演渲染，不演判定 —— 判定的用例在 `lib/system/__tests__/initWizardModel.test.ts`。
     done: i < currentIndex,
+    skipped: false,
     current: key === current,
   }));
 }
