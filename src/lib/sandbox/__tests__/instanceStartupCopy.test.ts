@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatElapsed, instanceSubCopy } from '@/lib/sandbox/instanceStartupCopy';
+import { formatElapsed, instanceSubCopy, startupSubtitle } from '@/lib/sandbox/instanceStartupCopy';
 
 describe('instanceSubCopy —— 起实例那一步的子文案（10 §7.4）', () => {
   it('imageStaged:false ⇒ 说出原因，并明写"不是卡死"', () => {
@@ -62,5 +62,46 @@ describe('formatElapsed —— 前端自算的「已等待」', () => {
   it('负数与 NaN 归 0 —— 时钟回拨不该渲染成 `-1:-3`', () => {
     expect(formatElapsed(-5_000)).toBe('0:00');
     expect(formatElapsed(Number.NaN)).toBe('0:00');
+  });
+});
+
+/**
+ * ⭐ **进度卡的副标题**（2026-09-10，用户：「启动任务的提示文案应该要改」）。
+ *
+ * ⛔ 它此前写死在 view 里：「首次启动需拉取镜像，可能耗时较长，请稍候」——**恒定**，
+ * 不看 `imageStaged`。镜像自本轮起由向导第 3 步预先铺好，那句于是在多数机器上是假的；
+ * 更糟的是它与同一张卡下面那行子文案**直接打架**：
+ *
+ *     标题：首次启动需拉取镜像，**可能耗时较长**
+ *     格子：**镜像已在本机**，正在拉起实例…
+ *
+ * ⚠️ 同一个病的第三次发作（前两次：`STEP_ACTION.staged`、`STAGE_LABEL.register`）：
+ * **view 里写死一句话，而下面已经有一个按情况说的分支**。
+ *
+ * MUTATION: 把 `startupSubtitle` 改回恒定返回那句 ⇒ 后两条红。
+ */
+describe('★ startupSubtitle —— 只有确实要拉镜像时才说「耗时较长」', () => {
+  it('⭐ imageStaged=false ⇒ 说清楚为什么久，并给出「之后每次都是几秒」', () => {
+    const s = startupSubtitle({ phase: 'starting', imageStaged: false });
+    expect(s).toContain('要先把它拉到本机');
+    expect(s).toContain('之后每次');
+  });
+
+  it('⭐ imageStaged=true ⇒ 不出这一行（⛔ 不许再说「可能耗时较长」）', () => {
+    expect(startupSubtitle({ phase: 'starting', imageStaged: true })).toBeUndefined();
+  });
+
+  it('⭐ provider 说不出（undefined）⇒ 也不出这一行 —— 「不知道为什么慢」不是「因为要拉镜像」', () => {
+    expect(startupSubtitle({ phase: 'starting' })).toBeUndefined();
+  });
+
+  it('没有进度信息 ⇒ 不出这一行', () => {
+    expect(startupSubtitle(undefined)).toBeUndefined();
+  });
+
+  it('⛔ 与格子子文案不重复：true 那一档由 instanceSubCopy 说，副标题保持沉默', () => {
+    const progress = { phase: 'starting', imageStaged: true } as const;
+    expect(instanceSubCopy(progress)).toContain('镜像已在本机');
+    expect(startupSubtitle(progress)).toBeUndefined();
   });
 });

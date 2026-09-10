@@ -11,7 +11,7 @@ import {
   type StartupPhaseKey,
 } from '@/lib/sandbox/sandboxLifecycle';
 import { installSubCopy } from '@/lib/sandbox/runtimeInstallProgress';
-import { formatElapsed, instanceSubCopy } from '@/lib/sandbox/instanceStartupCopy';
+import { formatElapsed, instanceSubCopy, startupSubtitle } from '@/lib/sandbox/instanceStartupCopy';
 import {
   describeSandboxError,
   SANDBOX_ENDED_COPY,
@@ -35,6 +35,15 @@ export interface SandboxLifecycle {
    * 此刻已经是过去时。undefined = 本次没有子文案。
    */
   phaseNote?: { phaseKey: StartupPhaseKey; text: string };
+  /**
+   * 进度卡标题下那句副标题。**undefined = 那一行不渲染**。
+   *
+   * ⛔ 它此前写死在 view 里（「首次启动需拉取镜像，可能耗时较长，请稍候」），**恒定**。
+   * 镜像自 2026-09-10 起由向导第 3 步预先铺好，那句于是在多数机器上是假的，而且与
+   * 同一张卡下面 `phaseNote` 的「镜像已在本机」直接打架。⇒ 与 `phaseNote` **同源**
+   * （都从这一份 `instance_progress` 派生），判定在 `startupSubtitle`。
+   */
+  subtitle?: string;
   /**
    * 当前启动阶段的「已等待」显示串（`3:10`）。**完全由前端算**：锚点是本页收到那条
    * `status_changed` 的时刻（store 的 `observedAt`），后端不推任何耗时字段。
@@ -92,11 +101,14 @@ export function useSandboxLifecycle(sandboxId: string | null): SandboxLifecycle 
   }, [ticking, observedAt]);
 
   return useMemo(() => {
+    const instanceProgress =
+      instancePhase === undefined ? undefined : { phase: instancePhase, imageStaged };
+    // ⚠️ 副标题与格子子文案**吃同一份进度**，于是两者不会各自演化出矛盾的说法
+    //    —— 那正是副标题被写死在 view 里时发生的事。
+    const subtitle = startupSubtitle(instanceProgress);
     const note =
       installStatus === undefined || installRuntime === undefined
-        ? instanceSubCopy(
-            instancePhase === undefined ? undefined : { phase: instancePhase, imageStaged },
-          )
+        ? instanceSubCopy(instanceProgress)
         : installSubCopy({
             runtime: installRuntime,
             status: installStatus,
@@ -112,6 +124,7 @@ export function useSandboxLifecycle(sandboxId: string | null): SandboxLifecycle 
       // 两个来源的子文案都永远挂「启动实例」格——起实例/装 CLI/注凭证/起 agent 会话
       // 全在 starting 段内（03 §4.3）。
       ...(note === undefined ? {} : { phaseNote: { phaseKey: INSTANCE_PHASE_KEY, text: note } }),
+      ...(subtitle === undefined ? {} : { subtitle }),
       // `ticking` 已经蕴含 observedAt 有值（它就是由这个条件构成的）——再判一次会被
       // `no-unnecessary-condition` 判死，也确实是一句永远为真的话。
       ...(ticking ? { elapsedLabel: formatElapsed(now - observedAt) } : {}),

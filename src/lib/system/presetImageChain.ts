@@ -65,6 +65,7 @@ const STEP_ACTION: Readonly<Record<PresetImageStep, string>> = {
   //    还多。2026-09-07 实测：这句话就渲染在后端那句**按档给出的正确耗时**正下方，
   //    同屏两个数字互相打架。⇒ 耗时由后端 `summary` 说（它知道是哪一档），这里只说
   //    「不用做任何事」。
+  // ⚠️ **这句只属于「平台搬不了」那种机器**（2026-09-10 收窄）：平台能自己铺时它是假话。
   staged: '不需要任何操作：第一个任务会自动把镜像铺开（耗时见上一行），之后每次 3–4 秒。',
 };
 
@@ -143,7 +144,11 @@ export function presetImageChainModel(input: PresetImageChainInput): PresetImage
       //    而 `STEP_ACTION.staged` 那句「第一个任务会自动把镜像铺开，需要数分钟」照样渲染出来
       //    —— 一条与它上面那句「已在本机铺开，可以立即发起任务」直接打架的预期管理。
       //    `action` 回答的是"接下来要做什么"，而这一步已经没有接下来了。
-      ...(reportedState === 'pass' ? {} : { action: STEP_ACTION[step] }),
+      // ⚠️ **能自己搬时同样不给 action**（2026-09-10 补的第二半）：那时 `offer.why` 已经
+      //    说了「平台自己拉一次即可，不必等到第一个任务」，而写死的那句说的是「不需要任何
+      //    操作，第一个任务会自动铺开」—— 同屏两句互相否定（真机截图逮到）。这与紧邻下面
+      //    那条「能自己搬时不再给命令」是同一条纪律：**平台能做的时候，别再教用户等**。
+      ...(reportedState === 'pass' || offer !== undefined ? {} : { action: STEP_ACTION[step] }),
       ...(fix === undefined ? {} : { fixCommand: fix }),
       ...(offer === undefined ? {} : { provision: offer }),
       ...(frame.errorCode === undefined ? {} : { errorCode: frame.errorCode }),
@@ -158,6 +163,32 @@ export function presetImageChainModel(input: PresetImageChainInput): PresetImage
     ready,
     ...(ready ? {} : { blockedText: BLOCKED_TEXT }),
   };
+}
+
+/**
+ * **进第 3 步就自己开始铺** —— 判定抽成纯函数（2026-09-10，用户裁决）。
+ *
+ * ⛔ 上一版只给一个 [准备镜像] 按钮。按钮不点，铺开照样被后置到第一个任务 —— 而那正是
+ * 用户明确否掉的形态：等待落在「写完指令点了发起」之后（实测这台机器 273 KB/s、
+ * boxlite 那张压缩后 320MB ⇒ 约 20 分钟），且那时它跑在 provision workflow 里，
+ * 失败是一个**失败的 Task**，不是一个能重试的向导步。
+ *
+ * ⚠️ **判据必须同时满足三条**，少一条就会在错的时候开始拉几百 MB：
+ *   ① 这一轮**真的有结论**（`phase === 'done'`）—— ⛔ 不在 `running`/`idle` 上抢跑；
+ *   ② 走到的那一步是 `staged` 且**没过**（过了就没什么可铺的）；
+ *   ③ 后端说**平台自己搬得了**（那一步带着 `provision` 计划）。
+ *
+ * ⚠️ 它**不阻塞**：向导照常可以 [稍后配置，下一步]（§7A ③ 那条不变）。
+ */
+export function autoStageOffer(
+  model: PresetImageChainModel,
+): PresetImageProvisionOffer | undefined {
+  if (model.phase !== 'done') return undefined;
+  const staged = model.steps.find((s) => s.step === 'staged');
+  if (staged === undefined || staged.state === 'pass' || staged.state === 'pending') {
+    return undefined;
+  }
+  return staged.provision;
 }
 
 /**

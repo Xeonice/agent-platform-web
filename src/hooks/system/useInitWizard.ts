@@ -56,7 +56,7 @@ import {
   connectivityCheckModel,
   connectivityFromDiagnoseDetail,
 } from '@/lib/system/connectivityVerdict';
-import { presetImageChainModel } from '@/lib/system/presetImageChain';
+import { autoStageOffer, presetImageChainModel } from '@/lib/system/presetImageChain';
 import {
   initSteps,
   nextStep,
@@ -124,6 +124,13 @@ export interface UseInitWizardResult {
   acknowledgeOffline: () => void;
 
   presetImage: PresetImageChainModel;
+  /**
+   * 这一轮的结论是「平台自己就能把镜像铺开」吗 —— container 据它决定要不要**自动开始**。
+   *
+   * ⚠️ 判定住在 `lib/system/presetImageChain.ts#autoStageOffer`（纯函数、单测钉着）；
+   * 这里只是把它交出去，⛔ 不在 container 里重算一遍那三条判据。
+   */
+  autoStage: boolean;
 
   /** Step4 订阅配置。`undefined` = runtime 列表还没到。 */
   subscription: SubscriptionStepModel | undefined;
@@ -495,6 +502,7 @@ export function useInitWizard(): UseInitWizardResult {
     }, []),
 
     presetImage,
+    autoStage: autoStageOffer(presetImage) !== undefined,
 
     subscription,
     subscriptionError: runtimes.isError,

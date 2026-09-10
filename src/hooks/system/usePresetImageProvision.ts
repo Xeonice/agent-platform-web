@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { provisionPresetImage } from '@/services/api/system.service';
 import type { ProvisionStageFrame } from '@/types/sse-protocol';
 
@@ -15,7 +15,11 @@ const STAGE_LABEL: Readonly<Record<ProvisionStageFrame['stage'], string>> = {
   fetch: '取资产',
   verify: '校验 sha256',
   load: '装载镜像',
-  register: '推送到 registry',
+  // ⚠️ **不写死终点**（2026-09-10）：这一步在 `local-docker`/`release-asset` 那几条路上
+  //    是 push 到 registry，而在 `provider-stage` 那条上是 provider 自己拉进本机镜像库
+  //    ——⛔ 一个「推送到 registry」会把后者说成一件它没做的事。终点由后端那句 message 说
+  //    （它带着 `plan.to`），这里只给一个不预设去向的阶段名。
+  register: '铺到位',
 };
 
 export interface UsePresetImageProvisionResult {
@@ -26,11 +30,25 @@ export interface UsePresetImageProvisionResult {
   start: () => void;
 }
 
-export function usePresetImageProvision(onFinished: () => void): UsePresetImageProvisionResult {
+export function usePresetImageProvision(
+  onFinished: () => void,
+  /**
+   * **进第 3 步且平台自己搬得了 ⇒ 自己开始**（`autoStageOffer`，用户 2026-09-10 裁决）。
+   *
+   * ⚠️ **只自动开一次**，靠 `autoStartedRef`。三个必须挡住的重开：
+   *   ① 组件重渲染 —— 依赖变了 effect 会再跑；
+   *   ② **搬失败之后** —— 自动重试一个几百 MB 的下载是在替用户做一个他没同意的决定，
+   *      失败时该做的是把失败在哪一步说清楚，让他自己点 [准备镜像]；
+   *   ③ 用户点了 [稍后配置，下一步] 又 [上一步] 回来 —— 那时若还没铺完，本来就还在跑。
+   */
+  autoStart = false,
+): UsePresetImageProvisionResult {
   const [isProvisioning, setProvisioning] = useState(false);
   const [statusText, setStatusText] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
+  /** 自动只开一次。⛔ 不是 state：它不该触发重渲染，也不该被重置。 */
+  const autoStartedRef = useRef(false);
 
   const start = useCallback(() => {
     // ⚠️ 掐掉上一条流（连点）—— 与诊断同一条重入保护。⛔ 后端也有并发闸，但那会返 409；
@@ -71,6 +89,16 @@ export function usePresetImageProvision(onFinished: () => void): UsePresetImageP
       setError(e instanceof Error ? e.message : '搬运失败');
     });
   }, [onFinished]);
+
+  // ⚠️ **effect 里只做「够不够条件」这一个判断**，判定本身在 `autoStageOffer`（纯函数、
+  //    有自己的用例）。⛔ 不要把 `phase`/`state`/`provision` 那三条揉进这里：那会让
+  //    「什么时候该自动开始」变成一段没人能单测的 effect。
+  useEffect(() => {
+    if (!autoStart) return;
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    start();
+  }, [autoStart, start]);
 
   return { isProvisioning, statusText, error, start };
 }
