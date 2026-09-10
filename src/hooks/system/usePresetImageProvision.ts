@@ -15,7 +15,11 @@ const STAGE_LABEL: Readonly<Record<ProvisionStageFrame['stage'], string>> = {
   fetch: '取资产',
   verify: '校验 sha256',
   load: '装载镜像',
-  register: '推送到 registry',
+  // ⚠️ **不写死终点**（2026-09-10）：这一步在 `local-docker`/`release-asset` 那几条路上
+  //    是 push 到 registry，而在 `provider-stage` 那条上是 provider 自己拉进本机镜像库
+  //    ——⛔ 一个「推送到 registry」会把后者说成一件它没做的事。终点由后端那句 message 说
+  //    （它带着 `plan.to`），这里只给一个不预设去向的阶段名。
+  register: '铺到位',
 };
 
 export interface UsePresetImageProvisionResult {

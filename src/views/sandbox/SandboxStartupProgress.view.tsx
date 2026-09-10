@@ -14,6 +14,15 @@ export interface SandboxStartupProgressProps {
   percent: number;
   /** 原始 status 文案（诊断用，可选）。 */
   statusLabel?: string;
+  /**
+   * 标题下那句副标题。**缺席就整行不渲染** —— ⛔ 视图不许兜底成任何一句话。
+   *
+   * ⛔ 这里此前写死着「首次启动需拉取镜像，可能耗时较长，请稍候」。镜像自 2026-09-10
+   * 起由向导第 3 步预先铺好，那句于是在多数机器上是假的，而且与同一张卡下面那行
+   * 「镜像已在本机」直接打架。⇒ 由 `lib/sandbox/instanceStartupCopy#startupSubtitle`
+   * 按 `imageStaged` 决定说不说、说什么。
+   */
+  subtitle?: string;
   /** 后端派生的默认任务名（10 §7.3 SandboxDto.name）；前端不自己派生。 */
   taskName?: string;
   /**
@@ -38,20 +47,26 @@ export function SandboxStartupProgressView({
   activeIndex,
   percent,
   statusLabel,
+  subtitle,
   taskName,
   phaseNote,
   activeElapsedLabel,
 }: SandboxStartupProgressProps) {
+  // ⚠️ 两者都缺席时整行不渲染 —— ⛔ 不要留一个空的 `<p>`，它会在标题下留一道空隙。
+  const hasStatus = statusLabel !== undefined && statusLabel !== '';
+  const hasSubtitle = subtitle !== undefined && subtitle !== '';
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 p-6 text-center">
       <div>
         <h2 className="text-lg font-semibold">
           {taskName !== undefined && taskName !== '' ? `正在启动：${taskName}` : '正在启动沙箱…'}
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          首次启动需拉取镜像，可能耗时较长，请稍候
-          {statusLabel !== undefined && statusLabel !== '' ? `（${statusLabel}）` : ''}
-        </p>
+        {hasSubtitle || hasStatus ? (
+          <p className="mt-1 text-sm text-muted-foreground">
+            {hasSubtitle ? subtitle : ''}
+            {hasStatus ? `（${statusLabel}）` : ''}
+          </p>
+        ) : null}
       </div>
 
       <div className="w-full max-w-sm" role="status" aria-live="polite">

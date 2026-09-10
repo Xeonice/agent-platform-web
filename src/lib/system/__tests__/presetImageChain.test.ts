@@ -236,3 +236,50 @@ describe('★ autoStageOffer —— 什么时候该自己开始铺', () => {
     expect(autoStageOffer(m)).toBeUndefined();
   });
 });
+
+/**
+ * ⭐ **平台能自己搬时，不许再渲染「等第一个任务」那句**（2026-09-10 真机截图逮到）。
+ *
+ * ⛔ 屏幕上同时出现过这两句，直接互相否定：
+ *   · `action`（前端写死）：「不需要任何操作：第一个任务会自动把镜像铺开」
+ *   · `offer.why`（后端）：「平台自己拉一次即可，**不必等到第一个任务**」
+ *
+ * ⚠️ 这是同一个病的**第二次发作** —— 第一次是写死耗时数字与后端按档给的打架
+ * （文件里那条注释记着）。根子一样：**前端写死一句后端已经能分情况说的话**。
+ *
+ * MUTATION: 把 `offer !== undefined` 从 action 判据里去掉 ⇒ 第一条红。
+ */
+describe('★ 能自己搬时不给写死的 action', () => {
+  const frame = (provision: unknown): DiagnoseCheckFrame => ({
+    event: 'check',
+    id: 'preset-image',
+    label: '预制镜像就绪',
+    status: 'info',
+    step: 'staged',
+    summary: '预制镜像已就绪，但尚未在本机铺开',
+    durationMs: 1,
+    ...(provision === undefined ? {} : { detail: { provision } }),
+  });
+
+  it('⭐ 有 provision 计划 ⇒ 第 5 步不带 action（由 offer.why 唯一说话）', () => {
+    const m = presetImageChainModel({
+      phase: 'done',
+      frame: frame({
+        provisionable: true,
+        from: 'ghcr.io/x/y:latest',
+        to: '本机 provider 镜像库',
+        sizeBytes: null,
+        why: '平台自己拉一次即可',
+      }),
+    });
+    const staged = m.steps.find((s) => s.step === 'staged');
+    expect(staged?.provision).toBeDefined();
+    expect(staged?.action).toBeUndefined();
+  });
+
+  it('搬不了时才给那句「等第一个任务」—— ⛔ 那条分支不许被顺手删掉', () => {
+    const m = presetImageChainModel({ phase: 'done', frame: frame(undefined) });
+    const staged = m.steps.find((s) => s.step === 'staged');
+    expect(staged?.action).toContain('第一个任务');
+  });
+});

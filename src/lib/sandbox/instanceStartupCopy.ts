@@ -48,6 +48,31 @@ export function instanceSubCopy(progress: InstanceStartupProgress | undefined): 
 }
 
 /**
+ * 进度卡**标题下那句副标题**。返回 undefined = 不渲染这一行。
+ *
+ * ⛔ 它此前是写死在 view 里的一句「首次启动需拉取镜像，可能耗时较长，请稍候」——
+ * **恒定**，不看 `imageStaged`。2026-09-10 起镜像由向导第 3 步预先铺好，那句话于是
+ * 在多数机器上是假的；更糟的是它和同一张卡下面那行子文案**直接打架**：
+ *
+ *     标题：首次启动需拉取镜像，**可能耗时较长**
+ *     格子：**镜像已在本机**，正在拉起实例…
+ *
+ * ⚠️ 这是同一个病的第三次发作（前两次：`STEP_ACTION.staged`、`STAGE_LABEL.register`）——
+ * **view 里写死一句话，而下面已经有一个按情况说的分支**。根子都一样：写死的那句必然
+ * 在某一档上是错的。
+ *
+ * ⇒ 规则很简单：**只有确实要拉镜像时才说"可能耗时较长"**，其余情况这一行不出现
+ * （`true` 与 `undefined` 都不出现）——因为该说的话格子下面那行已经说了，
+ * 在这里再说一遍要么重复、要么迟早分叉。⛔ 没话说的时候就别说。
+ */
+export function startupSubtitle(progress: InstanceStartupProgress | undefined): string | undefined {
+  // ⚠️ `undefined`（provider 说不出）与 `true` 一样不出这句 —— 「不知道为什么慢」
+  //    不能拿去当「因为要拉镜像所以慢」的理由（同 `instanceSubCopy` 的三态纪律）。
+  if (progress?.imageStaged !== false) return undefined;
+  return '首次使用这个镜像，要先把它拉到本机 —— 这一步最久，之后每次启动都是几秒';
+}
+
+/**
  * 「已等待」的显示形态：`m:ss`，超过一小时给 `h:mm:ss`。
  *
  * ⚠️ 这个数字**由前端自己算**，后端一个字节都不推：浏览器知道自己是哪一刻收到
