@@ -161,6 +161,32 @@ export function presetImageChainModel(input: PresetImageChainInput): PresetImage
 }
 
 /**
+ * **进第 3 步就自己开始铺** —— 判定抽成纯函数（2026-09-10，用户裁决）。
+ *
+ * ⛔ 上一版只给一个 [准备镜像] 按钮。按钮不点，铺开照样被后置到第一个任务 —— 而那正是
+ * 用户明确否掉的形态：等待落在「写完指令点了发起」之后（实测这台机器 273 KB/s、
+ * boxlite 那张压缩后 320MB ⇒ 约 20 分钟），且那时它跑在 provision workflow 里，
+ * 失败是一个**失败的 Task**，不是一个能重试的向导步。
+ *
+ * ⚠️ **判据必须同时满足三条**，少一条就会在错的时候开始拉几百 MB：
+ *   ① 这一轮**真的有结论**（`phase === 'done'`）—— ⛔ 不在 `running`/`idle` 上抢跑；
+ *   ② 走到的那一步是 `staged` 且**没过**（过了就没什么可铺的）；
+ *   ③ 后端说**平台自己搬得了**（那一步带着 `provision` 计划）。
+ *
+ * ⚠️ 它**不阻塞**：向导照常可以 [稍后配置，下一步]（§7A ③ 那条不变）。
+ */
+export function autoStageOffer(
+  model: PresetImageChainModel,
+): PresetImageProvisionOffer | undefined {
+  if (model.phase !== 'done') return undefined;
+  const staged = model.steps.find((s) => s.step === 'staged');
+  if (staged === undefined || staged.state === 'pass' || staged.state === 'pending') {
+    return undefined;
+  }
+  return staged.provision;
+}
+
+/**
  * 后端在 `detail.provision` 里带回来的搬运计划 → [准备镜像] 按钮要显示的东西。
  *
  * ⚠️ **`provisionable !== true` 一律返 undefined**，包括字段整个缺席（老后端）与

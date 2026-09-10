@@ -28,7 +28,10 @@ export function InitWizardContainer() {
   const w = useInitWizard();
   // ⚠️ 搬完之后**重跑检查链**，而不是由 hook 自行宣布就绪 —— 结论的唯一出处是诊断第 ⑧ 项。
   //    两个真相源会打架：hook 说成功了、检查链仍是红的，用户不知道该信谁。
-  const provision = usePresetImageProvision(w.recheck);
+  // ⚠️ **进第 3 步且平台自己搬得了 ⇒ 不等用户点，自己开始**（用户 2026-09-10 裁决）。
+  //    只给按钮的话，按钮不点铺开照样被后置到第一个任务 —— 那正是被否掉的形态。
+  //    判定在纯函数 `autoStageOffer` 里（container 够不着 lib，经 `w` 交出来）。
+  const provision = usePresetImageProvision(w.recheck, w.step === 'preset-image' && w.autoStage);
   const [expandedRuntime, setExpandedRuntime] = useState<string | undefined>(undefined);
 
   // 与 F21-5 诊断项的 [复制] 同一套（§5）。

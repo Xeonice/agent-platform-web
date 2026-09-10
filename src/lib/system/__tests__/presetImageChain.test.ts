@@ -5,8 +5,9 @@
 //      从 ℹ️ 变 ⚠️，其余一切照常，所以肉眼与其它用例都发现不了）；
 //    · 「五步的下一步动作两两不同」——把 `STEP_ACTION` 抽成一句通用文案时它红，
 //      而那正是「合成一个红灯」这件事在代码里的样子。
+import type { PresetImageChainModel, PresetImageProvisionOffer } from '@/types/init';
 import { describe, it, expect } from 'vitest';
-import { presetImageChainModel } from '@/lib/system/presetImageChain';
+import { presetImageChainModel, autoStageOffer } from '@/lib/system/presetImageChain';
 import type { DiagnoseCheckFrame } from '@/types/sse-protocol';
 
 function frame(over: Partial<DiagnoseCheckFrame>): DiagnoseCheckFrame {
@@ -176,5 +177,62 @@ describe('未就绪时那句「放行了但功能不可用」', () => {
     expect(model.blockedText).toContain('无法发起任何任务');
     // 同时要说清"能做什么"，否则用户以为整个平台都装坏了。
     expect(model.blockedText).toContain('项目能建');
+  });
+});
+
+/**
+ * ⭐ **自动开始的三条判据**（2026-09-10，用户裁决「进第 3 步就自己铺」）。
+ *
+ * ⛔ 少任何一条，都会在错的时候开始拉几百 MB：在 `running` 上抢跑、在已经铺好的机器上
+ * 白拉一次、或者在平台根本搬不了的机器上开一条必然失败的流。
+ *
+ * MUTATION: 去掉 `phase !== 'done'` 那道闸 ⇒ 「running 时不抢跑」那条红。
+ */
+describe('★ autoStageOffer —— 什么时候该自己开始铺', () => {
+  const offer: PresetImageProvisionOffer = {
+    from: 'ghcr.io/x/y:latest',
+    to: '本机 provider 镜像库',
+    sizeBytes: null,
+    why: '够得着，只是还没铺进本机的 provider 镜像库',
+  };
+  // ⚠️ 显式标注而不是断言：断言会让「模型少了一个字段」这种改动在这里悄悄通过
+  //    （仓库的 `no-unsafe-type-assertion` 正是为这个立的）。
+  const staged = (over: Partial<PresetImageChainModel> = {}): PresetImageChainModel => ({
+    phase: 'done',
+    ready: true,
+    steps: [
+      { step: 'config', ordinal: 1, state: 'pass', label: '' },
+      { step: 'registry', ordinal: 2, state: 'pass', label: '' },
+      { step: 'lineage', ordinal: 3, state: 'pass', label: '' },
+      { step: 'registration', ordinal: 4, state: 'pass', label: '' },
+      { step: 'staged', ordinal: 5, state: 'info', label: '', provision: offer },
+    ],
+    ...over,
+  });
+
+  it('⭐ 有结论 + 第 5 步没过 + 平台搬得了 ⇒ 开始', () => {
+    expect(autoStageOffer(staged())).toEqual(offer);
+  });
+
+  it('⛔ 这一轮还在跑 ⇒ 不抢跑（结论没出来，判据都还不成立）', () => {
+    expect(autoStageOffer(staged({ phase: 'running' }))).toBeUndefined();
+  });
+
+  it('⛔ 已经铺好了 ⇒ 不白拉一次', () => {
+    const m = staged();
+    m.steps[4]!.state = 'pass';
+    expect(autoStageOffer(m)).toBeUndefined();
+  });
+
+  it('⛔ 平台搬不了（没有 provision 计划）⇒ 不开一条必然失败的流', () => {
+    const m = staged();
+    delete m.steps[4]!.provision;
+    expect(autoStageOffer(m)).toBeUndefined();
+  });
+
+  it('⛔ 链在更早的一步就断了（第 5 步 pending）⇒ 不铺，先修那一步', () => {
+    const m = staged();
+    m.steps[4]!.state = 'pending';
+    expect(autoStageOffer(m)).toBeUndefined();
   });
 });
