@@ -188,6 +188,12 @@ export interface AutomationRow {
    * 少了它，用户换台机器打开会以为触发时刻漂了——而漂的其实是他自己的系统时区。
    */
   timezone: string;
+  /**
+   * 该时区**此刻**的偏移，如 `UTC+8`。⚠️ **实时算出来的**（`zoneOffsetLabel`），
+   * ⛔ 不是常量表 —— 夏令时地区换季会变，写死每年会错两段。
+   * 非法时区时缺席（宁可不显示，也不回落本机）。
+   */
+  timezoneOffsetText?: string;
   /** 时区与本机不一致时的提醒；一致时缺席（一致还提醒是噪音）。 */
   timezoneNote?: string;
   /** 🔴 / 🟡 时展示 [查看原因]。 */
@@ -221,6 +227,17 @@ export interface RunRow {
   /** `1 分 12 秒`；未结束或后端没给时缺席。 */
   durationText?: string;
   outputSummary?: string;
+  /**
+   * ★ **失败那一行唯一说得清「挂在哪一步」的东西**（`automation_runs.error_message`）。
+   *
+   * ⚠️ 它是**后端原文**（英文 / 异常 message），⛔ 不是文案。所以 view 必须把它当
+   * 「原始信息」摆——带标签、次要样式、和 `outputSummary` 同一档，⛔ 不许当成一句
+   * 人话直接摆在 `detail` 的位置上。人话由 `outcome.detail` 负责说，这一条负责
+   * 「到底是哪一步炸的」——两者缺一，用户要么看不懂、要么只看到一句通用话。
+   *
+   * `undefined` = 后端没给（成功/跳过/还在跑的行本来就没有）。
+   */
+  errorMessage?: string;
   /** 有 sandboxId 才渲染 [打开 Task]（契约暂缺时不渲染死按钮）。 */
   sandboxId?: string;
   /** webhook 投递结果的旁注。⚠️ 它**不影响规则状态**（P21-7 §7），文案上要说清。 */

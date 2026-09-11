@@ -9,19 +9,18 @@
 import { Button } from '@/components/ui/button';
 
 export interface AuditGapNoticeProps {
-  /** 断层区间（只用于文案里如实说明范围，不参与请求）。 */
-  afterSeq: number;
-  beforeSeq: number;
   filling?: boolean;
   onFill: () => void;
 }
 
-export function AuditGapNoticeView({
-  afterSeq,
-  beforeSeq,
-  filling = false,
-  onFill,
-}: AuditGapNoticeProps) {
+/**
+ * ⛔ **不再把 `seq` 区间写在屏幕上**（2026-09 修）。原文是「此处有未加载的事件
+ * （seq 1200 – 1587 之间，条数未知）」—— `seq` 是**数据库列名**，而那两个内部序号对用户
+ * 毫无意义：他既不知道 1200 是什么时候，也不能拿这两个数做任何事。
+ * 唯一有信息量的半句是「条数未知」，它留着；⚠️ **这不是把精确性删掉** —— 区间本来就
+ * 「只用于文案，不参与请求」，填洞用的是 hook 里那份 `gap`，一个字都没动。
+ */
+export function AuditGapNoticeView({ filling = false, onFill }: AuditGapNoticeProps) {
   return (
     <li
       data-testid="audit-gap-notice"
@@ -29,9 +28,7 @@ export function AuditGapNoticeView({
     >
       <span className="flex items-center gap-2">
         <span aria-hidden="true">⚠️</span>
-        <span>
-          此处有未加载的事件（seq {afterSeq} – {beforeSeq} 之间，条数未知）
-        </span>
+        <span>这里有一段事件还没加载（条数未知）</span>
       </span>
       <Button type="button" size="sm" variant="outline" disabled={filling} onClick={onFill}>
         {filling ? '加载中…' : '加载中间部分'}

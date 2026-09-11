@@ -1,4 +1,4 @@
-// F21-6 §3.3「🎁 已保留卷」的状态矩阵逐格落成 variant。
+// F21-6 §3.3「🎁 保留下来的成果」的状态矩阵逐格落成 variant。
 // ⚠️ 写了 play 的都是**真断言**，其中三条是否定性的：没有「恢复」、下载是 `<a download>`、
 //    两个大小一个都不少。这三条正是这个界面最容易被"顺手简化"掉的地方（见 view 文件头）。
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
@@ -15,7 +15,7 @@ const archiveUrl = (id: string): string => `/api/retained-volumes/${id}/archive`
 const ROW_A: RetainedVolumeRow = {
   id: 'rv-1',
   sandboxId: 'sbx-7f3a',
-  originText: '来源任务 sbx-7f3a',
+  originText: '来自任务 sbx-7f3a',
   sourceText: '销毁任务时保留',
   retainedAtText: '2026/8/25 10:12:00',
   diskText: '1.0 GB',
@@ -24,10 +24,14 @@ const ROW_A: RetainedVolumeRow = {
   urgent: false,
 };
 
-/** 弱引用断掉的那条：sandbox 记录归档后 `sandboxId` 为空，卷仍可管理（10 §7.3）。 */
+/**
+ * 弱引用断掉的那条：`sandboxId` 缺席，这份成果仍可管理（10 §7.3）。
+ * ⚠️ 文案说的是「关联不到」而不是「已归档」—— 缺一个 id 只说明关联不上，
+ *   而这个平台根本没有归档功能（F21-6 §10 D 裁决不做）。⛔ 不许把「不知道」说成一个具体状态。
+ */
 const ROW_ORPHAN: RetainedVolumeRow = {
   id: 'rv-2',
-  originText: '来源任务已归档',
+  originText: '关联不到来源任务（可能已被删除）',
   sourceText: '自动化产物',
   retainedAtText: '2026/8/01 09:00:00',
   diskText: '320 MB',
@@ -95,7 +99,8 @@ export const ExpiringSoon: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('retained-volume-countdown')).toHaveTextContent('不足 1 天');
     // 弱引用断掉时给的是一句话，不是空格子（空格子会被读成"加载失败"）。
-    await expect(canvas.getByText('来源任务已归档')).toBeInTheDocument();
+    // ⚠️ 缺一个 id 只说明关联不上，⛔ 不等于「已归档」（平台根本没有归档功能）。
+    await expect(canvas.getByText(/关联不到来源任务/)).toBeInTheDocument();
   },
 };
 
@@ -115,7 +120,7 @@ export const DeleteNeedsConfirm: Story = {
     await userEvent.click(canvas.getByRole('button', { name: '删除' }));
     // ⭐ 第一下**不删**：只展开确认态。一步删除是不可逆操作里最常见的事故。
     await expect(args.onDelete).not.toHaveBeenCalled();
-    await expect(canvas.getByText('永久删除？删掉后这份工作区不可恢复。')).toBeInTheDocument();
+    await expect(canvas.getByText('永久删除？删掉之后这份工作目录拿不回来。')).toBeInTheDocument();
 
     await userEvent.click(canvas.getByRole('button', { name: '确认删除' }));
     await expect(args.onDelete).toHaveBeenCalledWith('rv-1');
@@ -138,9 +143,9 @@ export const Empty: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const empty = canvas.getByTestId('retained-volumes-empty');
-    await expect(empty).toHaveTextContent('这个项目还没有已保留卷。');
+    await expect(empty).toHaveTextContent('这个项目还没有保留下来的成果。');
     // 空态要说清"卷是怎么来的"，否则用户不知道下次该怎么留下成果。
-    await expect(empty).toHaveTextContent('勾选「保留工作区卷」');
+    await expect(empty).toHaveTextContent('把工作目录留下来');
     // 空态不摆任何合计行（"共 0 个 · 占用 0 B" 是噪声）。
     await expect(canvas.queryByTestId('retained-volumes-totals')).toBeNull();
   },
@@ -158,10 +163,10 @@ export const Loading: Story = {
 
 /** 列表取不回来：红字，且**不冒充空态**。 */
 export const LoadFailed: Story = {
-  args: { rows: [], totals: EMPTY_TOTALS, loadErrorMessage: '网络错误，请稍后重试。' },
+  args: { rows: [], totals: EMPTY_TOTALS, loadErrorMessage: '网络不通，请稍后再试。' },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByRole('alert')).toHaveTextContent('网络错误，请稍后重试。');
+    await expect(canvas.getByRole('alert')).toHaveTextContent('网络不通，请稍后再试。');
     await expect(canvas.queryByTestId('retained-volumes-empty')).toBeNull();
   },
 };

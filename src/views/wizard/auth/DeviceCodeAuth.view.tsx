@@ -1,5 +1,5 @@
 // A · device-code（Codex，F07 §6.2 / §6.2a）：[打开授权页 ↗]（主按钮，开新标签页 + 复制码）
-// + 大字号 userCode + [复制] + 15:00 倒计时（剩 5min 转黄、归零转红 + [重新获取]）
+// + 大字号 userCode + [复制] + 倒计时（剩 5min 转黄、归零转红 + [换一串重来]；**无到期时间则不渲染**）
 // +「等待授权中…」轮询态。纯展示、props 驱动、零副作用。
 //
 // ⚠️ **`window.open` 不在这里调**（那是副作用）：本视图只把点击原样交给 `onOpenAuthPage`，
@@ -10,14 +10,27 @@ import { Button } from '@/components/ui/button';
 export interface DeviceCodeAuthProps {
   userCode: string;
   verificationUrl: string;
-  /** 剩余秒数（hook 倒计时派生）。 */
-  secondsLeft: number;
+  /**
+   * 剩余秒数（hook 倒计时派生）；**`null` = 后端没给到期时间 ⇒ 不渲染倒计时**。
+   *
+   * ⛔ 此前这一位恒有值（缺 `expiresAt` 时是 `0`），屏幕上就是一个红色 `00:00`
+   *    配着底下的「等待授权中…」—— 一个编出来的数字，还自相矛盾。
+   */
+  secondsLeft: number | null;
   /** 是否轮询中（展示「等待授权中…」）。 */
   polling: boolean;
   /** 连续网络错误（展示「网络异常 [重试]」，倒计时不受影响，P22 §2）。 */
   pollError: boolean;
-  /** 是否已过期（归零/服务端 expired → [重新获取]）。 */
+  /** 是否已停止等待（归零/服务端 expired/前端等够了 → [重新获取]）。 */
   expired: boolean;
+  /**
+   * 停下来的**原因**：`'expired'` 码真的到点了；`'gave-up'` 前端等够了（**码可能还有效**）。
+   *
+   * ⛔ 两者此前共用一句「设备码已过期。」。10 分钟硬性兜底触发时那句话是**错的**：
+   *    码没过期，是我们不等了。用户照着它去重新获取，真正的毛病（授权回程没通 /
+   *    后端漏发到期时间）还在原地。
+   */
+  expiredReason?: 'expired' | 'gave-up';
   onCopy?: () => void;
   onRefetchChallenge: () => void;
   /**
@@ -49,6 +62,7 @@ export function DeviceCodeAuthView({
   polling,
   pollError,
   expired,
+  expiredReason,
   onCopy,
   onRefetchChallenge,
   onOpenAuthPage,
@@ -57,9 +71,10 @@ export function DeviceCodeAuthView({
 }: DeviceCodeAuthProps) {
   const countdownColor = expired
     ? 'text-red-400'
-    : secondsLeft <= WARN_THRESHOLD_SEC
+    : secondsLeft !== null && secondsLeft <= WARN_THRESHOLD_SEC
       ? 'text-amber-400'
       : 'text-muted-foreground';
+  const gaveUp = expiredReason === 'gave-up';
 
   return (
     <div className="flex flex-col gap-3">
@@ -108,20 +123,28 @@ export function DeviceCodeAuthView({
       {/* ⚠️ 原来这里是一个小号「打开验证链接」文字链 —— 它与「大字号设备码」并排，
           读起来像「码是主角、链接是附注」，而实际顺序相反：**先开页面，再粘码**。
           ⇒ 主入口上移成按钮，这里只留倒计时。 */}
-      <div className="flex flex-wrap items-center gap-3">
-        <span aria-label="倒计时" className={'font-mono text-sm ' + countdownColor}>
-          {formatCountdown(secondsLeft)}
-        </span>
-      </div>
+      {/* ⚠️ 没有到期时间就**不画表盘** —— 画一个 00:00 出来是凭空捏造的确定性。 */}
+      {secondsLeft !== null && (
+        <div className="flex flex-wrap items-center gap-3">
+          <span aria-label="倒计时" className={'font-mono text-sm ' + countdownColor}>
+            {formatCountdown(secondsLeft)}
+          </span>
+        </div>
+      )}
 
       {expired ? (
-        <div className="flex items-center gap-2">
-          <p role="alert" className="text-xs text-red-400">
-            设备码已过期。
+        <div className="flex flex-col gap-1">
+          <p role="alert" className={'text-xs ' + (gaveUp ? 'text-amber-400' : 'text-red-400')}>
+            {gaveUp
+              ? '等了 10 分钟还没等到授权结果，这边先停下了 —— 这串码可能还有效，' +
+                '如果你刚在浏览器里点完，可以先换一串重来。'
+              : '这串设备码已经到期了。'}
           </p>
-          <Button type="button" variant="outline" size="sm" onClick={onRefetchChallenge}>
-            重新获取
-          </Button>
+          <div>
+            <Button type="button" variant="outline" size="sm" onClick={onRefetchChallenge}>
+              换一串重来
+            </Button>
+          </div>
         </div>
       ) : pollError ? (
         <div className="flex items-center gap-2">

@@ -149,6 +149,66 @@ describe('PtySocket (08 §3, socket.io transport)', () => {
     expect(argsLog[1]?.query['xSchemaHash']).toBe('sb-terminal-v1');
   });
 
+  /**
+   * ⭐ 用户终端标签的 `shellId` 也必须在重连时带回（06 §5 / 08 §5）。
+   *
+   * 少了它，后端会把重连当成"给我开一个新的"：**每断一次线，沙箱里就多一个没人认领
+   * 的 tmux 会话**，而用户看到的是一个空白终端（他刚才跑的东西还在另一个会话里）。
+   *
+   * ⚠️ 它走这条路（PtySocket 内部记住 + buildQuery 追加）而**不是**回灌进 React 的
+   * query：query 在连接 effect 的依赖里，首帧一到就改它等于每开一个新终端白白重连
+   * 一次（与 `fittedSize` 那条"只认第一次"是同一个坑）。
+   */
+  it('session 首帧的 shellId 在重连时并入 query（否则每次断线都多一个孤儿会话）', () => {
+    const argsLog: SocketFactoryArgs[] = [];
+    let mock = new MockSocket();
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: { sandboxId: 's1', kind: 'shell', xSchemaHash: 'sb-terminal-v2' },
+      socketFactory: (args) => {
+        argsLog.push(args);
+        mock = new MockSocket();
+        return mock;
+      },
+      onFrame: () => undefined,
+      onState: () => undefined,
+    });
+    socket.connect();
+    mock.triggerConnect();
+    mock.serverEmit({ type: 'session', socketSessionKey: 'K', shellId: 'a'.repeat(32) });
+
+    expect(socket.getShellId()).toBe('a'.repeat(32));
+    // 首连不带（后端据此现生成一个）
+    expect(argsLog[0]?.query).not.toHaveProperty('shellId');
+    socket.connect();
+    expect(argsLog[1]?.query['shellId']).toBe('a'.repeat(32));
+    expect(argsLog[1]?.query['kind']).toBe('shell');
+  });
+
+  it('⚠️ agent 连接的首帧不带 shellId ⇒ 重连也不许凭空加一个', () => {
+    const argsLog: SocketFactoryArgs[] = [];
+    let mock = new MockSocket();
+    const socket = new PtySocket({
+      uri: 'http://x/terminal',
+      query: { sandboxId: 's1' },
+      socketFactory: (args) => {
+        argsLog.push(args);
+        mock = new MockSocket();
+        return mock;
+      },
+      onFrame: () => undefined,
+      onState: () => undefined,
+    });
+    socket.connect();
+    mock.triggerConnect();
+    mock.serverEmit({ type: 'session', socketSessionKey: 'K' });
+    socket.connect();
+
+    expect(socket.getShellId()).toBeNull();
+    // 带上一个 shellId 就等于把 agent 那条连接偷偷变成一个 shell 连接。
+    expect(argsLog[1]?.query).not.toHaveProperty('shellId');
+  });
+
   it('connect_error 含未授权文案 → 触发 onUnauthorized（口令门 11 §3.1）', () => {
     const mock = new MockSocket();
     const onUnauthorized = vi.fn();

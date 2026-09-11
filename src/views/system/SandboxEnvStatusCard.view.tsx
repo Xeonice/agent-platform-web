@@ -1,4 +1,4 @@
-// Provider 状态卡（F21-5 §3/§6 · P21-5 §3）。纯展示、props 驱动、零副作用。
+// 「这台机器的沙箱环境」状态卡（F21-5 §3/§6 · P21-5 §3）。纯展示、props 驱动、零副作用。
 //
 // ⚠️ **「无样本」不是「0%」，也不是「正常」。** 后端在这一小时没有沙箱创建记录时**刻意
 // 不下发** `recentFailureRate`（0/0 不是 0%）。这里给它一个自己的图标（⚪）与自己的一句话，
@@ -10,36 +10,36 @@
 // ⏳ **[查看日志] 本轮没有**：`ProviderLogPanel` 要的"最近 20 行运行日志"在契约里还没有
 // 端点（10 §6.6 只有 providers 概览）。摆一个点了什么都不会发生的按钮，比暂时没有它更糟
 // ——用户会以为日志功能坏了。缺口记在本轮报告里。
-import type { ProviderHealthLevel, ProviderStatusCardModel } from '@/types/system';
+import type { ProviderHealthLevel, SandboxEnvStatusCardModel } from '@/types/system';
 
-const PROVIDER_ICON: Readonly<Record<ProviderHealthLevel, string>> = {
+const SANDBOX_ENV_ICON: Readonly<Record<ProviderHealthLevel, string>> = {
   ok: '✅',
   warning: '⚠️',
   error: '❌',
   // ⚠️ 单独一个图标：它既不是"好"也不是"坏"，而是"没有数据可以下结论"。
   'no-sample': '⚪',
 };
-const PROVIDER_LEVEL_TEXT: Readonly<Record<ProviderHealthLevel, string>> = {
+const SANDBOX_ENV_LEVEL_TEXT: Readonly<Record<ProviderHealthLevel, string>> = {
   ok: '正常',
   warning: '失败率偏高',
   error: '故障',
   'no-sample': '无样本',
 };
 
-export interface ProviderStatusCardProps {
-  model: ProviderStatusCardModel | null;
+export interface SandboxEnvStatusCardProps {
+  model: SandboxEnvStatusCardModel | null;
   isError: boolean;
 }
 
-export function ProviderStatusCardView({ model, isError }: ProviderStatusCardProps) {
+export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCardProps) {
   return (
     <section
-      aria-labelledby="provider-status-heading"
+      aria-labelledby="sandbox-env-status-heading"
       className="flex flex-col gap-3 rounded-lg border border-border p-4"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="provider-status-heading" className="text-base font-semibold">
-          🏃 Provider 状态
+        <h2 id="sandbox-env-status-heading" className="text-base font-semibold">
+          🏃 这台机器的沙箱环境
         </h2>
         {model === null ? null : (
           <span className="text-xs text-muted-foreground">
@@ -50,7 +50,7 @@ export function ProviderStatusCardView({ model, isError }: ProviderStatusCardPro
 
       {isError ? (
         <p role="alert" className="text-sm text-red-500">
-          ❌ Provider 概览读取失败 —— 这里的空白不代表没有 provider
+          ❌ 沙箱环境概览读取失败 —— 这里的空白不代表这台机器上没有沙箱环境
         </p>
       ) : model === null ? (
         <p className="text-sm text-muted-foreground">读取中…</p>
@@ -60,14 +60,18 @@ export function ProviderStatusCardView({ model, isError }: ProviderStatusCardPro
             {model.providers.map((p) => (
               <li
                 key={p.id}
-                data-testid={`provider-row-${p.id}`}
+                data-testid={`sandbox-env-row-${p.id}`}
                 className="flex flex-col gap-0.5 rounded-md border border-border/60 px-3 py-2 text-sm"
               >
                 <span className="flex flex-wrap items-center gap-2">
-                  <span aria-hidden="true">{PROVIDER_ICON[p.level]}</span>
-                  <span className="font-medium">{p.id}</span>
+                  <span aria-hidden="true">{SANDBOX_ENV_ICON[p.level]}</span>
+                  {/* ⚠️ 光一个 `aio` / `boxlite`，用户无从判断哪个是哪个（映射在 lib，
+                      未知 provider 原样用 id —— 开放注册表，猜一个描述比不给更贵）。 */}
+                  <span className="font-medium" data-testid={`sandbox-env-name-${p.id}`}>
+                    {p.displayName}
+                  </span>
                   <span className="text-xs text-muted-foreground">
-                    {PROVIDER_LEVEL_TEXT[p.level]}
+                    {SANDBOX_ENV_LEVEL_TEXT[p.level]}
                   </span>
                   {p.isDefault ? (
                     <span className="rounded bg-muted px-1.5 py-0.5 text-xs">默认</span>
@@ -80,7 +84,7 @@ export function ProviderStatusCardView({ model, isError }: ProviderStatusCardPro
           </ul>
 
           <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-medium">Runtime</h3>
+            <h3 className="text-sm font-medium">Agent</h3>
             <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
               {model.runtimes.map((r) => (
                 <li key={r.id} data-testid={`runtime-row-${r.id}`}>
@@ -92,7 +96,7 @@ export function ProviderStatusCardView({ model, isError }: ProviderStatusCardPro
           </div>
 
           <div className="flex flex-col gap-1">
-            <h3 className="text-sm font-medium">镜像规格</h3>
+            <h3 className="text-sm font-medium">镜像读取方式</h3>
             <ul className="flex flex-wrap gap-2 text-xs text-muted-foreground">
               {model.imageSpecs.map((s) => (
                 <li key={s.id} data-testid={`image-spec-${s.id}`}>

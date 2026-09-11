@@ -6,6 +6,7 @@ import { useRetryClone, useConvertToEmpty } from '@/hooks/project/useProjects';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
 import { useAppStore } from '@/stores';
 import { cloneFailureGuidance, type CloneFailureGuidance } from '@/lib/project/projectClone';
+import { PROJECT_ERROR_COPY, projectErrorMessage } from '@/lib/project/projectErrorCopy';
 import { ApiErrorException } from '@/services/api/apiError';
 
 export interface UseProjectRecoveryArgs {
@@ -25,13 +26,34 @@ export interface ProjectRecoveryApi {
   guidance: CloneFailureGuidance;
 }
 
-/** 归一化 mutation 错误为用户可见文案（401 已由 reportRestError 处理，此处覆盖 409/非 failed 态/网络）。 */
-function actionErrorMessage(error: unknown): string {
-  if (error instanceof ApiErrorException) {
-    return error.envelope.message !== '' ? error.envelope.message : '操作失败，请稍后重试。';
-  }
-  return '网络错误，请稍后重试。';
+/**
+ * 归一化 mutation 错误为用户可见文案（401 已由 reportRestError 处理，此处覆盖 409/网络）。
+ *
+ * ★ **按码查表，⛔ 不渲染 `envelope.message`。** 旧写法的中文兜底永远走不到
+ *   （`message` 恒非空），实际上屏的是 `retry-clone is only allowed on a failed project`。
+ *
+ * ⚠️ **两个动作各有自己的 `INVALID_STATE` 文案**：同一个 409，[重试克隆] 和
+ *   [改为空项目] 该说的话不一样，而"这是哪个动作"只有调用点知道 ——
+ *   ⛔ 不许合并成一句「当前状态不允许该操作」，那句话解释不了任何事。
+ */
+function actionErrorMessage(error: unknown, invalidState: string): string {
+  if (!(error instanceof ApiErrorException)) return '网络不通，请稍后再试。';
+  return projectErrorMessage(
+    error.envelope.code,
+    error.envelope.traceId,
+    '操作失败，请稍后重试。',
+    {
+      ...PROJECT_ERROR_COPY,
+      INVALID_STATE: invalidState,
+    },
+  );
 }
+
+/** 这两句都在说同一件事：这个项目已经不是「克隆失败」了，通常是别处已经处理过。 */
+const RETRY_INVALID_STATE =
+  '这个项目现在不是「克隆失败」状态，重试克隆用不上了 —— 可能已经克隆成功、或者在别处被改成了空项目。刷新一下看看。';
+const CONVERT_INVALID_STATE =
+  '这个项目现在不是「克隆失败」状态，改不成空项目 —— 可能已经克隆成功、或者在别处改过了。刷新一下看看。';
 
 export function useProjectRecovery({
   projectId,
@@ -56,7 +78,7 @@ export function useProjectRecovery({
         reportRestError(error);
         // 关键：回退到 failed，绝不停在 cloning（P0-2）。
         setCloneProgress(projectId, { phase: 'failed', errorCode: rollbackCode });
-        setActionError(actionErrorMessage(error));
+        setActionError(actionErrorMessage(error, RETRY_INVALID_STATE));
       },
     });
   };
@@ -71,7 +93,7 @@ export function useProjectRecovery({
       },
       onError: (error) => {
         reportRestError(error);
-        setActionError(actionErrorMessage(error));
+        setActionError(actionErrorMessage(error, CONVERT_INVALID_STATE));
       },
     });
   };

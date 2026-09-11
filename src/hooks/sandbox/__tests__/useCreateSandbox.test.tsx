@@ -43,6 +43,7 @@ const CREATED = {
   id: 'sb-1',
   projectId: 'proj-b',
   runtime: 'codex',
+  availableRuntimes: ['codex'],
   provider: 'aio',
   name: '对项目进行分析，输出摘要',
   status: 'pending',

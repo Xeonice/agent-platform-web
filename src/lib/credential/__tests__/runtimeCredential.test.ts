@@ -163,3 +163,25 @@ describe('revokeConfirmConfig（F21-3 §5：生效模式 warnActiveMode）', () 
     });
   });
 });
+
+describe('revokeConfirmConfig · otherMode（产品 §9 的「切到哪」）', () => {
+  it('另一模式已配置 → otherMode 指出是哪一个；未配置 → null', () => {
+    const bothConfigured: RuntimeDto = {
+      ...codex,
+      credentials: [
+        ...codex.credentials,
+        { credentialId: 'rc-2', mode: 'api-key', maskedIdentifier: 'sk-…ab12', status: 'ok' },
+      ],
+    };
+    // ⛔ 只有布尔位时「问不问」答得出、「切到哪」答不出 —— 那条追问也就接不上线。
+    expect(revokeConfirmConfig(runtimeCardModel(bothConfigured, NOW), 'account')).toMatchObject({
+      otherModeConfigured: true,
+      otherMode: 'api-key',
+    });
+    // codex 默认只配了 account。
+    expect(revokeConfirmConfig(runtimeCardModel(codex, NOW), 'account')).toMatchObject({
+      otherModeConfigured: false,
+      otherMode: null,
+    });
+  });
+});

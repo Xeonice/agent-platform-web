@@ -1,12 +1,12 @@
 // `sandbox.instance_progress` 的**唯一**消费点（纯函数，可单测）。
 //
-// 它补的是这个洞：一个 Task 停在「启动实例」**3 分 10 秒**，全程零反馈，用户判它卡死；
+// 它补的是这个洞：一个 Task 停在「启动运行环境」**3 分 10 秒**，全程零反馈，用户判它卡死；
 // 去排查的人第一次采样看到 CPU 0%、到 registry 零连接，**也判成了卡死**。审计流事后
 // 才说清楚：`starting` 段 190529ms，其中探测 + 装 runtime + 起会话加起来不到 0.4 秒，
 // 190 秒**全在 provider 起实例那一步**——13GB 的镜像本机第一次用，要现拉 + 铺 rootfs。
 //
 // 纪律（同 `runtimeInstallProgress`，15 §2.3 / 10 §7.4）：
-//   · 不 patch 任何 Query 字段，只喂进度卡「启动实例」格下的一行子文案；
+//   · 不 patch 任何 Query 字段，只喂进度卡「启动运行环境」格下的一行子文案；
 //   · 不作为失败原因来源（失败一律走 status_changed.errorCode / DTO.failureCode）。
 import type { InstanceStartupPhase } from '@/types/ws-protocol';
 
@@ -23,7 +23,7 @@ export interface InstanceStartupProgress {
 }
 
 /**
- * 「启动实例」格下的子文案。返回 undefined = 本格不加子文案。
+ * 「启动运行环境」格下的子文案。返回 undefined = 本格不加子文案。
  *
  * ⚠️ **`true` 那一支只陈述事实，不承诺时间。** 后端那个布尔有一种它自己排除不掉的假阳性：
  * BoxLite 的 image store 里有 `complete` 这一列（半截的 pull 是 0），而 SDK 的
@@ -33,17 +33,17 @@ export interface InstanceStartupProgress {
  */
 export function instanceSubCopy(progress: InstanceStartupProgress | undefined): string | undefined {
   if (progress === undefined) return undefined;
-  if (progress.phase === 'ready') return '实例已就绪，正在准备 agent 运行环境…';
+  if (progress.phase === 'ready') return '运行环境已就绪，正在启动 agent…';
   switch (progress.imageStaged) {
     case false:
       // 「不是卡死」这句必须写出来——这一段没有任何输出、CPU 也不忙，它看起来就是卡死了。
       return '本机还没有这个镜像，正在下载并铺开运行环境…（首次使用可能持续数分钟，期间没有输出，不是卡死）';
     case true:
-      return '镜像已在本机，正在拉起实例…';
+      return '镜像已在本机，正在启动运行环境…';
     default:
       // provider 说不出（第三方 provider 没实现这个可选方法，或这次问不出来）。
       // 只说做什么、不解释为什么慢——编一个理由比不给理由更糟。
-      return '正在拉起实例…';
+      return '正在启动运行环境…';
   }
 }
 
@@ -55,13 +55,18 @@ export function instanceSubCopy(progress: InstanceStartupProgress | undefined): 
  * 在多数机器上是假的；更糟的是它和同一张卡下面那行子文案**直接打架**：
  *
  *     标题：首次启动需拉取镜像，**可能耗时较长**
- *     格子：**镜像已在本机**，正在拉起实例…
+ *     格子：**镜像已在本机**，正在启动运行环境…
  *
  * ⚠️ 这是同一个病的第三次发作（前两次：`STEP_ACTION.staged`、`STAGE_LABEL.register`）——
  * **view 里写死一句话，而下面已经有一个按情况说的分支**。根子都一样：写死的那句必然
  * 在某一档上是错的。
  *
- * ⇒ 规则很简单：**只有确实要拉镜像时才说"可能耗时较长"**，其余情况这一行不出现
+ * ⚠️ **后半句「之后每次启动都是几秒」已删（2026-09-11）——那是一句没有依据的时间承诺。**
+ * 下次启动是不是几秒，取决于这张镜像有没有被 GC、CLI 装没装过（同一台机器实测过 753 秒）。
+ * 它和上面 `instanceSubCopy` 里"不承诺时间，宁可少一句安慰"是同一条纪律，写这一行时漏掉了。
+ * 前半句「这一步最久」已经把该说的说完了：它解释了为什么慢，且**不预测下一次**。
+ *
+ * ⇒ 规则很简单：**只有确实要拉镜像时才说"这一步最久"**，其余情况这一行不出现
  * （`true` 与 `undefined` 都不出现）——因为该说的话格子下面那行已经说了，
  * 在这里再说一遍要么重复、要么迟早分叉。⛔ 没话说的时候就别说。
  */
@@ -69,7 +74,7 @@ export function startupSubtitle(progress: InstanceStartupProgress | undefined): 
   // ⚠️ `undefined`（provider 说不出）与 `true` 一样不出这句 —— 「不知道为什么慢」
   //    不能拿去当「因为要拉镜像所以慢」的理由（同 `instanceSubCopy` 的三态纪律）。
   if (progress?.imageStaged !== false) return undefined;
-  return '首次使用这个镜像，要先把它拉到本机 —— 这一步最久，之后每次启动都是几秒';
+  return '首次使用这个镜像，要先把它拉到本机 —— 整个启动里这一步最久';
 }
 
 /**

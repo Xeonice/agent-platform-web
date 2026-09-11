@@ -120,3 +120,32 @@ describe('useGitCredentialManager · 更换 token 预填', () => {
     expect(result.current.sshKey).toBe('');
   });
 });
+
+describe('useGitCredentialManager · 「查不到」与「没配过」/ 私钥拿错文件', () => {
+  it('列表接口挂了 → loadError:true（视图据此渲染失败态，而不是「○ 未配置」）', async () => {
+    server.use(
+      http.get(`${API_BASE}/api/credentials`, () => new HttpResponse(null, { status: 500 })),
+    );
+    const { result } = renderHook(() => useGitCredentialManager(), { wrapper: makeWrapper() });
+    await waitFor(() => {
+      expect(result.current.loadError).toBe(true);
+    });
+    // ⛔ cards 同样是空的 —— 分辨「查不到」与「没配过」的唯一一位就是 loadError。
+    expect(result.current.cards).toEqual([]);
+  });
+
+  it('粘成 .pub 公钥 → 提示里点名这个最常见的实际原因', async () => {
+    const { result } = renderHook(() => useGitCredentialManager(), { wrapper: makeWrapper() });
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    act(() => {
+      result.current.openSshForm();
+    });
+    act(() => {
+      result.current.setSshKey('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host');
+    });
+    expect(result.current.sshWarning).toContain('.pub');
+    expect(result.current.sshSubmitDisabled).toBe(true);
+  });
+});

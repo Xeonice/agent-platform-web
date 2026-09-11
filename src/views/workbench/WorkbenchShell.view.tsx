@@ -133,9 +133,31 @@ export function WorkbenchShellView({
                 />
                 {!group.collapsed &&
                   (group.tasks.length === 0 ? (
-                    <p className="px-1 py-1 text-xs text-muted-foreground">
-                      在 {group.projectName} 中发起第一个任务 →
-                    </p>
+                    /**
+                     * ⚠️ **它此前是个 `<p>`，却带着一个 `→`。**
+                     * 箭头是"这里能点"的承诺，而它点不动 —— 用户点上去没有任何反应，
+                     * 比不给这句话更糟。⇒ 改成真按钮：点它 = 选中这个项目 + 打开新建任务弹层。
+                     * ⛔ 别只把箭头删掉了事：空组下确实需要一个发起入口，那正是这行字的用意。
+                     */
+                    <button
+                      type="button"
+                      data-testid={`empty-group-new-task-${group.projectId}`}
+                      /**
+                       * ⚠️ 可见文案**刻意不含项目名**（项目名放 `title`）——组头就在上一行，
+                       * 上下文不丢；而含了项目名的话，`getByRole('button', { name: /项目名/ })`
+                       * 会同时命中组头按钮与这一条，全仓（含 e2e）按项目名点项目的地方
+                       * 一起变成 strict-mode 二义匹配。这与同组「⋯」按钮上那条注释是同一条纪律。
+                       */
+                      title={`在 ${group.projectName} 中发起第一个任务`}
+                      className="w-full rounded px-1 py-1 text-left text-xs text-muted-foreground underline-offset-2 hover:bg-muted hover:text-foreground hover:underline"
+                      onClick={() => {
+                        // 先把归属定下来再开弹层：弹窗里没有项目下拉，归属继承选中项（§9.0）。
+                        onSelectProject?.(group.projectId);
+                        onNewTask?.();
+                      }}
+                    >
+                      发起第一个任务 →
+                    </button>
                   ) : (
                     <ul>
                       {group.tasks.map((task) => (

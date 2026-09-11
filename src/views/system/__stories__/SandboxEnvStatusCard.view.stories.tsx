@@ -1,17 +1,18 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { expect, within } from 'storybook/test';
-import { ProviderStatusCardView } from '@/views/system/ProviderStatusCard.view';
-import type { ProviderStatusCardModel } from '@/types/system';
+import { SandboxEnvStatusCardView } from '@/views/system/SandboxEnvStatusCard.view';
+import type { SandboxEnvStatusCardModel } from '@/types/system';
 
-function model(over: Partial<ProviderStatusCardModel> = {}): ProviderStatusCardModel {
+function model(over: Partial<SandboxEnvStatusCardModel> = {}): SandboxEnvStatusCardModel {
   return {
     providers: [
       {
         id: 'aio',
+        displayName: 'aio（容器运行时）',
         isDefault: true,
         level: 'ok',
         failureText: '最近 1h 失败率 0.5%（1/200）',
-        capabilityText: 'spawnTty · volumeMount · watchEvents · headlessTask',
+        capabilityText: '交互式终端 · 挂载工作区目录 · 状态变化推送 · 无人值守任务',
       },
     ],
     runtimes: [
@@ -30,21 +31,27 @@ function model(over: Partial<ProviderStatusCardModel> = {}): ProviderStatusCardM
   };
 }
 
-const meta: Meta<typeof ProviderStatusCardView> = {
-  title: 'System/ProviderStatusCard',
-  component: ProviderStatusCardView,
+const meta: Meta<typeof SandboxEnvStatusCardView> = {
+  title: 'System/SandboxEnvStatusCard',
+  component: SandboxEnvStatusCardView,
   parameters: { layout: 'padded' },
   args: { model: model(), isError: false },
 };
 export default meta;
 
-type Story = StoryObj<typeof ProviderStatusCardView>;
+type Story = StoryObj<typeof SandboxEnvStatusCardView>;
 
 export const Healthy: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('provider-row-aio')).toHaveTextContent('正常');
-    await expect(canvas.getByTestId('provider-row-aio')).toHaveTextContent('默认');
+    const row = canvas.getByTestId('sandbox-env-row-aio');
+    await expect(row).toHaveTextContent('正常');
+    await expect(row).toHaveTextContent('默认');
+    // ⭐ 光一个 `aio` 摆在屏幕上，用户无从判断它是什么（P21-5 §3 原型带括号）。
+    await expect(canvas.getByTestId('sandbox-env-name-aio')).toHaveTextContent('aio（容器运行时）');
+    // ⛔ 能力位不许再把 camelCase 键名原样上屏。
+    await expect(row).not.toHaveTextContent('spawnTty');
+    await expect(row).toHaveTextContent('交互式终端');
   },
 };
 
@@ -54,18 +61,20 @@ export const FailureRateWarning: Story = {
     model: model({
       providers: [
         {
+          // ⚠️ 第三方 provider：开放注册表 ⇒ **原样用 id**，⛔ 不编一个括号说明。
           id: 'custom-xx',
+          displayName: 'custom-xx',
           isDefault: false,
           level: 'warning',
           failureText: '最近 1h 失败率 5%（2/40）',
-          capabilityText: 'spawnTty · headlessTask',
+          capabilityText: '交互式终端 · 无人值守任务',
         },
       ],
     }),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const row = canvas.getByTestId('provider-row-custom-xx');
+    const row = canvas.getByTestId('sandbox-env-row-custom-xx');
     await expect(row).toHaveTextContent('失败率偏高');
     // 否定断言：⚠️ 与 ✅ 不许同时出现（把 healthy 直接当档次时这条会红）。
     await expect(row).not.toHaveTextContent('正常');
@@ -78,10 +87,11 @@ export const FailureRateError: Story = {
       providers: [
         {
           id: 'custom-xx',
+          displayName: 'custom-xx',
           isDefault: false,
           level: 'error',
           failureText: '最近 1h 失败率 22%（11/50）',
-          capabilityText: 'spawnTty',
+          capabilityText: '交互式终端',
         },
       ],
     }),
@@ -95,17 +105,18 @@ export const NoSample: Story = {
       providers: [
         {
           id: 'boxlite',
+          displayName: 'boxlite（微 VM）',
           isDefault: false,
           level: 'no-sample',
           failureText: '无样本（最近 1h 没有沙箱创建记录）',
-          capabilityText: 'spawnTty · volumeMount · watchEvents · headlessTask',
+          capabilityText: '交互式终端 · 挂载工作区目录 · 状态变化推送 · 无人值守任务',
         },
       ],
     }),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const row = canvas.getByTestId('provider-row-boxlite');
+    const row = canvas.getByTestId('sandbox-env-row-boxlite');
     await expect(row).toHaveTextContent('无样本');
     // ⚠️ 否定断言是关键：`?? 0` 之后这一行会平静地显示「失败率 0% 正常」，
     //    上面那条肯定断言换成 getByText('0%') 也照样绿。
@@ -139,8 +150,8 @@ export const LoadFailed: Story = {
   args: { model: null, isError: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByRole('alert')).toHaveTextContent('Provider 概览读取失败');
+    await expect(canvas.getByRole('alert')).toHaveTextContent('沙箱环境概览读取失败');
     // 空白 ≠ 没有 provider。
-    await expect(canvas.queryByTestId('provider-row-aio')).not.toBeInTheDocument();
+    await expect(canvas.queryByTestId('sandbox-env-row-aio')).not.toBeInTheDocument();
   },
 };

@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
 //   ① 任务指令随 POST /api/sandboxes 提交；
 //   ② 刷新后 localStorage **无指令残留**（15 §3.5 安全红线）；
 //   ③ 默认任务名用后端返回的 name（前端不派生）；
-//   ④ 进度卡四格顺序 = 面向用户的展示序（初始化 → 拉取镜像 → 准备工作区 → 启动实例），
+//   ④ 进度卡四格顺序 = 面向用户的展示序（初始化 → 拉取镜像 → 准备代码副本 → 启动运行环境），
 //      且 `creating` 高亮的是「拉取镜像」而不是第 3 格（展示序 ≠ 状态机序）。
 //   ⑤ **刷新后仍能看到失败原因**：WS 帧错过就没了，靠 `GET /api/sandboxes/:id` 的
 //      `failureCode`/`failureMessage` 恢复（持久化的 selectedSandboxId 是入口）。
@@ -53,8 +53,8 @@ function providerCaps(
 
 /**
  * runtime 由服务端 registry 驱动（GET /api/runtimes）。**必须 mock**：平台没有「默认
- * runtime」的概念（04 §8），不选就发不出去——不 mock 的话面板停在「后端未注册任何
- * runtime」，按钮一直 disabled，测试只会超时在一次点击上，看不出真正的原因。
+ * runtime」的概念（04 §8），不选就发不出去——不 mock 的话面板停在「平台上一个 Agent
+ * 都没有注册」，按钮一直 disabled，测试只会超时在一次点击上，看不出真正的原因。
  */
 const RUNTIMES = [
   {
@@ -154,6 +154,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           id: 'sb-e2e-launch',
           projectId: 'proj-e2e',
           runtime: 'codex',
+          availableRuntimes: ['codex'],
           // ⭐ `provider` 是 `SandboxResponseDto` 的**必填**字段，此前这三条沙箱 fixture
           //    都缺它（29 §3.2）——恰好前端这条路径不读它才没红。
           provider: 'aio',
@@ -200,8 +201,9 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     await expect(phases).toHaveCount(4);
     await expect(phases.nth(0)).toContainText('初始化');
     await expect(phases.nth(1)).toContainText('拉取镜像');
-    await expect(phases.nth(2)).toContainText('准备工作区');
-    await expect(phases.nth(3)).toContainText('启动实例');
+    // ⚠️ 标签是**上屏词**（P21-1 §9）：内部的「工作区」「实例」在界面上叫「代码副本」「运行环境」。
+    await expect(phases.nth(2)).toContainText('准备代码副本');
+    await expect(phases.nth(3)).toContainText('启动运行环境');
     await expect(phases.nth(1)).toContainText('●'); // active 标记
 
     // ② 安全红线：指令不落任何前端持久化
@@ -264,6 +266,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           id: 'sb-e2e-refresh',
           projectId: 'proj-e2e',
           runtime: 'codex',
+          availableRuntimes: ['codex'],
           provider: 'aio',
           name: '会失败的任务',
           status: 'starting',
@@ -283,6 +286,7 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
           id: 'sb-e2e-refresh',
           projectId: 'proj-e2e',
           runtime: 'codex',
+          availableRuntimes: ['codex'],
           provider: 'aio',
           name: '会失败的任务',
           status: 'failed',
@@ -431,6 +435,7 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
           id: 'sb-branch',
           projectId: 'proj-e2e',
           runtime: 'codex',
+          availableRuntimes: ['codex'],
           provider: 'aio',
           name: '分支任务',
           status: 'creating',
@@ -447,7 +452,7 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
     await page.getByRole('button', { name: /E2E 发起项目/ }).click();
     await openNewTaskModal(page);
 
-    // 选项来自后端（读的是本地引用，不触网）；缺省项 = 跟随基线当前分支。
+    // 选项来自后端（读的是项目本地那份代码，不触网）；缺省项 = 跟随项目当前的分支。
     const branchSelect = page.getByLabel('分支（可选）');
     await expect(branchSelect).toBeVisible();
     await expect(branchSelect).toHaveValue('');
@@ -508,6 +513,7 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
           id: 'sb-detail',
           projectId: 'proj-e2e',
           runtime: 'codex',
+          availableRuntimes: ['codex'],
           provider: 'aio',
           name: '已完成的任务',
           status: 'running',

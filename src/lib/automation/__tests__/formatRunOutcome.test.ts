@@ -36,9 +36,9 @@ describe('formatRunOutcome · 8 个 status 全覆盖', () => {
     expect(formatRunOutcome({ status: 'running' }).category).toBe('running');
   });
 
-  it('⭐ missed 的文案必须说清"不是规则失败"且"不补跑"（最容易被误读的一个）', () => {
+  it('⭐ missed 的文案必须说清"不是规则的问题"且"不补跑"（最容易被误读的一个）', () => {
     const o = formatRunOutcome({ status: 'missed' });
-    expect(o.detail).toContain('不是规则失败');
+    expect(o.detail).toContain('不是规则的问题');
     expect(o.detail).toContain('不会补跑');
     expect(o.countsTowardFailure).toBe(false);
     // 与 failed 的文案必须不同 —— 同一句话说两件事就等于没区分。
@@ -51,9 +51,9 @@ describe('formatRunOutcome · 8 个 status 全覆盖', () => {
     expect(auth.detail).not.toBe(prev.detail);
     expect(auth.detail).toContain('凭证');
     expect(prev.detail).toContain('上一次');
-    // 缺 error_code（契约暂缺）时降级成通用文案，但仍说"不计入连续失败"。
+    // 缺 error_code（契约暂缺）时降级成通用文案，但仍说"不算失败"。
     const unknown = formatRunOutcome({ status: 'skipped' });
-    expect(unknown.detail).toContain('不计入连续失败');
+    expect(unknown.detail).toContain('不算失败');
     expect(unknown.detail).not.toBe(auth.detail);
   });
 
@@ -64,11 +64,53 @@ describe('formatRunOutcome · 8 个 status 全覆盖', () => {
     expect(formatRunOutcome({ status: 'resource-exhausted' }).label).toBe('排队重试中 0/5');
   });
 
-  it('timeout 的文案与 failed 不同（要引导去调超时档位，不是去查代码）', () => {
+  it('timeout 的文案与 failed 不同（要引导去调「最长运行时间」，不是去查代码）', () => {
     const t = formatRunOutcome({ status: 'timeout' });
     expect(t.label).toBe('超时');
-    expect(t.detail).toContain('超时档位');
+    expect(t.detail).toContain('最长运行时间');
     expect(t.detail).not.toBe(formatRunOutcome({ status: 'failed' }).detail);
+  });
+
+  /**
+   * ★ **`failed` 分两支，判据是 `errorCode`。**
+   *
+   * `automation.scheduler.ts` 的 `queueOrGiveUp`：排队 5 次仍无资源 ⇒
+   * `finalize('failed', { errorCode: 'RESOURCE_EXHAUSTED' })`，且计入连续失败。
+   * 这一支**根本没跑起来** —— 没有容器、没有输出。此前这里不读 `errorCode`，
+   * 于是它和"跑了然后挂了"共用一句「任务真的跑了但失败了」，而那句话对它是假的：
+   * 用户会去翻一份不存在的日志。
+   */
+  it('⭐ failed + RESOURCE_EXHAUSTED：说「没排到资源、没跑起来」，⛔ 不许说「真的跑了」', () => {
+    const exhausted = formatRunOutcome({ status: 'failed', errorCode: 'RESOURCE_EXHAUSTED' });
+    const plain = formatRunOutcome({ status: 'failed' });
+
+    expect(exhausted.detail).not.toBe(plain.detail);
+    expect(exhausted.label).not.toBe(plain.label);
+    expect(exhausted.detail).toContain('没排到资源');
+    expect(exhausted.detail).not.toContain('跑起来了');
+    // 没有输出可看，这一句要说出来——否则用户去找一份不存在的日志。
+    expect(exhausted.detail).toContain('没有输出');
+    // ⚠️ 后端确实记了这一笔（`applyOutcome(…,'failed')`）⇒ 界面 ⛔ 不许替它改口径。
+    expect(exhausted.countsTowardFailure).toBe(true);
+    expect(exhausted.category).toBe('failure');
+  });
+
+  it('普通 failed 仍然说「真的跑起来了」（两支各说各的，⛔ 不许合并）', () => {
+    const plain = formatRunOutcome({ status: 'failed' });
+    expect(plain.detail).toContain('跑起来了');
+    expect(plain.label).toBe('失败');
+  });
+
+  /**
+   * ⚠️ `resource-exhausted`（还在排队，没有结果）与 `failed + RESOURCE_EXHAUSTED`
+   * （排完了、放弃了、算一次失败）是**两件事**，一个 `countsTowardFailure` 为假、
+   * 一个为真。同一个词出现在两处，文案上必须分得开。
+   */
+  it('⭐ 排队中 vs 排完放弃：算不算失败正好相反', () => {
+    expect(formatRunOutcome({ status: 'resource-exhausted' }).countsTowardFailure).toBe(false);
+    expect(
+      formatRunOutcome({ status: 'failed', errorCode: 'RESOURCE_EXHAUSTED' }).countsTowardFailure,
+    ).toBe(true);
   });
 });
 
@@ -76,7 +118,7 @@ describe('describeWebhookStatus', () => {
   it('⭐ 投递失败的旁注必须说明"规则状态不受影响"（P21-7 §9.1 #30）', () => {
     const note = describeWebhookStatus('failed');
     expect(note).toBeDefined();
-    expect(note).toContain('规则状态不受影响');
+    expect(note).toContain('状态不受影响');
   });
 
   it('缺席 → undefined（不渲染一行空的 webhook 说明）', () => {

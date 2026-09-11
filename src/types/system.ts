@@ -99,8 +99,14 @@ export interface ResourcePoolCardModel {
 /** provider 健康三档 + 「无样本」。 */
 export type ProviderHealthLevel = 'ok' | 'warning' | 'error' | 'no-sample';
 
-export interface ProviderRowModel {
+export interface SandboxEnvRowModel {
   id: string;
+  /**
+   * 上屏名：`aio（容器运行时）`。
+   * ⚠️ 光一个 `aio` / `boxlite` 摆在屏幕上，用户无从判断哪个是哪个（P21-5 §3 原型带括号）。
+   * ⛔ 未知 provider（开放注册表）原样用 id —— 猜一个描述比不给更贵。
+   */
+  displayName: string;
   isDefault: boolean;
   level: ProviderHealthLevel;
   /**
@@ -123,8 +129,8 @@ export interface RuntimeRowModel {
   authMethodsText: string;
 }
 
-export interface ProviderStatusCardModel {
-  providers: ProviderRowModel[];
+export interface SandboxEnvStatusCardModel {
+  providers: SandboxEnvRowModel[];
   runtimes: RuntimeRowModel[];
   imageSpecs: { id: string; isDefault: boolean }[];
   /** `'最近 1 小时'`。 */
@@ -161,12 +167,17 @@ export interface DiagnosticItemModel {
   label: string;
   /** `undefined` = 这一项还没回来（⏳ 占位，来自首帧 `start`）。 */
   status?: DiagnoseStatus;
-  summary?: string;
-  /** 可复制的修复命令 / 配置项。 */
-  hint?: string;
+  /** 一句话结论（≤ 20 字、不换行）：这一项好不好 + 挡不挡我干活。默认唯一可见的那行。 */
+  headline?: string;
+  /** 第二层：证据、例外条款、为什么。**默认收进展开层**。 */
+  detailText?: string;
+  /** 下一步 —— 人话，普通字体，⛔ 无复制按钮。 */
+  nextStep?: string;
+  /** 可复制的修复命令 / 配置项 —— 等宽 + [复制]。 */
+  command?: string;
   /** 只有第 ⑧ 项有；**五步各渲染各的，不许合成一条**（P21-5 §9A）。 */
   step?: PresetImageStep;
-  /** `'检查链第 3 步 · 血统（是不是平台自建的那张）'`；lib 查表，view 直接渲染。 */
+  /** `'前 2 步已通过，卡在第 3 步（共 5 步）· 来源'`；lib 算好，view 直接渲染。 */
   stepText?: string;
   /** 只在预制镜像链出现；**按开放集合读**，认不出的照常渲染 `summary`。 */
   errorCode?: string;
@@ -181,7 +192,7 @@ export interface DiagnosticsCardModel {
   phase: DiagnoseRunPhase;
   /** 恒八项、恒固定顺序；未开始时为空数组（还没有 `start` 帧，别用本地常量顶上）。 */
   items: DiagnosticItemModel[];
-  /** `'7 项正常 · 1 项提示 · 0 项警告 · 0 项失败 · 用时 5.0s'`；未收到 `done` 帧时不产出。 */
+  /** `'8 项全部正常 · 整轮 5.0s'` / `'6 项正常 · 1 项警告 · 1 项失败（含超时）· 整轮 5.0s'`。 */
   summaryText?: string;
   /** 断流时那句「诊断中断」的补充说明。 */
   abortedText?: string;

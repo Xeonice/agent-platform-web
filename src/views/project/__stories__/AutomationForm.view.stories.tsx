@@ -132,7 +132,8 @@ export const AdvancedOptions: Story = {
     await expect(canvas.getByTestId('form-retention-3')).toBeInTheDocument();
     await expect(canvas.getByTestId('form-retention-30')).toBeInTheDocument();
     // ⭐ 与已落地的保留卷互链：成果不是另开一套存储（F21-7 §10.4）。
-    await expect(canvas.getByTestId('form-retention-note')).toHaveTextContent('已保留卷');
+    // ⚠️ 与 `ProjectMenuPanel.view` 的按钮名逐字一致 —— 这条指路断了就等于没有。
+    await expect(canvas.getByTestId('form-retention-note')).toHaveTextContent('保留下来的成果');
   },
 };
 

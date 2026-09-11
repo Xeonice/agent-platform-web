@@ -73,7 +73,10 @@ export function ConnectionStatusView({
         className="flex items-center gap-2 bg-yellow-500/15 px-3 py-1.5 text-xs text-yellow-300"
       >
         <span aria-hidden>●</span>
-        <span>正在重连…（第 {attempt} 次）</span>
+        {/* ⚠️ 用户此刻最想知道的不是"连了第几次"，而是"我的 agent 还在跑吗"。
+            **断线重连确实恢复现场**（终端网关 attach 的是后端一直活着的那个会话），
+            所以这一句可以这么说 —— 它与「回收后重启」是两件事，那一件⛔ 不许这么说。 */}
+        <span>正在重连…（第 {attempt} 次）。任务在后台继续跑，不会因为这次断线中断。</span>
       </div>
     );
   }
@@ -84,7 +87,14 @@ export function ConnectionStatusView({
         role="alert"
         className="flex items-center gap-2 bg-red-500/15 px-3 py-1.5 text-xs text-red-300"
       >
-        <span>连接超时，已停止自动重连。</span>
+        {/* ⚠️ 两件事要分清，缺一条都会误导：
+              · **重试次数用完 ≠ 证明连不上**（超时只说明这几次没连上，不是"不可达"）；
+              · **任务本身没有因此停下** —— 断的只是这条看屏幕的连接，
+                后端那个 agent 会话一直活着，重新连上就能接着看。 */}
+        <span>
+          自动重连的次数用完了，暂时停手。这只说明这几次没连上，不代表连不上；
+          任务本身还在后台跑，重新连上就能接着看。
+        </span>
         <button
           type="button"
           className="underline"

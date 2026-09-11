@@ -283,7 +283,11 @@ describe('VS-3 失败路径 · 断层如实告知', () => {
 
     renderPanel();
     const notice = await screen.findByTestId('audit-gap-notice');
-    expect(notice).toHaveTextContent('此处有未加载的事件');
+    expect(notice).toHaveTextContent('这里有一段事件还没加载');
+    // 唯一有信息量的半句留着：中间**漏了多少条不知道**，列表不许假装连续。
+    expect(notice).toHaveTextContent('条数未知');
+    // ⛔ `seq` 是数据库列名，两个内部序号对用户毫无意义（填洞用的 gap 一个字没动）。
+    expect(notice).not.toHaveTextContent('seq');
 
     // 位置：夹在新批（400/399）与旧段（100/99）之间。
     const items = [...(notice.parentElement?.children ?? [])].map((el) =>

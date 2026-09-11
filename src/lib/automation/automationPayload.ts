@@ -66,7 +66,7 @@ export function validateDraft(draft: AutomationDraft): DraftErrors {
     errors.prompt = `任务内容超出 ${String(TASK_PROMPT_MAX_LENGTH)} 字符上限。`;
   }
 
-  if (draft.runtime === '') errors.runtime = '请选择 runtime。';
+  if (draft.runtime === '') errors.runtime = '请选择用哪个 Agent 跑。';
 
   const cron = scheduleToCron(draft.scheduleKind, draft.scheduleConfig);
   if (!cron.ok) errors.schedule = cron.reason;

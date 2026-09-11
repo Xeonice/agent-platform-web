@@ -16,6 +16,7 @@ import {
 } from '@/services/api/project.service';
 import { sandboxListKeys } from '@/hooks/sandbox/useSandboxes';
 import { ApiErrorException } from '@/services/api/apiError';
+import { PROJECT_ERROR_COPY, projectErrorMessage } from '@/lib/project/projectErrorCopy';
 import { useAppStore } from '@/stores';
 import type { CreateProjectInput, ProjectDto } from '@/types/project';
 
@@ -25,20 +26,24 @@ export const projectKeys = {
 
 /**
  * 新建项目错误 → 表单友好文案（container 不便 import service，故收敛在 hook 层）。
- * 名称重复（`ALREADY_EXISTS`）给明确提示；其余 4xx 用后端信封；网络错误给通用文案。
  *
  * ⚠️ 判据读**信封里的码**，不读 HTTP 状态码。这条与 `lib/sandboxErrorCopy` 的
  * `sideEffectFree` / 契约里的 `retryable` 同源：语义由后端在信封里声明，前端不从状态码反推。
  * 旧写法 `httpStatus === 409` 拿状态码当 `ALREADY_EXISTS` 的代理——后端哪天在这个端点上
  * 多返回一种 409（并发冲突、配额冲突……），用户就会被告知"项目名已存在"，而名字根本没重。
+ *
+ * ★ **2026-09：兜底不再回落到 `envelope.message`。**
+ *   旧写法是 `message !== '' ? message : '创建失败，请稍后重试。'` —— 而 `message`
+ *   **永远非空**（后端每一处 throw 都带一句话），那个中文兜底一次都没执行过。
+ *   实际上屏的是 `project limit reached (max 50)` / `sourceType 'git' requires repoUrl`
+ *   这类英文原话，而它们**同为 400、同为 `BAD_REQUEST`**，前端连分支的余地都没有。
+ *   ⇒ 后端本轮给这两条各补了业务码（`PROJECT_LIMIT_REACHED` / `INVALID_PROJECT_SOURCE`），
+ *     这里按码查表。未知码给通用话 + traceId（见 `lib/_shared/errorCopy`）。
  */
 export function describeCreateProjectError(error: unknown): string | undefined {
   if (error === null || error === undefined) return undefined;
-  if (error instanceof ApiErrorException) {
-    if (error.envelope.code === 'ALREADY_EXISTS') return '项目名已存在，请换一个名称。';
-    return error.envelope.message !== '' ? error.envelope.message : '创建失败，请稍后重试。';
-  }
-  return '网络错误，请稍后重试。';
+  if (!(error instanceof ApiErrorException)) return '网络不通，请稍后再试。';
+  return projectErrorMessage(error.envelope.code, error.envelope.traceId, '创建失败，请稍后重试。');
 }
 
 export function useProjects(): UseQueryResult<ProjectDto[]> {
@@ -87,10 +92,19 @@ export function useConvertToEmpty(): UseMutationResult<ProjectDto, Error, string
  * 树里那一项还在，用户会以为是刷新问题。
  */
 export function describeProjectActionError(error: unknown): string {
-  if (error instanceof ApiErrorException) {
-    return error.envelope.message !== '' ? error.envelope.message : '删除失败，请稍后重试。';
-  }
-  return '网络错误，请稍后重试。';
+  if (!(error instanceof ApiErrorException)) return '网络不通，请稍后再试。';
+  return projectErrorMessage(
+    error.envelope.code,
+    error.envelope.traceId,
+    '删除失败，请稍后重试。',
+    {
+      ...PROJECT_ERROR_COPY,
+      // ⚠️ 这条路上的 409 只有一个来源：项目下还有在跑的任务（或克隆还没停）。
+      //    ⛔ 不许用一句通用的「状态不允许」——那既没说清是什么挡住了，也没给出路。
+      INVALID_STATE: '这个项目现在删不掉：还有任务在跑或克隆还没停。等它们结束、或先停掉，再删。',
+      PROJECT_NOT_FOUND: '这个项目已经不在了（可能在别处被删掉了）。刷新一下列表即可。',
+    },
+  );
 }
 
 /**

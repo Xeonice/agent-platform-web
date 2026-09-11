@@ -89,6 +89,7 @@ const SANDBOX: SandboxDto = {
   id: 'sb-e2e',
   projectId: 'proj-e2e',
   runtime: 'claude-code',
+  availableRuntimes: ['claude-code'],
   provider: 'boxlite',
   name: 'E2E 冒烟任务',
   status: 'running',
@@ -147,7 +148,8 @@ test.describe('S2 选项目 + 建沙箱 + 终端骨架（mock 边界）', () => 
     // ⚠️ runtime 单选**按 fieldset 作用域**取，不靠正则区分：这份替身里 runtime 有个
     // `acme-agent`，将来别处再冒出一个同前缀的 id，一个 /acme/ 就会命中两个而触发 strict
     // 违规。收紧正则只是把眼前这次撞车躲开，按组取则结构上不可能撞。
-    const runtimes = page.getByRole('group', { name: /运行时/ });
+    // ⚠️ legend 的上屏词是「Agent（runtime）」——`runtime` 是内部词，只留在括号里。
+    const runtimes = page.getByRole('group', { name: /Agent/ });
 
     // ① **「运行档位 (provider)」单选组已删，这里断言它不存在。**
     //    `AioSandboxProvider extends DockerContainerBackend` —— aio 就是 docker 容器；

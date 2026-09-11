@@ -61,6 +61,7 @@ export const EmptyGuide: Story = { args: { task: undefined } };
 export const CapabilityBlocked: Story = {
   args: {
     task: undefined,
-    disabledReason: '运行档位「acme-box」不支持无头任务（headlessTask=false）。',
+    // ⚠️ 上屏不出现档位名与字段名（「运行档位」这个开关已从界面退休）。
+    disabledReason: '这台机器的沙箱环境跑不了无头任务（不开终端、直接跑完的那种）。',
   },
 };

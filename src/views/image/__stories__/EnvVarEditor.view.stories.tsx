@@ -127,6 +127,36 @@ export const ValueBytesOverflow: Story = {
     const counter = canvas.getByTestId('value-byte-counter');
     await expect(counter).toHaveTextContent('4098 / 4096 字节');
     await expect(counter.className).toMatch(/red/);
+    // ⭐ 同一个码按**位置**分句：这里超的是 VALUE，不许说成"超出长度或条数上限"。
+    const err = canvas.getByTestId('env-var-row-error');
+    await expect(err).toHaveAttribute('data-code', 'ENV_LIMIT_EXCEEDED');
+    await expect(err).toHaveTextContent('变量值太大');
+  },
+};
+
+/**
+ * ⭐ **`ENV_LIMIT_EXCEEDED` 一个码三种触发，此前三处共用一句「超出长度或条数上限」** ——
+ * 那句话在三个位置都不精确：它出现在变量名下面时，用户读不出到底是名字长了、值大了、
+ * 还是不该再加行了，而三者的改法完全不同。
+ *
+ * ⛔ **分岔的是文案不是码**：`data-code` 出去的仍然是同一个 `ENV_LIMIT_EXCEEDED`
+ * （P21-4 §10.6 明令不许发明第五个码）。
+ *
+ * MUTATION：把 `errorCopy()` 换回 `ERROR_COPY[e.code]` ⇒ 本条红。
+ */
+export const KeyTooLong: Story = {
+  args: {
+    rows: [{ id: 'r1', key: 'A'.repeat(65), value: 'v', secret: false, secretStored: false }],
+    valueByteCounts: [1],
+    errors: [{ index: 0, field: 'key', code: 'ENV_LIMIT_EXCEEDED', path: 'env[0].key' }],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const err = canvas.getByTestId('env-var-row-error');
+    // 码不变（与后端同一份口径），只是话说到了点子上。
+    await expect(err).toHaveAttribute('data-code', 'ENV_LIMIT_EXCEEDED');
+    await expect(err).toHaveTextContent('变量名太长');
+    await expect(err).not.toHaveTextContent('超出长度或条数上限');
   },
 };
 
@@ -162,5 +192,11 @@ export const OverRowLimit: Story = {
     valueByteCounts: Array.from({ length: 51 }, () => 1),
     canAddRow: false,
     errors: [{ field: 'rows', code: 'ENV_LIMIT_EXCEEDED', path: 'env' }],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // 整表级：说的是**条数**，不是长度。
+    const err = canvas.getByText(/变量条数太多/);
+    await expect(err).toHaveAttribute('data-code', 'ENV_LIMIT_EXCEEDED');
   },
 };

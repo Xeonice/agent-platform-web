@@ -179,12 +179,7 @@ export function AuditStreamCardView({
               {rows.map((row, index) => (
                 <Fragment key={row.seq}>
                   {gap !== null && gapIndex === index && (
-                    <AuditGapNoticeView
-                      afterSeq={gap.afterSeq}
-                      beforeSeq={gap.beforeSeq}
-                      filling={isFillingGap}
-                      onFill={onFillGap}
-                    />
+                    <AuditGapNoticeView filling={isFillingGap} onFill={onFillGap} />
                   )}
                   <AuditEventRowView
                     row={row}
@@ -195,12 +190,7 @@ export function AuditStreamCardView({
                 </Fragment>
               ))}
               {gap !== null && gapIndex === rows.length && (
-                <AuditGapNoticeView
-                  afterSeq={gap.afterSeq}
-                  beforeSeq={gap.beforeSeq}
-                  filling={isFillingGap}
-                  onFill={onFillGap}
-                />
+                <AuditGapNoticeView filling={isFillingGap} onFill={onFillGap} />
               )}
             </ul>
           )}

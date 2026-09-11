@@ -79,24 +79,70 @@ describe('describeCreateProjectError', () => {
    * 多返回一种 409（并发冲突、配额冲突……），用户就会被告知"项目名已存在"，而名字根本没重 ——
    * 一句**确凿的假话**，还把人推去改一个没问题的输入。把判据改回状态码，这条当场红。
    */
-  it('同是 409 但码不是 ALREADY_EXISTS → 透出后端那句话，绝不硬说"名称重复"', () => {
+  it('同是 409 但码不是 ALREADY_EXISTS → ⛔ 绝不硬说"名称重复"', () => {
     const err = new ApiErrorException(
-      { code: 'CONFLICT', message: '该项目正在被另一处修改，请稍后再试。', retryable: true },
+      { code: 'CONFLICT', message: 'concurrent modification', retryable: true },
       409,
     );
-    expect(describeCreateProjectError(err)).toBe('该项目正在被另一处修改，请稍后再试。');
+    expect(describeCreateProjectError(err)).not.toContain('项目名已存在');
   });
 
-  it('其余 4xx → 用后端信封文案', () => {
-    const err = new ApiErrorException(
-      { code: 'BAD_REQUEST', message: '名称过长', retryable: false },
+  /**
+   * ★ **两条都是 400，只有码分得开它们** —— 而它们的出路完全相反：
+   *   一条是"先删掉一个旧项目"，一条是"把仓库地址填上"。
+   *   此前两条都出线为 `BAD_REQUEST` + 英文原文，前端连分支的余地都没有。
+   */
+  it('⭐ PROJECT_LIMIT_REACHED / INVALID_PROJECT_SOURCE 同为 400，各说各的人话', () => {
+    const limit = new ApiErrorException(
+      {
+        code: 'PROJECT_LIMIT_REACHED',
+        message: 'project limit reached (max 50)',
+        retryable: false,
+      },
       400,
     );
-    expect(describeCreateProjectError(err)).toBe('名称过长');
+    const source = new ApiErrorException(
+      {
+        code: 'INVALID_PROJECT_SOURCE',
+        message: "sourceType 'git' requires repoUrl",
+        retryable: false,
+      },
+      400,
+    );
+    expect(describeCreateProjectError(limit)).toContain('上限');
+    expect(describeCreateProjectError(limit)).toContain('删掉一个');
+    expect(describeCreateProjectError(source)).toContain('仓库地址');
+    expect(describeCreateProjectError(limit)).not.toBe(describeCreateProjectError(source));
+  });
+
+  /**
+   * ★ **⛔ 不许把 `envelope.message` 上屏。**
+   *
+   * 这是本轮最核心的一条纪律（`useProjectBranches.ts` 早就裁决过，这几处没跟上）：
+   * 旧写法 `message !== '' ? message : 中文兜底` 里那个兜底**一次都没执行过**，
+   * 因为后端每一处 throw 都带着一句英文。用户看到的是
+   * `git project requires repoUrl (I-PRJ)` 这种带内部不变量编号的句子。
+   * ⇒ 未知码给通用话 + traceId（用户能照着念、我们能照着查）。
+   */
+  it('⭐ 未知码 ⇒ 通用话 + traceId，⛔ 后端英文原文一个字都不上屏', () => {
+    const err = new ApiErrorException(
+      {
+        code: 'SOMETHING_NEW',
+        message: 'git project requires repoUrl (I-PRJ)',
+        retryable: false,
+        traceId: 'trace-123',
+      },
+      400,
+    );
+    const msg = describeCreateProjectError(err);
+    expect(msg).not.toContain('repoUrl');
+    expect(msg).not.toContain('I-PRJ');
+    expect(msg).toContain('创建失败');
+    expect(msg).toContain('trace-123');
   });
 
   it('网络错误 → 通用文案；null → undefined', () => {
-    expect(describeCreateProjectError(new Error('Failed to fetch'))).toBe('网络错误，请稍后重试。');
+    expect(describeCreateProjectError(new Error('Failed to fetch'))).toBe('网络不通，请稍后再试。');
     expect(describeCreateProjectError(null)).toBeUndefined();
   });
 });
@@ -182,17 +228,27 @@ describe('describeProjectActionError', () => {
   /**
    * ⭐ §10.7 集成 ③ 的文案侧：409 要被翻成人话并**显示出来**，⛔ 不是静默关闭。
    */
-  it('后端信封有话 → 原样透出（409 也不例外）', () => {
+  it('INVALID_STATE（409）→ 说清是什么挡住了删除，并给出路', () => {
     const err = new ApiErrorException(
-      { code: 'CONFLICT', message: '该项目仍有运行中的任务，请先停止后再删除。', retryable: false },
+      {
+        code: 'INVALID_STATE',
+        message: 'project has running tasks',
+        retryable: false,
+      },
       409,
     );
-    expect(describeProjectActionError(err)).toBe('该项目仍有运行中的任务，请先停止后再删除。');
+    const msg = describeProjectActionError(err);
+    expect(msg).toContain('任务在跑');
+    // ⛔ 后端原文不上屏。
+    expect(msg).not.toContain('running tasks');
   });
 
-  it('信封为空 → 兜底文案；非 Api 错误 → 网络文案', () => {
-    const empty = new ApiErrorException({ code: 'CONFLICT', message: '', retryable: false }, 409);
-    expect(describeProjectActionError(empty)).toBe('删除失败，请稍后重试。');
-    expect(describeProjectActionError(new Error('boom'))).toBe('网络错误，请稍后重试。');
+  it('未知码 → 兜底文案（⛔ 不回落 message）；非 Api 错误 → 网络文案', () => {
+    const unknown = new ApiErrorException(
+      { code: 'WHATEVER', message: 'some backend prose', retryable: false },
+      409,
+    );
+    expect(describeProjectActionError(unknown)).toBe('删除失败，请稍后重试。');
+    expect(describeProjectActionError(new Error('boom'))).toBe('网络不通，请稍后再试。');
   });
 });

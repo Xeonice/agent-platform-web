@@ -55,7 +55,7 @@ export const WeeklyMultiDay: Story = {
 export const CreatingDefaultsToLocalZone: Story = {
   args: { editing: false },
   play: async ({ canvasElement }) => {
-    await expect(within(canvasElement).getByText(/创建后快照保存/)).toBeInTheDocument();
+    await expect(within(canvasElement).getByText(/建好之后就定下来了/)).toBeInTheDocument();
   },
 };
 

@@ -316,11 +316,96 @@ describe('⭐ 8 个 run status 在界面上分得开', () => {
     expect(authDetail).not.toBe(prevDetail);
     expect(authDetail).toContain('凭证');
 
-    // ⭐ missed 的详情必须说清"不是规则失败 / 不补跑"。
+    // ⭐ missed 的详情必须说清"不是规则的问题 / 不补跑"。
     fireEvent.click(within(at(items, 5)).getByTestId('run-toggle-detail'));
     const missedDetail = within(at(items, 5)).getByTestId('run-detail').textContent;
-    expect(missedDetail).toContain('不是规则失败');
+    expect(missedDetail).toContain('不是规则的问题');
     expect(missedDetail).toContain('不会补跑');
+  });
+});
+
+/**
+ * ★ **这一组钉的是三处"写好了没接线"里的两处**（第三处是全局横幅，见交付报告）。
+ */
+describe('⭐ 失败原因要真的说出来', () => {
+  const failingRule = () =>
+    rule({ id: 'a1', enabled: false, degraded: true, consecutiveFailures: 10 });
+
+  const runsFixture = [
+    // 最近一条不是失败（下面那条才是）—— 用来钉住 [查看原因] 展开的是**最近一次失败**，
+    // 而不是"最近一条"。
+    { id: 'r-latest', status: 'success' },
+    {
+      id: 'r-failed',
+      status: 'failed',
+      errorMessage: 'task exited with code 1: ENOENT ./scripts/nightly.sh',
+    },
+  ].map((r) => ({
+    automationId: 'a1',
+    retryCount: 0,
+    triggeredAt: '2026-08-31T00:00:00Z',
+    startedAt: '2026-08-31T00:00:00Z',
+    ...r,
+  }));
+
+  function serveFailing() {
+    server.use(
+      http.get(`${BASE}/api/projects/:id/automations`, () => HttpResponse.json([failingRule()])),
+      http.get(`${BASE}/api/automations/:id/runs`, () =>
+        HttpResponse.json({ items: runsFixture, hasMore: false }),
+      ),
+    );
+  }
+
+  /**
+   * ⭐ `errorMessage` 此前**解析了却从不渲染**：schema 里有、类型里有、`runRows` 不取、
+   *   view 不显示 ⇒ 每一条失败记录的原因永远只有一句通用话，违反「失败要说清失败在哪一步」。
+   */
+  it('errorMessage 渲染在展开的详情里（带标签，与人话 detail 各占一格）', async () => {
+    serveFailing();
+    renderInModal();
+    fireEvent.click(await screen.findByTestId('automation-select'));
+    const items = await screen.findAllByTestId('run-history-item');
+    // 失败那一条已经被 [查看原因] 之外的路径折叠着 —— 手动展开它。
+    fireEvent.click(within(at(items, 1)).getByTestId('run-toggle-detail'));
+
+    const raw = await within(at(items, 1)).findByTestId('run-error-message');
+    expect(raw).toHaveTextContent('ENOENT ./scripts/nightly.sh');
+    // 人话那一句仍然在（两者都要：一句说"属于哪一类"，一条说"哪一步炸的"）。
+    expect(within(at(items, 1)).getByTestId('run-detail')).toHaveTextContent('跑起来了');
+  });
+
+  it('没有 errorMessage 的行不摆一个空的原文块', async () => {
+    serveFailing();
+    renderInModal();
+    fireEvent.click(await screen.findByTestId('automation-select'));
+    const items = await screen.findAllByTestId('run-history-item');
+    fireEvent.click(within(at(items, 0)).getByTestId('run-toggle-detail'));
+    expect(within(at(items, 0)).queryByTestId('run-error-message')).toBeNull();
+  });
+
+  /**
+   * ⭐ [查看原因] 此前**只切视图不给原因**：按钮承诺了"原因"，用户拿到的是一个原因
+   *   仍然折叠着的页面。要么改行为，要么改文案不许诺 —— 这里选前者。
+   */
+  it('[查看原因] 自动展开**最近一次算失败**的那条（不是最近一条）', async () => {
+    serveFailing();
+    renderInModal();
+    fireEvent.click(await screen.findByTestId('automation-show-failure'));
+
+    const items = await screen.findAllByTestId('run-history-item');
+    // 失败那条的详情直接就在，不需要再点一次 [详情]。
+    expect(within(at(items, 1)).getByTestId('run-error-message')).toHaveTextContent('ENOENT');
+    // 最近那条（成功）不该被展开——展开的判据是 `countsTowardFailure`，不是"第一条"。
+    expect(within(at(items, 0)).queryByTestId('run-detail')).toBeNull();
+  });
+
+  it('从规则名进详情 ⇒ ⛔ 不自动展开（那是另一个意图：我只是想看看这条规则）', async () => {
+    serveFailing();
+    renderInModal();
+    fireEvent.click(await screen.findByTestId('automation-select'));
+    const items = await screen.findAllByTestId('run-history-item');
+    expect(within(at(items, 1)).queryByTestId('run-error-message')).toBeNull();
   });
 });
 

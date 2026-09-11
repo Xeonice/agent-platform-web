@@ -28,7 +28,7 @@ function check(over: Partial<DiagnoseCheckFrame> = {}): DiagnoseCheckFrame {
     id: 'container-runtime',
     label: '容器运行时可达',
     status: 'ok',
-    summary: 'docker socket 可达',
+    headline: '容器服务可达',
     durationMs: 142,
     ...over,
   };
@@ -103,13 +103,16 @@ describe('③④ 预制镜像五步：step / errorCode 各自成行，不合成�
         label: '预制镜像就绪',
         status: 'info',
         step: 'staged',
-        summary: '预制镜像已就绪，但尚未在本机铺开',
+        headline: '镜像还没下载到本机',
       }),
     );
     const item = diagnosticsCardModel(state).items[2];
     expect(item?.status).toBe('info');
     expect(item?.step).toBe('staged');
-    expect(item?.stepText).toContain('第 5 步');
+    expect(item?.stepText).toContain('第 5 步（共 5 步）');
+    // ⚠️ 走完了就不许说「卡在」—— 第 5 步 info 是一台完全健康的机器。
+    expect(item?.stepText).not.toContain('卡在');
+    expect(item?.stepText).toContain('前 4 步已通过');
     expect(item?.stepText).not.toMatch(/失败|错误/);
     // 第 5 步没有码（四个码只覆盖前四步）。
     expect(item?.errorCode).toBeUndefined();
@@ -128,6 +131,36 @@ describe('③④ 预制镜像五步：step / errorCode 各自成行，不合成�
     expect(new Set(texts).size).toBe(4);
   });
 
+  // ── ⭐ 「卡在第 N 步（共 5 步）」：序号必须自带上下文（2026-09-11 用户裁决）──
+  it('⭐ 卡在第 3 步 ⇒ 说清**前 2 步已通过**、**一共 5 步**', () => {
+    // ⛔ 上一版恒为「检查链第 3 步 · 血统」—— 一个孤零零的序号，用户答不出
+    //    「前面过了没有」「一共几步」这两个他真正在问的问题。
+    // MUTATION: 把 `presetImageStepText` 换回一张静态查表 ⇒ 本条红。
+    let state = applyDiagnoseStart(START);
+    state = applyDiagnoseCheck(
+      state,
+      check({ id: 'preset-image', label: '预制镜像就绪', status: 'fail', step: 'lineage' }),
+    );
+    const text = diagnosticsCardModel(state).items[2]?.stepText ?? '';
+    expect(text).toContain('前 2 步已通过');
+    expect(text).toContain('卡在第 3 步（共 5 步）');
+    // ⛔ 「血统」「检查链」都是内部词，上屏说「来源」。
+    expect(text).not.toContain('血统');
+    expect(text).not.toContain('检查链');
+    expect(text).toContain('来源');
+  });
+
+  it('第 1 步没有「前 N 步已通过」那半句（前面根本没有步）', () => {
+    let state = applyDiagnoseStart(START);
+    state = applyDiagnoseCheck(
+      state,
+      check({ id: 'preset-image', label: '预制镜像就绪', status: 'fail', step: 'config' }),
+    );
+    const text = diagnosticsCardModel(state).items[2]?.stepText ?? '';
+    expect(text).toContain('卡在第 1 步（共 5 步）');
+    expect(text).not.toContain('已通过');
+  });
+
   it('`errorCode` 原样带到 model（含**没见过的**码：开放集合，认不出照常渲染 summary）', () => {
     let state = applyDiagnoseStart(START);
     state = applyDiagnoseCheck(
@@ -137,20 +170,20 @@ describe('③④ 预制镜像五步：step / errorCode 各自成行，不合成�
         label: '预制镜像就绪',
         status: 'fail',
         errorCode: 'PRESET_IMAGE_SOMETHING_NEW_2027',
-        summary: '某个未来的失败',
+        headline: '某个未来的失败',
       }),
     );
     const item = diagnosticsCardModel(state).items[2];
     expect(item?.errorCode).toBe('PRESET_IMAGE_SOMETHING_NEW_2027');
-    expect(item?.summary).toBe('某个未来的失败');
+    expect(item?.headline).toBe('某个未来的失败');
     expect(isKnownPresetImageCode('PRESET_IMAGE_SOMETHING_NEW_2027')).toBe(false);
     expect(isKnownPresetImageCode('PRESET_IMAGE_NOT_SEEDED')).toBe(true);
   });
 });
 
-describe('§9B 端口占用：summary 与 hint 一字不改地带上去', () => {
+describe('§9B 端口占用：三层各归各位，证据一个字不丢', () => {
   it('⭐ 端口号 · 进程名与 pid · 平台原本要用它做什么，三样都在 model 里', () => {
-    const summary = '端口 3000（平台 HTTP/WS 服务）被 com.docke (pid 41235) 占用';
+    const detailText = '端口 3000（平台 HTTP/WS 服务）被 com.docke (pid 41235) 占用。';
     let state = applyDiagnoseStart(START);
     state = applyDiagnoseCheck(
       state,
@@ -158,18 +191,31 @@ describe('§9B 端口占用：summary 与 hint 一字不改地带上去', () => 
         id: 'port-conflict',
         label: '端口占用',
         status: 'fail',
-        summary,
-        hint: 'lsof -nP -iTCP:3000 -sTCP:LISTEN',
+        headline: '端口 3000 被占用，平台起不来',
+        detailText,
+        nextStep: '先确认它是什么，确实该让路就停掉它。',
+        command: 'lsof -nP -iTCP:3000 -sTCP:LISTEN',
       }),
     );
     const item = diagnosticsCardModel(state).items[1];
-    // ⚠️ 不许在 lib 里"归纳"成「端口被占用」：那句话对每一种占用一字不差，
+    // ⚠️ 不许在 lib 里"归纳"掉证据：那句话对每一种占用一字不差，
     //    而用户下一步要做的事完全取决于占它的是什么。
-    expect(item?.summary).toBe(summary);
-    expect(item?.summary).toContain('3000');
-    expect(item?.summary).toContain('com.docke');
-    expect(item?.summary).toContain('pid 41235');
-    expect(item?.hint).toBe('lsof -nP -iTCP:3000 -sTCP:LISTEN');
+    expect(item?.detailText).toBe(detailText);
+    expect(item?.detailText).toContain('com.docke');
+    expect(item?.detailText).toContain('pid 41235');
+    // ⛔ **散文与命令是两个字段**：合成一个时，一段散文会顶着 [复制] 渲染进等宽框。
+    expect(item?.nextStep).toBe('先确认它是什么，确实该让路就停掉它。');
+    expect(item?.command).toBe('lsof -nP -iTCP:3000 -sTCP:LISTEN');
+    // MUTATION: 在 `itemFor` 里把 nextStep 与 command 拼成一个字段 ⇒ 本条红。
+    expect(item?.nextStep).not.toContain('lsof');
+  });
+
+  it('⛔ 后端不给 nextStep / command 时不许凭空造一个', () => {
+    let state = applyDiagnoseStart(START);
+    state = applyDiagnoseCheck(state, check({ id: 'port-conflict', label: '端口占用' }));
+    const item = diagnosticsCardModel(state).items[1];
+    expect(item?.nextStep).toBeUndefined();
+    expect(item?.command).toBeUndefined();
   });
 });
 
@@ -191,6 +237,38 @@ describe('done 汇总与断流', () => {
     expect(model.abortedText).toBeUndefined();
   });
 
+  it('⛔ 全绿时不渲染那三个零 —— 「0 项提示 · 0 项警告 · 0 项失败」对下一步毫无区别', () => {
+    // MUTATION: 把 `summaryTextOf` 改回无条件拼四档 ⇒ 本条红。
+    let state = applyDiagnoseStart(START);
+    state = applyDiagnoseDone(state, {
+      event: 'done',
+      okCount: 8,
+      infoCount: 0,
+      warnCount: 0,
+      failCount: 0,
+      totalMs: 5012,
+    });
+    const text = diagnosticsCardModel(state).summaryText ?? '';
+    expect(text).toBe('8 项全部正常 · 整轮 5s');
+    expect(text).not.toContain('0 项');
+  });
+
+  it('为零的那几档单独消失，非零的照旧带上（含超时那半句跟着 failCount 走）', () => {
+    let state = applyDiagnoseStart(START);
+    state = applyDiagnoseDone(state, {
+      event: 'done',
+      okCount: 7,
+      infoCount: 1,
+      warnCount: 0,
+      failCount: 0,
+      totalMs: 900,
+    });
+    const text = diagnosticsCardModel(state).summaryText ?? '';
+    expect(text).toContain('1 项提示');
+    expect(text).not.toContain('0 项警告');
+    expect(text).not.toContain('含超时');
+  });
+
   it('⭐ 断流 ⇒ 已到达项**一条不动**，只多一句「诊断中断 N/M」', () => {
     let state = applyDiagnoseStart(START);
     state = applyDiagnoseCheck(state, check({}));
@@ -201,7 +279,7 @@ describe('done 汇总与断流', () => {
     // ⚠️ 否定断言是关键：把 `markDiagnoseAborted` 写成"清空 results"之后，
     //    「诊断中断」那句照样渲染，只有这一条会红。
     expect(model.items[0]?.status).toBe('ok');
-    expect(model.items[0]?.summary).toBe('docker socket 可达');
+    expect(model.items[0]?.headline).toBe('容器服务可达');
     expect(model.abortedText).toContain('1/3');
   });
 

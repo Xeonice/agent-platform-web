@@ -53,26 +53,28 @@ export const Submitting: Story = {
  * 能力位显隐：所选 provider `capabilities.headlessTask === false` ⇒ **置灰 + 原因**，
  * 与 `spawnTty=false` 禁用终端入口同一套做法。
  *
- * ⚠️ 档位名用第三方的 `acme-box`，**不用 `boxlite`**：两个内置档位（aio / boxlite）的
- * `headlessTask` 现在都是 `true`（S6 已落地），拿 boxlite 演"不支持"是在 story 里
- * 挂一条关于后端的假事实。开放 registry 里第三方档位不支持无头任务才是这一态的真实来源。
+ * ⚠️ **2026-09-11：理由里不再出现档位名，也不再出现字段名。**
+ * 「运行档位」这个开关已从界面退休（选择权收回后端）——把一个用户既选不了、
+ * 也在别处看不到的名字摆给他，只会让他去找一个不存在的下拉；`headlessTask=false`
+ * 则是能力位的字段名，属于"只进日志与 data 属性"那一层（P22 §6）。
+ * 两条相反的出路（换机器 / 改用交互式终端）仍然都摆出来，不替用户选。
  */
 export const CapabilityBlocked: Story = {
   args: {
     prompt: '跑一轮回归',
     disabledReason:
-      '运行档位「acme-box」不支持无头任务（headlessTask=false）。请改用支持的档位重建沙箱，或改用交互式终端。',
+      '这台机器的沙箱环境跑不了无头任务（不开终端、直接跑完的那种）。换一台支持它的机器重新发起，或者改用交互式终端。',
   },
 };
 
 /**
- * 能力位**未知**（刷新后拿不到沙箱的 provider —— DTO 里没有这个字段）：
- * 不置灰，就地说明"以后端校验为准"。
+ * 能力位**未知**（还没取到这台机器的沙箱环境信息）：不置灰，就地照实说。
+ * ⚠️ 「不知道」不能说成「不支持」—— 这是本仓的一条硬纪律。
  */
 export const CapabilityUnknown: Story = {
   args: {
     capabilityUnknownNote:
-      '无法确认这个沙箱的运行档位是否支持无头任务（刷新后拿不到档位信息），发起时以后端校验为准。',
+      '还不确定这台机器的沙箱环境能不能跑无头任务（环境信息还没取回来）。可以先发起，以平台的校验结果为准。',
   },
 };
 

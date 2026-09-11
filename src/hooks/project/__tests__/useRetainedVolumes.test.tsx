@@ -72,7 +72,8 @@ describe('useRetainedVolumes · 列表', () => {
       wrapper: makeWrapper(),
     });
     await waitFor(() => {
-      expect(result.current.loadErrorMessage).toBe('读取保留卷失败');
+      // 按码查表：`INTERNAL` 有共享文案。⛔ 后端 message 不上屏。
+      expect(result.current.loadErrorMessage).toBe('服务出错了，稍后再试。');
     });
     expect(result.current.rows).toEqual([]);
   });
@@ -118,9 +119,11 @@ describe('useRetainedVolumes · 删除', () => {
         listCalls += 1;
         return HttpResponse.json([]);
       }),
-      http.delete(
-        `${BASE}/api/retained-volumes/:id`,
-        () => new HttpResponse(null, { status: 404 }),
+      http.delete(`${BASE}/api/retained-volumes/:id`, () =>
+        HttpResponse.json(
+          { code: 'NOT_FOUND', message: 'retained volume rv-gone not found', retryable: false },
+          { status: 404 },
+        ),
       ),
     );
     const { result } = renderHook(() => useRetainedVolumes('proj-demo'), {
@@ -134,9 +137,7 @@ describe('useRetainedVolumes · 删除', () => {
       result.current.remove('rv-gone');
     });
     await waitFor(() => {
-      expect(result.current.actionErrorMessage).toBe(
-        '这个保留卷已经不存在了（可能刚被自动清理）。',
-      );
+      expect(result.current.actionErrorMessage).toBe('这份成果已经不在了（可能刚被自动清理）。');
     });
     // 那条记录真的没了 —— 列表必须跟着更新，否则用户会对着一条不存在的记录反复点删除。
     await waitFor(() => {
@@ -186,30 +187,54 @@ describe('describeRetainedVolumeError', () => {
     expect(describeRetainedVolumeError(undefined)).toBeUndefined();
   });
 
-  it('404 有专属人话（这是竞态，不是"操作失败"）', () => {
+  it('NOT_FOUND 有专属人话（这是竞态，不是"操作失败"）', () => {
     const err = new ApiErrorException(
       { code: 'NOT_FOUND', message: 'Not Found', retryable: false },
       404,
     );
-    expect(describeRetainedVolumeError(err)).toBe('这个保留卷已经不存在了（可能刚被自动清理）。');
+    expect(describeRetainedVolumeError(err)).toBe('这份成果已经不在了（可能刚被自动清理）。');
   });
 
-  it('其余 4xx/5xx 用后端信封原话', () => {
+  /**
+   * ★ **同为 404，两件事，两句话。**
+   *
+   * 旧判据是 `httpStatus === 404` ⇒ 这条也会被说成"已经不存在了"。可它其实是
+   * **记录还在、只是目录被清了**：那一条仍然列在面板里、仍然占着名额，用户该做的是
+   * 把它删掉，而不是等它自己消失。⇒ 读码，不读状态码。
+   */
+  it('⭐ VOLUME_ARCHIVE_MISSING ≠ NOT_FOUND：记录还在，只是文件没了，出路是"删掉这一条"', () => {
+    const gone = new ApiErrorException(
+      { code: 'VOLUME_ARCHIVE_MISSING', message: 'no longer on disk', retryable: false },
+      404,
+    );
+    const msg = describeRetainedVolumeError(gone);
+    expect(msg).toContain('删掉');
+    expect(msg).not.toBe(
+      describeRetainedVolumeError(
+        new ApiErrorException({ code: 'NOT_FOUND', message: 'x', retryable: false }, 404),
+      ),
+    );
+  });
+
+  it('⭐ 未知码 → 通用话 + traceId，⛔ 不回落后端 message', () => {
     const err = new ApiErrorException(
-      { code: 'FORBIDDEN', message: '没有权限删除该保留卷', retryable: false },
+      {
+        code: 'WHATEVER',
+        message: 'retained volume … is no longer on disk',
+        retryable: false,
+        traceId: 't-9',
+      },
       403,
     );
-    expect(describeRetainedVolumeError(err)).toBe('没有权限删除该保留卷');
-  });
-
-  it('信封 message 为空 → 兜底文案（不给用户一个空红字）', () => {
-    const err = new ApiErrorException({ code: 'INTERNAL', message: '', retryable: true }, 500);
-    expect(describeRetainedVolumeError(err)).toBe('操作失败，请稍后重试。');
+    const msg = describeRetainedVolumeError(err);
+    expect(msg).not.toContain('no longer on disk');
+    expect(msg).toContain('操作失败');
+    expect(msg).toContain('t-9');
   });
 
   it('非 ApiErrorException（断网）→ 网络错误文案', () => {
     expect(describeRetainedVolumeError(new TypeError('fetch failed'))).toBe(
-      '网络错误，请稍后重试。',
+      '网络不通，请稍后再试。',
     );
   });
 });

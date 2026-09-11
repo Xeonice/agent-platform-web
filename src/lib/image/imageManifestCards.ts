@@ -106,6 +106,10 @@ export function manifestToCardInput(dto: ImageManifestDto): ImageCardInput {
     // 「解析于 X 前」的时刻。后端把 `resolvedAt` 与 `registeredAt` 定义成同一个事件
     // （行是在解析出坐标的那一刻 INSERT 的，digest 此后永不 UPDATE），这里读语义对的那个。
     lastValidatedAt: dto.resolvedAt,
+    // ⚠️ **原样搬过去，不在这里判空、不在这里翻译**：`null` 在预置镜像上是"它就是锚点"、
+    //    在自定义镜像上是"平台没记下来"，而这一层看不到 `isBuiltin` 之外的上下文。
+    //    三档的分辨归 `imageLineage()` 一处，别在这里先压掉一档。
+    derivedFromDigest: dto.derivedFromDigest,
     warnings,
     errors,
   };

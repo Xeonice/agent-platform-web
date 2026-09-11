@@ -45,6 +45,7 @@ const SANDBOXES = [
     id: 'sbx-1',
     projectId: 'proj-a',
     runtime: 'codex',
+    availableRuntimes: ['codex'],
     provider: 'aio',
     name: '任务一',
     status: 'running',
@@ -58,6 +59,7 @@ const SANDBOXES = [
     id: 'sbx-2',
     projectId: 'proj-a',
     runtime: 'codex',
+    availableRuntimes: ['codex'],
     provider: 'aio',
     name: '任务二',
     // ⚠️ `idle` 是契约里真实存在的状态（`SandboxResponseDto.status` 十二态之一），
@@ -73,6 +75,7 @@ const SANDBOXES = [
     id: 'sbx-3',
     projectId: 'proj-a',
     runtime: 'codex',
+    availableRuntimes: ['codex'],
     provider: 'aio',
     name: '任务三',
     status: 'stopped',

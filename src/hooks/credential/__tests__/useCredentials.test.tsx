@@ -1,5 +1,7 @@
 // useCredentials（F21-3 §7.1）：① 切未配置模式 → needs-setup（不抛错）；② 重授权成功 → 两个 invalidate；
-// ③ 吊销生效中模式 → warnActiveMode:true。用默认 handlers（codex 帐号授权生效 + api-key 未配置）。
+// ③ 删除当前在用的那份 → warnActiveMode:true；④ isRowBusy 精确 scope；
+// ⑤⑥⑦ **本轮新增**：受影响任务读真数据 / 查不到时不许说「没有」/ 删完追问切到另一种登录方式；
+// ⑧ 列表加载失败自成一态。用默认 handlers（codex 帐号授权生效 + api-key 未配置）。
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8,6 +10,7 @@ import type { ReactNode } from 'react';
 import { server } from '@/mocks/node';
 import { useCredentials } from '@/hooks/credential/useCredentials';
 import { runtimeKeys, runtimeAuthKeys } from '@/hooks/credential/useRuntimes';
+import type { RuntimeDto } from '@/types/runtimeCredential';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
@@ -67,7 +70,9 @@ describe('useCredentials', () => {
     const pending = result.current.pendingRevoke;
     expect(pending).not.toBeNull();
     expect(pending?.warnActiveMode).toBe(true);
-    expect(pending?.warningText).toContain('无法追回');
+    // P0-4 的两半都要在：延迟语义的断言 + **能做的那件事**。
+    expect(pending?.warningText).toContain('平台这边删不掉');
+    expect(pending?.followUpText).toContain('厂商后台');
     expect(pending?.credentialId).toBe('rc-codex-account');
   });
 
@@ -101,5 +106,94 @@ describe('useCredentials', () => {
     expect(result.current.isRowBusy('codex', 'account')).toBe(true);
     expect(result.current.isRowBusy('codex', 'api-key')).toBe(false);
     expect(result.current.isRowBusy('claude-code', 'account')).toBe(false);
+  });
+});
+
+describe('useCredentials · 删除确认里的受影响任务（P0：确认框不许撒谎）', () => {
+  it('⑤ 接上真实 sandbox 列表：codex 上正在跑的任务被算进受影响清单', async () => {
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useCredentials(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.cards.length).toBeGreaterThan(0);
+    });
+    act(() => {
+      result.current.requestRevoke('codex', 'account');
+    });
+    // 替身里 codex 上有两个活着的任务（running / starting）+ 一个 stopped。
+    await waitFor(() => {
+      expect(result.current.pendingRevoke?.affectedKnown).toBe(true);
+    });
+    const affected = result.current.pendingRevoke?.affected;
+    expect(affected?.total).toBe(2);
+    expect(affected?.items.map((t) => t.name)).toEqual(['修一下登录态刷新', '补 e2e 用例']);
+  });
+
+  it('⑥ sandbox 列表拿不到 → affectedKnown:false（「不知道」不许说成「没有」）', async () => {
+    const { wrapper } = makeWrapper();
+    server.use(
+      http.get(`${API_BASE}/api/sandboxes`, () => new HttpResponse(null, { status: 500 })),
+    );
+    const { result } = renderHook(() => useCredentials(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.cards.length).toBeGreaterThan(0);
+    });
+    act(() => {
+      result.current.requestRevoke('codex', 'account');
+    });
+    // ⛔ items 同样是空数组 —— 分辨两者的唯一一位就是 affectedKnown。
+    await waitFor(() => {
+      expect(result.current.pendingRevoke?.affectedKnown).toBe(false);
+    });
+    expect(result.current.pendingRevoke?.affected.total).toBe(0);
+  });
+
+  it('⑦ 删掉当前在用的那份、另一种登录方式已配好 → 追问是否切过去（产品 §9）', async () => {
+    const { wrapper } = makeWrapper();
+    // 默认替身里没有「两种方式都配好」的 runtime —— 就地造一个（这一步本身就说明
+    // 产品 §9 那条路在默认 fixture 下根本走不到，此前也就没人发现它没接线）。
+    const bothConfigured: RuntimeDto = {
+      id: 'codex',
+      displayName: 'Codex',
+      vendor: 'OpenAI',
+      authMethods: ['oauth-device', 'api-key'],
+      apiKeyPrefix: 'sk-',
+      credentialStatus: 'active',
+      activeAuthMethod: 'account',
+      credentials: [
+        { credentialId: 'rc-account', mode: 'account', maskedIdentifier: 'a***@gm', status: 'ok' },
+        { credentialId: 'rc-key', mode: 'api-key', maskedIdentifier: 'sk-…ab12', status: 'ok' },
+      ],
+    };
+    server.use(http.get(`${API_BASE}/api/runtimes`, () => HttpResponse.json([bothConfigured])));
+
+    const { result } = renderHook(() => useCredentials(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.cards.length).toBeGreaterThan(0);
+    });
+
+    act(() => {
+      result.current.requestRevoke('codex', 'account');
+    });
+    expect(result.current.pendingRevoke?.otherModeConfigured).toBe(true);
+    act(() => {
+      result.current.confirmRevoke();
+    });
+    // ⛔ 不追问的后果是静默留下一个没有可用凭证的 Agent，下次发任务才撞上。
+    await waitFor(() => {
+      expect(result.current.pendingSwitch).not.toBeNull();
+    });
+    expect(result.current.pendingSwitch?.mode).toBe('api-key');
+    expect(result.current.pendingSwitch?.message).toContain('要现在切过去用吗');
+  });
+
+  it('⑧ runtime 列表接口挂了 → loadError:true（此前 isError 全仓无人读）', async () => {
+    const { wrapper } = makeWrapper();
+    server.use(http.get(`${API_BASE}/api/runtimes`, () => new HttpResponse(null, { status: 503 })));
+    const { result } = renderHook(() => useCredentials(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.loadError).toBe(true);
+    });
+    // 「查不动」时卡片确实是空的 —— 正因如此，视图必须靠 loadError 而不是 cards.length 说话。
+    expect(result.current.cards).toEqual([]);
   });
 });

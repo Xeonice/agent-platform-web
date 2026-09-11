@@ -1,4 +1,4 @@
-// Step3「沙箱镜像就绪」的五步链（F21-8 §7A · P21-5 §9A）。纯展示、props 驱动、零副作用。
+// Step3「沙箱镜像就绪」的五项检查（F21-8 §7A · P21-5 §9A）。纯展示、props 驱动、零副作用。
 //
 // ⚠️ **三条纪律，全在这一屏上：**
 //
@@ -6,8 +6,8 @@
 //     换成自建那张 / 重启平台 / 只是等一会），合成一句「镜像不可用」对五种情况一字不差，
 //     而用户能做的事一个都不一样。⇒ 每一步一行，失败那一步带它**自己的**修复动作与命令。
 //
-//  ② **第 5 步 `staged` 渲染 ℹ️「提示」，⛔ 不是 ⚠️ 也不是 ❌。** 它是完全正常的状态：
-//     镜像备齐了，只是本机还没铺开，首个任务要多等几分钟。渲染成警告会让用户去"修"一个
+//  ② **第 5 步渲染 ℹ️「提示」，⛔ 不是 ⚠️ 也不是 ❌。** 它是完全正常的状态：
+//     镜像备齐了，只是还没下载到本机，首个任务要多等几分钟。渲染成警告会让用户去"修"一个
 //     不需要修的东西——而他能想到的修法是删了重推，那会让情况更糟。
 //     ⇒ 下面这张表里 `info` 与 `fail` 是**两行**，谁把它们合并谁当场改到这里。
 //
@@ -67,7 +67,7 @@ export function PresetImageCheckView({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          检查链共 5 步，任一步未通过即止 —— 每一步的修复动作都不一样。
+          镜像检查共 5 项，任一项未通过即止 —— 每一项的修复动作都不一样。
         </p>
         <Button
           type="button"
@@ -99,7 +99,7 @@ export function PresetImageCheckView({
                 {isChecking && s.state === 'pending' ? '⏳' : STATE_ICON[s.state]}
               </span>
               <span className="font-medium">
-                检查链第 {String(s.ordinal)} 步 · {s.label}
+                第 {String(s.ordinal)} 步（共 {String(model.steps.length)} 步） · {s.label}
               </span>
               <span className="text-xs text-muted-foreground">
                 {isChecking && s.state === 'pending' ? '检查中…' : STATE_TEXT[s.state]}
@@ -108,6 +108,16 @@ export function PresetImageCheckView({
 
             {s.summary === undefined ? null : (
               <span className="whitespace-pre-wrap break-words">{s.summary}</span>
+            )}
+
+            {/* 第二层：证据 / 例外条款 / 为什么。⛔ 与结论分行、弱化，不许并成一句。 */}
+            {s.detail === undefined ? null : (
+              <span
+                data-testid={`preset-step-detail-${s.step}`}
+                className="whitespace-pre-wrap break-words text-xs text-muted-foreground"
+              >
+                {s.detail}
+              </span>
             )}
 
             {s.errorCode === undefined ? null : (

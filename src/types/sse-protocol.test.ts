@@ -161,7 +161,7 @@ describe('SSE_PROTOCOL_CANONICAL ↔ zod schema 自洽', () => {
       id: 'preset-image' as const,
       label: '预制镜像就绪',
       status: 'fail' as const,
-      summary: '未来的某个新码',
+      headline: '未来的某个新码',
       errorCode: 'PRESET_IMAGE_SOMETHING_NEW_2027',
       durationMs: 12,
     };
@@ -188,8 +188,8 @@ describe('SSE_PROTOCOL_CANONICAL ↔ zod schema 自洽', () => {
     ]);
   });
 
-  it('长度与 api 侧一致（795 字符）——字面量被改动时最先响的一条', () => {
-    expect(SSE_PROTOCOL_CANONICAL).toHaveLength(795);
+  it('长度与 api 侧一致（821 字符）——字面量被改动时最先响的一条', () => {
+    expect(SSE_PROTOCOL_CANONICAL).toHaveLength(821);
   });
 
   it('schema hash 是钉死的字面量（它是告知不是门，但版本本身不许悄悄变）', () => {

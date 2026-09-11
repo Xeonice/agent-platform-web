@@ -18,6 +18,13 @@ import { useOpenAuthPage } from '@/hooks/credential/useOpenAuthPage';
 export interface AuthGateContainerProps {
   runtimeId: string;
   runtimeName: string;
+  /**
+   * 该 runtime 的出处（`RuntimeDto.vendor`）—— 拼「去哪儿拿 API Key」那一句。
+   *
+   * ⚠️ 与 `apiKeyPrefix` 同理：**这一层不认识任何具体 runtime**，值原样透传。
+   * 缺席 ⇒ 只说「在签发它的厂商控制台里创建」，不猜名字。
+   */
+  vendor?: string;
   /** 可用鉴权方式（getAuthMethods 下发）。 */
   methods: RuntimeAuthMethod[];
   /**
@@ -49,6 +56,7 @@ function tabOfMethod(method: RuntimeAuthMethod): AuthTabKey {
 export function AuthGateContainer({
   runtimeId,
   runtimeName,
+  vendor,
   methods,
   apiKeyPrefix,
   initialMethod,
@@ -60,7 +68,7 @@ export function AuthGateContainer({
   const hasApiKey = methods.includes('api-key');
 
   const tabs: AuthGateTab[] = [
-    ...(accountMethod !== null ? [{ key: 'account' as const, label: '帐号授权' }] : []),
+    ...(accountMethod !== null ? [{ key: 'account' as const, label: '帐号登录' }] : []),
     ...(hasApiKey ? [{ key: 'api-key' as const, label: 'API Key' }] : []),
   ];
 
@@ -98,6 +106,7 @@ export function AuthGateContainer({
         key={currentMethod}
         runtimeId={runtimeId}
         method={currentMethod}
+        vendor={vendor}
         apiKeyPrefix={apiKeyPrefix}
         onSuccess={onSuccess}
       />
@@ -108,11 +117,18 @@ export function AuthGateContainer({
 interface AuthBranchSlotProps {
   runtimeId: string;
   method: RuntimeAuthMethod;
+  vendor?: string;
   apiKeyPrefix?: string;
   onSuccess?: (result: AuthSuccess) => void;
 }
 
-function AuthBranchSlot({ runtimeId, method, apiKeyPrefix, onSuccess }: AuthBranchSlotProps) {
+function AuthBranchSlot({
+  runtimeId,
+  method,
+  vendor,
+  apiKeyPrefix,
+  onSuccess,
+}: AuthBranchSlotProps) {
   const flow = useRuntimeAuthFlow({ runtimeId, method, apiKeyPrefix, onSuccess });
   const { state } = flow;
 
@@ -130,7 +146,7 @@ function AuthBranchSlot({ runtimeId, method, apiKeyPrefix, onSuccess }: AuthBran
   const authPage = useOpenAuthPage();
 
   if (state.phase === 'success') {
-    return <p className="text-xs text-green-400">✅ 配置完成</p>;
+    return <p className="text-xs text-green-400">✅ 已连上</p>;
   }
 
   if (state.branch === 'api-key') {
@@ -140,6 +156,7 @@ function AuthBranchSlot({ runtimeId, method, apiKeyPrefix, onSuccess }: AuthBran
         onValueChange={setApiKeyValue}
         expectedPrefix={flow.expectedPrefix}
         prefixValid={flow.isApiKeyPrefixValid(apiKeyValue)}
+        vendor={vendor}
         submitting={state.phase === 'submitting'}
         {...(state.phase === 'rejected' ? { error: state.message, reasons: state.reasons } : {})}
         onSubmit={() => {
@@ -156,7 +173,7 @@ function AuthBranchSlot({ runtimeId, method, apiKeyPrefix, onSuccess }: AuthBran
       if (verificationUrl === undefined || verificationUrl === '') {
         // 契约层空值：后端漏发验证链接 → 显式提示而非空白链接（P2）。
         return (
-          <RetryNotice message="授权信息缺失（验证链接为空），请重试。" onRetry={flow.begin} />
+          <RetryNotice message="登录信息没拿全（登录链接是空的），请重试。" onRetry={flow.begin} />
         );
       }
       return (
@@ -177,7 +194,7 @@ function AuthBranchSlot({ runtimeId, method, apiKeyPrefix, onSuccess }: AuthBran
     if (state.phase === 'error') {
       return <RetryNotice message={state.message} onRetry={flow.begin} />;
     }
-    return <p className="text-xs text-muted-foreground">正在获取授权链接…</p>;
+    return <p className="text-xs text-muted-foreground">正在准备登录链接…</p>;
   }
 
   // —— device-code ——
@@ -192,7 +209,7 @@ function AuthBranchSlot({ runtimeId, method, apiKeyPrefix, onSuccess }: AuthBran
       // 契约层空值：后端漏发设备码/验证链接 → 显式提示而非空白设备码/空链接（P2）。
       return (
         <RetryNotice
-          message="设备授权信息缺失（设备码或验证链接为空），请重试。"
+          message="登录信息没拿全（设备码或登录链接是空的），请重试。"
           onRetry={flow.begin}
         />
       );
@@ -205,6 +222,7 @@ function AuthBranchSlot({ runtimeId, method, apiKeyPrefix, onSuccess }: AuthBran
         polling={state.phase === 'polling'}
         pollError={state.phase === 'polling' && state.pollError}
         expired={state.phase === 'expired'}
+        {...(state.phase === 'expired' ? { expiredReason: state.reason } : {})}
         onCopy={() => {
           void navigator.clipboard.writeText(userCode);
         }}
@@ -226,7 +244,8 @@ function AuthBranchSlot({ runtimeId, method, apiKeyPrefix, onSuccess }: AuthBran
   if (state.phase === 'error') {
     return <RetryNotice message={state.message} onRetry={flow.begin} />;
   }
-  return <p className="text-xs text-muted-foreground">正在获取设备码…</p>;
+  // 用户此刻还看不到设备码这个东西 —— 就叫「登录」（术语表）。
+  return <p className="text-xs text-muted-foreground">正在准备登录…</p>;
 }
 
 function RetryNotice({ message, onRetry }: { message: string; onRetry: () => void }) {

@@ -2,10 +2,11 @@
 //
 // ★ **这一行要回答的是「这次到底发生了什么」，不是「好还是坏」。**
 //   8 个 status 在 `lib/automation/formatRunOutcome` 里先收敛成 6 个 category，
-//   这里按 category 上色 + 明写「计入/不计入连续失败」。
-//   ⚠️ 那句「不计入连续失败」不是装饰：`missed`（调度器宕机错过）和 `skipped`（凭证过期 /
-//   上次没跑完）在没有它的时候，会和 ❌ 失败一起被读成"我的规则一直在挂"，
-//   而这三件事该做的处置完全不同。
+//   这里按 category 上色 + 明写「这次算不算一次失败」。
+//   ⚠️ 那句「这次不算失败」不是装饰：`missed`（平台调度当时没在跑而错过）和 `skipped`
+//   （凭证过期 / 上次没跑完）在没有它的时候，会和 ❌ 失败一起被读成"我的规则一直在挂"，
+//   而这三件事该做的处置完全不同。⚠️ 但它的**视觉权重**要比"算一次失败"低一档，
+//   理由见下面那段注释。
 import { Button } from '@/components/ui/button';
 import type { RunOutcomeCategory, RunRow } from '@/types/automation';
 
@@ -71,9 +72,20 @@ export function RunHistoryItemView({
         </Button>
       </div>
 
-      {/* ★ 计入/不计入连续失败：区分四类结果的**硬判据**，每一行都给，不折叠。 */}
-      <p className="mt-1 text-[11px] text-muted-foreground" data-testid="run-failure-accounting">
-        {outcome.countsTowardFailure ? '⚠️ 计入连续失败计数' : '不计入连续失败计数'}
+      {/*
+        ★ 「算不算失败」：区分四类结果的**硬判据**，每一行都给，⛔ 不折叠、不省略。
+        ⚠️ 但两支的**视觉权重刻意不同**：一屏十条里有九条写着"这次不算失败"，
+           同样的颜色会让这一行整体沦为背景噪音，连那一条真的失败也一起被略过去。
+           算失败的那支保留常规次要色 + ⚠️；不算的那支再降一档 —— 它要的是"扫到时能看见"，
+           不是"每一行都来抢一次注意力"。⛔ 降的是权重，不是这句话本身。
+      */}
+      <p
+        className={`mt-1 text-[11px] ${
+          outcome.countsTowardFailure ? 'text-muted-foreground' : 'text-muted-foreground/60'
+        }`}
+        data-testid="run-failure-accounting"
+      >
+        {outcome.countsTowardFailure ? '⚠️ 这次算一次失败' : '这次不算失败'}
       </p>
 
       {expanded && (
@@ -81,6 +93,20 @@ export function RunHistoryItemView({
           <p className="text-xs text-muted-foreground" data-testid="run-detail">
             {outcome.detail}
           </p>
+          {/*
+            ★ 后端给的失败原因原文。**带标签、次要样式**，与 `outputSummary` 同一档：
+              它是机器写给排查用的（英文 / 异常 message），⛔ 不是人话文案——
+              上面那句 `outcome.detail` 才是。两者都要：一句说"这属于哪一类失败"，
+              一条说"到底哪一步炸的"。此前这一条解析了却从不渲染，失败原因永远只有通用话。
+          */}
+          {row.errorMessage !== undefined && row.errorMessage !== '' && (
+            <div data-testid="run-error-message">
+              <p className="text-[11px] text-muted-foreground">失败信息（后端原文）</p>
+              <pre className="mt-0.5 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-muted px-2 py-1 text-[11px] text-red-300">
+                {row.errorMessage}
+              </pre>
+            </div>
+          )}
           {row.webhookNote !== undefined && (
             <p className="text-[11px] text-muted-foreground" data-testid="run-webhook-note">
               {row.webhookNote}
@@ -104,10 +130,10 @@ export function RunHistoryItemView({
                 }}
                 data-testid="run-open-task"
               >
-                打开 Task
+                打开任务
               </Button>
               <span className="ml-2 text-[11px] text-muted-foreground">
-                无头任务，右侧是只读输出，不是可交互终端。
+                这是自动跑的任务，右侧只能看输出，不能敲命令。
               </span>
             </div>
           )}

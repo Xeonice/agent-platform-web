@@ -24,13 +24,26 @@ export default meta;
 
 type Story = StoryObj<typeof DeleteProjectConfirmView>;
 
-/** 无运行中任务：级联句在，警示句说的是"当前没有运行中的任务"（不沉默）。 */
+/**
+ * 无运行中任务：三行后果都在，警示句说的是"当前没有运行中的任务"（不沉默）。
+ *
+ * ★ **三行一条都不许省**：会删掉 / 会留下（含「远端 Git 仓库不受影响」）/ 删掉之后拿不回来。
+ *   旧文案是一句话，把最重要的「留了什么」塞进括号，而且一个字都没说远端仓库不受影响
+ *   —— 那是开发者按下去之前最想确认的第一件事。
+ */
 export const NoRunningTasks: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('delete-cascade-copy')).toHaveTextContent(
-      '将删除该项目下 5 个 Task 及其数据卷（保留的成果卷除外），不可逆。',
-    );
+    const cascade = canvas.getByTestId('delete-cascade-copy');
+    await expect(cascade).toHaveTextContent('会删掉');
+    await expect(cascade).toHaveTextContent('5 个任务');
+    await expect(cascade).toHaveTextContent('会留下');
+    await expect(cascade).toHaveTextContent('远端 Git 仓库不受影响');
+    await expect(cascade).toHaveTextContent('删掉之后');
+    await expect(cascade).toHaveTextContent('拿不回来');
+    // ⛔ 界面上别处没有的词不许出现在这里（用户没法把「成果卷」和菜单里那一项对上）。
+    await expect(cascade.textContent).not.toContain('成果卷');
+    await expect(cascade.textContent).not.toContain('数据卷');
     await expect(canvas.getByTestId('delete-running-warning')).toHaveTextContent(
       '当前没有运行中的任务',
     );
@@ -45,7 +58,7 @@ export const TwoRunningTasks: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const warning = canvas.getByTestId('delete-running-warning');
-    await expect(warning).toHaveTextContent('含 2 个运行中任务将被强制停止');
+    await expect(warning).toHaveTextContent('其中 2 个任务正在跑，会被强制停下');
     await expect(warning).toHaveAttribute('role', 'alert');
   },
 };
@@ -59,7 +72,7 @@ export const WhileCloning: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const note = canvas.getByTestId('delete-cloning-note');
-    await expect(note).toHaveTextContent('先取消克隆');
+    await expect(note).toHaveTextContent('先停掉这次克隆');
     await expect(note).toHaveTextContent('取消克隆（保留项目）');
   },
 };

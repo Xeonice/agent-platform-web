@@ -37,6 +37,15 @@ const TEST_TIMEOUT_MS = 15_000;
 
 export interface GitCredentialManager {
   loading: boolean;
+  /**
+   * 列表**加载失败**（区别于「查到了、确实没配」）。
+   *
+   * ⛔ 没有这一位时，接口挂了会渲染成「○ 未配置」+ [配置 SSH 密钥] ——
+   *    用户会以为自己的密钥被平台清掉了，然后重新配一份。
+   */
+  loadError: boolean;
+  /** [重试] 重新拉取列表。 */
+  retryLoad: () => void;
   cards: GitCredentialCardModel[];
   missingTypes: GitCredentialType[];
   guidanceText: string;
@@ -333,13 +342,22 @@ export function useGitCredentialManager(): GitCredentialManager {
       return '检测到带 passphrase 的私钥，当前不支持，请改用无口令的密钥。';
     }
     if (!looksLikePrivateKey(sshKey)) {
-      return '这看起来不是有效的私钥（应以 -----BEGIN … PRIVATE KEY----- 开头）。';
+      // ⚠️ 补上**最常见的那个实际原因**：粘成了 `.pub` 公钥。只说「格式不对」时，用户会反复
+      //    重粘同一个文件 —— 他手边确实有两个文件，而报错没告诉他拿错了哪一个。
+      return (
+        '这看起来不是私钥（应以 -----BEGIN … PRIVATE KEY----- 开头）。' +
+        '最常见的原因是粘成了 .pub 公钥文件 —— 要的是没有 .pub 后缀的那一个（如 id_ed25519）。'
+      );
     }
     return null;
   })();
 
   return {
     loading: credentials.isPending,
+    loadError: credentials.isError,
+    retryLoad: (): void => {
+      void credentials.refetch();
+    },
     cards,
     missingTypes,
     guidanceText: GIT_CREDENTIAL_GUIDANCE,

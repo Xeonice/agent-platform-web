@@ -101,6 +101,15 @@ export interface NewSandboxPanelProps {
    * 而平台从头到尾没提示过一句。这正是本轮修掉的那条链路。
    */
   authGateSlot?: ReactNode;
+  /**
+   * 闸门拦的是**哪个 Agent**（后端下发的 `displayName`）。
+   *
+   * ⚠️ 它存在的唯一理由是那句解释：`authGateSlot` 在场时 [发起] 是禁着的，而
+   * `createDisabledReason` 只服务 `ttyUnsupported` ⇒ **按钮灰着、一句话都没有**。
+   * 「按钮禁着却不给理由」是这份面板自己在别处（provider 那三档）明令禁止的事。
+   * 缺席时退回一句不点名的话——⛔ 宁可少一个名字，也不许一句话都不说。
+   */
+  authGateRuntimeName?: string;
   /** 分支①：已有生效凭证时的正面确认——"将以 a***@gm 身份运行"（P20 §5.1）。 */
   runtimeIdentityNotice?: string;
   /** 一般创建失败文案（已落库、可重试那一类）。 */
@@ -148,6 +157,7 @@ export function NewSandboxPanelView({
   projectName,
   onCancel,
   authGateSlot,
+  authGateRuntimeName,
   runtimeIdentityNotice,
   errorMessage,
   rejectionMessage,
@@ -192,11 +202,12 @@ export function NewSandboxPanelView({
       <div>
         {/* 终端不再是"开工开关"：agent 会话由后端在 provision 的「启动实例」阶段起好（03 §4.3），
             打开终端只是 attach 已存在的会话——文案据此改写（S5 裁决 T-2）。 */}
+        {/* ⚠️ P21-1 §9：界面上不出现「沙箱 / 容器」措辞 —— 用户这边它就叫「任务」。 */}
         <p className="text-sm text-muted-foreground">
           {projectName === undefined || projectName === ''
-            ? '创建一个沙箱运行 agent'
-            : `在「${projectName}」中创建一个沙箱运行 agent`}
-          ；填了任务指令则 agent <strong>启动时即执行</strong>，不必等你打开终端
+            ? '发起一个任务，让 agent 去跑'
+            : `在「${projectName}」中发起一个任务，让 agent 去跑`}
+          ；填了任务指令，agent <strong>启动时就开始执行</strong>，不必等你打开终端
         </p>
       </div>
 
@@ -204,12 +215,13 @@ export function NewSandboxPanelView({
           ⚠️ 曾经与它并列的还有一组「运行档位 (provider)」单选——**已删**：跑在哪种沙箱上
           是宿主平台的事实，不是用户的偏好（详见下面那段注释）。 */}
       <fieldset className="flex flex-col gap-2" disabled={creating}>
-        <legend className="mb-1 text-xs text-muted-foreground">运行时 (runtime) · 必选</legend>
+        {/* ⚠️ 上屏词是「Agent」；`runtime` 是内部词，只留在括号里给排障的人对号入座。 */}
+        <legend className="mb-1 text-xs text-muted-foreground">Agent（runtime）· 必选</legend>
 
         {loadingRuntimes && (
           <div
             aria-busy="true"
-            aria-label="正在加载可选运行时"
+            aria-label="正在加载可选 Agent"
             data-testid="runtimes-skeleton"
             className="flex flex-col gap-2"
           >
@@ -221,7 +233,7 @@ export function NewSandboxPanelView({
         {runtimesLoadFailed && (
           <div className="flex flex-col items-start gap-2">
             <p role="alert" className="text-sm text-red-400">
-              运行时加载失败：{runtimesErrorMessage}
+              Agent 列表加载失败：{runtimesErrorMessage}
             </p>
             <Button
               variant="outline"
@@ -229,14 +241,14 @@ export function NewSandboxPanelView({
                 onRetryRuntimes();
               }}
             >
-              重试加载运行时
+              重试加载 Agent
             </Button>
           </div>
         )}
 
         {noRuntimes && (
           <p role="alert" className="text-sm text-muted-foreground">
-            后端未注册任何 runtime，暂无法创建沙箱。
+            平台上一个 Agent 都没有注册，现在发不了任务。
           </p>
         )}
 
@@ -264,7 +276,7 @@ export function NewSandboxPanelView({
             一进面板就朝屏幕阅读器喊一句 alert，等于把"正常的下一步"报成了故障。 */}
         {runtimeUnchosen && (
           <p className="text-xs text-muted-foreground">
-            请选择一个运行时 —— 平台没有默认运行时，必须显式指定
+            请选择一个 Agent —— 平台没有默认 Agent，必须你来指定
           </p>
         )}
       </fieldset>
@@ -297,7 +309,7 @@ export function NewSandboxPanelView({
           {loadingProviders && (
             <span
               aria-busy="true"
-              aria-label="正在确认运行环境"
+              aria-label="正在确认这台机器的沙箱环境"
               data-testid="providers-skeleton"
               className="h-4 w-40 animate-pulse rounded bg-muted"
             />
@@ -306,7 +318,7 @@ export function NewSandboxPanelView({
           {loadFailed && (
             <div className="flex flex-col items-center gap-2">
               <p role="alert" className="text-red-400">
-                运行环境确认失败：{providersErrorMessage}
+                没能确认这台机器的沙箱环境：{providersErrorMessage}
               </p>
               <Button
                 variant="outline"
@@ -321,7 +333,7 @@ export function NewSandboxPanelView({
 
           {noProviders && (
             <p role="alert" className="text-muted-foreground">
-              后端未注册任何沙箱运行环境，暂无法创建沙箱。
+              平台上一个沙箱环境都没有注册，现在发不了任务。
             </p>
           )}
         </div>
@@ -356,7 +368,7 @@ export function NewSandboxPanelView({
               }}
               className="mt-1 w-full rounded border border-input bg-background px-2 py-1.5 text-sm"
             >
-              <option value="">跟随基线当前分支（默认）</option>
+              <option value="">跟随项目当前的分支（默认）</option>
               {branches.map((b) => (
                 <option key={b} value={b}>
                   {b}
@@ -366,7 +378,7 @@ export function NewSandboxPanelView({
           )}
           {branchesErrorMessage !== undefined && branchesErrorMessage !== '' && (
             <p role="status" className="mt-1 text-xs text-muted-foreground">
-              分支列表暂不可用（{branchesErrorMessage}），将使用基线当前分支创建。
+              分支列表暂时取不到（{branchesErrorMessage}），这次会用项目当前的分支。
             </p>
           )}
         </div>
@@ -430,6 +442,23 @@ export function NewSandboxPanelView({
       {createDisabledReason !== undefined && (
         <p role="alert" className="max-w-sm text-sm text-amber-400">
           {createDisabledReason}
+        </p>
+      )}
+
+      {/*
+        ⚠️ **闸门拦住时也要给一句话。**
+
+        `authGateSlot !== undefined` 是 `createDisabled` 的一个分项，而
+        `createDisabledReason` 只服务 `ttyUnsupported` ⇒ 闸门在场时按钮灰着、
+        底下一句解释都没有。用户看得见上面那块登录面板，但没人告诉他
+        "**是它**在拦着发起"——尤其在面板被滚出视野时。
+
+        这正是这份面板自己在 provider 那三档上明令禁止的事（「禁着却不给理由，
+        是最难查的那种 UI」），只是漏在了鉴权这一支。
+      */}
+      {authGateSlot !== undefined && (
+        <p data-testid="auth-gate-disabled-reason" className="max-w-sm text-sm text-amber-400">
+          先完成上面的 {authGateRuntimeName ?? '这个 Agent'} 登录，才能发起任务。
         </p>
       )}
 

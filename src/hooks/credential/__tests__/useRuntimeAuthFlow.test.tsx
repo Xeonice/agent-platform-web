@@ -205,15 +205,16 @@ describe('A · device-code', () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(result.current.state.phase).toBe('polling');
-      // 缺 expiresAt：倒计时短路（secondsLeft=0），但不因此误终止——仍在轮询。
-      expect(result.current.secondsLeft).toBe(0);
+      // ⛔ 缺 expiresAt ⇒ `secondsLeft` 是 **null（不知道）**，不是 0（一个编出来的确定值）。
+      //    此前它恒为 0，屏幕上就是红色的 00:00 配着「等待授权中…」。
+      expect(result.current.secondsLeft).toBeNull();
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
       });
       expect(result.current.state.phase).toBe('polling');
 
-      // 越过 10min 硬上限 → 强制 expired（与 expiresAt 无关的兜底）。
+      // 越过 10min 硬上限 → 强制停下（与 expiresAt 无关的兜底）。
       await act(async () => {
         await vi.advanceTimersByTimeAsync(10 * 60_000);
       });

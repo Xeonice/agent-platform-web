@@ -11,8 +11,9 @@ function frame(detail: Record<string, unknown> | undefined): DiagnoseCheckFrame 
     status: 'fail',
     step: 'registry',
     errorCode: 'PRESET_IMAGE_NOT_IN_REGISTRY',
-    summary: "镜像 'localhost:5001/platform/sandbox:v2' 在 registry 里解析不到",
-    hint: 'docker build -t x . && docker push x',
+    headline: '镜像仓库里找不到这张镜像',
+    detailText: "'localhost:5001/platform/sandbox:v2' 解析不到。",
+    command: 'docker build -t x . && docker push x',
     detail,
     durationMs: 3,
   };

@@ -76,8 +76,8 @@ describe('connectivityCheckModel', () => {
       { rows: [openai, down(registry, '连接超时；如在内网请配置 HTTP_PROXY')], fromHistory: true },
       NOW,
     );
-    expect(model.rows[0]).toMatchObject({ kindText: '模型 API', stateText: '可达 · 351ms' });
-    expect(model.rows[1]).toMatchObject({ kindText: '镜像仓库', stateText: '不可达' });
+    expect(model.rows[0]).toMatchObject({ kindText: '模型 API', stateText: '连得上 · 351ms' });
+    expect(model.rows[1]).toMatchObject({ kindText: '镜像下载源', stateText: '连不上' });
     expect(model.rows[1]?.hint).toContain('HTTP_PROXY');
   });
 
@@ -102,7 +102,7 @@ describe('connectivityCheckModel', () => {
   it('一条结果都没有 ⇒ hasResult=false（调用方据此才去自动跑一轮）', () => {
     const model = connectivityCheckModel({ rows: undefined, fromHistory: true }, NOW);
     expect(model.hasResult).toBe(false);
-    expect(model.verdictText).toContain('尚未检测');
+    expect(model.verdictText).toContain('还没有检查过');
   });
 
   it('离线那句必须说清是物理约束、且平台其余功能可用', () => {
@@ -150,12 +150,12 @@ describe('connectivityCheckModel', () => {
 
     // 只有镜像仓库挂：可以说 Agent 可用 —— 这一半没变。
     expect(onlyRegistry).toContain('Agent 可用');
-    expect(onlyRegistry).toContain('拉取新镜像');
+    expect(onlyRegistry).toContain('下载新镜像');
 
     // 挂的是模型 API：⛔ 不许再说「Agent 可用」，也不许说「模型 API 仍可达」。
     expect(oneModelApi).not.toContain('Agent 可用');
     expect(oneModelApi).not.toContain('模型 API 仍可达');
-    expect(oneModelApi).toContain('不是离线');
+    expect(oneModelApi).toContain('不算断网');
     expect(oneModelApi).toContain('可能用不了');
   });
 
@@ -168,7 +168,7 @@ describe('connectivityCheckModel', () => {
    *
    * MUTATION: `rowModel` 里去掉 `timedOut` 分支 ⇒ 本条红。
    */
-  it('⭐ 逐行：timedOut 的那条说「未在预算内应答」，不说「不可达」', () => {
+  it('⭐ 逐行：timedOut 的那条说「超时未响应」，不说「连不上」', () => {
     const timedOut: ConnectivityResultDto = { ...openai, ok: false, timedOut: true };
     const refused: ConnectivityResultDto = { ...anthropic, ok: false };
     const rows = connectivityCheckModel(
@@ -178,10 +178,11 @@ describe('connectivityCheckModel', () => {
 
     const slow = rows.find((r) => r.id === 'api.openai.com');
     const dead = rows.find((r) => r.id === 'api.anthropic.com');
-    expect(slow?.stateText).toBe('未在预算内应答');
+    // ⚠️ 「预算」是内部词（那是探测的超时时限），上屏说「超时未响应」；三态区分一格没动。
+    expect(slow?.stateText).toBe('超时未响应');
     expect(slow?.timedOut).toBe(true);
     // 镜像:另一条是真的够不着，措辞不能被一起改掉。
-    expect(dead?.stateText).toBe('不可达');
+    expect(dead?.stateText).toBe('连不上');
     expect(dead?.timedOut).toBeUndefined();
   });
 
@@ -191,8 +192,10 @@ describe('connectivityCheckModel', () => {
       { rows: [{ ...openai, ok: false, timedOut: true }, anthropic, registry], fromHistory: false },
       NOW,
     ).verdictText;
-    expect(text).toContain('未在预算内应答');
+    expect(text).toContain('超时未响应');
     expect(text).toContain('超时不等于连不上');
+    // ⛔ 「预算」这个内部词不许再上屏（换成"这次检查的超时时限"）。
+    expect(text).not.toContain('预算');
   });
 
   it('三句结论都不点名具体 runtime（开放注册表：点名的那句在第三方 runtime 上是错的）', () => {

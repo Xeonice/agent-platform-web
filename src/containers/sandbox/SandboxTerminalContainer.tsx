@@ -56,6 +56,8 @@ interface CreatedTask {
   name?: string;
   /** 沙箱的 runtime（S6 无头任务 POST 路径里的 `:rt`）。 */
   runtime?: string;
+  /** 这个沙箱里能跑哪几个 agent CLI（06 §5.6）——终端 [+ 新终端] 下拉的数据源。 */
+  availableRuntimes?: string[];
   /** 沙箱实际落在哪个 provider 档位上（S6 能力位判定）。 */
   provider?: string;
   /** 模式：`true` = 无头任务，`false` = 交互式终端（创建时二选一，P20 §3.2）。 */
@@ -162,6 +164,14 @@ export function SandboxTerminalContainer({
   const taskName = localTask?.name ?? restored.name;
   // 无头任务打给沙箱自己的 runtime（本会话取创建响应，刷新后取 DTO）。
   const sandboxRuntime = localTask?.runtime ?? restored.runtime;
+  /**
+   * 终端 [+ 新终端] 下拉能开哪几个 CLI（06 §5.6）。
+   *
+   * ⚠️ 刚创建那一刻 provision 还没跑完 ④，DTO 上通常只有默认那一个 —— 这是对的：
+   * 那时盒子里确实还没有别的凭证。刷新 / 下次进来会取到完整的那份。
+   * ⛔ 不在这里拿 `/api/runtimes` 全集兜底：那会列出点开必然失败的选项。
+   */
+  const availableRuntimes = localTask?.availableRuntimes ?? restored.availableRuntimes ?? [];
   const socketConfig = useTerminalSocketConfig(wsBaseUrl, sandboxId);
 
   const providerList = providers.data ?? [];
@@ -253,6 +263,7 @@ export function SandboxTerminalContainer({
             id: sandbox.id,
             name: sandbox.name,
             runtime: sandbox.runtime,
+            availableRuntimes: sandbox.availableRuntimes,
             provider: sandbox.provider,
             headless: sandbox.headless,
           });
@@ -362,12 +373,22 @@ export function SandboxTerminalContainer({
                 }`
               : undefined
           }
+          // 闸门在场时按钮是禁着的 —— 把"是谁在拦"说出来（见 view 里 `authGateRuntimeName` 的注释）。
+          {...(selectedRuntimeDto === undefined
+            ? {}
+            : { authGateRuntimeName: selectedRuntimeDto.displayName })}
           createDisabledReason={
             // ⚠️ 原文案是「请改选其它运行档位」——**现在用户改不了了**（档位由宿主平台决定）。
             //    一条指向不存在的操作的提示，比不提示更贵：它让人在界面上找一个不存在的开关。
+            //
+            // ⚠️⚠️ **这里不许写 `**重点**`**：它渲染在 `NewSandboxPanel.view` 的纯文本
+            //    `<p>{createDisabledReason}</p>` 里，全仓没有 markdown 渲染器 ⇒ 屏幕上会
+            //    真的出现两颗星号。（同一份面板 199 行用的是 `<strong>`，说明这是笔误。）
+            //    要强调就改句序，把重点放句首。
             ttyUnsupported
-              ? `当前宿主的运行档位「${hostProvider.name}」不支持终端（spawnTty=false）。` +
-                '档位由平台按宿主环境选定，不能在这里更改；可以改用**无头任务**（不开终端，agent 启动即执行）。'
+              ? '这台机器的沙箱环境开不了终端。' +
+                '跑在哪种沙箱环境上是这台机器的事实，不是一个可以在这里改的选项；' +
+                '改发无头任务就可以——不开终端，agent 启动就开始执行。'
               : undefined
           }
           // 两条**互斥**的错误呈现路径（P22 §1 / 04 §5）：
@@ -410,7 +431,7 @@ export function SandboxTerminalContainer({
           className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground"
         >
           <p>「{projectName}」下还没有任务。</p>
-          <p>点左侧 [＋ 新任务] 发起一个 —— 填了指令，agent 启动时即执行。</p>
+          <p>点左侧 [＋ 新任务] 发起一个 —— 填了指令，agent 启动时就开始执行。</p>
         </div>
       </>
     );
@@ -442,8 +463,10 @@ export function SandboxTerminalContainer({
    */
   const sandboxHeadless = localTask?.headless ?? restored.headless;
 
-  // sessionId 是前端标签身份（≠ 后端下发的 socketSessionKey，08 §11.1）；S1 单标签固定 :0。
   // 交给生命周期门：startup 展示进度、running 才开终端、failed 可重试。
+  // ⚠️ 这里**不再传 sessionId**：多标签之后"有哪几个标签、各自叫什么 id"由
+  //    `useTerminalSessions` 一处派生（Agent 那个仍是 `<sandboxId>:0`，08 §11.1）。
+  //    以前这里硬编码 `${sandboxId}:0` 是"一个 Task 一个终端"假设的残留。
   //
   // ⚠️ 弹层与主区**并存**：沙箱已经跑起来时照样能开「新建任务」——一个项目多个任务是
   // 数据模型本来的样子，把入口藏起来等于把这个能力从界面上抹掉（同 §N.3 对无头面板的裁决）。
@@ -451,8 +474,8 @@ export function SandboxTerminalContainer({
     <>
       {newTaskModal}
       <SandboxLifecycleContainer
-        sessionId={`${sandboxId}:0`}
         sandboxId={sandboxId}
+        availableRuntimes={availableRuntimes}
         socketConfig={socketConfig}
         onRetry={handleRetry}
         taskName={taskName}
@@ -463,7 +486,6 @@ export function SandboxTerminalContainer({
               runtime={sandboxRuntime}
               wsBaseUrl={wsBaseUrl}
               headlessTaskSupported={headlessTaskSupported}
-              providerName={sandboxProvider}
             />
           )
         }

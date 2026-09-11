@@ -26,6 +26,8 @@ export interface AutomationDetailProps {
     hasMore: boolean;
     loadingMore: boolean;
   };
+  /** 从列表的 [查看原因] 进来 ⇒ 运行历史里最近一次算失败的那条**自动展开**。 */
+  focusLatestFailure?: boolean;
   onBack: () => void;
   onEdit: (id: string) => void;
   onToggle: (id: string, next: boolean) => void;
@@ -41,6 +43,7 @@ export function AutomationDetailView({
   busy = false,
   actionErrorMessage,
   runs,
+  focusLatestFailure = false,
   onBack,
   onEdit,
   onToggle,
@@ -118,7 +121,7 @@ export function AutomationDetailView({
           }}
           data-testid="detail-toggle"
         >
-          {row.lifecycle === 'autoDisabled' ? '重新启用' : enabled ? '禁用' : '启用'}
+          {row.lifecycle === 'autoDisabled' ? '重新开启' : enabled ? '关掉' : '开启'}
         </Button>
         {!confirming && (
           <Button
@@ -140,7 +143,7 @@ export function AutomationDetailView({
           className="rounded border border-red-500/40 bg-red-500/5 px-3 py-2 text-xs"
           data-testid="detail-delete-confirm"
         >
-          <p>删除「{row.name}」？运行历史会一并删除，且不可恢复。</p>
+          <p>删除「{row.name}」？这条规则的运行历史会一起删掉，删了拿不回来。</p>
           <div className="mt-2 flex gap-2">
             <Button
               size="sm"
@@ -175,6 +178,7 @@ export function AutomationDetailView({
           : { loadErrorMessage: runs.loadErrorMessage })}
         hasMore={runs.hasMore}
         loadingMore={runs.loadingMore}
+        focusLatestFailure={focusLatestFailure}
         onLoadMore={onLoadMoreRuns}
         {...(onOpenTask === undefined ? {} : { onOpenTask })}
       />

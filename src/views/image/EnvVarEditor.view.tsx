@@ -12,16 +12,39 @@
 import { Button } from '@/components/ui/button';
 import type { EnvVarRowModel, EnvVarValidationError, EnvVarErrorCode } from '@/types/image';
 
-/** 行内文案与后端四个码同名映射（F21-4 §5 表），**不做二次翻译**。 */
+/** VALUE 上限的**字节**数——计数器上的分母，单位在 UI 上也写「字节」（F21-4 §5）。 */
+const VALUE_MAX_BYTES_LABEL = 4096;
+/** KEY 长度上限与每镜像条数上限（与 `lib/image/validateEnvVar.ts` 的 `ENV_KEY_MAX` /
+ *  `ENV_ROWS_MAX` 同值；view 碰不到 lib，所以只能在这里各写一份标签值）。 */
+const KEY_MAX_LABEL = 64;
+const ROWS_MAX_LABEL = 50;
+
+/**
+ * 行内文案与后端四个码同名映射（F21-4 §5 表），**不做二次翻译**。
+ *
+ * ⚠️ **`ENV_LIMIT_EXCEEDED` 一个码有三种触发，所以它按位置分句**（2026-09 修）：
+ * 变量名太长 / 变量值太大 / 条数太多。此前三处共用「超出长度或条数上限」——
+ * 那句话在三个位置**都不精确**：它出现在一行的变量名下面时，用户读不出到底是名字长了、
+ * 值大了、还是根本不该再加行了，而三者的改法完全不同。
+ *
+ * ⛔ **不许为此发明第五个错误码**（P21-4 §10.6 明令，四码契约是与后端的同一份口径）：
+ * 分岔的是**文案**，不是码——`data-code` 上出去的仍然是同一个 `ENV_LIMIT_EXCEEDED`。
+ */
 const ERROR_COPY: Record<EnvVarErrorCode, string> = {
   ENV_NAME_INVALID: '变量名只能包含字母、数字、下划线，且不能以数字开头',
   ENV_NAME_RESERVED: '该变量名为系统保留，请使用凭证管理配置',
-  ENV_LIMIT_EXCEEDED: '超出长度或条数上限',
+  // 位置无关时的兜底（正常路径走 `errorCopy()`，不会取到这一条）。
+  ENV_LIMIT_EXCEEDED: '超出上限',
   ENV_DUPLICATE_KEY: '变量名重复',
 };
 
-/** VALUE 上限的**字节**数——计数器上的分母，单位在 UI 上也写「字节」（F21-4 §5）。 */
-const VALUE_MAX_BYTES_LABEL = 4096;
+/** 同一个码、三个位置、三句话。 */
+function errorCopy(code: EnvVarErrorCode, field: EnvVarValidationError['field']): string {
+  if (code !== 'ENV_LIMIT_EXCEEDED') return ERROR_COPY[code];
+  if (field === 'key') return `变量名太长（最多 ${String(KEY_MAX_LABEL)} 个字符）`;
+  if (field === 'value') return `变量值太大（最多 ${String(VALUE_MAX_BYTES_LABEL)} 字节）`;
+  return `变量条数太多（每张镜像最多 ${String(ROWS_MAX_LABEL)} 条）`;
+}
 
 export interface EnvVarEditorProps {
   rows: readonly EnvVarRowModel[];
@@ -139,7 +162,7 @@ export function EnvVarEditorView({
                 data-code={e.code}
                 className="text-[11px] text-red-400"
               >
-                {ERROR_COPY[e.code]}
+                {errorCopy(e.code, e.field)}
               </p>
             ))}
           </div>
@@ -148,7 +171,7 @@ export function EnvVarEditorView({
 
       {tableErrors.map((e) => (
         <p key={e.code} role="alert" className="text-[11px] text-red-400" data-code={e.code}>
-          {ERROR_COPY[e.code]}
+          {errorCopy(e.code, e.field)}
         </p>
       ))}
 

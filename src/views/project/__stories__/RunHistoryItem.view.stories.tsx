@@ -15,21 +15,22 @@ const OUTCOMES = {
     category: 'success',
     icon: '✅',
     label: '成功',
-    detail: '任务执行完成。连续失败计数已清零。',
+    detail: '任务跑完了，成功。之前累计的失败次数已经清零。',
     countsTowardFailure: false,
   },
   failed: {
     category: 'failure',
     icon: '❌',
     label: '失败',
-    detail: '任务真的跑了但失败了。这次计入连续失败：累计 3 次会自动降频。',
+    detail: '任务真的跑起来了，但没跑成。这次算一次失败：累计 3 次会自动放慢（每天只试一次）。',
     countsTowardFailure: true,
   },
   timeout: {
     category: 'failure',
     icon: '❌',
     label: '超时',
-    detail: '达到硬超时被强制结束，按失败处理。这次计入连续失败；可在规则里调大超时档位。',
+    detail:
+      '跑到了规则里设的最长运行时间，被强制结束，按失败处理。这次算一次失败；可以在规则里把最长运行时间调大一档。',
     countsTowardFailure: true,
   },
   skippedAuth: {
@@ -37,7 +38,7 @@ const OUTCOMES = {
     icon: '⏭️',
     label: '跳过',
     detail:
-      '该 runtime 的凭证已过期或被吊销，本次未触发。重新授权后会按原调度继续。这次没有执行，不计入连续失败。',
+      '这个 Agent 的凭证已过期或被吊销，本次没有触发。重新授权后会按原来的时间表继续。这次没有执行，不算失败。',
     countsTowardFailure: false,
   },
   skippedPrev: {
@@ -45,7 +46,7 @@ const OUTCOMES = {
     icon: '⏭️',
     label: '跳过',
     detail:
-      '上一次触发的任务当时还在跑，按「跳过」并发策略未再起一个。这次没有执行，不计入连续失败。',
+      '上一次触发的任务当时还在跑，按「跳过」的策略这次没有再起一个。这次没有执行，不算失败。',
     countsTowardFailure: false,
   },
   missed: {
@@ -53,7 +54,7 @@ const OUTCOMES = {
     icon: '🕳️',
     label: '错过',
     detail:
-      '调度器当时没在运行，错过了这个触发时刻。这不是规则失败，按设计也不会补跑（否则凌晨任务会在中午执行）。不计入连续失败。',
+      '平台的定时调度当时没在运行，错过了这个时刻。这不是规则的问题；按设计也不会补跑（补跑会让凌晨的任务在中午执行）。这次不算失败。',
     countsTowardFailure: false,
   },
   queued: {
@@ -61,22 +62,30 @@ const OUTCOMES = {
     icon: '⚠️',
     label: '排队重试中 3/5',
     detail:
-      '触发时资源不足，正按 24 分钟间隔重试（最多 5 次，约 2 小时窗口）。还没有结果，不计入连续失败。',
+      '触发的时候没有空闲资源，正在按 24 分钟一次的间隔排队重试（最多 5 次）。还没有结果，这次不算失败。',
     countsTowardFailure: false,
   },
   running: {
     category: 'running',
     icon: '⏳',
     label: '运行中',
-    detail: '任务正在执行。',
+    detail: '任务正在跑。',
     countsTowardFailure: false,
   },
   pending: {
     category: 'waiting',
     icon: '⏳',
     label: '待执行',
-    detail: '已触发，正在创建任务。',
+    detail: '已经触发，正在创建任务。',
     countsTowardFailure: false,
+  },
+  exhausted: {
+    category: 'failure',
+    icon: '❌',
+    label: '没排到资源',
+    detail:
+      '一直没排到资源，等了 5 次还是没跑起来，这一次就不再等了。任务没有真正开始，所以没有输出可看。这次算一次失败：累计 3 次会自动放慢（每天只试一次）。',
+    countsTowardFailure: true,
   },
 } satisfies Record<string, RunOutcome>;
 
@@ -111,7 +120,7 @@ export const Success: Story = {
   args: { row: make('success', { sandboxId: 'sbx-1' }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('不计入');
+    await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('不算失败');
     await expect(canvas.getByTestId('run-open-task')).toBeInTheDocument();
   },
 };
@@ -121,18 +130,67 @@ export const Failed: Story = {
   args: { row: make('failed', { outputSummary: 'Error: ENOENT reports/' }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('计入连续失败');
+    await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('算一次失败');
     await expect(canvas.getByTestId('run-output-summary')).toBeInTheDocument();
   },
 };
 
-/** ❌ 超时：也计入连续失败，但文案要引导去调超时档位，不是去查代码。 */
+/**
+ * ❌ **没排到资源**：`status='failed'` 但 `errorCode='RESOURCE_EXHAUSTED'`。
+ *
+ * ★ 它**算一次失败，却根本没跑起来** —— 横跨了"有结果·坏"和"没有跑"两类，是八个
+ *   status 里唯一一个不能只看 status 就归类的。和普通失败共用一句「任务真的跑了但
+ *   失败了」是**假的**：用户会去翻一份不存在的日志。
+ */
+export const GaveUpNoCapacity: Story = {
+  args: { row: make('exhausted') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('run-label')).toHaveTextContent('没排到资源');
+    await expect(canvas.getByTestId('run-detail')).toHaveTextContent('没有输出');
+    await expect(canvas.getByTestId('run-detail')).not.toHaveTextContent('跑起来了');
+    // 后端确实记了这一笔 ⇒ ⛔ 界面不许替它改口径。
+    await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('算一次失败');
+  },
+};
+
+/**
+ * ⭐ **失败原文单独一格**（`automation_runs.error_message`）。
+ *
+ * 它此前解析了却从不渲染 ⇒ 失败原因永远只有一句通用话。两者都要：`run-detail` 说
+ * "这属于哪一类失败"，这一格说"到底哪一步炸的"。⚠️ 它是后端原文（英文/异常 message），
+ * 所以带标签、次要样式，⛔ 不许当人话摆到 `run-detail` 的位置上。
+ */
+export const FailedWithErrorMessage: Story = {
+  args: {
+    row: make('failed', {
+      errorMessage: 'task exited with code 1: ENOENT ./scripts/nightly.sh',
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('run-error-message')).toHaveTextContent('ENOENT');
+    await expect(canvas.getByTestId('run-error-message')).toHaveTextContent('后端原文');
+    // 人话那一句仍然在。
+    await expect(canvas.getByTestId('run-detail')).toHaveTextContent('算一次失败');
+  },
+};
+
+/** 没有 errorMessage 的行 ⛔ 不摆一个空的原文块。 */
+export const NoErrorMessage: Story = {
+  args: { row: make('success') },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).queryByTestId('run-error-message')).toBeNull();
+  },
+};
+
+/** ❌ 超时：也算一次失败，但文案要引导去调「最长运行时间」，不是去查代码。 */
 export const Timeout: Story = {
   args: { row: make('timeout') },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('run-label')).toHaveTextContent('超时');
-    await expect(canvas.getByTestId('run-detail')).toHaveTextContent('超时档位');
+    await expect(canvas.getByTestId('run-detail')).toHaveTextContent('最长运行时间');
   },
 };
 
@@ -142,7 +200,7 @@ export const SkippedAuthExpired: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('run-detail')).toHaveTextContent('凭证');
-    await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('不计入');
+    await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('不算失败');
   },
 };
 
@@ -168,13 +226,17 @@ export const Missed: Story = {
     // ⭐ 自成一类：⛔ 不能与 skipped 合并，也绝不能与 failure 同色同类。
     await expect(item).toHaveAttribute('data-category', 'missed');
     await expect(item).toHaveAttribute('data-counts-toward-failure', 'false');
-    await expect(canvas.getByTestId('run-detail')).toHaveTextContent('不是规则失败');
+    await expect(canvas.getByTestId('run-detail')).toHaveTextContent('不是规则的问题');
     await expect(canvas.getByTestId('run-detail')).toHaveTextContent('不会补跑');
   },
 };
 
-/** ⚠️ 资源不足排队：24min × 5，历史上显示「已排队 n/5」。 */
-export const ResourceExhausted: Story = {
+/**
+ * ⚠️ 资源不足**排队中**：24min × 5，显示「排队 n/5」。
+ * ⛔ 与上面的 `GaveUpNoCapacity`（排完了、放弃了）是两件事：这一支还没有结果、不算失败，
+ *   那一支算一次失败。同一个词出现在两处，文案与 `countsTowardFailure` 都必须分得开。
+ */
+export const QueuedForCapacity: Story = {
   args: { row: make('queued', { durationText: undefined }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

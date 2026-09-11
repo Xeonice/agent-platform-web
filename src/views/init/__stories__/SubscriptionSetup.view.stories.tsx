@@ -47,8 +47,19 @@ type Story = StoryObj<typeof SubscriptionSetupView>;
 export const NoneConfigured: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('subscription-setup')).toHaveAttribute('data-ready', 'false');
+    const section = canvas.getByTestId('subscription-setup');
+    await expect(section).toHaveAttribute('data-ready', 'false');
     await expect(canvas.getByTestId('subscription-blocked')).toBeVisible();
+
+    /**
+     * ⛔ **「不必两个都配」把 Agent 的数量写死成 2**（2026-09 修）。Agent 是**开放
+     * 注册表**（04 §3）—— 装了第三方 Agent 的机器上这句话当场变成假话。
+     * MUTATION：改回「不必两个都配」⇒ 本条红。
+     */
+    await expect(section).not.toHaveTextContent('不必两个都配');
+    await expect(section).toHaveTextContent('不用全部配');
+    // ⚠️ 「配好任意一个就能开始」不许省：判据本来就是"至少一个"。
+    await expect(section).toHaveTextContent('配好任意一个就能开始');
   },
 };
 

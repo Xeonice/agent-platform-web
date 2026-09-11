@@ -53,6 +53,8 @@ export function GitCredentialsContainer() {
   return (
     <GitCredentialsSectionView
       loading={m.loading}
+      loadError={m.loadError}
+      onRetryLoad={m.retryLoad}
       cards={m.cards}
       missingTypes={m.missingTypes}
       guidanceText={m.guidanceText}

@@ -60,13 +60,13 @@ export function connectivityVerdict(rows: readonly ConnectivityResultDto[]): Con
  * —— 由 container 以 prop 传入，⛔ 不许在 view 里再抄一句（抄出来的那句迟早跟这句分叉）。
  */
 const VERDICT_TEXT: Readonly<Record<ConnectivityVerdict, string>> = {
-  ok: '出网正常：模型 API 与镜像仓库均可达。',
+  ok: '联网正常：模型 API 与镜像下载源都连得上。',
   // ⚠️ **partial 不是一种情形，是两种** —— 这一档的判据只是「模型 API 没有全挂」，
   //    它同时覆盖「只有镜像仓库挂了」与「挂了一部分模型 API」。所以这里不能有定值，
   //    见 `partialText()`。留这个键是为了让 Record 保持全覆盖（少一档编译不过）。
   partial: '',
   offline:
-    '当前为离线环境，Agent 将不可用 —— 每个 runtime 都必须能访问自己的模型 API，这是物理约束，不是配置问题。平台其余功能（项目管理、凭证与镜像配置、系统诊断）照常可用。',
+    '当前连不上外网，Agent 将不可用 —— 每个 Agent 都必须能访问自己的模型 API，这是物理约束，不是配置问题。平台其余功能（项目管理、凭证与镜像配置、系统诊断）照常可用。',
 };
 
 function rowModel(row: ConnectivityResultDto): ConnectivityRowModel {
@@ -76,18 +76,18 @@ function rowModel(row: ConnectivityResultDto): ConnectivityRowModel {
     modelApi: row.modelApi,
     ok: row.ok,
     // ⚠️ 两类必须在界面上分得开：离线判定只看前者，用户得看得出"报红的这条属于哪一类"。
-    kindText: row.modelApi ? '模型 API' : '镜像仓库',
+    kindText: row.modelApi ? '模型 API' : '镜像下载源',
     // ⚠️ **超时与够不着必须分开说**（2026-09-09 用户质疑后补的）。后端在同一份 DTO 里
     //    给了 `timedOut`，它的 summary 也一直分着写；**只有这一行把两者压成了「不可达」**
     //    —— 于是后端说「未在预算内应答」，用户屏幕上却是一个 ❌ 加「不可达」。
     //    「3.5 秒内没完成握手」证明不了「连不上」，实测同一目标的握手会在 2.3s~10.2s 抖动。
     stateText: row.ok
       ? row.latencyMs === undefined
-        ? '可达'
-        : `可达 · ${String(Math.round(row.latencyMs))}ms`
+        ? '连得上'
+        : `连得上 · ${String(Math.round(row.latencyMs))}ms`
       : row.timedOut === true
-        ? '未在预算内应答'
-        : '不可达',
+        ? '超时未响应'
+        : '连不上',
     ...(row.timedOut === true ? { timedOut: true } : {}),
     ...(row.hint === undefined ? {} : { hint: row.hint }),
   };
@@ -104,7 +104,7 @@ function rowModel(row: ConnectivityResultDto): ConnectivityRowModel {
  */
 /** 结论句的唯一出口：`partial` 走 `partialText`，另两档取定值。 */
 function verdictTextOf(rows: readonly ConnectivityResultDto[]): string {
-  if (rows.length === 0) return '尚未检测过出网可达性。';
+  if (rows.length === 0) return '还没有检查过这台机器能不能联网。';
   const verdict = connectivityVerdict(rows);
   return verdict === 'partial' ? partialText(rows) : VERDICT_TEXT[verdict];
 }
@@ -113,19 +113,19 @@ function partialText(rows: readonly ConnectivityResultDto[]): string {
   const failed = rows.filter((r) => !r.ok);
   const hitModelApi = failed.some((r) => r.modelApi);
   // ⚠️ 全是超时时连"没通过"都要说得更轻：那只是没在预算内应答。
-  const verb = failed.every((r) => r.timedOut === true) ? '未在预算内应答' : '未通过检查';
+  const verb = failed.every((r) => r.timedOut === true) ? '超时未响应' : '没通过检查';
   // ⛔ **不在这句里点名具体目标**（同本文件上方那条纪律，用例「三句结论都不点名具体
   //    runtime」钉着）：`api.openai.com` 这种名字念出来既像 runtime 名，又与逐行结果重复。
   //    哪几条没过由下方那张表自己说 —— 它本来就逐条渲染着。
   const tail = failed.every((r) => r.timedOut === true)
-    ? '⚠️ 超时不等于连不上：一条时快时慢的链路会周期性越过探测预算，重跑一次看它是否稳定。'
+    ? '⚠️ 超时不等于连不上：一条时快时慢的链路会周期性超过这次检查的超时时限，重跑一次看它是否稳定。'
     : '';
   if (!hitModelApi) {
-    return `有镜像仓库${verb} —— 模型 API 都可达，Agent 可用；受影响的只是拉取新镜像。${tail}`;
+    return `有镜像下载源${verb} —— 模型 API 都连得上，Agent 可用；受影响的只是下载新镜像。${tail}`;
   }
   return (
-    `有模型 API ${verb} —— 其余模型 API 可达，所以平台不是离线；` +
-    `但依赖它的 runtime 可能用不了，其他 runtime 不受影响。${tail}`
+    `有模型 API ${verb} —— 其余模型 API 连得上，所以平台不算断网；` +
+    `但依赖它的那个 Agent 可能用不了，其他 Agent 不受影响。${tail}`
   );
 }
 

@@ -102,10 +102,28 @@ export const DiagnoseCheckFrameSchema = z.object({
   id: DiagnoseCheckIdSchema,
   label: z.string(),
   status: DiagnoseStatusSchema,
-  /** 一行人话，**直接上 UI**；自带这一次实测的具体数字（P21-5 §9B）。 */
-  summary: z.string(),
-  /** 修复建议：可复制的命令或配置项（P21-5 §6「点击复制命令到剪贴板」）。 */
-  hint: z.string().optional(),
+  /**
+   * 一句话结论，**≤ 20 字、不换行**：这一项好不好 + 挡不挡我干活。界面第一行。
+   *
+   * ⚠️ 它替代了旧的 `summary`。拆开的原因：旧字段既当标题又装证据，长成了三行散文，
+   * 而它渲染在图标同一行 —— 用户要读完一整段才知道这一项到底好不好。
+   */
+  headline: z.string(),
+  /**
+   * 第二层：证据、例外条款、为什么。界面**默认收进展开层**。
+   *
+   * ⚠️ 名字不叫 `detail`，因为 `detail` 早被结构化细节占着（pid、字节数、digest）。
+   */
+  detailText: z.string().optional(),
+  /**
+   * 下一步 —— **人话，普通字体，⛔ 没有复制按钮**。
+   *
+   * ⚠️ 它与 `command` 必须是两个字段：合成一个 `hint` 时，一段散文（「重跑一次看稳
+   * 不稳定」）被渲染进等宽框顶着一个 [复制] 按钮 —— 复制下来也没地方粘。
+   */
+  nextStep: z.string().optional(),
+  /** 真正可粘贴执行的命令 / 配置项：等宽 + [复制]（P21-5 §6「点击复制命令到剪贴板」）。 */
+  command: z.string().optional(),
   step: PresetImageStepSchema.optional(),
   /**
    * ⚠️ 是 `string` 而不是 `enum(PRESET_IMAGE_CODES)`：闭集在**后端**，前端收窄成闭集
@@ -201,7 +219,7 @@ export type ProvisionServerFrame = z.infer<typeof ProvisionServerFrameSchema>;
 
 export const SSE_PROTOCOL_CANONICAL =
   'diagnose.server:start{checks[{id,label}],timeoutMs},' +
-  'check{id,label,status,summary,hint?,step?,errorCode?,detail?,durationMs},' +
+  'check{id,label,status,headline,detailText?,nextStep?,command?,step?,errorCode?,detail?,durationMs},' +
   'done{okCount,infoCount,warnCount,failCount,totalMs}|' +
   'diagnose.status:ok,info,warn,fail,timeout|' +
   'diagnose.checks:container-runtime,dev-kvm,disk-space,port-conflict,' +

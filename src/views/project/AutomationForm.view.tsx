@@ -134,8 +134,9 @@ export function AutomationFormView({
         />
       </label>
 
+      {/* 屏上叫 Agent；`runtime` 是内部字段名（10 §6.5），⛔ 不上屏。 */}
       <label className="flex flex-col gap-1 text-xs">
-        Runtime
+        用哪个 Agent 跑
         <select
           value={draft.runtime}
           className="rounded border border-border bg-background px-2 py-1"
@@ -185,7 +186,7 @@ export function AutomationFormView({
       </label>
 
       <fieldset className="flex flex-col gap-1 text-xs">
-        <legend className="font-medium">超时配置</legend>
+        <legend className="font-medium">最长运行时间</legend>
         <div className="flex flex-wrap gap-3">
           {AUTOMATION_TIMEOUT_OPTIONS.map((minutes) => (
             <label key={minutes} className="flex items-center gap-1.5">
@@ -203,7 +204,7 @@ export function AutomationFormView({
           ))}
         </div>
         <span className="text-[11px] text-muted-foreground">
-          无头任务硬超时。超时记 failed 并计入连续失败。
+          任务最长能跑多久。跑过头会被强制结束，并且这次算一次失败。
         </span>
       </fieldset>
 
@@ -285,11 +286,13 @@ export function AutomationFormView({
               </label>
             ))}
           </div>
-          {/* ⭐ 与已落地的保留卷是同一条路（13 §2.2.2 / F21-7 §10.4）：这个天数直接
+          {/* ⭐ 与项目菜单里那个面板是同一条路（13 §2.2.2 / F21-7 §10.4）：这个天数直接
               喂 `retained_volumes.retain_until`，产物以 source='automation-artifact' 落进
-              项目的「🎁 已保留卷」面板，不是另开一套存储。说出来用户才知道去哪儿找成果。 */}
+              项目的「🎁 保留下来的成果」面板，不是另开一套存储。说出来用户才知道去哪儿找成果。
+              ⚠️ 这句里的按钮名必须与 `ProjectMenuPanel.view` 的那一个**逐字一致**，
+                 否则这条指路指向一个界面上找不到的名字。 */}
           <span className="text-[11px] text-muted-foreground" data-testid="form-retention-note">
-            成果以保留卷形式存放，到期自动清理；期间可在项目的「🎁 已保留卷」里下载。
+            成果会留在项目的「🎁 保留下来的成果」里，到期自动清理；到期之前都可以下载。
           </span>
         </fieldset>
       </details>

@@ -404,6 +404,7 @@ function sandboxDto(overrides: Partial<SandboxDto> & Pick<SandboxDto, 'id'>): Sa
   return {
     projectId: 'proj-demo',
     runtime: DEFAULT_RUNTIME_ID,
+    availableRuntimes: [DEFAULT_RUNTIME_ID],
     provider: DEFAULT_PROVIDER_NAME,
     name: defaultTaskName(undefined),
     status: 'running',
@@ -1553,6 +1554,37 @@ export const handlers = [
   // 默认档由数组项的 isDefault 标记（无顶层字段）。
   http.get(`${API_BASE}/api/providers`, () => HttpResponse.json(PROVIDER_REGISTRY)),
 
+  /**
+   * 沙箱列表（`GET /api/sandboxes`，不带 projectId = 全部项目）。
+   *
+   * ★ 2026-09-11 补。此前**这条路由在替身里根本不存在** —— `vitest.setup.ts` 用的是
+   *   `onUnhandledRequest: 'error'`，所以任何消费 `useSandboxes` 的用例都是撞在未处理请求上，
+   *   而不是拿到数据。工作台左侧树（`useSandboxes`）、项目删除确认里的运行中任务数
+   *   （`useProjectRunningTasks`）、以及凭证页删除确认里的受影响任务（`useAffectedTasks`）
+   *   共用这一条，缺了它三处都验不动。
+   *
+   * ⚠️ 这份数组里的 `runtime` 值必须来自注册表常量：受影响任务是**按 runtime 过滤**出来的，
+   *   替身要是写死一个后端不认识的键，过滤永远返回空 —— 而那正是这次要修的那个 bug 的样子。
+   */
+  http.get(`${API_BASE}/api/sandboxes`, ({ request }) => {
+    const projectId = new URL(request.url).searchParams.get('projectId');
+    const all: SandboxDto[] = [
+      sandboxDto({ id: 'sb-1', name: '修一下登录态刷新', status: 'running' }),
+      sandboxDto({ id: 'sb-2', name: '补 e2e 用例', status: 'starting' }),
+      sandboxDto({
+        id: 'sb-3',
+        name: '已经跑完的那个',
+        status: 'stopped',
+        projectId: 'proj-other',
+      }),
+    ];
+    // ⚠️ 过滤结果单独标注类型 —— `check:mock-contracts` 要求响应体的**接收者**有锚定，
+    //    三元表达式里的 `.filter()` 它判不出来（会报「循环引用」）。
+    const visible: SandboxDto[] =
+      projectId === null ? all : all.filter((s) => s.projectId === projectId);
+    return HttpResponse.json(visible);
+  }),
+
   // 单个沙箱（刷新恢复的唯一来源）：任务名 + 失败原因（failureCode/failureMessage 仅 failed 时出现）。
   http.get(`${API_BASE}/api/sandboxes/:id`, ({ params }) =>
     HttpResponse.json(sandboxDto({ id: String(params['id']), name: 'dev 恢复的任务' })),
@@ -2035,35 +2067,39 @@ const DIAGNOSE_FRAMES: readonly DiagnoseServerFrame[] = [
       { id: 'disk-space', label: '磁盘余量（DATA_ROOT）' },
       { id: 'port-conflict', label: '端口占用' },
       { id: 'outbound-network', label: '外网连通（模型 API / 镜像仓库）' },
-      { id: 'ws-loopback', label: 'WS 回环' },
-      { id: 'data-root-fs', label: 'DATA_ROOT 文件系统' },
+      { id: 'ws-loopback', label: '实时推送自检' },
+      { id: 'data-root-fs', label: '数据目录文件系统' },
       { id: 'preset-image', label: '预制镜像就绪' },
     ],
-    timeoutMs: 5000,
+    // ⚠️ 与后端 `DIAGNOSE_TIMEOUT_MS` 同步；界面**不自行计时**，也不把它抄进文案。
+    timeoutMs: 10_000,
   },
   {
     event: 'check',
     id: 'container-runtime',
-    label: '容器运行时可达',
+    label: '容器服务可达',
     status: 'ok',
-    summary: 'aio：docker socket 可达（/var/run/docker.sock），版本 27.3.1',
+    headline: '容器服务可达',
+    detailText: '/var/run/docker.sock，142ms · Docker/27.3.1 (linux)。',
     durationMs: 142,
   },
   {
     event: 'check',
     id: 'dev-kvm',
-    label: '微 VM 档位（boxlite）可用',
+    label: '轻量虚拟机沙箱可用',
     status: 'ok',
-    summary:
-      'Hypervisor.framework 就绪（Apple Silicon · Darwin 25.5.0）—— 微 VM 档位（boxlite）可用，且是这台机器的默认档。⛔ 它不需要 Docker，也不需要任何守护进程',
+    headline: '轻量虚拟机沙箱可用，正在用它',
+    detailText:
+      'Apple Silicon · Darwin 25.5.0，内核报告支持硬件虚拟化。它不需要 Docker，也不需要任何常驻服务。',
     durationMs: 6,
   },
   {
     event: 'check',
     id: 'disk-space',
-    label: '磁盘余量（DATA_ROOT）',
+    label: '磁盘余量',
     status: 'ok',
-    summary: '/data 剩余 50 GB（共 200 GB，已用 75%）',
+    headline: '磁盘余量充足',
+    detailText: '/data：已用 150 GB / 200 GB（75%），可用 50 GB。',
     durationMs: 11,
   },
   {
@@ -2071,10 +2107,14 @@ const DIAGNOSE_FRAMES: readonly DiagnoseServerFrame[] = [
     id: 'port-conflict',
     label: '端口占用',
     status: 'fail',
+    headline: '端口 3000 被占用，平台起不来',
     // ⚠️ 三样齐全：端口号 · 进程名 (pid) · 平台原本要用它做什么。
-    summary:
-      '端口 3000（平台 HTTP/WS 服务（REST · /events · /terminal · /tasks 同一端口））被 com.docke (pid 41235) 占用',
-    hint: '先确认它是什么：lsof -nP -iTCP:3000 -sTCP:LISTEN；确实该让路就停掉它，否则给平台换一个端口：PORT=<其它端口> 重启平台',
+    detailText:
+      '端口 3000（平台 HTTP/WS 服务（REST · /events · /terminal · /tasks 同一端口））被 com.docke (pid 41235) 占用。',
+    nextStep:
+      '先确认它是什么，确实该让路就停掉它；否则给平台换一个端口（PORT=<其它端口>）后重启平台。',
+    // ⚠️ 只有真能粘贴执行的东西才进 command（等宽 + [复制]）。
+    command: 'lsof -nP -iTCP:3000 -sTCP:LISTEN',
     detail: {
       conflicts: [
         {
@@ -2091,37 +2131,47 @@ const DIAGNOSE_FRAMES: readonly DiagnoseServerFrame[] = [
     id: 'outbound-network',
     label: '外网连通（模型 API / 镜像仓库）',
     status: 'warn',
-    summary: 'api.openai.com 可达（182ms）；ghcr.io 连接超时',
-    hint: 'HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 重启平台',
-    durationMs: 5000,
+    headline: '拉不到新镜像，Agent 仍可用',
+    detailText:
+      'ghcr.io 未在超时时限内应答。模型 API 正常，Agent 可用；镜像仓库连不上只影响拉新镜像。',
+    // ⚠️ 散文归 nextStep，⛔ 不进等宽框。
+    nextStep:
+      '重跑一次看它稳不稳定：偶发多半只是慢；每次都这样就在系统设置里填 HTTPS_PROXY 后重试。',
+    durationMs: 7000,
   },
   {
     event: 'check',
     id: 'ws-loopback',
-    label: 'WS 回环',
+    label: '实时推送自检',
     status: 'ok',
-    summary: '本机 /events 握手 + 回环帧往返 8ms',
+    headline: '实时推送正常',
+    detailText: '本机 127.0.0.1:3000 应答正常（8ms）。',
     durationMs: 24,
   },
   {
     event: 'check',
     id: 'data-root-fs',
-    label: 'DATA_ROOT 文件系统',
+    label: '数据目录文件系统',
     status: 'warn',
-    summary: '/data 文件系统为 ext4，不支持 reflink —— CoW 加速功能受限',
-    hint: '换用支持 reflink 的文件系统（Btrfs / XFS）承载 DATA_ROOT',
+    headline: '秒级复制用不了，更费磁盘',
+    detailText:
+      '数据目录（DATA_ROOT）/data 是 ext4，不支持秒级复制（EOPNOTSUPP）—— 每个任务的工作区会实占一份完整副本。不改也能用。',
+    nextStep: '想省磁盘就把数据目录放到支持秒级复制的文件系统上（Btrfs，或开了 reflink 的 XFS）。',
     durationMs: 9,
   },
   {
     event: 'check',
     id: 'preset-image',
     label: '预制镜像就绪',
-    // ⚠️ **info 不是 warn**：镜像是好的，只是本机还没铺开（P21-5 §9A 第 5 步）。
+    // ⚠️ **info 不是 warn**：镜像是好的，只是还没下载到本机（P21-5 §9A 第 5 步）。
     status: 'info',
     step: 'staged',
-    summary:
-      '预制镜像已就绪，但尚未在本机铺开 —— **首个任务需要数分钟准备镜像**（13GB 镜像实测冷启动约 190 秒），之后每次 3–4 秒',
-    hint: '不需要任何操作：第一个任务会自动拉取并铺开；想提前铺可以先跑一个空任务',
+    headline: '镜像还没下载到本机',
+    // ⛔ 体积与耗时**按档说**，⛔ 一个 markdown 星号都不许有。
+    detailText:
+      '镜像本身没问题，只是这台机器上还没有它的副本（镜像压缩后约 0.3GB，通常十几秒到一分钟）。',
+    nextStep:
+      '不需要做任何事，第一个任务会自动下载（耗时见上一行）。这一步要镜像仓库在 —— 外网连通那一项若报镜像仓库不可达，先解决那个。',
     durationMs: 431,
   },
   {

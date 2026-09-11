@@ -144,14 +144,27 @@ describe('排序：按 retainUntil 升序 —— 界面顺序 = 真实消失顺�
 });
 
 describe('来源与弱引用', () => {
-  it('sandboxId 在 → 说出来源任务', () => {
-    expect(retainedVolumeRow(dto(), NOW).originText).toBe('来源任务 sbx-7f3a');
+  it('sandboxId 在 → 说出来源任务（长 id 只取前 8 位，完整 id 仍在字段里给 view 挂 title）', () => {
+    expect(retainedVolumeRow(dto(), NOW).originText).toBe('来自任务 sbx-7f3a');
+    const long = retainedVolumeRow(dto({ sandboxId: 'sbx-7f3a-4b1c-11ef-9e02' }), NOW);
+    expect(long.originText).toBe('来自任务 sbx-7f3a…');
+    expect(long.sandboxId).toBe('sbx-7f3a-4b1c-11ef-9e02');
   });
 
-  it('⭐ sandboxId 缺席（sandbox 归档后置空）→ 「来源任务已归档」，不是空字符串', () => {
-    // 空格子会被读成"加载失败"，而这条记录完全正常、仍可下载与删除（10 §7.3 弱引用）。
+  /**
+   * ★ **「不知道」不能说成「已归档」。**
+   *
+   * 旧文案是「来源任务已归档」—— 缺一个 id 只说明**关联不上**：任务可能被删了、
+   * 这条记录可能本来就没记上 id。归档只是其中一种可能，而这个平台**根本没有归档功能**
+   * （F21-6 §10 D 已裁决不做）⇒ 界面在指认一个不存在的状态。
+   * ⛔ 同时也不许退回空字符串：空格子会被读成"加载失败"，而这条记录完全正常、
+   *   仍可下载与删除（10 §7.3 弱引用）。
+   */
+  it('⭐ sandboxId 缺席 → 说「关联不到」，⛔ 不说「已归档」（那是把"不知道"说成一个具体状态）', () => {
     const row = retainedVolumeRow(dto({ sandboxId: undefined }), NOW);
-    expect(row.originText).toBe('来源任务已归档');
+    expect(row.originText).toContain('关联不到');
+    expect(row.originText).not.toContain('归档');
+    expect(row.originText).not.toBe('');
     expect(row.sandboxId).toBeUndefined();
   });
 

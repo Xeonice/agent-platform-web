@@ -42,7 +42,9 @@ describe('useProjectClone', () => {
     rerender();
     expect(result.current.isCloning).toBe(true);
     expect(result.current.percent).toBe(2); // 527/26348 —— 分母是对象数
-    expect(result.current.detailLabel).toBe('接收对象 · 527/26,348 · 380.0 KB · 189.0 KB/s');
+    expect(result.current.detailLabel).toBe(
+      '接收对象（第 4/6 步） · 527/26,348 · 380.0 KB · 189.0 KB/s',
+    );
   });
 
   it('⚠️ 上一版这条测的是一条生产不可达的分支', () => {
@@ -56,7 +58,7 @@ describe('useProjectClone', () => {
     });
     rerender();
     expect(result.current.percent).toBeNull();
-    expect(result.current.detailLabel).toBe('接收对象 · 1.0 MB');
+    expect(result.current.detailLabel).toBe('接收对象（第 4/6 步） · 1.0 MB');
   });
 
   it('receiving 之前的空窗也有话说（旧解析器这里一个数都没有）', () => {
@@ -65,7 +67,7 @@ describe('useProjectClone', () => {
       emit('cloning', { stage: 'enumerating', objectsTotal: 26348 });
     });
     rerender();
-    expect(result.current.detailLabel).toBe('枚举远端对象 · 共 26,348 个对象');
+    expect(result.current.detailLabel).toBe('枚举远端对象（第 1/6 步） · 共 26,348 个对象');
   });
 
   it('已用时长只在进行中给；done/failed 后不再计时', () => {

@@ -55,7 +55,19 @@ export function InitWizardShellView({
     >
       <section className="flex w-full max-w-3xl flex-col gap-4 rounded-lg border border-border bg-background p-6">
         <header className="flex flex-col gap-3">
-          <h1 className="text-lg font-semibold">平台初始化</h1>
+          {/*
+            ⚠️ **这是用户看到的第一行字**，此前只有「平台初始化」四个字 —— 它说不出
+            "要做什么"，也说不出"要多久"，于是第一反应是"还要装多久"。
+            ⛔ **不许在这里承诺时间**（"约 5 分钟"是编的）：说得出的是**步数**与
+            **哪一步需要你离开这一页**，这两件都是真的。
+          */}
+          <div className="flex flex-col gap-1">
+            <h1 className="text-lg font-semibold">平台初始化 · 共 5 步</h1>
+            <p className="text-sm text-muted-foreground">
+              一次性设置：先确认这台机器能联网、备齐沙箱镜像，再配一个你自己的模型帐号，最后看一眼本机资源。
+              只有配模型帐号那一步需要你离开这一页；之后所有配置都能在「设置 → 系统状态」里改。
+            </p>
+          </div>
           <ol data-testid="init-wizard-steps" className="flex flex-wrap gap-2 text-xs">
             {steps.map((s) => (
               <li

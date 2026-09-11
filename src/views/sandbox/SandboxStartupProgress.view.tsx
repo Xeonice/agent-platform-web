@@ -12,8 +12,15 @@ export interface SandboxStartupProgressProps {
   activeIndex: number;
   /** 进度百分比（0–100，running 前 < 100）。 */
   percent: number;
-  /** 原始 status 文案（诊断用，可选）。 */
-  statusLabel?: string;
+  /**
+   * 原始 status（`preparing-workspace` / `creating` / …）。**只挂 `data-status`，不上屏。**
+   *
+   * ⛔ 它此前叫 `statusLabel` 并被拼进副标题 ⇒ 用户看到的是
+   * 「首次使用这个镜像…（preparing-workspace）」—— 一个后端状态机的内部名字。
+   * P22 §6 把这类东西（原始 status / 错误码 / 字段名 / 原始 error.message）
+   * 划到"只进日志与 data 属性"那一层：排障与 e2e 用得上，用户不该看见。
+   */
+  dataStatus?: string;
   /**
    * 标题下那句副标题。**缺席就整行不渲染** —— ⛔ 视图不许兜底成任何一句话。
    *
@@ -46,27 +53,26 @@ export function SandboxStartupProgressView({
   phases,
   activeIndex,
   percent,
-  statusLabel,
+  dataStatus,
   subtitle,
   taskName,
   phaseNote,
   activeElapsedLabel,
 }: SandboxStartupProgressProps) {
-  // ⚠️ 两者都缺席时整行不渲染 —— ⛔ 不要留一个空的 `<p>`，它会在标题下留一道空隙。
-  const hasStatus = statusLabel !== undefined && statusLabel !== '';
+  // ⚠️ 副标题缺席时整行不渲染 —— ⛔ 不要留一个空的 `<p>`，它会在标题下留一道空隙。
   const hasSubtitle = subtitle !== undefined && subtitle !== '';
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 p-6 text-center">
+    <div
+      className="flex h-full flex-col items-center justify-center gap-6 p-6 text-center"
+      data-testid="sandbox-startup-progress"
+      data-status={dataStatus}
+    >
       <div>
+        {/* ⚠️ P21-1 §9：界面上不出现「沙箱」这个词，用户这边它就叫「任务」。 */}
         <h2 className="text-lg font-semibold">
-          {taskName !== undefined && taskName !== '' ? `正在启动：${taskName}` : '正在启动沙箱…'}
+          {taskName !== undefined && taskName !== '' ? `正在启动：${taskName}` : '正在启动任务…'}
         </h2>
-        {hasSubtitle || hasStatus ? (
-          <p className="mt-1 text-sm text-muted-foreground">
-            {hasSubtitle ? subtitle : ''}
-            {hasStatus ? `（${statusLabel}）` : ''}
-          </p>
-        ) : null}
+        {hasSubtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
 
       <div className="w-full max-w-sm" role="status" aria-live="polite">

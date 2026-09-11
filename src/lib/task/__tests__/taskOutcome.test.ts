@@ -53,7 +53,8 @@ describe('后端真会发的那组码都有人话（S6 review ⑦）', () => {
     ['TASK_FAILED', '失败'],
     ['TASK_KILLED', '终止'],
     ['TASK_TIMED_OUT', '超时'],
-    ['SANDBOX_GONE', '沙箱'],
+    // ⚠️ 关键词跟着上屏口径走：界面上不说「沙箱」，说「运行环境」（P21-1 §9）。
+    ['SANDBOX_GONE', '运行环境'],
     ['RESUME_FAILED', '重启'],
   ])('%s ⇒ 有针对性的人话（不是兜底句）', (code, keyword) => {
     const copy = describeTaskErrorCode(code);
@@ -88,7 +89,8 @@ describe('describeTaskOutcome · 正常终态', () => {
 
 describe('describeTaskErrorCode · 码 → 人话', () => {
   it('收录的码给人话', () => {
-    expect(describeTaskErrorCode('UNSUPPORTED_CAPABILITY')).toContain('headlessTask');
+    // ⚠️ 不再断言 `headlessTask` —— 那是能力位的字段名，不该出现在用户看的句子里。
+    expect(describeTaskErrorCode('UNSUPPORTED_CAPABILITY')).toContain('无头运行');
   });
 
   it('未收录的码 ⇒ undefined：兜底交给调用点的语境，不由词表代劳', () => {

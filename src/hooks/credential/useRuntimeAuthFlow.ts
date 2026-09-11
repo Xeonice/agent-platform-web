@@ -48,8 +48,14 @@ export interface UseRuntimeAuthFlowArgs {
 
 export interface RuntimeAuthFlow {
   state: AuthFlowState;
-  /** device-code 剩余秒数（仅 polling/expired 有意义）。 */
-  secondsLeft: number;
+  /**
+   * device-code 剩余秒数；**`null` = 后端没给 `expiresAt`，无从倒数 ⇒ 不要渲染倒计时**。
+   *
+   * ⛔ 此前这里恒为 `0`，于是后端漏发 `expiresAt` 时屏幕上是一个**红色的 00:00**，
+   *    底下同时写着「等待授权中…」—— 两句话互相打脸，而且那个 00:00 完全是编的。
+   *    没有到期时间就不画表盘，比画一个假的好。
+   */
+  secondsLeft: number | null;
   /** api-key 期望前缀（前端格式提示）。 */
   expectedPrefix: string;
   /** api-key 前缀是否合法（格式提示，权威判定在后端）。 */
@@ -76,7 +82,7 @@ function reasonsFromError(error: unknown): string[] {
       if (messages.length > 0) return messages;
     }
   }
-  return ['凭证格式错误、无权限或额度不足，请检查后重试。'];
+  return ['可能是格式不对、这个 key 没有权限，或者额度用完了。'];
 }
 
 function messageFromError(error: unknown, fallback: string): string {
@@ -119,7 +125,7 @@ export function useRuntimeAuthFlow({
       .catch((error: unknown) => {
         dispatch({
           type: 'BEGIN_ERROR',
-          message: messageFromError(error, '发起授权失败，请重试。'),
+          message: messageFromError(error, '没能开始登录，请重试。'),
         });
       });
   }, [branch, runtimeId]);
@@ -139,7 +145,7 @@ export function useRuntimeAuthFlow({
         .catch((error: unknown) => {
           dispatch({
             type: 'PASTE_SUBMIT_ERROR',
-            message: messageFromError(error, '授权码无效或已过期，请重新获取后粘贴。'),
+            message: messageFromError(error, '这串授权码不对或已经失效，请重新取一次再粘贴。'),
           });
         });
     },
@@ -160,7 +166,7 @@ export function useRuntimeAuthFlow({
         .catch((error: unknown) => {
           dispatch({
             type: 'APIKEY_REJECTED',
-            message: messageFromError(error, '凭证被拒绝，请检查后重试。'),
+            message: messageFromError(error, '这份凭证没被接受。'),
             reasons: reasonsFromError(error),
           });
         });
@@ -216,7 +222,9 @@ export function useRuntimeAuthFlow({
             // 区别于下方 catch 的**瞬时网络请求异常**（fetch 抛错）——那种才留在 polling 重试（P1-a）。
             dispatch({
               type: 'POLL_FAILED',
-              message: '授权失败：登录被拒绝或授权助手异常，请再次登录。',
+              // 「授权助手」是内部说法 —— 上屏叫「登录程序」。
+              message:
+                '登录没能完成：对方拒绝了这次登录，或者本机的登录程序出了问题。请再登录一次。',
             });
           } else {
             dispatch({ type: 'POLL_PENDING' });
@@ -232,7 +240,8 @@ export function useRuntimeAuthFlow({
     // 硬性兜底：与 expiresAt（非 required）无关的强制上限，防后端漏发 expiresAt → 无限轮询假死（P1-a）。
     const hardStop = setTimeout(() => {
       if (cancelled) return;
-      dispatch({ type: 'POLL_EXPIRED' });
+      // ⚠️ **不是** POLL_EXPIRED：这是我们等够了，不是码到点了（见 authFlow `reason` 上的注释）。
+      dispatch({ type: 'POLL_GAVE_UP' });
     }, MAX_POLL_DURATION_MS);
     return (): void => {
       cancelled = true;
@@ -259,13 +268,14 @@ export function useRuntimeAuthFlow({
   }, [expiresAt]);
 
   // 倒计时归零 → 客户端转 expired（服务端 expired 轮询也会触发；两者取先到）。
+  // `null` = 没有 expiresAt ⇒ 没有倒计时这回事，交给视图**不渲染**（不是渲染成 0）。
   const secondsLeft =
     expiresAt !== undefined
       ? Math.max(0, Math.floor((new Date(expiresAt).getTime() - nowTick) / 1000))
-      : 0;
+      : null;
 
   useEffect(() => {
-    if (isPolling && expiresAt !== undefined && secondsLeft <= 0) {
+    if (isPolling && expiresAt !== undefined && secondsLeft !== null && secondsLeft <= 0) {
       dispatch({ type: 'POLL_EXPIRED' });
     }
   }, [isPolling, expiresAt, secondsLeft]);

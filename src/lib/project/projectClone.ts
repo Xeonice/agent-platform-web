@@ -25,7 +25,18 @@ export function cloneProgressPercent(state: ProjectCloneState): number | null {
   return null;
 }
 
-/** git 阶段 → 中文。填住 receiving 之前那段"一个数都没有"的空窗。 */
+/**
+ * git 阶段 → 中文 + **序号**。填住 receiving 之前那段"一个数都没有"的空窗。
+ *
+ * ★ **序号 `(4/6)` 不是装饰，它是唯一在解释"进度条为什么会重来一遍"的东西。**
+ *   git 的每个阶段各自从 0% 数到 100%（`git-cloner.port.ts:58-63` 已把这一点记为
+ *   已知未修），所以用户会眼看着同一根条子 0→100 走好几遍。没有序号的时候，
+ *   那看起来就是"卡住了又重来"，而它其实是正常推进 —— 界面此前一个字都没解释。
+ *   有了 `(4/6)`，同一件事读起来是"第 4 段跑完了，还有 2 段"。
+ *
+ * ⚠️ 分母是**这张表的长度**，不是写死的 6：加一个阶段就自动变 7，
+ *   ⛔ 不许把 6 硬编码到句子里（那正是下一个人加阶段时会漏掉的地方）。
+ */
 const STAGE_LABEL: Record<NonNullable<ProjectCloneState['stage']>, string> = {
   enumerating: '枚举远端对象',
   counting: '清点对象',
@@ -35,8 +46,26 @@ const STAGE_LABEL: Record<NonNullable<ProjectCloneState['stage']>, string> = {
   checkout: '检出文件',
 };
 
+/**
+ * 阶段顺序（git 实际走的先后）。
+ * `satisfies` 挡住写错的阶段名；漏写一个只会让那一阶段退回"只给名字不给序号"，
+ * 不会编出一个错的序号（见下面 `index < 0` 那一支）。
+ */
+const STAGE_ORDER = [
+  'enumerating',
+  'counting',
+  'compressing',
+  'receiving',
+  'resolving',
+  'checkout',
+] as const satisfies readonly NonNullable<ProjectCloneState['stage']>[];
+
 export function cloneStageLabel(stage: ProjectCloneState['stage']): string | undefined {
-  return stage === undefined ? undefined : STAGE_LABEL[stage];
+  if (stage === undefined) return undefined;
+  const index = (STAGE_ORDER as readonly string[]).indexOf(stage);
+  const label = STAGE_LABEL[stage];
+  // 表里没有的阶段（后端加了新值而这里还没跟上）⇒ 只给名字，⛔ 不编一个假的序号。
+  return index < 0 ? label : `${label}（第 ${String(index + 1)}/${String(STAGE_ORDER.length)} 步）`;
 }
 
 /** 速率，如 `1.2 MB/s`。 */
@@ -84,8 +113,34 @@ export interface CloneFailureGuidance {
 export function cloneFailureGuidance(errorCode: string | undefined): CloneFailureGuidance {
   switch (errorCode) {
     case 'CLONE_FAILED_PERMISSION':
+      // 这一条现在**只**在远端真的回绝了一个凭证时出现（401/403/publickey/Authentication
+      // failed）。「Repository not found」已经拆去 `CLONE_FAILED_NOT_FOUND` —— 见下一条。
       return {
-        message: '没有访问该仓库的权限。请配置 Git 访问凭证后重试克隆。',
+        message:
+          '远端拒绝了这次访问：凭证无效或没有这个仓库的权限。配置 Git 访问凭证后可重试克隆。',
+        canRetry: false,
+        needsCredentials: true,
+      };
+
+    /**
+     * ★ **「打不开」不等于「没权限」。**
+     *
+     * 后端对 `Repository not found` / 404 单独发这个码，因为它**分不出**是哪一种：
+     * 私有仓没配凭证、和地址写错一个字母，在 git 那里长得一模一样（远端故意如此——
+     * 回 403 就等于承认这个私有仓存在）。
+     *
+     * ⛔ 所以这句话**不许断言其中任何一种**。旧文案说的是「没有访问该仓库的权限」，
+     * 对地址打错的用户而言那是**假的**：他会被送去配一个根本不缺的凭证，而只读条
+     * 明写着不能改远端 —— 唯一真正的出路（删掉重建）此前一个字都没提。
+     *
+     * 两条出路都给：配凭证（界面上有按钮）+ 删掉重建（没有按钮，所以必须写进句子里）。
+     */
+    case 'CLONE_FAILED_NOT_FOUND':
+      return {
+        message:
+          '打不开这个仓库：可能是私有仓库还没配 Git 凭证，也可能是地址写错了。' +
+          '如果是私有仓库，配好凭证后可以重试克隆；如果是地址写错了，远端地址建好之后改不了，' +
+          '需要删掉这个项目重新建一个。',
         canRetry: false,
         needsCredentials: true,
       };
@@ -103,11 +158,23 @@ export function cloneFailureGuidance(errorCode: string | undefined): CloneFailur
       };
     case 'INTERRUPTED':
       return { message: '克隆被中断，请重试。', canRetry: true, needsCredentials: false };
+    /**
+     * ★ **「重试克隆」≠「重新创建」，这里曾经把两者说混了。**
+     *
+     * 旧文案让用户「清理磁盘后**重新创建**」。可失败的这个项目**还在**、还占着 50 个
+     * 名额里的一个 —— 照做的结果是多出一个项目，而不是修好这一个。这正是本页
+     * 「重试克隆保留项目 / 重新创建另起一个」这条区分要防的事。
+     *
+     * ⚠️ `canRetry` 由 false 改为 true，与信封里的 `retryable` **不矛盾**，两者问的
+     * 不是同一个问题：`retryable` 说的是「把这个请求原样再发一次会不会成功」（不会，
+     * 盘还是满的）；这里的 `canRetry` 决定的是**清完盘之后用户按的那个按钮在不在**。
+     * 藏掉它，用户腾出了空间也没有路可以回到这个项目上。
+     */
     case 'DISK_INSUFFICIENT':
-      // 03 §7.5 retryable=❌：磁盘不足重试无意义，只保留「转为空项目」。
       return {
-        message: '磁盘空间不足，无法完成克隆。可转为空项目，或清理磁盘后重新创建。',
-        canRetry: false,
+        message:
+          '磁盘空间不足，没能克隆完。清理出空间后可以在这个项目上重试克隆；也可以改为空项目。',
+        canRetry: true,
         needsCredentials: false,
       };
     default:

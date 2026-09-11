@@ -56,7 +56,8 @@ describe('useProjectRecovery', () => {
       expect(useAppStore.getState().projectClones['p1']?.phase).toBe('failed');
     });
     expect(useAppStore.getState().projectClones['p1']?.errorCode).toBe('CLONE_FAILED_NETWORK');
-    expect(result.current.actionError).toBe('克隆服务暂时不可用');
+    // ⛔ 后端 message 不上屏：未知码走通用兜底（见 `lib/_shared/errorCopy`）。
+    expect(result.current.actionError).toBe('操作失败，请稍后重试。');
   });
 
   it('convert-to-empty 成功 → 清 clone 态 + onConverted(projectId)', async () => {
@@ -98,16 +99,53 @@ describe('useProjectRecovery', () => {
       result.current.convertToEmpty();
     });
 
+    /**
+     * ★ **`INVALID_STATE` 的文案由「调用点」决定**：同一个 409，[重试克隆] 和
+     *   [改为空项目] 该说的话不一样，而"这是哪个动作"只有调用点知道。
+     *   ⛔ 不许合并成一句「当前状态不允许该操作」——那句话解释不了任何事，也没给出路。
+     */
     await waitFor(() => {
-      expect(result.current.actionError).toBe('仅失败态可转为空项目');
+      expect(result.current.actionError).toContain('改不成空项目');
     });
+    // ⛔ 后端原文不上屏。
+    expect(result.current.actionError).not.toContain('仅失败态');
   });
 
-  it('guidance 由 errorCode 派生（DISK_INSUFFICIENT 不可重试）', () => {
+  it('⭐ retry 与 convert 的 INVALID_STATE 是两句不同的话（合并回一句这条就红）', async () => {
+    useAppStore.getState().setCloneProgress('p1', { phase: 'failed', errorCode: 'TIMEOUT' });
+    server.use(
+      http.post(`${API_BASE}/api/projects/:id/retry-clone`, () =>
+        HttpResponse.json(
+          {
+            code: 'INVALID_STATE',
+            message: 'retry-clone is only allowed on a failed project',
+            retryable: false,
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    const { result } = renderHook(
+      () => useProjectRecovery({ projectId: 'p1', errorCode: 'TIMEOUT' }),
+      { wrapper: makeWrapper() },
+    );
+    act(() => {
+      result.current.retry();
+    });
+    await waitFor(() => {
+      expect(result.current.actionError).toContain('重试克隆用不上了');
+    });
+    expect(result.current.actionError).not.toContain('retry-clone');
+  });
+
+  it('guidance 由 errorCode 派生（DISK_INSUFFICIENT：清完盘可以在这个项目上重试克隆）', () => {
     const { result } = renderHook(
       () => useProjectRecovery({ projectId: 'p1', errorCode: 'DISK_INSUFFICIENT' }),
       { wrapper: makeWrapper() },
     );
-    expect(result.current.guidance.canRetry).toBe(false);
+    // ⚠️ 由 false 改为 true：藏掉这个按钮，用户腾出空间之后没有路回到这个项目上，
+    //    而旧文案给的"重新创建"会多造一个项目（重试克隆 ≠ 重新创建）。
+    expect(result.current.guidance.canRetry).toBe(true);
+    expect(result.current.guidance.message).not.toContain('重新创建');
   });
 });

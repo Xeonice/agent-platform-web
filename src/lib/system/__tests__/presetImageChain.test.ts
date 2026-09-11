@@ -9,6 +9,7 @@ import type { PresetImageChainModel, PresetImageProvisionOffer } from '@/types/i
 import { describe, it, expect } from 'vitest';
 import { presetImageChainModel, autoStageOffer } from '@/lib/system/presetImageChain';
 import type { DiagnoseCheckFrame } from '@/types/sse-protocol';
+import { PRESET_IMAGE_STEPS } from '@/types/sse-protocol';
 
 function frame(over: Partial<DiagnoseCheckFrame>): DiagnoseCheckFrame {
   return {
@@ -16,7 +17,7 @@ function frame(over: Partial<DiagnoseCheckFrame>): DiagnoseCheckFrame {
     id: 'preset-image',
     label: '预制镜像就绪',
     status: 'ok',
-    summary: '预制镜像就绪',
+    headline: '预制镜像就绪',
     durationMs: 22,
     ...over,
   };
@@ -37,8 +38,9 @@ describe('五步链的展开', () => {
         status: 'fail',
         step: 'lineage',
         errorCode: 'PRESET_IMAGE_NOT_PLATFORM_BUILT',
-        summary: "'ghcr.io/agent-infra/sandbox:latest' 是上游镜像，不是平台自建的那张",
-        hint: 'bash scripts/build-sandbox-image.sh',
+        headline: '这张镜像来源不对，用不了',
+        detailText: "'ghcr.io/agent-infra/sandbox:latest' 是上游镜像，不是平台自己构建的那张。",
+        command: 'bash scripts/build-sandbox-image.sh',
       }),
     });
     expect(model.steps.map((s) => s.state)).toEqual(['pass', 'pass', 'fail', 'pending', 'pending']);
@@ -54,7 +56,8 @@ describe('五步链的展开', () => {
       frame: frame({
         status: 'info',
         step: 'staged',
-        summary: '预制镜像已就绪，但尚未在本机铺开 —— 首个任务需要数分钟准备镜像',
+        headline: '镜像还没下载到本机',
+        detailText: '镜像本身没问题，只是这台机器上还没有它的副本。',
       }),
     });
     const staged = model.steps[4];
@@ -78,15 +81,23 @@ describe('五步链的展开', () => {
     expect(model.blockedText).toBeUndefined();
   });
 
-  it('⭐ 已通过的那一步**不给 action** —— 否则会渲染出一句和 summary 打架的话', () => {
+  it('⭐ 已通过的那一步**不给 action** —— 否则会渲染出一句和结论打架的话', () => {
     // ⚠️ 真机实测发现的：第 5 步是 `ok`（「已在本机铺开，可以立即发起任务」），
     //    而 action 那句「第一个任务会自动把镜像铺开，需要数分钟」照样渲染 ——
     //    同一行里一句说"现在就能发"、一句说"要等数分钟"。
     const model = presetImageChainModel({
       phase: 'done',
-      frame: frame({ status: 'ok', step: 'staged', summary: '已注册、已在本机铺开' }),
+      frame: frame({
+        status: 'ok',
+        step: 'staged',
+        headline: '预制镜像就绪，可以立即发起任务',
+        detailText: '平台检查过，而且已经下载到这台机器上。',
+      }),
     });
-    expect(model.steps[4]?.summary).toContain('已在本机铺开');
+    expect(model.steps[4]?.summary).toContain('可以立即发起任务');
+    // ⚠️ 证据下沉到第二层，⛔ 不许与结论拼成一句。
+    expect(model.steps[4]?.detail).toContain('已经下载到这台机器上');
+    expect(model.steps[4]?.summary).not.toContain('已经下载到这台机器上');
     expect(model.steps[4]?.action).toBeUndefined();
   });
 });
@@ -105,14 +116,33 @@ describe('⛔ 不许合成一个红灯：每一步都有自己的下一步动作
     expect(actions.every((a) => a !== undefined && a.length > 0)).toBe(true);
   });
 
-  it('⭐ 血统那一步必须说清「注册也会被拒」', () => {
-    // ⚠️ 不说清楚，用户会以为只是少做了一步注册，照着去注册再撞一次墙（P21-5 §9A 第 3 步）。
+  it('⭐ 来源那一步必须说清「手动加进来也会被拒」', () => {
+    // ⚠️ 不说清楚，用户会以为只是少做了一步，照着去做再撞一次墙（P21-5 §9A 第 3 步）。
     const model = presetImageChainModel({
       phase: 'done',
       frame: frame({ status: 'fail', step: 'lineage' }),
     });
-    expect(model.steps[2]?.action).toContain('注册也会被血统检查拒');
-    expect(model.steps[2]?.action).toContain('不是少做一步注册');
+    const action = model.steps[2]?.action ?? '';
+    expect(action).toContain('手动加进来同样会被拒');
+    expect(action).toContain('不是少做一步');
+    // ⛔ 「血统」是内部词，上屏一个字都不许有（这一步的名字叫「来源」）。
+    expect(`${action}${model.steps[2]?.label ?? ''}`).not.toContain('血统');
+  });
+
+  it('⛔ 五步的上屏文案里一个 markdown 星号、一个反引号都不许有（没有渲染器）', () => {
+    // ⛔ 全链路是纯文本渲染 —— 后端与本文件写下的 `**…**` 会**原样上屏**，用户读到的
+    //    是带星号的源代码。这条把五步的标题、动作、兜底命令一起扫一遍。
+    // MUTATION: 在任意一句里加回一对 `**` ⇒ 本条红。
+    for (const step of PRESET_IMAGE_STEPS) {
+      const model = presetImageChainModel({
+        phase: 'done',
+        frame: frame({ status: 'fail', step }),
+      });
+      const row = model.steps.find((s) => s.step === step);
+      const text = `${row?.label ?? ''}${row?.action ?? ''}`;
+      expect(text, `${step}: ${text}`).not.toContain('**');
+      expect(text, `${step}: ${text}`).not.toContain('`');
+    }
   });
 
   it('⭐ 配置那一步要给**按档**的配置项，且明说别动 SANDBOX_DEFAULT_IMAGE', () => {
@@ -126,10 +156,10 @@ describe('⛔ 不许合成一个红灯：每一步都有自己的下一步动作
       phase: 'done',
       frame: frame({ status: 'fail', step: 'config' }),
     });
-    expect(model.steps[0]?.action).toContain('SANDBOX_<档位>_IMAGE');
-    expect(model.steps[0]?.action).toContain('别改 `SANDBOX_DEFAULT_IMAGE`');
+    expect(model.steps[0]?.action).toContain('SANDBOX_AIO_IMAGE');
+    expect(model.steps[0]?.action).toContain('别动 SANDBOX_DEFAULT_IMAGE');
     expect(model.steps[0]?.fixCommand).toMatch(/SANDBOX_(AIO|BOXLITE)_IMAGE=/);
-    expect(model.steps[0]?.fixCommand, '⛔ 修复命令不许是那个会波及两档的总开关').not.toMatch(
+    expect(model.steps[0]?.fixCommand, '⛔ 修复命令不许是那个会波及两种环境的总开关').not.toMatch(
       /^SANDBOX_DEFAULT_IMAGE=/,
     );
   });
@@ -155,16 +185,33 @@ describe('⛔ 不许合成一个红灯：每一步都有自己的下一步动作
     }
   });
 
-  it('后端 `hint` **优先**于本地兜底命令（它带着这台机器上的真实取值）', () => {
+  it('后端 `command` **优先**于本地兜底命令（它带着这台机器上的真实取值）', () => {
     const model = presetImageChainModel({
       phase: 'done',
       frame: frame({
         status: 'fail',
         step: 'registry',
-        hint: 'docker push localhost:5001/platform/sandbox:v2',
+        command: 'docker push localhost:5001/platform/sandbox:v2',
       }),
     });
     expect(model.steps[1]?.fixCommand).toBe('docker push localhost:5001/platform/sandbox:v2');
+  });
+
+  it('⛔ `nextStep`（散文）**绝不许**流进 `fixCommand` —— 那个格子是等宽 + [复制]', () => {
+    // ⛔ 这正是被拆掉的那个坑：后端的 `hint` 早就演化成散文（「重跑一次看稳不稳定」），
+    //    而界面把整个 hint 塞进 `<code>` 顶着一个 [复制] 按钮 —— 复制下来也没地方粘。
+    // MUTATION: 让 `fixCommandFor` 回去接 `frame.nextStep` ⇒ 本条红。
+    const model = presetImageChainModel({
+      phase: 'done',
+      frame: frame({
+        status: 'fail',
+        step: 'registry',
+        nextStep: '重跑一次看它稳不稳定：偶发多半只是慢。',
+      }),
+    });
+    expect(model.steps[1]?.fixCommand).not.toContain('重跑一次');
+    // 后端没给命令 ⇒ 回落到本地兜底的**命令形态**，⛔ 不是那段散文。
+    expect(model.steps[1]?.fixCommand).toBe('docker push <镜像仓库>/platform/sandbox:<标签>');
   });
 });
 
@@ -256,7 +303,7 @@ describe('★ 能自己搬时不给写死的 action', () => {
     label: '预制镜像就绪',
     status: 'info',
     step: 'staged',
-    summary: '预制镜像已就绪，但尚未在本机铺开',
+    headline: '镜像还没下载到本机',
     durationMs: 1,
     ...(provision === undefined ? {} : { detail: { provision } }),
   });

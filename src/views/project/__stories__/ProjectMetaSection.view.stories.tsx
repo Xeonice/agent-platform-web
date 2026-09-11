@@ -23,7 +23,7 @@ type Story = StoryObj<typeof ProjectMetaSectionView>;
 export const Ready: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByText('就绪')).toBeInTheDocument();
+    await expect(canvas.getByText('可用')).toBeInTheDocument();
     await expect(canvas.getByText('5')).toBeInTheDocument();
     await expect(canvas.queryByText('来源')).not.toBeInTheDocument();
     await expect(canvasElement.textContent).not.toContain('github.com');

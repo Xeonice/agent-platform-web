@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   imageCardModel,
+  imageLineage,
   shortenDigest,
   digestStateOf,
   refKindOf,
@@ -163,6 +164,54 @@ describe('imageCardModel · 其余派生与否定断言（F21-4 §7.1 ⑤）', (
     expect(model.warnings).toEqual([]);
     expect(model.errors).toEqual([]);
     expect(imageCardModel(tagImage, NOW).warnings).toHaveLength(1);
+  });
+
+  /**
+   * ⭐ **来源（`derivedFromDigest`）三档，⛔ 不许压成两档。**
+   *
+   * 这个字段一直在 DTO 里、界面上一处都没渲染 —— 于是用户在镜像页拿到 ✅，到建任务时
+   * 才撞 `IMAGE_PROVIDER_MISMATCH`，而「注册期就判掉」这套设计的全部意义就是避免这一幕。
+   *
+   * 三档的区别是本条真正要守的东西：
+   *  · 预置镜像上的 `null` 是**事实**（它就是来源起点，没有更早的祖先）；
+   *  · 自定义镜像上的 `null` 是**不知道**（平台没记下来）—— ⛔「不知道」不能说成「没有」。
+   *
+   * MUTATION：把 `imageLineage` 里 `isBuiltin` 那一支删掉（让锚点也落 `unknown`）⇒ 本条红。
+   */
+  it('⭐ 来源三档：锚点 / 已记下 / 未确定，三句各不相同', () => {
+    const anchor = imageLineage({ isBuiltin: true, derivedFromDigest: null });
+    expect(anchor.kind).toBe('anchor');
+    expect(anchor.text).not.toContain('未确定');
+    expect(anchor.note).toBeUndefined();
+
+    const derived = imageLineage({ isBuiltin: false, derivedFromDigest: FULL_DIGEST });
+    expect(derived.kind).toBe('derived');
+    // 截断口径与 digest 那一行同一份（`shortenDigest`），不另写一套。
+    expect(derived.text).toContain(shortenDigest(FULL_DIGEST));
+
+    const unknown = imageLineage({ isBuiltin: false, derivedFromDigest: null });
+    expect(unknown.kind).toBe('unknown');
+    expect(unknown.text).toBe('来源未确定');
+    // ⚠️ 「不知道」不能说成「没有」：这一档必须自带那句澄清。
+    expect(unknown.note).toContain('这不等于它没有来源');
+  });
+
+  /** ⛔ **前端不算兼容性**：那取决于锚点属于哪一档，是平台自己的配置，卡片推不出来。 */
+  it('⭐ 来源那一行只陈述事实，⛔ 不下"能不能用"的结论', () => {
+    const texts = [
+      imageLineage({ isBuiltin: true, derivedFromDigest: null }),
+      imageLineage({ isBuiltin: false, derivedFromDigest: FULL_DIGEST }),
+      imageLineage({ isBuiltin: false, derivedFromDigest: null }),
+    ].map((l) => `${l.text}${l.note ?? ''}`);
+    for (const t of texts) {
+      expect(t).not.toMatch(/兼容|不能用|无法使用|可以使用/);
+    }
+  });
+
+  /** `lineage` **恒存在**：缺席那一行读起来就是"这张镜像没有来源"，而有一档恰恰是"不知道"。 */
+  it('⭐ 卡片模型上 lineage 恒存在（缺席会被读成"它没有来源"）', () => {
+    expect(imageCardModel(baseTagImage, NOW).lineage.kind).toBe('unknown');
+    expect(imageCardModel({ ...baseTagImage, isBuiltin: true }, NOW).lineage.kind).toBe('anchor');
   });
 
   it('⑤ 否定断言：模型上不许出现任何「结论过期」字段（钉定 digest 之后结论不会烂）', () => {

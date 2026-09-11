@@ -240,7 +240,7 @@ describe('SandboxTerminalContainer · 档位由宿主平台选定（前端不选
     await waitFor(() => {
       expect(createBtn).toBeDisabled();
     });
-    expect(screen.getByRole('alert')).toHaveTextContent(/不支持终端（spawnTty=false）/);
+    expect(screen.getByRole('alert')).toHaveTextContent(/开不了终端/);
     // ⚠️ 文案**不许**再叫用户「改选其它运行档位」——那个开关已经不存在了，
     //    一条指向不存在操作的提示比不提示更贵。
     expect(screen.getByRole('alert')).not.toHaveTextContent(/改选/);
@@ -276,7 +276,7 @@ describe('SandboxTerminalContainer · 档位由宿主平台选定（前端不选
     renderContainer();
     await chooseRuntime();
 
-    expect(await screen.findByText(/后端未注册任何沙箱运行环境/)).toBeInTheDocument();
+    expect(await screen.findByText(/一个沙箱环境都没有注册/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
   });
 
@@ -296,7 +296,7 @@ describe('SandboxTerminalContainer · 档位由宿主平台选定（前端不选
     );
     renderContainer();
 
-    expect(await screen.findByText(/运行环境确认失败/)).toBeInTheDocument();
+    expect(await screen.findByText(/没能确认这台机器的沙箱环境/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
@@ -323,6 +323,8 @@ function sandboxDto(overrides: Partial<SandboxResponse> & { id?: string } = {}):
     id: 'sb-1',
     projectId: 'proj-1',
     runtime: REAL_RUNTIME_IDS[0],
+    // 「这个沙箱里能跑哪几个 CLI」（06 §5.6）——终端 [+ 新终端] 下拉的数据源。
+    availableRuntimes: [REAL_RUNTIME_IDS[0]],
     provider: 'aio',
     name: '默认任务名',
     status: 'pending',
@@ -554,7 +556,7 @@ describe('SandboxTerminalContainer · 新错误呈现（P22 §1 / 04 §5）', ()
 
     await waitForCreatable();
     fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
-    expect(await screen.findByText(/镜像拉取失败/)).toBeInTheDocument();
+    expect(await screen.findByText(/没能把镜像拉下来/)).toBeInTheDocument();
   });
 
   it('IMAGE_CONTRACT_VIOLATION（provision 期失败）→ 失败卡不给 [重试]，只给换镜像', async () => {
@@ -668,10 +670,46 @@ describe('SandboxTerminalContainer · 失败原因的刷新恢复（通道②：
     );
     renderContainer();
 
-    expect(await screen.findByText(/运行时 CLI 安装失败/)).toBeInTheDocument();
+    expect(await screen.findByText(/Agent 的命令行工具/)).toBeInTheDocument();
     // 只有一张失败卡（install_progress 不是第二条失败通道，不会再渲染一份）。
     expect(screen.getAllByTestId('sandbox-outcome')).toHaveLength(1);
     expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  /**
+   * ⭐ **正常停止不许出现「诊断码：stopped」**（2026-09-11 修）。
+   *
+   * `ended` 分支此前把**原始 status**（`stopped` / `destroyed` / …）当 `diagnosticCode`
+   * 传进失败卡，于是一次用户自己点的停止会在卡片上渲染出「诊断码：stopped」——
+   * 那不是任何一个错误码，用户拿着它去报障只会浪费两边的时间。
+   * `failed` 那一支传的才是真码。
+   *
+   * 顺带钉住另外两条同批纪律：
+   *   · 界面上不出现「沙箱」（P21-1 §9）；
+   *   · **「回收后重启」≠「断线重连」** —— 新的一轮从头开始，必须明写它不接上次进度。
+   *
+   * MUTATION：把 `diagnosticCode` 改回 `decision === 'failed' ? outcome.code : status`
+   * ⇒ 前两条断言红。
+   */
+  it('⭐ 正常停止（ended）⇒ 不出诊断码、不说「沙箱」，并明示新一轮不接上次进度', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    useAppStore.getState().setSelectedSandboxId('sb-stopped');
+    useAppStore.getState().clearSandboxStatus('sb-stopped');
+    server.use(
+      http.get(`${API_BASE}/api/sandboxes/:id`, ({ params }) =>
+        HttpResponse.json(sandboxDto({ id: String(params['id']), status: 'stopped' })),
+      ),
+    );
+    renderContainer();
+
+    const outcome = await screen.findByTestId('sandbox-outcome');
+    // ⛔ 原始 status 不是错误码，不许当诊断码上屏。
+    expect(outcome.textContent).not.toContain('诊断码');
+    expect(outcome.textContent).not.toContain('stopped');
+    expect(outcome.getAttribute('data-code')).toBeNull();
+    // 界面上不说「沙箱」；且明说新的一轮不接上次进度。
+    expect(outcome.textContent).not.toContain('沙箱');
+    expect(outcome.textContent).toContain('不会接着上次的进度');
   });
 
   it('该沙箱已被销毁（404）→ 清掉持久化选中并回到新建入口', async () => {
@@ -786,8 +824,8 @@ describe('SandboxTerminalContainer · runtime 注册表驱动（14 §10）', () 
     expect(checkedRadiosNamed('sandbox-runtime')).toHaveLength(0);
     expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
     // 「还没选」≠「没得选」：两句提示必须分开，不能复用"后端未注册任何 runtime"。
-    expect(screen.getByText(/平台没有默认运行时，必须显式指定/)).toBeInTheDocument();
-    expect(screen.queryByText(/后端未注册任何 runtime/)).not.toBeInTheDocument();
+    expect(screen.getByText(/平台没有默认 Agent，必须你来指定/)).toBeInTheDocument();
+    expect(screen.queryByText(/一个 Agent 都没有注册/)).not.toBeInTheDocument();
 
     // 选了之后才可用，而且提示消失。
     await chooseRuntime('codex');
@@ -814,7 +852,7 @@ describe('SandboxTerminalContainer · runtime 注册表驱动（14 §10）', () 
 
     // ⚠️ **不能用 `waitForCreatable()`**：它内含 `chooseRuntime()`，而本条测的正是
     //    「一个 runtime 都没得选」。同步点改成那句提示自己出现。
-    expect(await screen.findByText(/后端未注册任何 runtime/)).toBeInTheDocument();
+    expect(await screen.findByText(/一个 Agent 都没有注册/)).toBeInTheDocument();
     const createBtn = screen.getByRole('button', { name: '发起任务并打开终端' });
     await waitFor(() => {
       expect(createBtn).toBeDisabled();
@@ -824,7 +862,7 @@ describe('SandboxTerminalContainer · runtime 注册表驱动（14 §10）', () 
     // 旁路触发（键盘/程序化点击）同样不许发请求——空 runtime 发出去就是一次注定失败的创建。
     fireEvent.click(createBtn);
     await waitFor(() => {
-      expect(screen.getByText(/后端未注册任何 runtime/)).toBeInTheDocument();
+      expect(screen.getByText(/一个 Agent 都没有注册/)).toBeInTheDocument();
     });
     expect(posted).toBe(false);
   });
@@ -860,10 +898,10 @@ describe('SandboxTerminalContainer · runtime 注册表驱动（14 §10）', () 
     );
     renderContainer();
 
-    expect(await screen.findByText(/运行时加载失败/)).toBeInTheDocument();
+    expect(await screen.findByText(/Agent 列表加载失败/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole('button', { name: '重试加载运行时' }));
+    fireEvent.click(screen.getByRole('button', { name: '重试加载 Agent' }));
     expect(await screen.findByRole('radio', { name: /^codex/ })).toBeInTheDocument();
     await chooseRuntime();
     await waitFor(() => {
@@ -1011,11 +1049,11 @@ describe('SandboxTerminalContainer · 鉴权拦截层（P20 §5.1 三分支）',
     expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
     // 判据不止"按钮禁着":这条链路的原始故障就是**请求发出去了**,后端只能事后 WARN。
     expect(posted).toBe(0);
-    // 分支②才说"只需配置一次"——这是一次性语义,已过期那支说这句话是假的。
-    expect(screen.getByText(/只需配置一次/)).toBeInTheDocument();
+    // 分支②才说"只用配一次"——这是一次性语义,已过期那支说这句话是假的。
+    expect(screen.getByText(/只.*配.*一次/)).toBeInTheDocument();
   });
 
-  it('③ 凭证已过期（expired）→ 同样拦住，但**不说**「只需配置一次」', async () => {
+  it('③ 凭证已过期（expired）→ 同样拦住，但**不说**「只用配一次」', async () => {
     mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
     mockRuntimeRegistry([runtimeDto({ id: 'codex', credentialStatus: 'expired' })]);
     renderContainer();
@@ -1023,7 +1061,7 @@ describe('SandboxTerminalContainer · 鉴权拦截层（P20 §5.1 三分支）',
 
     expect(await screen.findByTestId('auth-gate')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
-    expect(screen.queryByText(/只需配置一次/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/只.*配.*一次/)).not.toBeInTheDocument();
   });
 
   it('① 有生效凭证（active）→ 不出闸门，给正面确认「将以 … 身份运行」，发起可用', async () => {
@@ -1130,7 +1168,9 @@ describe('SandboxTerminalContainer · 新建任务弹层形态', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(dialog).toHaveAttribute('data-testid', 'modal-new-task');
     // 弹窗内**没有**项目下拉：任务归属继承左侧树选中项（§9.0 两个弹窗不嵌套）。
-    expect(within(dialog).getByText(/在「ProjectA」中发起/)).toBeInTheDocument();
+    // ⚠️ **精确串**而不是 `/在「ProjectA」中发起/`：面板首句也以同样的话开头，
+    // 用正则会同时命中弹层副标题与它，触发 strict-mode 二义匹配（改文案时撞过一次）。
+    expect(within(dialog).getByText('在「ProjectA」中发起')).toBeInTheDocument();
     expect(within(dialog).queryByLabelText(/项目/)).not.toBeInTheDocument();
   });
 
@@ -1243,7 +1283,7 @@ describe('SandboxTerminalContainer · 分支选择器', () => {
     return { body: () => captured };
   }
 
-  it('选项来自 GET /api/projects/:id/branches（缺省项 = 跟随基线当前分支）', async () => {
+  it('选项来自 GET /api/projects/:id/branches（缺省项 = 跟随项目当前的分支）', async () => {
     mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
     mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
     renderContainer();
@@ -1254,7 +1294,8 @@ describe('SandboxTerminalContainer · 分支选择器', () => {
     });
     // 缺省项在最前，且**它的 value 是空串**——前端不预填任何分支名。
     expect(select).toHaveValue('');
-    expect(within(select).getByRole('option', { name: /跟随基线当前分支/ })).toBeInTheDocument();
+    // 上屏词：基线 → 项目当前（分支/代码）。
+    expect(within(select).getByRole('option', { name: /跟随项目当前的分支/ })).toBeInTheDocument();
   });
 
   /**
@@ -1337,7 +1378,7 @@ describe('SandboxTerminalContainer · 分支选择器', () => {
     renderContainer();
     await chooseRuntime('codex');
 
-    expect(await screen.findByText(/将使用基线当前分支创建/)).toBeInTheDocument();
+    expect(await screen.findByText(/会用项目当前的分支/)).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeEnabled();
     });

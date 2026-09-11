@@ -61,8 +61,25 @@ describe('describeLifecycle', () => {
     });
   });
 
-  it('降频文案说明"每日重试一次"（用户要知道它还在跑，只是慢了）', () => {
-    expect(describeLifecycle('degraded', 3).text).toContain('每日重试一次');
+  it('放慢的文案要说清"它还在跑，只是慢了"（⛔ 不许只写内部词「降频」）', () => {
+    const text = describeLifecycle('degraded', 3).text;
+    expect(text).toContain('放慢');
+    expect(text).toContain('每天只试一次');
+    expect(text).not.toContain('降频');
+  });
+
+  /**
+   * ★ **两个数一起给。**
+   *
+   * 界面上只写「连续失败 10 次」，而产品文档说的是「放慢之后再连续失败 7 次就停用」——
+   * 用户拿这两个数对不上会以为其中一个错了。它们是同一件事的两种数法：
+   * 总共 10 次，其中前 3 次让它放慢、之后又失败 7 次。⇒ 换算直接写出来。
+   */
+  it('⭐ 自动停用的文案同时给「总共 N 次」和「放慢后又 M 次」，用户才对得上产品文档', () => {
+    const text = describeLifecycle('autoDisabled', 10).text;
+    expect(text).toContain('10 次');
+    expect(text).toContain('7 次'); // 10 - 3（DEGRADE_AFTER_FAILURES）
+    expect(text).toContain('自动停用');
   });
 });
 

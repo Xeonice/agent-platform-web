@@ -4,7 +4,11 @@
 // ——而不是被测过的 `resync()` / `sessionEnded` 单点逻辑。下面按真实时序钉住它们。
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act, cleanup } from '@testing-library/react';
-import type { TerminalServerFrame } from '@/types/ws-protocol';
+import type {
+  TerminalClientFrame,
+  TerminalServerFrame,
+  TerminalShellSummary,
+} from '@/types/ws-protocol';
 import { WS_SCHEMA_HASH } from '@/lib/terminal/terminalSocket';
 import { TERMINAL_EXIT_ATTACH_FAILED, type TerminalSocketConfig } from '@/types/terminal';
 
@@ -149,7 +153,7 @@ describe('TerminalMount · 尺寸与会话终止的接线', () => {
     });
     const attach = screen.getByTestId('terminal-session-ended').textContent;
     expect(attach).toContain('没能连上');
-    expect(attach).toContain('重新发起任务');
+    expect(attach).toContain('重新发起一个任务');
 
     // ⚠️ 只断言 -2 是不够的：把两个码合并成一句话时，-2 那条照样通过。
     // 必须同时钉住 **-1 说的是另一回事** —— 被 OOM kill 的 agent 跑过、可能有日志，
@@ -162,7 +166,39 @@ describe('TerminalMount · 尺寸与会话终止的接线', () => {
     const signal = screen.getByTestId('terminal-session-ended').textContent;
     expect(signal).toContain('信号');
     expect(signal).not.toContain('没能连上');
-    expect(signal).not.toContain('重新发起任务');
+    expect(signal).not.toContain('重新发起一个任务');
+  });
+
+  /**
+   * ⭐ **`-2` 不许往终端里写「[进程已退出，code -2]」**（2026-09-11 修）。
+   *
+   * `-2`（`TERMINAL_EXIT_ATTACH_FAILED`）是**平台自造的哨兵码，不是任何进程的退出码**
+   * —— 这一支上根本没有"进程退出"这回事（平台压根没附着上）。把它印成
+   * 「进程已退出，code -2」是在终端里写一句假话，而且是用户最可能截图去搜的那一句。
+   * 上面那条用例证明了 -2 / -1 的**状态条**不同，但屏幕上这一行此前仍把两支写成一样。
+   *
+   * MUTATION: 把 `if (!attachFailed)` 去掉（无条件 `term.write`）⇒ 第一条断言红。
+   */
+  it('⭐ -2 是平台哨兵码，不是退出码 ⇒ 终端里**不写**那一行，只走状态条', () => {
+    mount();
+    act(() => {
+      sock.onFrame?.({ type: 'exit', code: TERMINAL_EXIT_ATTACH_FAILED });
+    });
+    // 屏上一个字都不写：那一行会说一件没发生过的事。
+    expect(term.write).not.toHaveBeenCalledWith('s1', expect.stringContaining('进程已退出'));
+    // 但话没有少说 —— 状态条把"没连上、重连没用"讲清楚了。
+    expect(screen.getByTestId('terminal-session-ended').textContent).toContain('没能连上');
+
+    // 反面：-1 与真实退出码确实有进程退出过，那一行照旧写。
+    cleanup();
+    mount();
+    act(() => {
+      sock.onFrame?.({ type: 'exit', code: 137 });
+    });
+    expect(term.write).toHaveBeenCalledWith(
+      's1',
+      expect.stringContaining('[进程已退出，code 137]'),
+    );
   });
 
   it('ResizeObserver 挂了也收 —— 卸载时必须 disconnect（否则每次重挂泄漏一个观察者）', () => {
@@ -233,5 +269,98 @@ describe('TerminalMount · 先 fit 再建连（PTY 出生尺寸）', () => {
     expect(sock.query?.['rows']).toBe('51');
     // 而 resize 帧照发（PTY 靠它跟上真实尺寸）。
     expect(sock.send).toHaveBeenCalledWith({ type: 'resize', cols: 80, rows: 20 });
+  });
+});
+
+/**
+ * 多标签给 TerminalMount 加的三条接线（06 §5 / 08 §5）。每一条漏掉都不会报错，
+ * 只会让界面悄悄变坏 —— 所以三条都钉住。
+ */
+describe('TerminalMount · 多标签接线', () => {
+  it('⭐ `session` 首帧带 shellId ⇒ 往上报（这个标签靠它在重建时接回同一个会话）', () => {
+    const onShellId = vi.fn();
+    render(
+      <TerminalMount sessionId="s1" sandboxId="s1" socketConfig={CFG} onShellId={onShellId} />,
+    );
+    act(() => {
+      sock.onFrame?.({ type: 'session', socketSessionKey: 'K', shellId: 'a'.repeat(32) });
+    });
+    expect(onShellId).toHaveBeenCalledWith('a'.repeat(32));
+  });
+
+  it('⚠️ agent 连接的首帧不带 shellId ⇒ **不往上报**（缺席 ≠ 空串）', () => {
+    const onShellId = vi.fn();
+    render(
+      <TerminalMount sessionId="s1" sandboxId="s1" socketConfig={CFG} onShellId={onShellId} />,
+    );
+    act(() => {
+      sock.onFrame?.({ type: 'session', socketSessionKey: 'K' });
+    });
+    // 报一个空串会让上层把 agent 标签当成"有会话 id 的 shell 标签"。
+    expect(onShellId).not.toHaveBeenCalled();
+  });
+
+  it('⭐ 从后台切回前台 ⇒ 补一次 fit（隐藏期间宽度是 0，doFit 按纪律跳过）', () => {
+    const { rerender } = render(
+      <TerminalMount sessionId="s1" sandboxId="s1" socketConfig={CFG} active={false} />,
+    );
+    const before = term.fit.mock.calls.length;
+
+    rerender(<TerminalMount sessionId="s1" sandboxId="s1" socketConfig={CFG} active />);
+
+    // 不补的话 xterm 停在隐藏前的行列数，而 tmux 用绝对定位画状态栏 ——
+    // 屏幕上就是一串错位的重复状态栏（本域已经为尺寸不同步栽过一次）。
+    expect(term.fit.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it('registerSend 交出一个能发帧的转发器，卸载时注销（装配层据它代发 close_shell）', () => {
+    const registered: (((f: TerminalClientFrame) => boolean) | null)[] = [];
+    const { unmount } = render(
+      <TerminalMount
+        sessionId="s1"
+        sandboxId="s1"
+        socketConfig={CFG}
+        registerSend={(send) => registered.push(send)}
+      />,
+    );
+    expect(registered).toHaveLength(1);
+    registered[0]?.({ type: 'close_shell', shellId: 'a'.repeat(32) });
+    expect(sock.send).toHaveBeenCalledWith({ type: 'close_shell', shellId: 'a'.repeat(32) });
+
+    unmount();
+    // ⛔ 不注销的话，被淘汰的标签会在装配层留下一个僵尸 sender，
+    //    "借一条连接代发"就会借到一条已经断了的连接。
+    expect(registered.at(-1)).toBeNull();
+  });
+});
+
+describe('TerminalMount · 后端清单帧（06 §5.5）', () => {
+  it('⭐ `shells` 帧原样往上传，`null` **不许**在这一层折成 `[]`', () => {
+    const onShells = vi.fn<(shells: TerminalShellSummary[] | null) => void>();
+    render(<TerminalMount sessionId="s1" sandboxId="s1" socketConfig={CFG} onShells={onShells} />);
+
+    act(() => {
+      sock.onFrame?.({ type: 'shells', shells: [{ shellId: 'a'.repeat(32) }] });
+    });
+    act(() => {
+      sock.onFrame?.({ type: 'shells', shells: [] });
+    });
+    act(() => {
+      sock.onFrame?.({ type: 'shells', shells: null });
+    });
+
+    // 三态一路保到上层：折一下就是把「问不出来」说成「没有」。
+    const seen: (TerminalShellSummary[] | null)[] = onShells.mock.calls.map(([arg]) => arg);
+    expect(seen).toEqual([[{ shellId: 'a'.repeat(32) }], [], null]);
+  });
+
+  it('⚠️ `shells` 帧不写屏、不影响会话终止判定（它不是终端输出）', () => {
+    render(<TerminalMount sessionId="s1" sandboxId="s1" socketConfig={CFG} />);
+    const before = term.write.mock.calls.length;
+    act(() => {
+      sock.onFrame?.({ type: 'shells', shells: null });
+    });
+    expect(term.write.mock.calls.length).toBe(before);
+    expect(sock.sessionEnded).toBe(false);
   });
 });

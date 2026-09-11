@@ -20,7 +20,7 @@ describe('instanceSubCopy —— 起实例那一步的子文案（10 §7.4）', 
 
   it('imageStaged 缺席 ⇒ 只说在做什么，不编理由', () => {
     const text = instanceSubCopy({ phase: 'starting' });
-    expect(text).toBe('正在拉起实例…');
+    expect(text).toBe('正在启动运行环境…');
     // 「provider 说不出」不能被渲染成「本机没有这个镜像」——那是把不知道说成了知道。
     expect(text).not.toContain('还没有这个镜像');
     expect(text).not.toContain('已在本机');
@@ -29,7 +29,7 @@ describe('instanceSubCopy —— 起实例那一步的子文案（10 §7.4）', 
   it('phase:ready ⇒ 换成下一步的文案，不再停在"正在拉起"', () => {
     // 冷启那 190 秒结束的**那一刻**是用户全程唯一一次看到进展。文案必须跟着走。
     expect(instanceSubCopy({ phase: 'ready', imageStaged: false })).toBe(
-      '实例已就绪，正在准备 agent 运行环境…',
+      '运行环境已就绪，正在启动 agent…',
     );
   });
 
@@ -81,10 +81,22 @@ describe('formatElapsed —— 前端自算的「已等待」', () => {
  * MUTATION: 把 `startupSubtitle` 改回恒定返回那句 ⇒ 后两条红。
  */
 describe('★ startupSubtitle —— 只有确实要拉镜像时才说「耗时较长」', () => {
-  it('⭐ imageStaged=false ⇒ 说清楚为什么久，并给出「之后每次都是几秒」', () => {
+  /**
+   * ⭐ **2026-09-11：后半句「之后每次启动都是几秒」已删。**
+   *
+   * 那是一句**没有依据的时间承诺**：下次启动是不是几秒，取决于这张镜像有没有被 GC、
+   * CLI 装没装过（同一台机器实测过 753 秒）。它与 `instanceSubCopy` 里"不承诺时间，
+   * 宁可少一句安慰"是同一条纪律 —— 写这一行时漏掉了。
+   * 前半句「这一步最久」已经说完该说的：它解释了为什么慢，且**不预测下一次**。
+   *
+   * MUTATION: 把「之后每次启动都是几秒」加回去 ⇒ 第二、三条断言红。
+   */
+  it('⭐ imageStaged=false ⇒ 说清楚为什么久，但**不承诺下一次要多久**', () => {
     const s = startupSubtitle({ phase: 'starting', imageStaged: false });
     expect(s).toContain('要先把它拉到本机');
-    expect(s).toContain('之后每次');
+    expect(s).toContain('这一步最久');
+    // ⛔ 任何时间承诺都不许出现（同 imageStaged=true 那一支的口径）。
+    expect(s).not.toMatch(/秒|分钟|很快|马上|之后每次/);
   });
 
   it('⭐ imageStaged=true ⇒ 不出这一行（⛔ 不许再说「可能耗时较长」）', () => {

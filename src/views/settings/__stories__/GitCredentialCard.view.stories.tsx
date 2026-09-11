@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { expect, within } from 'storybook/test';
 import { GitCredentialCardView } from '@/views/settings/GitCredentialCard.view';
 
 const noop = (): void => undefined;
@@ -20,6 +21,22 @@ export default meta;
 type Story = StoryObj<typeof GitCredentialCardView>;
 
 export const Unconfigured: Story = { args: { credential: null } };
+
+/**
+ * ⛔ **接口挂了 ≠ 没配过。**
+ * 此前加载失败也落到 `credential === null` 这一支，屏幕上是「○ 未配置」+ [配置 SSH 密钥] ——
+ * 用户会以为自己的密钥被清了。这一条钉住失败态自成一格、且**不给「去配一个新的」的引导**。
+ */
+export const LoadFailed: Story = {
+  args: { credential: null, loadFailed: true, onRetryLoad: noop },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('git-load-error')).toBeVisible();
+    await expect(canvas.getByRole('button', { name: '重试' })).toBeVisible();
+    await expect(canvas.queryByText('○ 未配置')).toBeNull();
+    await expect(canvas.queryByRole('button', { name: '配置 SSH 密钥' })).toBeNull();
+  },
+};
 
 export const SshConfigured: Story = {
   args: {

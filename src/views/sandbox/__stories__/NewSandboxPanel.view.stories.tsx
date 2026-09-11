@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { expect, within } from 'storybook/test';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
 import type { RuntimeDto } from '@/types/runtimeCredential';
 import type { SandboxProviderCapabilities, SandboxProviderDto } from '@/types/sandbox';
@@ -131,7 +132,7 @@ export const EmptyRuntimeRegistry: Story = {
 export const ThirdPartyProvider: Story = {
   args: { hostProvider: THIRD_PARTY },
 };
-/** capabilities.spawnTty === false → 禁用建沙箱入口并给出原因。 */
+/** capabilities.spawnTty === false → 禁用发起入口并给出原因。 */
 export const TtyUnsupported: Story = {
   args: {
     hostProvider: {
@@ -141,9 +142,49 @@ export const TtyUnsupported: Story = {
     },
     // ⚠️ 文案不再说「请改选其它运行档位」——档位由宿主决定，用户改不了；
     //    一条指向不存在的操作的提示，比不提示更贵。
+    // ⚠️⚠️ 也**不许写 `**无头任务**`**：它渲染在纯文本 `<p>` 里，星号会原样上屏
+    //    （全仓没有 markdown 渲染器）。要强调就改句序。
     createDisabledReason:
-      '当前宿主的运行档位「headless-only」不支持终端（spawnTty=false）。' +
-      '档位由平台按宿主环境选定，不能在这里更改；可以改用**无头任务**（不开终端，agent 启动即执行）。',
+      '这台机器的沙箱环境开不了终端。' +
+      '跑在哪种沙箱环境上是这台机器的事实，不是一个可以在这里改的选项；' +
+      '改发无头任务就可以——不开终端，agent 启动就开始执行。',
+  },
+  play: async ({ canvasElement }) => {
+    // ⭐ 屏幕上不许出现字面星号（这条曾经真的上过屏）。
+    await expect(canvasElement.textContent).not.toContain('**');
+  },
+};
+
+/**
+ * ⭐ **鉴权闸门在场 ⇒ 按钮禁着，且必须有一句话说清是它在拦**（2026-09-11 修）。
+ *
+ * `authGateSlot !== undefined` 是 `createDisabled` 的一个分项，而 `createDisabledReason`
+ * 只服务 `ttyUnsupported` ⇒ 闸门在场时按钮灰着、底下一句解释都没有。这正是这份面板
+ * 自己在 provider 那三档上明令禁止的事（「禁着却不给理由，是最难查的那种 UI」）。
+ *
+ * MUTATION: 删掉 view 里 `authGateSlot !== undefined` 那段 `<p>` ⇒ 第二条断言红。
+ */
+export const AuthGateBlocking: Story = {
+  args: {
+    authGateSlot: <div>（这里是 AuthGateContainer 的登录面板）</div>,
+    authGateRuntimeName: 'Claude Code',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
+    await expect(canvas.getByTestId('auth-gate-disabled-reason')).toHaveTextContent(
+      '先完成上面的 Claude Code 登录，才能发起任务。',
+    );
+  },
+};
+
+/** 拿不到 displayName 时**仍然要说话**——⛔ 宁可少一个名字，也不许一句话都不说。 */
+export const AuthGateBlockingWithoutName: Story = {
+  args: { authGateSlot: <div>（登录面板）</div> },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByTestId('auth-gate-disabled-reason')).toHaveTextContent(
+      '先完成上面的 这个 Agent 登录，才能发起任务。',
+    );
   },
 };
 export const LoadingProviders: Story = {
@@ -192,7 +233,7 @@ export const InitialPromptTooLong: Story = {
  *（对照 CreateError 那条已落库的失败）。
  *
  * 两条各一：能力静态校验（409）与非法镜像引用（400）。措辞对两者都成立 ——
- * 这正是尾句从"改选运行档位或调整能力要求"泛化成"调整配置"的原因。
+ * 这正是尾句从"改选沙箱环境或调整能力要求"泛化成"调整配置"的原因。
  */
 export const ZeroSideEffectRejected: Story = {
   args: {
@@ -209,7 +250,7 @@ export const ZeroSideEffectRejectedImageRef: Story = {
 };
 
 // —— 分支选择器（F21-2 §N.1，本轮新增）：四态 ——
-/** 多分支：缺省项是「跟随基线当前分支」，选它等于**不传** `branch`。 */
+/** 多分支：缺省项是「跟随项目当前的分支」，选它等于**不传** `branch`。 */
 export const BranchesMany: Story = { args: {} };
 /** 单分支仓库：照样渲染，缺省项仍在（"只有一条分支"不等于"没有缺省语义"）。 */
 export const BranchesSingle: Story = { args: { branches: ['main'] } };
@@ -224,7 +265,7 @@ export const BranchesLoading: Story = {
 export const BranchesHiddenForEmptyProject: Story = {
   args: { showBranchPicker: false, branches: [] },
 };
-/** 分支列表取不到 ⇒ 降级为"用基线分支"，**创建按钮照常可点**（不拦核心链路）。 */
+/** 分支列表取不到 ⇒ 降级为"用项目当前的分支"，**创建按钮照常可点**（不拦核心链路）。 */
 export const BranchesLoadFailed: Story = {
   args: { branches: [], branchesErrorMessage: '读取本地引用失败' },
 };

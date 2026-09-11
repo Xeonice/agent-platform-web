@@ -142,7 +142,7 @@ export const LoadFailed: Story = {
   args: { model: null, isError: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByRole('alert')).toHaveTextContent('资源水位读取失败');
+    await expect(canvas.getByRole('alert')).toHaveTextContent('本机资源读取失败');
     await expect(canvas.queryByText('资源充足')).not.toBeInTheDocument();
     await expect(canvas.queryByTestId('resource-gauge-cpu')).not.toBeInTheDocument();
   },

@@ -61,8 +61,8 @@ export function InitWizardContainer() {
     return (
       <InitWizardShellView
         {...shell}
-        title="第 1 步 · 出网可达性"
-        description="平台需要够得着模型 API（Agent 用）与镜像仓库（拉沙箱镜像用）。进向导直接显示上次检测的结果，不重跑一轮——需要最新结果时点 [重新检测]。"
+        title="第 1 步 · 联网检查"
+        description="平台需要连得上模型 API（Agent 用）与镜像下载源（下载沙箱镜像用）。这里直接显示上次检查的结果，不重跑一轮——需要最新结果时点 [重新检测]。"
         onNext={w.goNext}
         nextDisabled={nextBlockedByOffline}
         footerNote={nextBlockedByOffline ? '请先在上方确认「以离线模式继续」。' : undefined}
@@ -91,7 +91,7 @@ export function InitWizardContainer() {
       <InitWizardShellView
         {...shell}
         title="第 2 步 · 代理配置"
-        description="上一步有目标不可达。内网环境通常需要配置代理；配好后点 [保存并重新检测]。"
+        description="上一步有目标连不上。内网环境通常需要配置代理；配好后点 [保存并重新检测]。"
         onNext={w.goNext}
         nextLabel="跳过，下一步"
         footerNote="保存只写配置，不会结束初始化。"
@@ -128,11 +128,11 @@ export function InitWizardContainer() {
     return (
       <InitWizardShellView
         {...shell}
-        title="第 3 步 · 沙箱镜像就绪"
+        title="第 3 步 · 沙箱镜像"
         // ⚠️ 原文写「镜像体积（约 13GB）」—— 那是**本地 build 产物**的体积，
-        //    而发布资产按档位是 0.43–2.07GB（P21-8 §2 前提②）。写死一个数会在两种
+        //    而发布资产按沙箱环境是 0.43–2.07GB（P21-8 §2 前提②）。写死一个数会在两种
         //    部署里各错一次，⇒ 只说"它是下一步磁盘评估的最大一块"这个不变的事实。
-        description="平台自建的沙箱镜像备齐了没有。这一步排在资源确认之前是刻意的：它依赖出网/代理，而镜像体积又是下一步磁盘评估的最大一块。"
+        description="平台自己的沙箱镜像备齐了没有。这一步排在本机资源之前是刻意的：它要先能联网/走代理，而镜像体积又是下一步磁盘评估里最大的一块。"
         onNext={w.goNext}
         // ⚠️ **不阻塞**：未就绪也让走（§7A ③）。按钮上的字改成 [稍后配置，下一步]，
         //    后果由 footerNote 与卡片里的 ⚠️ 一起说清。
@@ -140,7 +140,7 @@ export function InitWizardContainer() {
         footerNote={
           w.presetImage.ready
             ? undefined
-            : '⚠️ 跳过后平台能进、项目能建，但在镜像就绪之前无法发起任何任务。'
+            : '⚠️ 跳过后平台能进、项目能建，但在镜像备齐之前无法发起任何任务。'
         }
       >
         <PresetImageCheckView
@@ -165,8 +165,8 @@ export function InitWizardContainer() {
     return (
       <InitWizardShellView
         {...shell}
-        title="第 4 步 · 订阅配置"
-        description="agent 用你自己的模型帐号跑。这一步排在最后一个准备项，是因为它是整个向导里唯一需要你离开本页去别处操作的一步 —— 而设备码只有 15 分钟。"
+        title="第 4 步 · 模型帐号"
+        description="Agent 用你自己的模型帐号跑。这一步排在最后一个准备项，是因为它是整个向导里唯一需要你离开本页去别处操作的一步 —— 而设备码只有 15 分钟。"
         onNext={w.goNext}
         // ⚠️ **不阻塞**（与 Step 3 同一条口径）：它们挡住的是同一件事——发起任务。
         nextLabel={model?.ready === true ? '下一步' : '稍后配置，下一步'}
@@ -178,10 +178,10 @@ export function InitWizardContainer() {
       >
         {w.subscriptionError ? (
           <p role="alert" className="text-sm text-red-500">
-            读不到 runtime 列表 —— 无法判断凭证状态。可以先跳过，之后在凭证管理页配置。
+            读不到 Agent 列表 —— 无法判断凭证状态。可以先跳过，之后在凭证管理页配置。
           </p>
         ) : model === undefined ? (
-          <p className="text-sm text-muted-foreground">正在读取 runtime 列表…</p>
+          <p className="text-sm text-muted-foreground">正在读取 Agent 列表…</p>
         ) : (
           <SubscriptionSetupView
             model={model}
@@ -224,8 +224,11 @@ export function InitWizardContainer() {
   return (
     <InitWizardShellView
       {...shell}
-      title="第 5 步 · 资源池确认"
-      description="确认这台机器的资源规模。预留 15% 只影响调度上限，不影响水位进度条的分母。"
+      title="第 5 步 · 本机资源"
+      // ⛔ **这一句以前硬编码了「预留 15%」**，而同一屏的 `reservedText` 取的是后端下发的
+      //    `dto.disk.reservedPercent` —— 后端一改这个值，标题这句当场变成假话。
+      //    ⇒ 这里根本不该出现具体百分比，具体数字由下方那一行如实说。
+      description="确认这台机器的资源规模。平台会留出一部分容量不拿去跑任务（具体比例见下方），进度条的分母仍然是总容量。"
       // 最后一步的动作按钮在内容区里（[确认，开始使用]），壳上不再给 [下一步]。
     >
       <ResourceConfirmView

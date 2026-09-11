@@ -23,9 +23,9 @@ export interface AuthGatePanelProps {
   onOpenCredentials?: () => void;
 }
 
-/** 取舍说明（07 §6.1/P20 §5.1）：帐号授权用订阅额度；API key 按量计费、配置最快。 */
+/** 取舍说明（07 §6.1/P20 §5.1）：帐号登录走订阅额度；API key 按用量计费、配起来最快。 */
 const TRADEOFF_HINT =
-  '帐号授权使用订阅额度；API Key 按量计费、配置最快。两类凭证可同时留存，切换只改谁生效。';
+  '帐号登录走你的订阅额度；API Key 按用量计费、配起来最快。两样可以同时留着，切换只改现在用哪个。';
 
 export function AuthGatePanelView({
   runtimeName,
@@ -45,12 +45,12 @@ export function AuthGatePanelView({
         <h3 className="text-sm font-semibold">配置 {runtimeName} 凭证</h3>
         {showOneTimeNotice && (
           <p className="text-xs text-muted-foreground">
-            只需配置一次，此后所有任务（包括其他项目）自动使用该凭证。
+            只用配一次，之后所有任务（别的项目也算）都会用它。
           </p>
         )}
       </header>
 
-      <div role="tablist" aria-label="鉴权方式" className="flex gap-1 border-b border-border">
+      <div role="tablist" aria-label="登录方式" className="flex gap-1 border-b border-border">
         {tabs.map((tab) => {
           const active = tab.key === selectedTab;
           return (

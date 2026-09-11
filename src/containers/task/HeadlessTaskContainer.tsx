@@ -97,8 +97,12 @@ export interface HeadlessTaskContainerProps {
    * `null` = registry 里查不到这个档位（还在加载 / 档位已卸载）⇒ 不置灰，以后端 409 为准。
    */
   headlessTaskSupported: boolean | null;
-  /** 档位名（仅用于文案）。 */
-  providerName?: string;
+  /**
+   * ⛔ **`providerName` 已删（2026-09-11）。**
+   * 它唯一的用途是把档位名拼进置灰理由（「运行档位『acme-box』不支持…」），而
+   * 「运行档位」这个开关早已从界面退休（选择权收回后端）——把一个用户既选不了、
+   * 也看不到别处的名字摆在他面前，只会让他去找一个不存在的下拉。
+   */
   /**
    * 测试注入的 /tasks socket 工厂（依赖注入替代模块级 mock，12 §3.1.1）。
    * 生产不传 ⇒ 走真实 socket.io。须是稳定引用。
@@ -111,7 +115,6 @@ export function HeadlessTaskContainer({
   runtime,
   wsBaseUrl,
   headlessTaskSupported,
-  providerName,
   socketFactory,
 }: HeadlessTaskContainerProps) {
   // ⚠️ 安全红线（15 §3.5）：指令**只在本容器的局部 state**，绝不写进 store / persist。
@@ -342,11 +345,14 @@ export function HeadlessTaskContainer({
 
   const disabledReason =
     headlessTaskSupported === false
-      ? `运行档位「${providerName ?? '当前档位'}」不支持无头任务（headlessTask=false）。请改用支持的档位重建沙箱，或改用交互式终端。`
+      ? // ⚠️ 「运行档位」这个开关已从界面退休（选择权收回后端）——⛔ 别再让用户去改一个
+        //    找不到的下拉；也别把 `headlessTask=false` 这种字段名摆到用户面前。
+        '这台机器的沙箱环境跑不了无头任务（不开终端、直接跑完的那种）。换一台支持它的机器重新发起，或者改用交互式终端。'
       : undefined;
   const capabilityUnknownNote =
     headlessTaskSupported === null
-      ? '暂时无法确认当前运行档位是否支持无头任务（档位列表未就绪），发起时以后端校验为准。'
+      ? // 「不知道」不能说成「不支持」——这里确实还不知道，就照实说。
+        '还不确定这台机器的沙箱环境能不能跑无头任务（环境信息还没取回来）。可以先发起，以平台的校验结果为准。'
       : undefined;
 
   /**

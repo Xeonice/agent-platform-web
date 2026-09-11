@@ -16,6 +16,7 @@ import { useModalFocus } from '@/hooks/_shared/useModalFocus';
 import { ImageCardView, ImageCardSkeleton } from '@/views/image/ImageCard.view';
 import { ImageVersionHistoryView } from '@/views/image/ImageVersionHistory.view';
 import { EnvVarEditorView } from '@/views/image/EnvVarEditor.view';
+import { ImageRequirementsPanelView } from '@/views/image/ImageRequirementsPanel.view';
 import { RegisterImageModalView } from '@/views/image/RegisterImageModal.view';
 import { UpdateCompareDialogView } from '@/views/image/UpdateCompareDialog.view';
 import { ConfirmDialogView } from '@/views/settings/ConfirmDialog.view';
@@ -90,9 +91,22 @@ export function ImagesContainer() {
           className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground"
         >
           <p>还没有注册任何镜像。注册一张之后，它会出现在发起任务向导的镜像下拉里。</p>
-          <Button type="button" size="sm" onClick={m.openRegister}>
-            + 注册新镜像
-          </Button>
+          {/*
+            ⚠️ **空态也要前置硬约束**（2026-09 修）：这里是很多人第一次接触注册这件事的地方，
+            而真正会拒绝他的那一条（必须从平台预制镜像改起）此前在注册前一个字都没出现过。
+          */}
+          <p data-testid="images-empty-constraint">
+            ⚠️ 自定义镜像必须从平台的预制镜像改起（Dockerfile 第一行 FROM
+            平台预制镜像，或它的派生）。平台按镜像内容比对来源，改标签、改名都不算数。
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={m.openRegister}>
+              + 注册新镜像
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={m.viewRequirements}>
+              查看镜像要求
+            </Button>
+          </div>
         </div>
       )}
 
@@ -237,6 +251,13 @@ export function ImagesContainer() {
           onViewRequirements={m.viewRequirements}
         />
       )}
+
+      {/*
+        ⚠️ **常驻面板，不是 toast**：用户改 Dockerfile 时要对照着看四条要求。
+        ⛔ 它刻意**不接** `useEscapeKey`、也不在弹层关闭时跟着关：注册弹窗开着时它要能同屏
+        对照，而 Esc 归弹层（P20 §8.4）—— 面板自己有 [关闭]。
+      */}
+      {m.requirementsOpen && <ImageRequirementsPanelView onClose={m.closeRequirements} />}
 
       {m.pendingDelete !== null && (
         <ConfirmDialogView
