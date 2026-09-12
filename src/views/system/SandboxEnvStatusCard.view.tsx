@@ -38,8 +38,12 @@ export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCar
       className="flex flex-col gap-3 rounded-lg border border-border p-4"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-2">
+        {/* ⚠️ 只改可见文案，不改文件名/组件名/类型名（design-notes §4 Phase 1 +
+            §5 拍板点 1：`SandboxEnvStatusCard` 这个名字已经在上一轮改过，这一轮
+            只把标题从「这台机器的沙箱环境」换成「沙箱环境状态」，与同页其它三张卡
+            「X状态」的命名对齐）。 */}
         <h2 id="sandbox-env-status-heading" className="text-base font-semibold">
-          🏃 这台机器的沙箱环境
+          🏃 沙箱环境状态
         </h2>
         {model === null ? null : (
           <span className="text-xs text-muted-foreground">

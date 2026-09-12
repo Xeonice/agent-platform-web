@@ -114,7 +114,8 @@ export function startupPercent(status: string): number {
  * 需要过，于是也一直没有——接真实列表时必须补上，否则只能靠 cast 蒙混。
  *
  * ⚠️ `waiting-input` **不在这里产生**：它是 `running` 的子态，走 DTO 的 `waitingInput`
- * 布尔字段（10 §7.4），树上单独渲染 🔵。把它折进 status 会让"等待输入"与"运行中"
+ * 布尔字段（10 §7.4），树上单独渲染一个 `StatusDot`（warn，design-notes.md §4 Phase 3
+ * 第 2 条；此前是手写的 🔵 emoji）。把它折进 status 会让"等待输入"与"运行中"
  * 变成互斥的两个值，而它们实际是一个状态加一个标志。
  */
 export function toDisplayStatus(

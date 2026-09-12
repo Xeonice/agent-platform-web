@@ -6,15 +6,23 @@
 //
 // ⚠️ **`hint` 原样整段渲染，不截断。** 后端那句带着这一次实测的具体原因（连接超时 / TLS 失败 /
 // 内网要配代理），而这一行的全部价值就在它里面。
+//
+// ⚠️ **状态用 `StatusPill`（design/design-notes.md §2 八态对照表）**，⛔ 不再是手写 emoji：
+// `timeout`（超时未响应）与 `fail`（连不上）是两个独立色相、两个独立图标——这正是产品文档
+// 反复订正的那条纪律（P21-5 §9E「超时 ≠ 不可达」）：颜色/图标长得一样，用户会把"网络抖了
+// 一下"和"这东西是坏的"当成同一件事去修，而修法完全不同。
+import { StatusPill } from '@/components/ui/status-pill';
 import type { ConnectivityRowModel } from '@/types/init';
 
 export interface ConnectivityItemProps {
   row: ConnectivityRowModel;
-  /** 检测进行中：整行 ⏳（后端不逐目标推送，所以是整轮一起转）。 */
+  /** 检测进行中：整行转圈（后端不逐目标推送，所以是整轮一起转）。 */
   pending?: boolean;
 }
 
 export function ConnectivityItemView({ row, pending = false }: ConnectivityItemProps) {
+  const status = pending ? 'pending' : row.ok ? 'ok' : row.timedOut === true ? 'timeout' : 'fail';
+  const statusText = pending ? '检测中…' : row.stateText;
   return (
     <li
       data-testid={`connectivity-item-${row.id}`}
@@ -24,9 +32,7 @@ export function ConnectivityItemView({ row, pending = false }: ConnectivityItemP
       className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
     >
       <span className="flex flex-wrap items-center gap-2">
-        <span aria-hidden="true">
-          {pending ? '⏳' : row.ok ? '✅' : row.timedOut === true ? '⏱' : '❌'}
-        </span>
+        <StatusPill status={status}>{statusText}</StatusPill>
         <span className="font-medium">{row.target}</span>
         <span
           data-testid={`connectivity-kind-${row.id}`}
@@ -34,7 +40,6 @@ export function ConnectivityItemView({ row, pending = false }: ConnectivityItemP
         >
           {row.kindText}
         </span>
-        <span className="text-xs text-muted-foreground">{pending ? '检测中…' : row.stateText}</span>
       </span>
       {row.hint === undefined || pending ? null : (
         <span className="whitespace-pre-wrap break-words text-xs text-muted-foreground">

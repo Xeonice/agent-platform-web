@@ -8,6 +8,7 @@
 // 「资源耗尽，无法创建新 Task」。判定在 lib，但这一行的存在本身是产品要求——把三条水位条
 // 摆出来让用户自己看，等于把"还能不能再发一个 Task"这个唯一的问题留给他自己算。
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import type { ResourceGaugeModel, ResourceLevel, ResourcePoolCardModel } from '@/types/system';
 
 /** 三重线索之一：图标。⚠️ 与 `LEVEL_TEXT`、`LEVEL_BAR` 是三份**并列**的线索，不是装饰。 */
@@ -21,10 +22,15 @@ const LEVEL_TEXT: Readonly<Record<ResourceLevel, string>> = {
   warn: '警告',
   critical: '严重',
 };
+/**
+ * `Progress`（shadcn/Radix）的填充色只有一档 `bg-primary`（Phase 0 产物，⛔ 不改）——
+ * 这里用 Tailwind 的子选择器 `[&>div]:bg-*` 覆盖它的 `Indicator`，不用去改
+ * `components/ui/progress.tsx` 加 variant。
+ */
 const LEVEL_BAR: Readonly<Record<ResourceLevel, string>> = {
-  ok: 'bg-emerald-500',
-  warn: 'bg-amber-500',
-  critical: 'bg-red-500',
+  ok: '[&>div]:bg-emerald-500',
+  warn: '[&>div]:bg-amber-500',
+  critical: '[&>div]:bg-red-500',
 };
 
 export interface ResourcePoolCardProps {
@@ -51,19 +57,11 @@ function Gauge({ gauge }: { gauge: ResourceGaugeModel }) {
           {gauge.amountText}（{gauge.usedPercent}%）
         </span>
       </div>
-      <div
-        role="progressbar"
+      <Progress
+        value={Math.min(100, Math.max(0, gauge.usedPercent))}
         aria-label={`${gauge.label} 使用率`}
-        aria-valuenow={gauge.usedPercent}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        className="h-2 w-full overflow-hidden rounded-full bg-muted"
-      >
-        <div
-          className={`h-full rounded-full ${LEVEL_BAR[gauge.level]}`}
-          style={{ width: `${String(Math.min(100, Math.max(0, gauge.usedPercent)))}%` }}
-        />
-      </div>
+        className={`h-2 bg-muted ${LEVEL_BAR[gauge.level]}`}
+      />
     </li>
   );
 }
@@ -82,7 +80,7 @@ export function ResourcePoolCardView({
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="resource-pool-heading" className="text-base font-semibold">
-          📊 本机资源
+          📊 本机资源水位
         </h2>
         <Button
           type="button"

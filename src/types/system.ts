@@ -183,6 +183,14 @@ export interface DiagnosticItemModel {
   errorCode?: string;
   /** `'1.2s'`；未返回时不产出。 */
   durationText?: string;
+  /**
+   * 只在第 ⑤ 项（`outbound-network`，联网检查）出现：`'超时时限 10s'`。
+   *
+   * ⚠️ 数值**来自服务端首帧 `start.timeoutMs`**（`diagnosticsCardModel` 里算好），
+   * ⛔ 不许在这里或调用方写死一个字面量秒数——`design/prototype.html` 那份静态原型
+   * 里写的 `10s` 只是示例数据，落地时必须原样跟着配置走（design-notes §4 Phase 1）。
+   */
+  timeoutText?: string;
 }
 
 /** 整轮诊断的阶段。 */

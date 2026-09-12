@@ -27,6 +27,20 @@ export interface UsePresetImageProvisionResult {
   /** 当前阶段的一句话。⛔ **失败在哪一步必须说得出**（五阶段的下一步各不相同）。 */
   statusText: string | undefined;
   error: string | undefined;
+  /**
+   * 当前帧的 0–1 进度——原样转发 `ProvisionStageFrame.progress`，⛔ **不做任何换算/估算**。
+   * `undefined` = 这一轮还没开始；`null` = 后端这一帧给不出分母（docker 的进度帧不一定带
+   * `total`），界面要画不确定态，⛔ 不许当 0 用（那会显示一个停在 0% 不动的进度条，
+   * 与"卡死了"在观感上完全一致）。
+   */
+  progress: number | null | undefined;
+  /**
+   * 本次搬运已经跑了多少秒——**真实挂钟时间**，`Date.now()` 差值，不是估算值。
+   * 只在 `isProvisioning` 为真时递增；结束（成功/失败/未开始）时为 `undefined`。
+   * ⚠️ 这与"进度百分比停在原地"是两件独立的事——`Progress` 里的字节分数长时间不变时，
+   * 这个仍在跳动的数字才是"没有卡死，还在写盘"的证据（design/design-notes.md §1 问题 3）。
+   */
+  elapsedSeconds: number | undefined;
   start: () => void;
 }
 
@@ -46,6 +60,8 @@ export function usePresetImageProvision(
   const [isProvisioning, setProvisioning] = useState(false);
   const [statusText, setStatusText] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [progress, setProgress] = useState<number | null | undefined>(undefined);
+  const [elapsedSeconds, setElapsedSeconds] = useState<number | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
   /** 自动只开一次。⛔ 不是 state：它不该触发重渲染，也不该被重置。 */
   const autoStartedRef = useRef(false);
@@ -60,6 +76,7 @@ export function usePresetImageProvision(
     setProvisioning(true);
     setError(undefined);
     setStatusText('正在开始…');
+    setProgress(undefined);
 
     void provisionPresetImage(
       {
@@ -69,6 +86,8 @@ export function usePresetImageProvision(
           // ⚠️ `skipped` 要说出来。把没发生的步骤悄悄跳过，用户会以为校验做过了。
           const mark = f.status === 'skipped' ? '（跳过）' : '';
           setStatusText(`${STAGE_LABEL[f.stage]}${mark}：${f.message}${pct}`);
+          // ⚠️ 原样转发，⛔ 不做二次判断——`null` 与数字都是合法取值，见类型上的注释。
+          setProgress(f.progress);
         },
         onDone: (f) => {
           if (controller.signal.aborted) return;
@@ -90,6 +109,25 @@ export function usePresetImageProvision(
     });
   }, [onFinished]);
 
+  // ⚠️ **真实挂钟时间，不是估算**：`Date.now()` 差值，每秒刷新一次。只在这一轮搬运真的
+  //    在跑的时候递增——结束（成功/失败）或还没开始过都是 `undefined`，⛔ 不假装还在计时。
+  //    这与 `progress` 是两件独立的事：字节分数长时间不动时，这个仍在跳的数字才是
+  //    "没有卡死，还在写盘"的证据（design/design-notes.md §1 问题 3）。
+  useEffect(() => {
+    if (!isProvisioning) {
+      setElapsedSeconds(undefined);
+      return;
+    }
+    const startedAt = Date.now();
+    setElapsedSeconds(0);
+    const id = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => {
+      clearInterval(id);
+    };
+  }, [isProvisioning]);
+
   // ⚠️ **effect 里只做「够不够条件」这一个判断**，判定本身在 `autoStageOffer`（纯函数、
   //    有自己的用例）。⛔ 不要把 `phase`/`state`/`provision` 那三条揉进这里：那会让
   //    「什么时候该自动开始」变成一段没人能单测的 effect。
@@ -100,5 +138,5 @@ export function usePresetImageProvision(
     start();
   }, [autoStart, start]);
 
-  return { isProvisioning, statusText, error, start };
+  return { isProvisioning, statusText, error, progress, elapsedSeconds, start };
 }

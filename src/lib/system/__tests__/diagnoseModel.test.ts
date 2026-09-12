@@ -296,3 +296,65 @@ describe('formatDurationMs', () => {
     expect(formatDurationMs(820)).toBe('820ms');
   });
 });
+
+// design/design-notes.md §4 Phase 1「诊断第 ⑤ 项的超时时限文案改为读配置（当前 10s），
+// 不再写死」。⚠️ 用例钉住的是「文案里的数 = 配置里的数」，不是「文案里是 10」——
+// 下面两条刻意用**两个不同、且都不是 10000** 的 timeoutMs，专治"把数字焊死成
+// 10 还照样让断言绿"这种改法（写死 `'超时时限 10s'` 会让第一条通过、第二条红）。
+describe('⑤ 联网检查（outbound-network）的超时时限文案：读配置，不写死', () => {
+  const START_WITH_NETWORK: DiagnoseStartFrame = {
+    event: 'start',
+    checks: [
+      { id: 'container-runtime', label: '容器运行时可达' },
+      { id: 'outbound-network', label: '外网连通（模型 API / 镜像仓库）' },
+    ],
+    timeoutMs: 7000,
+  };
+
+  it('⭐ timeoutMs 是 7000 ⇒ 文案是「超时时限 7s」，不是别的数字', () => {
+    const model = diagnosticsCardModel(applyDiagnoseStart(START_WITH_NETWORK));
+    const network = model.items.find((i) => i.id === 'outbound-network');
+    expect(network?.timeoutText).toBe('超时时限 7s');
+  });
+
+  it('⭐ 换一份 timeoutMs（12345）⇒ 文案跟着换成 12.3s —— 证明是读配置不是焊死 10', () => {
+    const model = diagnosticsCardModel(
+      applyDiagnoseStart({ ...START_WITH_NETWORK, timeoutMs: 12_345 }),
+    );
+    const network = model.items.find((i) => i.id === 'outbound-network');
+    expect(network?.timeoutText).toBe('超时时限 12.3s');
+  });
+
+  it('只有第 ⑤ 项有这句话，其余项不许被顺手带上', () => {
+    const model = diagnosticsCardModel(applyDiagnoseStart(START_WITH_NETWORK));
+    const other = model.items.find((i) => i.id === 'container-runtime');
+    expect(other?.timeoutText).toBeUndefined();
+  });
+
+  it('还没收到 start 帧（timeoutMs 未知）⇒ 不产出这句话，不能编一个数出来', () => {
+    const model = diagnosticsCardModel(beginDiagnose(undefined));
+    expect(model.items).toEqual([]);
+    // 结果到达但清单还没来的边界不存在（结果按 id 归位到 start 给的清单里），
+    // 这里只需确认 beginDiagnose 之后的 timeoutMs 占位（0）不会产出任何文案。
+    const afterResult = diagnosticsCardModel(
+      applyDiagnoseCheck(beginDiagnose(undefined), check({ id: 'outbound-network' })),
+    );
+    expect(afterResult.items.every((i) => i.timeoutText === undefined)).toBe(true);
+  });
+
+  it('结果到达之后（有 headline/detailText）这句话仍然在，不会被结果覆盖掉', () => {
+    const withResult = applyDiagnoseCheck(
+      applyDiagnoseStart(START_WITH_NETWORK),
+      check({
+        id: 'outbound-network',
+        status: 'timeout',
+        headline: '联网检查未在时限内应答',
+        durationMs: 7000,
+      }),
+    );
+    const model = diagnosticsCardModel(withResult);
+    const network = model.items.find((i) => i.id === 'outbound-network');
+    expect(network?.timeoutText).toBe('超时时限 7s');
+    expect(network?.status).toBe('timeout');
+  });
+});

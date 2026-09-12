@@ -140,11 +140,30 @@ export function markDiagnoseAborted(state: DiagnoseRunState): DiagnoseRunState {
 
 const IDLE_MODEL: DiagnosticsCardModel = { phase: 'idle', items: [] };
 
+/**
+ * 只有第 ⑤ 项（联网检查）配这句——**数值来自服务端首帧 `start.timeoutMs`**，
+ * ⛔ 不许写死字面量秒数（design/prototype.html 那份静态原型里的 `10s` 只是示例数据，
+ * 前车之鉴见 `web/src/mocks/handlers.ts` 里 `DIAGNOSE_TIMEOUT_MS` 的那条注释）。
+ * `timeoutMs <= 0` 时（还没收到 `start` 帧）不产出——那时候没有配置可读，说了也是编的。
+ */
+function timeoutTextFor(checkId: DiagnoseCheckId, timeoutMs: number): string | undefined {
+  if (checkId !== 'outbound-network' || timeoutMs <= 0) return undefined;
+  return `超时时限 ${formatDurationMs(timeoutMs)}`;
+}
+
 function itemFor(
   check: { id: DiagnoseCheckId; label: string },
   frame: DiagnoseCheckFrame | undefined,
+  timeoutMs: number,
 ): DiagnosticItemModel {
-  if (frame === undefined) return { id: check.id, label: check.label };
+  const timeoutText = timeoutTextFor(check.id, timeoutMs);
+  if (frame === undefined) {
+    return {
+      id: check.id,
+      label: check.label,
+      ...(timeoutText === undefined ? {} : { timeoutText }),
+    };
+  }
   return {
     id: check.id,
     // 标签以**结论帧**为准（两帧的 label 同源，但结论帧是这一项自己最后说的那一次）。
@@ -161,6 +180,7 @@ function itemFor(
       : { step: frame.step, stepText: presetImageStepText(frame.step, frame.status) }),
     ...(frame.errorCode === undefined ? {} : { errorCode: frame.errorCode }),
     durationText: formatDurationMs(frame.durationMs),
+    ...(timeoutText === undefined ? {} : { timeoutText }),
   };
 }
 
@@ -191,7 +211,9 @@ function summaryTextOf(done: DiagnoseDoneFrame): string {
 
 export function diagnosticsCardModel(state: DiagnoseRunState | undefined): DiagnosticsCardModel {
   if (state === undefined) return IDLE_MODEL;
-  const items = state.checks.map((check) => itemFor(check, state.results[check.id]));
+  const items = state.checks.map((check) =>
+    itemFor(check, state.results[check.id], state.timeoutMs),
+  );
   const arrived = items.filter((i) => i.status !== undefined).length;
   return {
     phase: state.phase,

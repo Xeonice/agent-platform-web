@@ -16,28 +16,16 @@
 //   所以大多数时刻我们**根本没有数据**。那时 `hasData: false`，⛔ 调用方不许把它当成
 //   "一切正常"渲染成静默 —— 这正是本仓「『不知道』不能说成『没有』」那条纪律。
 import { automationLifecycle } from '@/lib/automation/automationStatus';
-import { AUTO_DISABLE_AFTER_FAILURES, type AutomationDto } from '@/types/automation';
+import {
+  AUTO_DISABLE_AFTER_FAILURES,
+  type AutomationAttention,
+  type AutomationDto,
+} from '@/types/automation';
 
-export interface AutomationAttention {
-  /**
-   * 判定所依据的数据是否真的到手了。
-   * `false` ⇒ 这一刻我们**不知道**有没有问题（列表还没拉过 / 拉失败）。
-   * ⛔ 不许把它渲染成"没有问题"。
-   */
-  hasData: boolean;
-  /** 🔴 已经被连续失败推到自动停用的规则数 —— 它们**已经不会再触发了**。 */
-  autoDisabledCount: number;
-  /** 🟡 被放慢到每天只试一次的规则数 —— 还在跑，但比用户设的频率慢得多。 */
-  degradedCount: number;
-  /** 要不要提示。`hasData === false` 时恒为 `false`（没有数据就没有结论）。 */
-  needsAttention: boolean;
-  /** 横幅主文案；`needsAttention === false` 时缺席。 */
-  title?: string;
-  /** 横幅第二行；`needsAttention === false` 时缺席。 */
-  description?: string;
-  /** 动作按钮文案；点了应当打开该项目的自动化面板。 */
-  actionLabel?: string;
-}
+// ⚠️ `AutomationAttention` 本身住在 `types/automation.ts`（不是这里）：横幅层要把它塞进
+// `GlobalBannerInput`，而 boundaries 规则只许 `type → type`，`types/banner.ts` 够不到
+// `lib/automation/*`。本文件只 re-export 类型给旧的引用点用，实现仍然全在这一份。
+export type { AutomationAttention };
 
 const NO_ATTENTION: AutomationAttention = {
   hasData: false,
@@ -108,28 +96,32 @@ function describe(autoDisabled: number, degraded: number): string {
 }
 
 /*
- * ⏳ **待横幅层（另有负责人）配合的三处**，本文件已把数据备好：
+ * ✅ **本轮（design-notes.md Phase 3 第 3 条「全局横幅优先级」）已按下面这份清单接上**，
+ *    这条注释原样留着当接线记录（谁想知道"治理类横幅从哪来的"，从这里能一路找到）：
  *
  *   ① `types/banner.ts`
- *      · `BannerSeverity` 目前只有 `'blocking'` 一档 —— 这条是**治理类**（⚠️），
- *        需要加 `'warning'`。⚠️ 该文件头明写"取值与它的生产方必须同一轮落地"，
- *        本文件就是那个生产方。
- *      · `BannerId` 加 `'automation-needs-attention'`（`BANNER_RANK` 同步加一行，
+ *      · `BannerSeverity` 加了 `'warning'`（治理类，⚠️）——`BannerSeverity` 文件头那句
+ *        "取值与它的生产方必须同一轮落地"，本文件就是那个生产方。
+ *      · `BannerId` 加了 `'automation-needs-attention'`（`BANNER_RANK` 同步加了一行，
  *        排在两条 blocking 之后）。
- *      · `GlobalBannerInput` 加一位 `automation: AutomationAttention`。
+ *      · `GlobalBannerInput` 加了一位 `automation?: AutomationAttention`
+ *        （可选，缺席按"没有数据"处理，不强制所有既有调用点都要传）。
  *
  *   ② `lib/system/globalBanner.ts`
- *      · `globalBanners()` 里加一支：`input.automation.needsAttention` ⇒ push 一条，
+ *      · `globalBanners()` 加了一支：`automation.needsAttention` ⇒ push 一条，
  *        `title` / `description` / `actionLabel` **直接取本文件产出的那三个字段**，
- *        ⛔ 不要在那边另写一份文案（两份迟早分叉）。
- *      · 治理类横幅按 07 §8.4 可以"关闭后当天不再弹" ⇒ 走 `bannerDismissedToday`
- *        （`createUiSlice` 里那对至今没有写入方的 action，这条正是它们的第一个用户）。
+ *        没有另写第二份文案。
+ *      · 治理类横幅按 07 §8.4"关闭后当天不再弹"，`dismiss()` 分支按 severity 走
+ *        `bannerDismissedToday`（`createUiSlice` 里那对此前没有写入方的 action，
+ *        这条是它们的第一个用户）。
  *
  *   ③ `hooks/system/useGlobalBanner.ts`
- *      · 取数：**⛔ 不要新拉一次**（该文件纪律 ①）。规则列表已有 key
- *        `automationKeys.list(projectId)`；用 `useQuery({ queryKey, enabled: false })`
- *        只读订阅缓存即可，与它读 `systemKeys.diagnose()` 的手法完全一致。
- *      · 然后 `automationAttention(cached)` → 塞进 `globalBanners()` 的入参。
+ *      · 取数**没有新拉一次、也没有再起一份只读订阅**：直接调用
+ *        `hooks/automation/useAutomations.ts` 已经导出的 `useAutomationAttention(projectId)`
+ *        （该文件自己的注释写着"给全局横幅层用的那一位"——它比这份接线记录写得还早，
+ *        本文件最初的草稿一度重新拼了一遍 `useQuery({queryKey, enabled:false})`，
+ *        是重复实现，已经改回来）。
+ *      · 结果直接塞进 `globalBanners()` 的入参，不在这里另存一份状态。
  *
  * ⛔ **一个已知的、本轮解决不了的缺口（需要后端）：**
  *   上面这套只在**用户至少打开过一次该项目的自动化面板**之后才有数据（`hasData`）。

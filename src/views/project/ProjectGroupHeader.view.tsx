@@ -2,7 +2,9 @@
 //
 // 两个 variant 由 `cloneStatus` 派生，不额外开一个 prop（多一个入参就多一种"两处不一致"的可能）：
 //   · `normal`      —— `📁 ProjectName · N ⋯`（cloning 另带黄色徽标）
-//   · `cloneFailed` —— `🔴 📁 ProjectName ⚠️ 克隆失败 ⋯`（产品 P21-6 §9）
+//   · `cloneFailed` —— `● 📁 ProjectName ⚠️ 克隆失败 ⋯`（产品 P21-6 §9；前导的 `●` 是
+//     `StatusDot`（`status="fail"`），design-notes.md §4 Phase 3 第 2 条落地前是手写的
+//     🔴 emoji，现在接入 `StatusPill` 极简变体的同一套语义色）
 //
 // ⚠️ **failed 项目在本实现里仍然可以选中**，与 §5/§6 那条「failed 不可选为当前项目、
 // 点组头仅展开」不一致 —— 这是**刻意的**，理由回填进了文档：`ProjectRecoveryContainer`
@@ -12,6 +14,7 @@
 // 「⋯」的菜单本体是 `ProjectGroupMenu.view`，由 container 决定开合后经 `menuSlot` 插进来
 // （views 不持有开合状态；组头只负责给它一个定位锚点）。
 import type { ReactNode } from 'react';
+import { StatusDot } from '@/components/ui/status-pill';
 import type { ProjectGroup } from '@/types/domain';
 
 export interface ProjectGroupHeaderProps {
@@ -56,7 +59,10 @@ export function ProjectGroupHeaderView({
           onSelect(projectId);
         }}
       >
-        {failed && <span aria-hidden="true">🔴</span>}
+        {/* 组头徽标接入 StatusPill 的极简变体（design-notes.md §4 Phase 3 第 2 条）：
+            纯色 dot 换掉此前手写的 🔴 emoji——语义（fail）与颜色都来自同一套 token，
+            八态本体（`statusPillVariants`）一个字节没动。 */}
+        {failed && <StatusDot status="fail" label="克隆失败" />}
         <span aria-hidden="true">📁</span>
         <span className="truncate">{projectName}</span>
         <span className="text-muted-foreground">· {taskCount}</span>

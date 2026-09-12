@@ -7,12 +7,17 @@
 //
 // ⚠️ `unknown` 那一行**必须带上"为什么测不了"**（`hint`）：只写一个「未测量」，读者
 // 唯一能得到的结论是"这个界面没做完"。
+//
+// ⚠️ **三态映射到 `StatusPill` 的八态闭集**（design-notes §4 Phase 1）：`down` 映射到
+// `fail`（红，确定坏了），`unknown` **原样**映射到 `StatusPill` 的 `unknown`
+// （虚线灰）——两边字面同名不是巧合，是同一条"测不了 ≠ 已断开"纪律的两处落地。
+import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { ConnectionState, ConnectionStatusCardModel } from '@/types/system';
 
-const STATE_ICON: Readonly<Record<ConnectionState, string>> = {
-  ok: '✅',
-  down: '🔴',
-  unknown: '⚪',
+const STATE_PILL_STATUS: Readonly<Record<ConnectionState, StatusPillStatus>> = {
+  ok: 'ok',
+  down: 'fail',
+  unknown: 'unknown',
 };
 const STATE_TEXT: Readonly<Record<ConnectionState, string>> = {
   ok: '正常',
@@ -42,10 +47,8 @@ export function ConnectionStatusCardView({ model }: ConnectionStatusCardProps) {
             className="flex flex-col gap-0.5 text-sm"
           >
             <span className="flex flex-wrap items-center gap-2">
-              <span aria-hidden="true">{STATE_ICON[row.state]}</span>
+              <StatusPill status={STATE_PILL_STATUS[row.state]}>{STATE_TEXT[row.state]}</StatusPill>
               <span className="font-medium">{row.label}</span>
-              {/* 文字线索与图标并列（a11y：颜色/图标都不是唯一线索）。 */}
-              <span className="text-xs text-muted-foreground">{STATE_TEXT[row.state]}</span>
               <span className="text-muted-foreground">{row.valueText}</span>
             </span>
             {row.hint === undefined ? null : (

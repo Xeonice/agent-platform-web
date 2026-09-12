@@ -64,6 +64,53 @@ export const MultiProject: Story = {
 };
 
 /**
+ * ⭐ 任务树状态点接入 `StatusPill` 的极简变体（design-notes.md §4 Phase 3 第 2 条）：
+ * 等待输入 → warn dot，运行中 → ok dot。⛔ 不再是文字前缀 🔵。
+ *
+ * 变异：把 `task.waitingInput ? 'warn' : 'ok'` 写反 ⇒ 本例两句 `data-status` 断言都会红
+ * （一个该是 warn 却读到 ok，反之亦然）。
+ */
+export const TaskTreeStatusDots: Story = {
+  args: { groups, waitingInputCount: 1, healthLabel: null, terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const waitingRow = canvas.getByRole('button', { name: /等待你输入的任务/ });
+    const runningRow = canvas.getByRole('button', { name: /运行中的任务/ });
+    await expect(waitingRow.querySelector('[data-slot="status-dot"]')).toHaveAttribute(
+      'data-status',
+      'warn',
+    );
+    await expect(runningRow.querySelector('[data-slot="status-dot"]')).toHaveAttribute(
+      'data-status',
+      'ok',
+    );
+  },
+};
+
+/**
+ * ⭐ 「正常时不渲染」（design-notes.md §1 问题 5 / §4 Phase 3 第 4 条）：`healthLabel: null`
+ * ⇒ 顶栏那个 `data-testid="health-label"` 的节点**整个不挂载**，⛔ 不是挂载了一个空字符串。
+ */
+export const HealthLabelHidden: Story = {
+  args: { groups, waitingInputCount: 0, healthLabel: null, terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.queryByTestId('health-label')).toBeNull();
+  },
+};
+
+/** 异常时才挂载：非空字符串 ⇒ 节点出现，且样式是错误色（不是中性灰）。 */
+export const HealthLabelShown: Story = {
+  args: { groups, waitingInputCount: 0, healthLabel: '后端不可用', terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const label = canvas.getByTestId('health-label');
+    await expect(label).toHaveTextContent('后端不可用');
+    await expect(label.className).toContain('text-error');
+  },
+};
+
+/**
  * ⭐ **空组那句「发起第一个任务 →」必须是可点的**（2026-09-11 修）。
  *
  * 它此前是个 `<p>`，却带着一个 `→` —— 箭头是"这里能点"的承诺，而它点不动。

@@ -1,6 +1,10 @@
+import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { expect, fn, userEvent, within } from 'storybook/test';
-import { DiagnosticsCardView } from '@/views/system/DiagnosticsCard.view';
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
+import {
+  DiagnosticsCardView,
+  type DiagnosticsCardProps,
+} from '@/views/system/DiagnosticsCard.view';
 import type { DiagnosticItemModel, DiagnosticsCardModel } from '@/types/system';
 
 const EIGHT: DiagnosticItemModel[] = [
@@ -18,14 +22,40 @@ function withResult(id: DiagnosticItemModel['id'], patch: Partial<DiagnosticItem
   return EIGHT.map((i) => (i.id === id ? { ...i, ...patch } : i));
 }
 
+/**
+ * `DiagnosticsCardView` 是纯 props 驱动的（`openIds`/`onOpenIdsChange` 由
+ * `useDiagnosticsDisclosure` 在真实页面里算好——`view` 层不许 import `lib`，
+ * `*.stories.tsx` 按 `eslint.config.js` 的说明同样被归为 `view` 元素，一样不许）。
+ * 这个小外壳只是给故事一个能交互的受控壳：初始展开集合复刻同一条「非 ok/info 默认
+ * 展开」规则（两行，纯粹为了故事的初始视觉状态；规则本身的穷举测试在
+ * `lib/system/__tests__/diagnosticsDisclosure.test.ts`，端到端接线的测试在
+ * `hooks/system/__tests__/useDiagnosticsDisclosure.test.ts` 与
+ * `containers/system/__tests__/SystemStatusContainer.test.tsx`，这两行不是权威来源）。
+ */
+function isDefaultExpandedForStory(status: DiagnosticItemModel['status']): boolean {
+  return status !== 'ok' && status !== 'info';
+}
+function defaultOpenIdsForStory(items: readonly DiagnosticItemModel[]): string[] {
+  return items.filter((i) => isDefaultExpandedForStory(i.status)).map((i) => i.id);
+}
+
+function ControlledDiagnosticsCard(props: DiagnosticsCardProps) {
+  const [openIds, setOpenIds] = useState(() => defaultOpenIdsForStory(props.model.items));
+  return <DiagnosticsCardView {...props} openIds={openIds} onOpenIdsChange={setOpenIds} />;
+}
+
 const meta: Meta<typeof DiagnosticsCardView> = {
   title: 'System/DiagnosticsCard',
   component: DiagnosticsCardView,
   parameters: { layout: 'padded' },
+  render: (args) => <ControlledDiagnosticsCard {...args} />,
   args: {
     model: { phase: 'idle', items: [] } satisfies DiagnosticsCardModel,
     isDiagnosing: false,
     schemaMismatch: null,
+    // 真实值由 `ControlledDiagnosticsCard` 接管，这两个只是满足 props 类型。
+    openIds: [],
+    onOpenIdsChange: fn(),
     onDiagnose: fn(),
     onExportLogs: fn(),
     onCopyHint: fn(),
@@ -127,9 +157,88 @@ export const Completed: Story = {
     await expect(preset).not.toHaveTextContent('警告');
 
     // 命令在展开层里，且复制的是**命令原文**（散文不进复制框）。
-    await userEvent.click(canvas.getByTestId('diagnostic-toggle-outbound-network'));
+    // ⭐ Phase 1「非 ok/info 默认展开」：这一项是 `warn`，一到达就已经自己展开了，
+    //   ⛔ 不需要再点 [展开详情]（点它现在反而是收起）。
     await userEvent.click(canvas.getByRole('button', { name: '复制' }));
     await expect(args.onCopyHint).toHaveBeenCalledWith('HTTPS_PROXY=http://127.0.0.1:7890');
+  },
+};
+
+/**
+ * ⭐ Phase 1「非 ok/info 默认展开」（design-notes §1 问题 1 + §4）：全部完成的场景里，
+ * `ok`/`info` 两项默认收起，其余（`warn`/`fail`/`timeout`）默认展开——用户打开页面
+ * 第一眼看到的就是"哪几项需要我看"，不用逐项点开。且用户能手动扳动其中一项，
+ * 不连带影响别的项。
+ */
+export const DefaultDisclosure: Story = {
+  args: {
+    model: {
+      phase: 'done',
+      items: EIGHT.map((i, index) => {
+        if (i.id === 'outbound-network') {
+          return { ...i, status: 'warn' as const, headline: '拉不到新镜像，Agent 仍可用' };
+        }
+        if (i.id === 'port-conflict') {
+          return {
+            ...i,
+            status: 'fail' as const,
+            headline: '端口 3000 被占用，平台起不来',
+            detailText: '被 com.docke (pid 41235) 占用。',
+          };
+        }
+        if (i.id === 'ws-loopback') {
+          return {
+            ...i,
+            status: 'timeout' as const,
+            headline: '10 秒内没有结果',
+            detailText: '这一项这次没有结论，其余项不受影响。',
+          };
+        }
+        // 其余五项：ok，且第一项额外带 detailText，用来证明"有内容也照样收起"。
+        return {
+          ...i,
+          status: 'ok' as const,
+          headline: '正常',
+          ...(index === 0 ? { detailText: '这是一段证据，默认应该看不见。' } : {}),
+        };
+      }),
+      summaryText: '5 项正常 · 1 项警告 · 2 项失败（含超时）· 整轮 8s',
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    // --- 默认态：ok 收起，warn/fail/timeout 展开 ---
+    await expect(canvas.queryByTestId('diagnostic-detail-container-runtime')).toBeNull();
+    await expect(canvas.getByTestId('diagnostic-item-outbound-network')).toHaveTextContent(
+      '拉不到新镜像',
+    );
+    await expect(canvas.getByTestId('diagnostic-item-port-conflict')).toHaveTextContent(
+      'com.docke',
+    );
+    await expect(canvas.getByTestId('diagnostic-toggle-port-conflict')).toHaveTextContent('收起');
+    await expect(canvas.getByTestId('diagnostic-toggle-container-runtime')).toHaveTextContent(
+      '展开详情',
+    );
+
+    // --- 用户手动收起 fail 项：只影响这一项，其余默认展开的项不受连累 ---
+    await userEvent.click(canvas.getByTestId('diagnostic-toggle-port-conflict'));
+    // ⚠️ **必须 `waitFor`**：收起有过渡动效，Radix `Presence` 要等 `animationend` 才把节点
+    //    移出 DOM。点完立刻断言 `toBeNull()` 会在满负载跑整批 story 时假红 ——
+    //    ⛔ 那时的正确反应是让断言等，**不是**把动画砍掉去迁就用例（曾经那样做过一版）。
+    await waitFor(() => expect(canvas.queryByTestId('diagnostic-detail-port-conflict')).toBeNull());
+    // ⚠️ MUTATION: 若 override 逻辑误把"当前展开的其它项"也一并冻结成 override，
+    //    这一条不受影响；但如果它们被误冻结成**收起**，下面这条会因为 timeout 项的
+    //    证据消失而红。
+    await expect(canvas.getByTestId('diagnostic-detail-ws-loopback')).toHaveTextContent(
+      '这一项这次没有结论',
+    );
+
+    // --- 用户手动展开一个默认收起的 ok 项 ---
+    await userEvent.click(canvas.getByTestId('diagnostic-toggle-container-runtime'));
+    await expect(canvas.getByTestId('diagnostic-detail-container-runtime')).toHaveTextContent(
+      '这是一段证据',
+    );
   },
 };
 

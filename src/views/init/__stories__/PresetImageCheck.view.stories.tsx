@@ -63,6 +63,10 @@ export const AllPassed: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('preset-image-check')).toHaveAttribute('data-ready', 'true');
     await expect(canvas.queryByTestId('preset-image-blocked')).toBeNull();
+    // ⚠️ 状态用 `StatusPill`：通过 ⇒ `ok`（design/design-notes.md §2）。
+    await expect(
+      canvas.getByTestId('preset-step-staged').querySelector('[data-status="ok"]'),
+    ).not.toBeNull();
   },
 };
 
@@ -70,6 +74,30 @@ export const Checking: Story = {
   args: {
     model: { phase: 'running', steps: chain('config', 'pending').steps, ready: false },
     isChecking: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // ⚠️ 整轮一起转：正在检查中的 `pending` 步骤用会转的 `pending`（灰底 + loader），
+    // ⛔ 不是「链停下、没被检查到」那个 `unknown`（虚线灰）——两者产品事实不同。
+    const configStep = canvas.getByTestId('preset-step-config');
+    await expect(configStep.querySelector('[data-status="pending"]')).not.toBeNull();
+    await expect(configStep).toHaveTextContent('检查中…');
+  },
+};
+
+/**
+ * ⭐ **链停下之后，后面几步是"没被检查"，不是"检查中"、也不是"失败了"**——`unknown`
+ * （虚线灰边框，design/design-notes.md §2："无样本/未知，≠ 0，≠ 失败"）。
+ */
+export const StoppedStepsAreUnknownNotPending: Story = {
+  args: { model: chain('lineage', 'fail') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const registration = canvas.getByTestId('preset-step-registration');
+    await expect(registration).toHaveAttribute('data-state', 'pending');
+    await expect(registration.querySelector('[data-status="unknown"]')).not.toBeNull();
+    await expect(registration.querySelector('[data-status="pending"]')).toBeNull();
+    await expect(registration).toHaveTextContent('未检查');
   },
 };
 
@@ -226,16 +254,54 @@ export const ProvisionableWithSize: Story = {
   },
 };
 
+/**
+ * ⭐ **进度是真实的 `Progress` + 计时器，数据源来自真实的 provision 事件流**
+ * （design/design-notes.md §1 问题 3 · §4 Phase 2 第 3 条）——⛔ 不是原型里那个自转的
+ * `setInterval` 演示。两个数字各自独立：百分比来自 `progress`，用时来自挂钟时间。
+ */
 export const Provisioning: Story = {
   args: {
     model: provisionable(),
     isProvisioning: true,
     provisionStatusText: '推送到 registry：Pushing 9d6e6fb71054 · 87%',
+    provisionProgress: 0.87,
+    provisionElapsedSeconds: 99,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('preset-provision-button')).toBeDisabled();
     await expect(canvas.getByTestId('preset-provision-status')).toHaveTextContent('87%');
+    await expect(canvas.getByTestId('preset-provision-percent')).toHaveTextContent('87%');
+    const bar = canvas
+      .getByTestId('preset-provision-progress')
+      .querySelector('[role="progressbar"]');
+    await expect(bar).not.toBeNull();
+    // ⚠️ 已用时是**独立于百分比**的第二个数字——两个都在跳，才是"没有卡死"的证据。
+    await expect(canvas.getByTestId('preset-provision-elapsed')).toHaveTextContent('1 分 39 秒');
+  },
+};
+
+/**
+ * ⭐ **进度给不出分母 ⇒ 画不确定态，⛔ 不许显示一个停在原地的假百分比**（`progress: null`
+ * 是合法取值——docker 的进度帧不一定带 `total`，见 `usePresetImageProvision.ts`）。
+ */
+export const ProvisioningWithoutKnownProgress: Story = {
+  args: {
+    model: provisionable(),
+    isProvisioning: true,
+    provisionStatusText: '推送到 registry：Pushing 9d6e6fb71054',
+    provisionProgress: null,
+    provisionElapsedSeconds: 12,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const block = canvas.getByTestId('preset-provision-progress');
+    // 否定断言：⛔ 不许出现任何百分比数字或进度条。
+    await expect(canvas.queryByTestId('preset-provision-percent')).toBeNull();
+    await expect(block.querySelector('[role="progressbar"]')).toBeNull();
+    await expect(block).toHaveTextContent('进度未知');
+    // 已用时仍然是真的——它与"给不出百分比"是两件独立的事。
+    await expect(canvas.getByTestId('preset-provision-elapsed')).toHaveTextContent('12 秒');
   },
 };
 

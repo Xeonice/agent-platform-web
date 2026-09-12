@@ -2,16 +2,109 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 产品规定：全局暗色（P21 §3）。脚手架先给一套暗色 token；终端区纯黑由 --terminal-bg 控制。 */
+/*
+ * Design token 全集（design/design-notes.md §2，逐字照抄，不许自行调整 L 值——
+ * 每个色相都逐一跑过 WCAG AA 对比度，见该文档「WCAG AA 对比度实测」表）。
+ *
+ * 产品规定「全局默认暗色」（docs/product/21 §「全局默认暗色（shadcn OKLCH 定制）」）：
+ * 设计稿原样是亮色在 :root、暗色在 [data-theme="dark"]；本项目沿用既有的
+ * `darkMode: 'class'` 策略（设计稿文末已注明这种替换是等价的），把暗色选择器换成
+ * `.dark`。默认仍是暗色靠 `<html className="dark">`（src/app/layout.tsx）保证——
+ * 亮色 :root 只是"新增可用"，不是新默认。
+ */
 :root {
-  --background: 222 14% 11%;
-  --foreground: 0 0% 90%;
-  --muted: 222 12% 18%;
-  --muted-foreground: 0 0% 60%;
-  --border: 222 10% 24%;
-  --primary: 210 90% 56%;
+  --background: 0 0% 100%;
+  --background-elevated: 0 0% 98%;
+  --background-subtle: 0 0% 95%;
+  --foreground: 0 0% 4%;
+  --foreground-muted: 0 0% 32%;
+  --foreground-subtle: 0 0% 40%; /* v2：45%→40%，见设计稿对比度表 */
+  --border: 0 0% 90%;
+  --border-strong: 0 0% 83%;
+
+  --primary: 0 0% 4%;
   --primary-foreground: 0 0% 100%;
-  --terminal-bg: #000000;
+  --accent: 212 100% 48%; /* 焦点环 / 链接，唯一的中性强调色 */
+
+  /* v2：L 值全部下调，逐色跑过 WCAG AA，语义分配不变 */
+  --success: 142 76% 26%;
+  --warning: 32 95% 30%;
+  --error: 0 74% 44%;
+  --info: 201 96% 32%;
+  --timeout: 263 83% 56%; /* 与 error 独立的色相：超时 ≠ 失败 */
+
+  --radius-sm: 4px; /* 徽标 / pill */
+  --radius-md: 6px; /* 按钮 / 输入框 */
+  --radius-lg: 10px; /* 卡片 */
+  --radius-xl: 16px; /* 大容器 / 向导壳 */
+  --radius: var(--radius-md); /* shadcn CLI 生成的组件按 --radius 取圆角 */
+
+  --terminal-bg: #000000; /* 画布恒黑，两套主题都不能碰 */
+  --terminal-chrome: #e7e7ea; /* 仪表壳跟随主题，这是亮色的值 */
+  --terminal-chrome-border: #d3d3d7;
+  --terminal-fg: #e4e4e7;
+  --terminal-fg-dim: #8a8a90;
+
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.1);
+
+  /*
+   * 以下几个变量不是设计稿 token 清单里的条目，是 shadcn CLI 生成的组件模板
+   * （card/dialog/input/switch 等）里引用到、而设计稿没有单独定义的"结构性别名"——
+   * 全部映射到上面已定案的 token，不引入 shadcn 默认的 OKLCH 调色板：
+   * `card`/`popover` 用 elevated 背景（卡片本来就应该比页面背景亮一档）；
+   * `input`/`ring` 分别对应边框与焦点环（accent，设计稿里唯一的强调色）；
+   * `secondary` 对应 subtle 背景；`destructive` 直接复用 `error`（语义等价，
+   * 8 态色板里"确定坏了"就是 error）。
+   */
+  --card: var(--background-elevated);
+  --card-foreground: var(--foreground);
+  --popover: var(--background-elevated);
+  --popover-foreground: var(--foreground);
+  --secondary: var(--background-subtle);
+  --secondary-foreground: var(--foreground);
+  --destructive: var(--error);
+  --destructive-foreground: 0 0% 100%;
+  --input: var(--border);
+  --ring: var(--accent);
+}
+
+.dark {
+  --background: 0 0% 4%;
+  --background-elevated: 0 0% 7%;
+  --background-subtle: 0 0% 11%;
+  --foreground: 0 0% 93%;
+  --foreground-muted: 0 0% 63%;
+  --foreground-subtle: 0 0% 50%; /* v2：45%→50% */
+  --border: 0 0% 16%;
+  --border-strong: 0 0% 24%;
+
+  --primary: 0 0% 93%;
+  --primary-foreground: 0 0% 4%;
+  --accent: 217 91% 63%;
+
+  --success: 142 71% 45%;
+  --warning: 38 92% 55%;
+  --error: 0 84% 63%;
+  --info: 199 89% 62%;
+  --timeout: 258 90% 71%;
+
+  --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.45);
+
+  /* 暗色下仪表壳维持原状——这套深色就是照「终端区纯黑底」的要求定的 */
+  --terminal-chrome: #111214;
+  --terminal-chrome-border: #2a2b2e;
+  --terminal-fg-dim: #6b6b70;
+
+  --card: var(--background-elevated);
+  --card-foreground: var(--foreground);
+  --popover: var(--background-elevated);
+  --popover-foreground: var(--foreground);
+  --secondary: var(--background-subtle);
+  --secondary-foreground: var(--foreground);
+  --destructive: var(--error);
+  --destructive-foreground: 0 0% 4%;
+  --input: var(--border);
+  --ring: var(--accent);
 }
 
 html,

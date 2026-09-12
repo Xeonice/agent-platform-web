@@ -25,6 +25,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { INIT_QUERY_OPTIONS } from '@/hooks/system/useInitGate';
 import { DIAGNOSE_CACHE_OPTIONS } from '@/hooks/system/useSystemStatus';
+import { useAutomationAttention } from '@/hooks/automation/useAutomations';
 import { useAppStore } from '@/stores';
 import { ApiErrorException } from '@/services/api/apiError';
 import {
@@ -35,7 +36,9 @@ import {
   OFFLINE_ACTION_DISABLED_REASON,
   bannerStackModel,
   globalBanners,
+  isDismissedToday,
   pruneDismissed,
+  todayKey,
 } from '@/lib/system/globalBanner';
 import type { BannerId, BannerStackModel, GlobalBannerModel } from '@/types/banner';
 import type { ConnectivityCheckModel } from '@/types/init';
@@ -92,7 +95,10 @@ function useConnectivitySnapshot(): ConnectivitySnapshot {
 
 export interface GlobalBannerApi {
   model: BannerStackModel;
-  /** 显式关闭一条（🔴 阻断类只在**本次会话**内生效，见 `types/banner.ts`）。 */
+  /**
+   * 显式关闭一条。**语义按 severity 分岔**（`types/banner.ts` 头部那两条纪律）：
+   * 🔴 阻断类只在**本次会话**内生效；⚠️ 治理类写 `bannerDismissedToday`，当天不再弹。
+   */
   dismiss: (id: BannerId) => void;
   /** 横幅动作：置「进系统状态页就跑一轮诊断」的意图位。跳转由 container 做。 */
   requestRecheck: () => void;
@@ -102,6 +108,16 @@ export function useGlobalBanner(): GlobalBannerApi {
   const snapshot = useConnectivitySnapshot();
   const [dismissed, setDismissed] = useState<BannerId[]>([]);
   const requestDiagnoseAutorun = useAppStore((s) => s.requestDiagnoseAutorun);
+  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
+  const dismissedToday = useAppStore((s) => s.bannerDismissedToday);
+  const dismissBannerToday = useAppStore((s) => s.dismissBannerToday);
+
+  // 治理类横幅的数据源：`useAutomations.ts` 已经备好了这一位（"给全局横幅层用的那一位"，
+  // 见该 hook 自己的文档注释），⛔ 不在这里另起一份只读缓存订阅——两份查同一个 key、
+  // 算同一件事，迟早只改其中一份、另一份悄悄漂掉。projectId 取当前**选中的项目**：
+  // 横幅这一刻只能代表"我正盯着的这个项目"，不是"全部项目"（跨项目概览需要后端新端点，
+  // 见 `lib/automation/automationAttention.ts` 文末记录的后端待办）。
+  const automation = useAutomationAttention(selectedProjectId);
 
   const banners = useMemo<GlobalBannerModel[]>(
     () =>
@@ -110,21 +126,50 @@ export function useGlobalBanner(): GlobalBannerApi {
         ...(snapshot.statusUnavailableReason === undefined
           ? {}
           : { statusUnavailableReason: snapshot.statusUnavailableReason }),
+        automation,
       }),
-    [snapshot],
+    [snapshot, automation],
   );
 
   // 回收已消失那条的关闭记录 —— 否则"关闭"会变成永久的（见 `pruneDismissed` 注释）。
   // ⚠️ 在**渲染期**算而不是在 effect 里 set：effect 会晚一帧，那一帧里横幅已经该出现却还被
   //    过滤掉；而 `dismissed` 只在真的变化时才 set（下面那个 `!==` 比较），不会打循环。
+  // ⚠️ 这一步**只回收会话级的 `dismissed`**，⛔ 不动 `bannerDismissedToday`——治理类的
+  //    "当天不再弹"就是要撑过判定中途消失又复现，回收会直接废掉这条语义（`isDismissedToday`
+  //    文档同一处说明）。
   const live = useMemo(() => pruneDismissed(dismissed, banners), [dismissed, banners]);
   if (live.length !== dismissed.length) setDismissed(() => live);
 
-  const model = useMemo(() => bannerStackModel(banners, live), [banners, live]);
+  // 当天关过的治理类横幅：按日期字符串比对，跨天自然失效，不需要单独的回收步骤。
+  // ⚠️ 从 `banners`（已经是 `BannerId[]`）取 id 再过滤，⛔ 不从 `Object.keys(dismissedToday)`
+  // 断言成 `BannerId[]`——那是把一个更宽的 `string` 断言成更窄的类型，lint 禁止（也确实
+  // 没有依据：store 里的 key 理论上可以是任何字符串）；反正只有当前会渲染的这几条
+  // banner 的关闭状态值得查。
+  const dismissedTodayIds = useMemo(() => {
+    const now = new Date();
+    return banners.map((b) => b.id).filter((id) => isDismissedToday(id, dismissedToday, now));
+  }, [banners, dismissedToday]);
 
-  const dismiss = useCallback((id: BannerId): void => {
-    setDismissed((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  }, []);
+  const allDismissed = useMemo(
+    () => (dismissedTodayIds.length === 0 ? live : [...live, ...dismissedTodayIds]),
+    [live, dismissedTodayIds],
+  );
+
+  const model = useMemo(() => bannerStackModel(banners, allDismissed), [banners, allDismissed]);
+
+  const dismiss = useCallback(
+    (id: BannerId): void => {
+      const target = banners.find((b) => b.id === id);
+      // ⚠️ 治理类走当天记录（持久化），⛔ 不进本地 `dismissed`（那是会话级、且会被
+      //    上面那步"判定消失就回收"提前清掉——当天关闭的东西不该在规则一恢复就弹回来）。
+      if (target?.severity === 'warning') {
+        dismissBannerToday(id, todayKey(new Date()));
+        return;
+      }
+      setDismissed((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    },
+    [banners, dismissBannerToday],
+  );
 
   return { model, dismiss, requestRecheck: requestDiagnoseAutorun };
 }

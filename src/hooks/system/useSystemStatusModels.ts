@@ -24,7 +24,7 @@ import type {
 export interface SystemStatusModels {
   /** `null` = 还没取到（加载中或失败）。 */
   resourcePool: ResourcePoolCardModel | null;
-  providerStatus: SandboxEnvStatusCardModel | null;
+  sandboxEnvStatus: SandboxEnvStatusCardModel | null;
   connection: ConnectionStatusCardModel;
   diagnostics: DiagnosticsCardModel;
 }
@@ -41,7 +41,7 @@ export function useSystemStatusModels(status: UseSystemStatusResult): SystemStat
   );
 
   const providers = status.providers;
-  const providerStatus = useMemo(
+  const sandboxEnvStatus = useMemo(
     () => (providers === undefined ? null : sandboxEnvStatusModel(providers)),
     [providers],
   );
@@ -65,5 +65,5 @@ export function useSystemStatusModels(status: UseSystemStatusResult): SystemStat
   const diagnoseState = status.diagnoseState;
   const diagnostics = useMemo(() => diagnosticsCardModel(diagnoseState), [diagnoseState]);
 
-  return { resourcePool, providerStatus, connection, diagnostics };
+  return { resourcePool, sandboxEnvStatus, connection, diagnostics };
 }

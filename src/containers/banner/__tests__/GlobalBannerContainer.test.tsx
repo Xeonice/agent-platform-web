@@ -20,7 +20,10 @@ import { GlobalBannerContainer } from '@/containers/banner/GlobalBannerContainer
 import { AppBootGate } from '@/containers/init/AppBootGate';
 import { useAppStore } from '@/stores';
 import { systemKeys } from '@/hooks/system/useAuditStream';
+import { automationKeys } from '@/hooks/automation/useAutomations';
+import { todayKey } from '@/lib/system/globalBanner';
 import type { DiagnoseRunState, InitStatusDto } from '@/types/system';
+import type { AutomationDto } from '@/types/automation';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
 
@@ -104,11 +107,62 @@ function renderBanner(children?: ReactNode, seedDiagnose?: DiagnoseRunState) {
   );
 }
 
+/**
+ * 治理类横幅（automation-needs-attention）测试专用工厂——与
+ * `AutomationsPanelContainer.test.tsx` 的 `rule()` 是同一套字段，照抄以避免两份契约漂移。
+ */
+function rule(overrides: Partial<AutomationDto> & Pick<AutomationDto, 'id'>): AutomationDto {
+  return {
+    projectId: 'proj-demo',
+    name: '每天凌晨数据分析',
+    runtime: 'codex',
+    prompt: '汇总昨天的日志',
+    scheduleKind: 'daily',
+    scheduleConfig: { time: '08:00' },
+    timezone: 'Asia/Shanghai',
+    timeoutMinutes: 120,
+    artifactRetentionDays: 7,
+    enabled: true,
+    degraded: false,
+    consecutiveFailures: 0,
+    triggerOn: 'failure',
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-08-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+/**
+ * 渲染横幅 + **预先把某个项目的自动化规则列表种进缓存**（`useGlobalBanner` 只读订阅这份
+ * 缓存，⛔ 不自己拉取——见该文件"取数纪律 ①"）。同时把它设为当前选中项目：横幅只能代表
+ * "我正盯着的这个项目"（`automationAttentionCacheOptions` 的注释）。
+ */
+function renderBannerWithAutomations(
+  projectId: string,
+  rules: AutomationDto[],
+  seedDiagnose?: DiagnoseRunState,
+) {
+  useAppStore.getState().setSelectedProjectId(projectId);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  client.setQueryData(automationKeys.list(projectId), rules);
+  if (seedDiagnose !== undefined) client.setQueryData(systemKeys.diagnose(), seedDiagnose);
+  function Wrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  }
+  return render(<GlobalBannerContainer />, { wrapper: Wrapper });
+}
+
 beforeEach(() => {
   cleanup();
   initStatusCalls = 0;
   nav.push.mockClear();
   useAppStore.setState({ accessLocked: false, diagnoseAutorunRequested: false });
+  useAppStore.getState().setSelectedProjectId(null);
+  useAppStore.getState().setSelectedProjectForMenu(null);
+  useAppStore.getState().setCurrentModal(null);
+  useAppStore.setState({ bannerDismissedToday: {} });
 });
 // ⚠️ store 的复位只放在 `beforeEach`：放进 `afterEach` 时它会在 RTL 自动 cleanup **之前**
 // 跑到，于是给一棵还挂着的树推了一次 act 之外的更新（React 会打警告，且它与被测行为无关）。
@@ -258,6 +312,110 @@ describe('关闭与动作（07 §8.4：🔴 不自动收起、须显式关闭）
     fireEvent.click(screen.getByTestId('banner-action-platform-state-unknown'));
     expect(useAppStore.getState().diagnoseAutorunRequested).toBe(false);
     expect(nav.push).toHaveBeenCalledWith('/settings/system');
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// ⚠️ 治理类横幅（design-notes.md §4 Phase 3 第 3 条「全局横幅优先级」）：接线测试。
+// 文案本身的正确性归 `lib/automation/automationAttention.ts` 自己的单测钉住，
+// 这里只测"接得上、排得对、关得掉"。
+// ————————————————————————————————————————————————————————————————
+describe('⚠️ 治理类横幅（automation-needs-attention）', () => {
+  it('⭐ 缓存里有该项目「已自动停用」的规则 ⇒ 出一条 ⚠️ 治理类横幅', async () => {
+    serve(status());
+    renderBannerWithAutomations('proj-demo', [
+      rule({ id: 'r1', enabled: false, consecutiveFailures: 10 }),
+      rule({ id: 'r2', enabled: false, consecutiveFailures: 10 }),
+    ]);
+    const banner = await screen.findByTestId('banner-automation-needs-attention');
+    expect(banner).toHaveAttribute('data-severity', 'warning');
+    expect(banner).toHaveTextContent('2 条定时规则已自动停用');
+    expect(screen.getByTestId('banner-action-automation-needs-attention')).toHaveTextContent(
+      '查看这些规则',
+    );
+  });
+
+  /**
+   * ⭐ **没打开过该项目的自动化面板 ⇒ 没有数据 ⇒ 不出横幅**——这是
+   * `lib/automation/automationAttention.ts` 文末记录的已知缺口，⛔ 不许把"没拉到"
+   * 渲染成"没问题"之外的任何东西（这里体现为"沉默"，不是"出一条误导性的横幅"）。
+   */
+  it('缓存里没有该项目的规则列表（面板没打开过）⇒ 不出治理类横幅', async () => {
+    serve(status());
+    useAppStore.getState().setSelectedProjectId('proj-never-opened');
+    renderBanner();
+    await waitFor(() => {
+      expect(initStatusCalls).toBe(1);
+    });
+    expect(screen.queryByTestId('banner-automation-needs-attention')).toBeNull();
+  });
+
+  it('规则都正常（needsAttention:false）⇒ 不出横幅', async () => {
+    serve(status());
+    renderBannerWithAutomations('proj-demo', [rule({ id: 'r1' })]);
+    await waitFor(() => {
+      expect(initStatusCalls).toBe(1);
+    });
+    expect(screen.queryByTestId('banner-automation-needs-attention')).toBeNull();
+  });
+
+  /**
+   * ⭐⭐ **三色分层的核心断言（同时存在）**：阻断压过治理。
+   * 变异：把 `BANNER_RANK['automation-needs-attention']` 改成 `0` ⇒ 下面的顺序断言变红；
+   * 把两档共用同一套颜色 class ⇒ 最后两句 className 断言变红。
+   */
+  it('⭐⭐ 离线（阻断）与治理类同时命中 ⇒ 阻断排在治理之前，颜色也分得开', async () => {
+    serve(status({ lastConnectivityCheck: OFFLINE }));
+    renderBannerWithAutomations('proj-demo', [
+      rule({ id: 'r1', enabled: false, consecutiveFailures: 10 }),
+    ]);
+    await screen.findByTestId('banner-offline');
+    await screen.findByTestId('banner-automation-needs-attention');
+
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts.map((a) => a.getAttribute('data-testid'))).toEqual([
+      'banner-offline',
+      'banner-automation-needs-attention',
+    ]);
+    expect(alerts[0]?.className).toContain('red-500');
+    expect(alerts[1]?.className).not.toContain('red-500');
+  });
+
+  /**
+   * ⭐ 点动作 ⇒ 去工作台并打开**这个项目**的自动化面板——⛔ 不是像另外两条横幅那样
+   * 跳系统状态页（那里没有自动化面板，跳过去用户会找不到"这些规则"在哪）。
+   */
+  it('⭐ [查看这些规则] ⇒ 回工作台 + 打开该项目的自动化面板（不是跳系统状态页）', async () => {
+    serve(status());
+    renderBannerWithAutomations('proj-demo', [
+      rule({ id: 'r1', enabled: false, consecutiveFailures: 10 }),
+    ]);
+    fireEvent.click(await screen.findByTestId('banner-action-automation-needs-attention'));
+    expect(nav.push).toHaveBeenCalledWith('/');
+    expect(nav.push).not.toHaveBeenCalledWith('/settings/system');
+    expect(useAppStore.getState().currentModal).toBe('automations');
+    expect(useAppStore.getState().selectedProjectForMenu).toBe('proj-demo');
+  });
+
+  /**
+   * ⭐ **关闭语义分岔**：治理类关闭写 `bannerDismissedToday`（当天不再弹），
+   * ⛔ 不进阻断类那个会话级的本地 `dismissed`——变异：把 `dismiss()` 里 severity 分支删掉，
+   * 让治理类也走 `setDismissed` ⇒ 本例最后一句关于 store 的断言变红（横幅虽然也会消失，
+   * 但不是靠这条机制，`bannerDismissedToday` 会保持空）。
+   */
+  it('⭐ 点 [关闭] ⇒ 横幅消失，且写的是 bannerDismissedToday（当天不再弹），不是会话级', async () => {
+    serve(status());
+    renderBannerWithAutomations('proj-demo', [
+      rule({ id: 'r1', enabled: false, consecutiveFailures: 10 }),
+    ]);
+    await screen.findByTestId('banner-automation-needs-attention');
+    fireEvent.click(screen.getByTestId('banner-dismiss-automation-needs-attention'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('banner-automation-needs-attention')).toBeNull();
+    });
+    expect(useAppStore.getState().bannerDismissedToday['automation-needs-attention']).toBe(
+      todayKey(new Date()),
+    );
   });
 });
 

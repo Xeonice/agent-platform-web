@@ -12,6 +12,7 @@
 // ⚠️ **[确认，开始使用] 是整个向导里唯一会写 `initialized=true` 的按钮。** 前面每一步的
 // 保存都只是存配置。
 import { Button } from '@/components/ui/button';
+import { StatusPill } from '@/components/ui/status-pill';
 import type { ResourceConfirmModel } from '@/types/init';
 
 export interface ResourceConfirmProps {
@@ -51,7 +52,9 @@ export function ResourceConfirmView({
                 className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
               >
                 <span className="flex flex-wrap items-center gap-2">
-                  <span aria-hidden="true">{row.low ? '⚠️' : '✅'}</span>
+                  <StatusPill status={row.low ? 'warn' : 'ok'}>
+                    {row.low ? '偏低' : '正常'}
+                  </StatusPill>
                   <span className="font-medium">{row.label}</span>
                   <span>{row.valueText}</span>
                 </span>

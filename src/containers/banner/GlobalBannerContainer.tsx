@@ -13,20 +13,40 @@
 //    「全局横幅的 [重新检测] 落地点」。这里只做 意图位 + `router.push` 两件事。
 import { useRouter } from 'next/navigation';
 import { useGlobalBanner } from '@/hooks/system/useGlobalBanner';
+import { useAppStore } from '@/stores';
 import { BannerStackView } from '@/views/banner/BannerStack.view';
 
-/** 两条横幅的动作去处相同：系统状态页（诊断卡在那里，且只有那里有所有者）。 */
+/** 两条阻断类横幅的动作去处：系统状态页（诊断卡在那里，且只有那里有所有者）。 */
 const SYSTEM_STATUS_ROUTE = '/settings/system';
+/** 工作台路由——治理类横幅的 [查看这些规则] 要去的地方（自动化面板只在工作台里）。 */
+const WORKBENCH_ROUTE = '/';
 
 export function GlobalBannerContainer() {
   const router = useRouter();
   const { model, dismiss, requestRecheck } = useGlobalBanner();
+  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
+  const setSelectedProjectForMenu = useAppStore((s) => s.setSelectedProjectForMenu);
+  const setCurrentModal = useAppStore((s) => s.setCurrentModal);
 
   return (
     <BannerStackView
       model={model}
       onDismiss={dismiss}
       onAction={(id) => {
+        // ⚠️ 「查看这些规则」跳的不是系统状态页——自动化面板只挂在工作台的
+        //    `WorkbenchContainer`（组头「⋯」→ 项目菜单）里，`/settings/system` 上没有它。
+        //    走同一套 `currentModal`/`selectedProjectForMenu` 是因为两者本来就是同一份
+        //    全局 store 状态：`WorkbenchContainer` 的 `overlaySlot` 已经在读它们。
+        if (id === 'automation-needs-attention') {
+          // ⚠️ 只有真的拿到了 projectId 才动这两位状态——理论上到这一步它必然有值
+          // （横幅本身就是拿这个 projectId 的缓存判出来的），这里只是防御性收窄类型。
+          if (selectedProjectId !== null) {
+            setSelectedProjectForMenu(selectedProjectId);
+            setCurrentModal('automations');
+          }
+          router.push(WORKBENCH_ROUTE);
+          return;
+        }
         // 「状态未知」那条只是去看看（此时诊断多半也跑不通，自动跑一轮只会多一条红线）；
         // 「离线」那条才真的要重跑一轮出网检测。
         if (id === 'offline') requestRecheck();

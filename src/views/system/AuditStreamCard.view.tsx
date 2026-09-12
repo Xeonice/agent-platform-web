@@ -30,6 +30,7 @@
 // 用户看到的是"当前筛选无匹配记录"**且没有任何继续加载的入口**，读出来的结论是"没有"。
 import { Fragment, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { AuditEventRowView } from '@/views/system/AuditEventRow.view';
 import { AuditGapNoticeView } from '@/views/system/AuditGapNotice.view';
 import type { AuditEmptyKind, AuditGap, AuditRowModel } from '@/types/audit';
@@ -144,11 +145,9 @@ export function AuditStreamCardView({
       ) : isPending ? (
         <ul aria-busy="true" aria-label="审计流加载中" className="flex flex-col gap-1.5">
           {Array.from({ length: SKELETON_ROWS }, (_, i) => (
-            <li
-              key={i}
-              data-testid="audit-skeleton-row"
-              className="h-6 animate-pulse rounded bg-muted/50"
-            />
+            <li key={i}>
+              <Skeleton data-testid="audit-skeleton-row" className="h-6 w-full" />
+            </li>
           ))}
         </ul>
       ) : (

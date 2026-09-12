@@ -243,3 +243,31 @@ export interface RunRow {
   /** webhook 投递结果的旁注。⚠️ 它**不影响规则状态**（P21-7 §7），文案上要说清。 */
   webhookNote?: string;
 }
+
+/**
+ * 自动化侧「需要用户知道的事」的汇总判定结果（P21-7 §4/§5、`lib/automation/automationAttention.ts`
+ * 的产出形状）。**放在 `types/` 而不是与判定函数同一个 `lib/` 文件**：`lib/system/globalBanner.ts`
+ * 要把它塞进 `GlobalBannerInput`，而 `boundaries/element-types`（eslint.config.js）只许
+ * `type → type`——`types/banner.ts` 不能 import `lib/automation/*`，与 `ResourcePoolCardModel`
+ * 住在 `types/system.ts`、由 `lib/system/resourceModel.ts` 产出是同一个理由、同一条规则。
+ */
+export interface AutomationAttention {
+  /**
+   * 判定所依据的数据是否真的到手了。
+   * `false` ⇒ 这一刻我们**不知道**有没有问题（列表还没拉过 / 拉失败）。
+   * ⛔ 不许把它渲染成"没有问题"。
+   */
+  hasData: boolean;
+  /** 🔴 已经被连续失败推到自动停用的规则数 —— 它们**已经不会再触发了**。 */
+  autoDisabledCount: number;
+  /** 🟡 被放慢到每天只试一次的规则数 —— 还在跑，但比用户设的频率慢得多。 */
+  degradedCount: number;
+  /** 要不要提示。`hasData === false` 时恒为 `false`（没有数据就没有结论）。 */
+  needsAttention: boolean;
+  /** 横幅主文案；`needsAttention === false` 时缺席。 */
+  title?: string;
+  /** 横幅第二行；`needsAttention === false` 时缺席。 */
+  description?: string;
+  /** 动作按钮文案；点了应当打开该项目的自动化面板。 */
+  actionLabel?: string;
+}

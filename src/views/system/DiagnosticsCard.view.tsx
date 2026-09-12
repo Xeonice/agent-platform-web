@@ -13,6 +13,14 @@
 //
 // ⚠️ **schema hash 对不上只提示、不拦截**：诊断的使用场景是「系统好像坏了」，
 // 因版本不匹配而中断一次只读诊断，等于在最需要它的时候把它关掉。
+//
+// ⚠️ **八项共用一个 `Accordion type="multiple"`，展开集合是受控的**
+// （design/design-notes.md §1 问题 1 + §4 Phase 1 第一条）。「非 ok/info 默认展开」
+// 的判定与 override 计算住在 `lib/system/diagnosticsDisclosure.ts`，经
+// `hooks/system/useDiagnosticsDisclosure.ts` 接到 `SystemStatusContainer`——本文件
+// **不 import lib**（分层铁律：`view` 只能 `allow: ['view','type','component']`），
+// `openIds`/`onOpenIdsChange` 就是两个普通 prop，这里只管照给定的 `openIds` 渲染。
+import { Accordion } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { DiagnosticItemView } from '@/views/system/DiagnosticItem.view';
 import type { DiagnosticsCardModel } from '@/types/system';
@@ -22,6 +30,10 @@ export interface DiagnosticsCardProps {
   isDiagnosing: boolean;
   /** 服务端 `X-Schema-Hash` 与前端认识的对不上；`null` = 一致或未知。 */
   schemaMismatch: string | null;
+  /** 当前应该展开的那几项 id（`useDiagnosticsDisclosure` 算好）。 */
+  openIds: string[];
+  /** 接 Accordion 的 `onValueChange`：用户手动展开/收起时回传完整的新数组。 */
+  onOpenIdsChange: (nextOpenIds: string[]) => void;
   onDiagnose: () => void;
   onExportLogs: () => void;
   /** 命令 [复制]（clipboard + toast 在 container）。 */
@@ -32,6 +44,8 @@ export function DiagnosticsCardView({
   model,
   isDiagnosing,
   schemaMismatch,
+  openIds,
+  onOpenIdsChange,
   onDiagnose,
   onExportLogs,
   onCopyHint,
@@ -77,14 +91,26 @@ export function DiagnosticsCardView({
               //    `DIAGNOSE_TIMEOUT_MS` 早已是 10s —— 一个抄在界面上的常量必然漂移，
               //    而它对用户的下一个动作没有任何区别（等就是了）。真实预算由服务端
               //    在首帧 `start.timeoutMs` 里下发，⚠️ 前端不自行计时（F21-5 §7.1 ②）。
+              //    第 ⑤ 项到达之后会自己带上这句话（读的是同一份配置，见
+              //    `DiagnosticItemView` 的 `timeoutText`），这里的空态文案不需要抢先说。
               '尚未运行。点 [重新诊断] 跑一轮：各项并行，某一项超时也不阻塞其余项。'}
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <Accordion
+          type="multiple"
+          value={openIds}
+          onValueChange={onOpenIdsChange}
+          className="flex flex-col gap-2"
+        >
           {model.items.map((item) => (
-            <DiagnosticItemView key={item.id} item={item} onCopyHint={onCopyHint} />
+            <DiagnosticItemView
+              key={item.id}
+              item={item}
+              expanded={openIds.includes(item.id)}
+              onCopyHint={onCopyHint}
+            />
           ))}
-        </ul>
+        </Accordion>
       )}
 
       {model.summaryText === undefined ? null : (

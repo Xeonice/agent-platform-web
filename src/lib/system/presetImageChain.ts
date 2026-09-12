@@ -31,7 +31,7 @@ const STEP_LABEL: Readonly<Record<PresetImageStep, string>> = {
   // ⛔ 2026-09-07：这一步问的**不再是**「配了没有」。出厂留空、平台按你的机器自动选
   //    —— **没配才是正确的出厂状态**。它现在问的是「这台机器有没有一张能用的镜像」。
   config: '该用哪张镜像（没指定 = 平台按你的机器自动选）',
-  registry: '镜像仓库里有没有这张镜像',
+  registry: '镜像下载源里有没有这张镜像',
   lineage: '来源对不对：是不是平台自己构建的那一张',
   registration: '平台检查过没有、能不能选用',
   // ⚠️ 措辞里一个「失败/错误」字样都不许有：这一步问的是「下载到本机没有」，不是「坏没坏」。
@@ -52,7 +52,7 @@ const STEP_ACTION: Readonly<Record<PresetImageStep, string>> = {
   config:
     '给这台机器的沙箱环境单独指定一张镜像：平台没有为它发布预制镜像（多半是自己注册的第三方环境）。用 SANDBOX_AIO_IMAGE / SANDBOX_BOXLITE_IMAGE 这种按环境分开的配置指过去。别动 SANDBOX_DEFAULT_IMAGE —— 它是两种环境共用的总开关，一填就让「按你的机器自动选」失效，另一种会拿到不能互换的那张。',
   registry:
-    '把镜像推上去，或把地址改成推过的那个：镜像仓库里找不到这张镜像，平台既检查不了它也拉不下来。',
+    '把镜像推上去，或把地址改成推过的那个：镜像下载源里找不到这张镜像，平台既检查不了它也拉不下来。',
   // ⚠️ 「手动加进来也会被拒」这句不许省：不说清楚，用户会以为只是少做了一步，照着去做再撞一次墙。
   lineage:
     '换成平台自己构建的那一张：上游镜像只是平台镜像的起点，拿它手动加进来同样会被拒 —— 不是少做一步。用平台的构建脚本重新构建并推送。',
@@ -70,9 +70,10 @@ const STEP_ACTION: Readonly<Record<PresetImageStep, string>> = {
 /** 后端没给 `hint` 时的兜底命令形态（③：⛔ 不覆盖后端那一句）。 */
 const FALLBACK_FIX: Readonly<Partial<Record<PresetImageStep, string>>> = {
   // ⚠️ 按环境分开配 —— 与上面 `STEP_ACTION.config` 同一条：别给那个会波及两种环境的总开关。
-  config: 'SANDBOX_AIO_IMAGE=<镜像仓库>/<仓库名>:<标签>   # 或 SANDBOX_BOXLITE_IMAGE',
-  registry: 'docker push <镜像仓库>/platform/sandbox:<标签>',
-  lineage: 'bash scripts/build-sandbox-image.sh && docker push <镜像仓库>/platform/sandbox:<标签>',
+  config: 'SANDBOX_AIO_IMAGE=<镜像下载源>/<仓库名>:<标签>   # 或 SANDBOX_BOXLITE_IMAGE',
+  registry: 'docker push <镜像下载源>/platform/sandbox:<标签>',
+  lineage:
+    'bash scripts/build-sandbox-image.sh && docker push <镜像下载源>/platform/sandbox:<标签>',
 };
 
 /** ⚠️ `info` 单独一档 —— 见文件头 ②。谁把它并进 `fail`，第 5 步就变成一个要去修的东西。 */

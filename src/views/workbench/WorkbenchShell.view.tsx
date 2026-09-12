@@ -2,13 +2,19 @@
 import type { ReactNode } from 'react';
 import type { ProjectGroup } from '@/types/domain';
 import { Button } from '@/components/ui/button';
+import { StatusDot } from '@/components/ui/status-pill';
 import { ProjectGroupHeaderView } from '@/views/project/ProjectGroupHeader.view';
 import { CurrentProjectIndicatorView } from '@/views/project/CurrentProjectIndicator.view';
 
 export interface WorkbenchShellProps {
   groups: ProjectGroup[];
   waitingInputCount: number;
-  healthLabel: string;
+  /**
+   * 顶栏健康提示。`null` ⇒ **整行不渲染**（design-notes.md §1 问题 5 / §4 Phase 3 第 4 条）：
+   * 「后端健康（HTTP 200）」这类常态文案用户拿它做不了任何决定，只会占地方；只有异常时
+   * container 才会给出非空字符串（如「后端不可用」），此时才挂载。
+   */
+  healthLabel: string | null;
   terminalSlot: ReactNode;
   selectedTaskId?: string | null;
   selectedProjectId?: string | null;
@@ -76,9 +82,11 @@ export function WorkbenchShellView({
     <div className="flex h-full flex-col bg-background text-foreground">
       <header className="flex h-12 items-center gap-3 border-b border-border px-4">
         <span className="font-semibold">Agent 管理平台</span>
-        <span className="text-xs text-muted-foreground" data-testid="health-label">
-          {healthLabel}
-        </span>
+        {healthLabel !== null && (
+          <span className="text-xs text-error" data-testid="health-label">
+            {healthLabel}
+          </span>
+        )}
         {/* 当前项目指示器（F21-6 §3）：只读 + 点击树内定位，⛔ 无下拉（§9.1 #2 否定性验收）。 */}
         <CurrentProjectIndicatorView
           projectName={currentProjectName}
@@ -166,13 +174,20 @@ export function WorkbenchShellView({
                             type="button"
                             aria-current={selectedTaskId === task.id || undefined}
                             className={
-                              'w-full rounded px-2 py-1 text-left text-sm hover:bg-muted ' +
+                              'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-sm hover:bg-muted ' +
                               (selectedTaskId === task.id ? 'bg-muted' : '')
                             }
                             onClick={() => onSelectTask?.(task.id)}
                           >
-                            {task.waitingInput ? '🔵 ' : ''}
-                            {task.name}
+                            {/* 任务树状态点接入 StatusPill 的极简变体（design-notes.md §4
+                                Phase 3 第 2 条 / 原型 `.dot` 类）：换掉此前手写的 🔵 emoji，
+                                等待输入用 warn、其余用 ok——与原型 `renderTaskTree()` 的
+                                两态判据一致。 */}
+                            <StatusDot
+                              status={task.waitingInput ? 'warn' : 'ok'}
+                              label={task.waitingInput ? '等待你输入' : '运行中'}
+                            />
+                            <span className="truncate">{task.name}</span>
                           </button>
                         </li>
                       ))}

@@ -144,12 +144,16 @@ export function WorkbenchContainer() {
   const groupMenuProject = projects.data?.find((p) => p.id === groupMenuProjectId) ?? null;
   const menuProject = projects.data?.find((p) => p.id === selectedProjectForMenu) ?? null;
 
-  const healthLabel =
-    health.data !== undefined
-      ? `后端健康（HTTP ${String(health.data.status)}）`
-      : health.isError
-        ? '后端不可用'
-        : '正在检查后端…';
+  /**
+   * 「正常时整行不渲染」（design-notes.md §1 问题 5 / §4 Phase 3 第 4 条）：一句
+   * 「后端健康（HTTP 200）」的常驻文案，用户拿它做不了任何决定，只会占地方，异常时才
+   * 挂载。**「检查中」也不算异常**——它同样没有可操作性，一闪而过挂载又卸载反而更显眼；
+   * 唯一值得说一句的是"读不到"（`health.isError`）。
+   *
+   * ⚠️ `null` ⇒ `WorkbenchShellView` 整个不渲染那个 `<span>`，⛔ 不是渲染一个空字符串
+   * （空字符串仍然是"挂载了，只是看不见内容"，与"正常时不渲染"要的东西不一样）。
+   */
+  const healthLabel = health.isError ? '后端不可用' : null;
 
   const handleSelectProject = (projectId: string): void => {
     setReadyProjectId(null); // 手动切换：就绪判定回到列表口径

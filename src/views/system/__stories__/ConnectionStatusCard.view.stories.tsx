@@ -24,7 +24,12 @@ type Story = StoryObj<typeof ConnectionStatusCardView>;
 export const AllGreen: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('connection-row-events')).toHaveTextContent('15ms');
+    const row = canvas.getByTestId('connection-row-events');
+    await expect(row).toHaveTextContent('15ms');
+    // ⭐ Phase 1：`ok` 状态换成 `StatusPill`（design-notes §4）——钉住底层 variant 是
+    //    `ok`，不是只钉文字（文字「正常」与 pill variant 是两件独立的事，只测文字
+    //    抓不住"映射表被改错但文案凑巧还对"这种改法，见 `RestDown` 故事的反例）。
+    await expect(row.querySelector('[data-status]')).toHaveAttribute('data-status', 'ok');
   },
 };
 
@@ -53,6 +58,8 @@ export const EventsUnmeasured: Story = {
     await expect(row).not.toHaveTextContent('异常');
     // 「测不了」必须带上为什么。
     await expect(row).toHaveTextContent('只在工作台挂载');
+    // ⭐ Phase 1：`unknown` 映射到 `StatusPill` 的 `unknown`（虚线灰），不是 `fail`。
+    await expect(row.querySelector('[data-status]')).toHaveAttribute('data-status', 'unknown');
   },
 };
 
@@ -88,6 +95,11 @@ export const RestDown: Story = {
     const row = canvas.getByTestId('connection-row-rest');
     await expect(row).toHaveTextContent('异常');
     await expect(row).toHaveTextContent('INTERNAL');
+    // ⭐ Phase 1：`down` 映射到 `StatusPill` 的 `fail`（红），这才是「确定坏了」的
+    //    颜色/图标语义——只断言中文「异常」这四个字抓不住这一条，见文件头注释。
+    // MUTATION：把 `STATE_PILL_STATUS.down` 从 `'fail'` 改成 `'ok'`，文字断言照样
+    // 全绿（`STATE_TEXT` 没变），只有这一条会红。
+    await expect(row.querySelector('[data-status]')).toHaveAttribute('data-status', 'fail');
   },
 };
 

@@ -10,9 +10,12 @@ import {
   OFFLINE_ACTION_DISABLED_REASON,
   bannerStackModel,
   globalBanners,
+  isDismissedToday,
   pruneDismissed,
+  todayKey,
 } from '@/lib/system/globalBanner';
 import type { ConnectivityResultDto } from '@/types/init';
+import type { AutomationAttention } from '@/types/automation';
 
 const openai: ConnectivityResultDto = { target: 'api.openai.com', ok: true, modelApi: true };
 const anthropic: ConnectivityResultDto = { target: 'api.anthropic.com', ok: true, modelApi: true };
@@ -148,5 +151,118 @@ describe('关闭与回收（07 §8.4：🔴 不自动收起、须显式关闭）
 describe('置灰理由（P21-8 §7 tooltip 文案）', () => {
   it('文案只有一份，横幅与 [+ 新任务] tooltip 共用', () => {
     expect(OFFLINE_ACTION_DISABLED_REASON).toBe('离线模式：需连接网络才能发起任务');
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// ⚠️ 治理类横幅（design-notes.md §4 Phase 3 第 3 条「全局横幅优先级」）：
+// 唯一的生产方是 `lib/automation/automationAttention.ts`，本文件只测**接线**——
+// 文案是否正确由那份文件自己的测试钉住，这里不重复断言文案内容的每一个字。
+// ————————————————————————————————————————————————————————————————
+const NEEDS_ATTENTION: AutomationAttention = {
+  hasData: true,
+  autoDisabledCount: 2,
+  degradedCount: 0,
+  needsAttention: true,
+  title: '有 2 条定时规则已自动停用',
+  description: '2 条连着失败 10 次后已经不再触发，要重新开启才会继续跑。',
+  actionLabel: '查看这些规则',
+};
+const NO_ATTENTION: AutomationAttention = {
+  hasData: true,
+  autoDisabledCount: 0,
+  degradedCount: 0,
+  needsAttention: false,
+};
+
+describe('治理类横幅（automation-needs-attention）', () => {
+  it('needsAttention ⇒ 出一条 warning，文案直接取 automationAttention 的三个字段', () => {
+    const banners = globalBanners({
+      connectivity: check([openai, anthropic, registry]),
+      automation: NEEDS_ATTENTION,
+    });
+    expect(banners).toHaveLength(1);
+    expect(banners[0]).toEqual({
+      id: 'automation-needs-attention',
+      severity: 'warning',
+      title: NEEDS_ATTENTION.title,
+      description: NEEDS_ATTENTION.description,
+      actionLabel: NEEDS_ATTENTION.actionLabel,
+    });
+  });
+
+  it('needsAttention:false ⇒ 不出这条横幅', () => {
+    expect(
+      globalBanners({
+        connectivity: check([openai, anthropic, registry]),
+        automation: NO_ATTENTION,
+      }),
+    ).toEqual([]);
+  });
+
+  /**
+   * ⭐ **省略 `automation` 字段要与「显式传 NO_ATTENTION」等价**——这条钉住
+   * `GlobalBannerInput.automation` 是可选字段，既有调用点（本文件前面几十个 `globalBanners({...})`）
+   * 不必逐个补这一位。变异：把 `input.automation ?? NO_AUTOMATION_ATTENTION` 里的 `??`
+   * 去掉（改成直接 `input.automation.needsAttention`）⇒ 本例抛异常而不是回空数组。
+   */
+  it('⭐ 省略 automation 字段 ⇒ 不出治理类横幅、也不抛错（可选字段的兜底）', () => {
+    expect(globalBanners({ connectivity: check([openai, anthropic, registry]) })).toEqual([]);
+  });
+
+  /**
+   * ⭐⭐ **三色分层的核心断言**：阻断 > 治理，三条同时命中时排序必须是
+   * `platform-state-unknown` → `offline` → `automation-needs-attention`。
+   *
+   * 变异：把 `BANNER_RANK['automation-needs-attention']` 改成 `0` ⇒ 本例的顺序断言变红；
+   * 把 `NEEDS_ATTENTION` 的 severity 判定去掉、让它也走 `severity:'blocking'` 分支
+   * ⇒ 下面 `severity` 那句变红。
+   */
+  it('⭐⭐ 三条同时命中 ⇒ 阻断（2 条）排在治理（1 条）之前', () => {
+    const banners = globalBanners({
+      connectivity: check([down(openai), down(anthropic)]),
+      statusUnavailableReason: '连接被拒绝',
+      automation: NEEDS_ATTENTION,
+    });
+    const stacked = bannerStackModel(banners, []);
+    expect(stacked.banners.map((b) => b.id)).toEqual([
+      'platform-state-unknown',
+      'offline',
+      'automation-needs-attention',
+    ]);
+    expect(stacked.banners.map((b) => b.severity)).toEqual(['blocking', 'blocking', 'warning']);
+  });
+});
+
+describe('治理类的「关闭后当天不再弹」（isDismissedToday，与阻断类的会话级关闭是两套机制）', () => {
+  // ⚠️ `todayKey` 按**本地**日历日算（`getFullYear`/`getMonth`/`getDate`，不是 UTC）——
+  // "今天"要匹配用户自己时区里的"今天"，不是格林尼治的。夹具因此**用本地时间构造函数**
+  // （`new Date(y, m, d, h)`，月份从 0 开始），⛔ 不用 ISO/UTC 字符串——那样在 UTC+8 之类
+  // 的时区里，`T23:59:00.000Z` 已经是本地日历的第二天，会把"同一天"的夹具错造成"跨天"。
+  const DAY_1 = new Date(2026, 7, 29, 10, 0, 0);
+  const DAY_1_LATER = new Date(2026, 7, 29, 23, 59, 0);
+  const DAY_2 = new Date(2026, 7, 30, 0, 0, 1);
+
+  it('todayKey 只取年月日，同一天内多次调用相等', () => {
+    expect(todayKey(DAY_1)).toBe(todayKey(DAY_1_LATER));
+    expect(todayKey(DAY_1)).not.toBe(todayKey(DAY_2));
+  });
+
+  it('记录的日期等于今天 ⇒ 算已关闭', () => {
+    const record = { 'automation-needs-attention': todayKey(DAY_1) };
+    expect(isDismissedToday('automation-needs-attention', record, DAY_1_LATER)).toBe(true);
+  });
+
+  /**
+   * ⭐ 跨天 ⇒ 记录自然失效——**不需要**任何回收步骤（与阻断类的 `pruneDismissed` 不同）。
+   * 变异：把比较从"日期字符串相等"改成"记录存在即算关闭" ⇒ 本例变红。
+   */
+  it('⭐ 跨天 ⇒ 记录自动失效，不再算已关闭', () => {
+    const record = { 'automation-needs-attention': todayKey(DAY_1) };
+    expect(isDismissedToday('automation-needs-attention', record, DAY_2)).toBe(false);
+  });
+
+  it('没有记录 ⇒ 不算已关闭', () => {
+    expect(isDismissedToday('automation-needs-attention', {}, DAY_1)).toBe(false);
   });
 });

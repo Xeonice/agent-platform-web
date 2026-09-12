@@ -155,6 +155,10 @@ export function InitWizardContainer() {
             ? {}
             : { provisionStatusText: provision.statusText })}
           {...(provision.error === undefined ? {} : { provisionError: provision.error })}
+          {...(provision.progress === undefined ? {} : { provisionProgress: provision.progress })}
+          {...(provision.elapsedSeconds === undefined
+            ? {}
+            : { provisionElapsedSeconds: provision.elapsedSeconds })}
         />
       </InitWizardShellView>
     );

@@ -8,7 +8,7 @@
 //    · 断流时把已有结果一起清空  ⇒「中断后已到达项仍在」红（「诊断中断」那句照样渲染）
 //    · 资源 500 时渲染成 0% 水位 ⇒「失败不许伪装成空闲」那条否定断言红
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, within, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
@@ -162,6 +162,60 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('两栏分组（Phase 1 补做：design/design-notes.md §1「系统状态左列大片空白」+ design/prototype.html #system）', () => {
+  it('左列＝本机资源水位＋诊断，右列＝沙箱环境状态＋连接状态，且各列内部顺序固定', async () => {
+    serve();
+    renderCards();
+    await screen.findByText('资源充足');
+
+    const left = screen.getByTestId('system-status-column-left');
+    const right = screen.getByTestId('system-status-column-right');
+
+    // ⚠️ MUTATION：把 `ConnectionStatusCardView` 挪去右列（或反之）会让下面按列
+    // 归属的断言其中一条变红——这条锁的是"谁在哪一列"，不是"页面上出现了四个标题"。
+    expect(
+      within(left).getByRole('heading', { level: 2, name: /本机资源水位/ }),
+    ).toBeInTheDocument();
+    expect(within(left).getByRole('heading', { level: 2, name: /诊断/ })).toBeInTheDocument();
+    expect(
+      within(left).queryByRole('heading', { level: 2, name: /沙箱环境状态/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(left).queryByRole('heading', { level: 2, name: /连接状态/ }),
+    ).not.toBeInTheDocument();
+
+    expect(
+      within(right).getByRole('heading', { level: 2, name: /沙箱环境状态/ }),
+    ).toBeInTheDocument();
+    expect(within(right).getByRole('heading', { level: 2, name: /连接状态/ })).toBeInTheDocument();
+    expect(
+      within(right).queryByRole('heading', { level: 2, name: /本机资源水位/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(right).queryByRole('heading', { level: 2, name: /诊断/ }),
+    ).not.toBeInTheDocument();
+
+    // ⚠️ MUTATION：把右列内部两张卡顺序对调（连接状态在前、沙箱环境状态在后）只有下面
+    // 这条顺序断言会红——"两张卡都在右列"测不出顺序被打乱。
+    const rightHeadings = within(right)
+      .getAllByRole('heading', { level: 2 })
+      .map((h) => h.textContent.trim());
+    expect(rightHeadings).toEqual(['🏃 沙箱环境状态', '🌐 连接状态']);
+
+    const leftHeadings = within(left)
+      .getAllByRole('heading', { level: 2 })
+      .map((h) => h.textContent.trim());
+    expect(leftHeadings).toEqual(['📊 本机资源水位', '🔧 诊断']);
+
+    // ⛔ 不强制等高：v1 被推翻的「三列卡片强制等高空出一大截」（design-notes.md §1）
+    // 在这里落地为两列各自 `flex flex-col`，不给 `items-stretch`/固定高度。
+    expect(left).toHaveClass('flex', 'flex-col', 'gap-4');
+    expect(right).toHaveClass('flex', 'flex-col', 'gap-4');
+    expect(left).not.toHaveClass('items-stretch');
+    expect(right).not.toHaveClass('items-stretch');
+  });
+});
+
 describe('30s 轮询（15 §2.2：运维看板 15s stale + 30s refetchInterval）', () => {
   it('推进 30s ⇒ resources / providers 各再取一次；推进 29s ⇒ 一次都不再取', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -245,11 +299,73 @@ describe('VS-1 · 诊断（SSE 流式 / 非阻塞 / 跨路由保留 / 断流）'
     expect(row).toHaveTextContent('端口 3000 被占用，平台起不来');
     // ⚠️ 证据在展开层里，但**一个字都不许丢**：端口号 · 进程名与 pid · 平台原本要用它
     //    做什么 —— 缺一样用户就得自己去查（§9B）。
-    fireEvent.click(screen.getByTestId('diagnostic-toggle-port-conflict'));
+    // ⚠️ Phase 1「非 ok/info 默认展开」：`fail` 不是 ok/info，这一项结果一到达就
+    //    已经自己展开了，⛔ 不必再点 [展开详情]——点它现在反而是**收起**。
     expect(row).toHaveTextContent('com.docke');
     expect(row).toHaveTextContent('pid 41235');
     expect(row).toHaveTextContent('平台 HTTP/WS 服务');
     expect(screen.getByTestId('diagnose-summary')).toHaveTextContent('含超时');
+  });
+
+  it('⭐ 「非 ok/info 默认展开」：ok 项默认收起、fail 项默认展开，且用户能手动扳一把', async () => {
+    // design/design-notes.md §1 问题 1 + §4 Phase 1：`container-runtime`（ok）默认收起，
+    // `port-conflict`（fail）默认展开——这条用例覆盖的是端到端（SSE → model → 受控
+    // Accordion），不是纯函数层面（那份在 `lib/system/diagnosticsDisclosure.test.ts`）。
+    serve();
+    renderCards();
+    await screen.findByText('资源充足');
+    fireEvent.click(screen.getByRole('button', { name: '重新诊断' }));
+    await screen.findByTestId('diagnose-summary');
+
+    const okRow = screen.getByTestId('diagnostic-item-container-runtime');
+    // ⚠️ MUTATION: 把 `isDefaultExpanded` 写反（`status === 'ok' || status === 'info'`）
+    //    ⇒ 下面这条肯定断言（fail 默认可见证据）与紧接着的收起断言都会红。
+    expect(screen.queryByTestId('diagnostic-detail-port-conflict')).toBeInTheDocument();
+    expect(screen.getByTestId('diagnostic-item-port-conflict')).toHaveTextContent('com.docke');
+
+    // 用户手动收起 fail 项 ⇒ 证据从 DOM 里消失（不是 Radix 光切 aria，而是真的收起）。
+    fireEvent.click(screen.getByTestId('diagnostic-toggle-port-conflict'));
+    expect(screen.queryByTestId('diagnostic-detail-port-conflict')).not.toBeInTheDocument();
+
+    // ok 项这份 fixture 没有第二层内容（`CHECK_OK` 没给 detailText/nextStep/command），
+    // 所以它压根不该长出 [展开详情] 按钮——「没有更多内容就不给展开按钮」这条纪律
+    // 与「非 ok/info 默认展开」是两条独立的规则，收起 fail 项不该把它撞坏。
+    expect(screen.queryByTestId('diagnostic-toggle-container-runtime')).not.toBeInTheDocument();
+    expect(okRow).toHaveTextContent('容器服务可达');
+  });
+
+  it('⭐ 第 ⑤ 项（联网检查）的超时时限文案端到端读的是 start 帧的 timeoutMs，不是写死的 10s', async () => {
+    // design/design-notes.md §4 Phase 1「诊断第 ⑤ 项的超时时限文案改为读配置（当前
+    // 10s），不再写死」。⚠️ 这里故意用 7000（不是 5000/10000 那两个在别处出现过的数），
+    // 钉住"文案里的数 = 这一帧的 timeoutMs"，而不是"文案里凑巧是个数字"。
+    const startWithNetwork = frame({
+      event: 'start',
+      checks: [{ id: 'outbound-network', label: '外网连通（模型 API / 镜像仓库）' }],
+      timeoutMs: 7000,
+    });
+    const checkTimeout = frame({
+      event: 'check',
+      id: 'outbound-network',
+      label: '外网连通（模型 API / 镜像仓库）',
+      status: 'timeout',
+      headline: '联网检查未在时限内应答',
+      durationMs: 7000,
+    });
+    serve({ sse: [startWithNetwork, checkTimeout] });
+    renderCards();
+    await screen.findByText('资源充足');
+    fireEvent.click(screen.getByRole('button', { name: '重新诊断' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('diagnostic-item-outbound-network')).toHaveAttribute(
+        'data-status',
+        'timeout',
+      );
+    });
+    expect(screen.getByTestId('diagnostic-timeout-outbound-network')).toHaveTextContent(
+      '超时时限 7s',
+    );
+    expect(screen.getByTestId('diagnostic-timeout-outbound-network')).not.toHaveTextContent('10s');
   });
 
   it('⭐ 运行中**不阻塞**：诊断进行时 [导出日志] 仍可点（无遮罩、无 disabled）', async () => {
