@@ -37,7 +37,7 @@ export function ConnectionStatusCardView({ model }: ConnectionStatusCardProps) {
       className="flex flex-col gap-3 rounded-lg border border-border p-4"
     >
       <h2 id="connection-status-heading" className="text-base font-semibold">
-        🌐 连接状态
+        连接状态
       </h2>
       <ul className="flex flex-col gap-2">
         {model.rows.map((row) => (

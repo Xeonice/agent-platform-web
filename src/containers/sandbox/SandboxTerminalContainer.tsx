@@ -161,6 +161,12 @@ export function SandboxTerminalContainer({
   const restored = useSandboxRestore(restoreId, projectId);
   const sandboxId = localTask?.id ?? (restored.notFound ? null : restoreId);
   const taskName = localTask?.name ?? restored.name;
+  /**
+   * 终端仪表壳工具栏的面包屑（design-notes.md §4 Phase 3 / 原型 `renderTerminal()`：
+   * `${t.project} / ${t.name}`）。任务名缺席时（还没拿到名字的极短窗口）只给项目名，
+   * ⛔ 不拼一个空的 `/ undefined`。
+   */
+  const terminalBreadcrumb = taskName === undefined ? projectName : `${projectName} / ${taskName}`;
   // 无头任务打给沙箱自己的 runtime（本会话取创建响应，刷新后取 DTO）。
   const sandboxRuntime = localTask?.runtime ?? restored.runtime;
   /**
@@ -522,6 +528,7 @@ export function SandboxTerminalContainer({
         socketConfig={socketConfig}
         onRetry={handleRetry}
         taskName={taskName}
+        breadcrumb={terminalBreadcrumb}
         headlessSlot={
           sandboxRuntime === undefined || sandboxHeadless !== true ? undefined : (
             <HeadlessTaskContainer

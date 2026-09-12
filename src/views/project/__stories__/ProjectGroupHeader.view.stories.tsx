@@ -20,6 +20,8 @@ const meta: Meta<typeof ProjectGroupHeaderView> = {
     cloneStatus: 'ready',
     selected: false,
     onSelect: fn(),
+    collapsed: false,
+    onToggleCollapse: fn(),
     onOpenMenu: fn(),
   },
 };
@@ -66,6 +68,37 @@ export const CloneFailed: Story = {
       .querySelector('[data-slot="status-dot"]');
     await expect(dot).not.toBeNull();
     await expect(dot).toHaveAttribute('data-status', 'fail');
+  },
+};
+
+/**
+ * ⭐ 折叠箭头是**独立按钮**：点它只切折叠，不触发 `onSelect`（design-notes.md §4
+ * Phase 3 / 原型的 chevron）。两个动作分开是刻意的——failed 态项目仍然要能被选中
+ * 才能触达恢复面板（见文件头注释），把折叠揉进选中按钮会两头不讨好。
+ *
+ * 变异：把折叠箭头点击处理器改成同时调用 `onSelect` ⇒ 本例最后一句
+ * `onSelect` 未被调用的断言变红。
+ */
+export const ToggleCollapse: Story = {
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const toggle = canvas.getByTestId('project-group-toggle');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.click(toggle);
+    await expect(args.onToggleCollapse).toHaveBeenCalledWith('p1');
+    await expect(args.onSelect).not.toHaveBeenCalled();
+  },
+};
+
+/** 折叠态：箭头旋转 -90°（视觉上指向右），且无障碍态 `aria-expanded=false`。 */
+export const Collapsed: Story = {
+  args: { collapsed: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const toggle = canvas.getByTestId('project-group-toggle');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const chevron = toggle.querySelector('svg');
+    await expect(chevron?.getAttribute('class')).toContain('-rotate-90');
   },
 };
 

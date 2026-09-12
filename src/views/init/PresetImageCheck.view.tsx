@@ -170,7 +170,14 @@ export function PresetImageCheckView({
             {s.provision === undefined ? null : (
               <span
                 data-testid={`preset-step-provision-${s.step}`}
-                className="flex flex-col gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-2"
+                // ⚠️ **`--info` token，不是硬编码 emerald**：这一块说的是"平台自己能搬"，
+                // 语义与第 5 步本身渲染 `info`（提示，不是警告/错误）是同一件事——
+                // design/prototype.html 的 provision 区块同样直接取
+                // `hsl(var(--info)/.3)` / `hsl(var(--info)/.06)`，这里逐值抄过来，不让
+                // 两处颜色各自漂移。用 `[hsl(var(--info)/…)]` 而不是 `info/30` 修饰符写法，
+                // 与 `components/ui/status-pill.tsx` 已经在用的写法一致（该文件同样发现过
+                // 类修饰符对 CSS 变量颜色不总是可靠）。
+                className="flex flex-col gap-2 rounded-md border border-[hsl(var(--info)/0.3)] bg-[hsl(var(--info)/0.06)] p-2"
               >
                 <span className="text-xs text-muted-foreground">{s.provision.why}</span>
                 <span className="flex flex-wrap items-center gap-2">

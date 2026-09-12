@@ -230,6 +230,14 @@ export const Provisionable: Story = {
     // ⛔ 能自己搬时**不许**还渲染那条 `docker build` 命令：两个都给等于让用户在
     //    「点按钮」和「敲命令」之间选，而正确答案只有一个。
     await expect(canvas.queryByText(/docker build/)).toBeNull();
+    // ⭐ design/design-notes.md §4 收口第 2 项：provision 提示框改用 `--info` token，
+    //    ⛔ 不是硬编码的 `emerald`。
+    // MUTATION：把 `PresetImageCheck.view.tsx` 里那个 `className` 换回
+    //    `border-emerald-500/40 bg-emerald-500/5` ⇒ 下面两条都会红（class 名字
+    //    完全不同，不是"改了个数值"）。
+    const provisionBlock = canvas.getByTestId('preset-step-provision-registry');
+    await expect(provisionBlock.className).toContain('hsl(var(--info)');
+    await expect(provisionBlock.className).not.toContain('emerald');
   },
 };
 

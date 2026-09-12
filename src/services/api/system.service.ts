@@ -217,6 +217,23 @@ export class DiagnoseStreamAborted extends Error {
   }
 }
 
+/**
+ * 镜像搬运流没有正常收尾（没收到 `done` 帧就断了）——`provisionPresetImage` 专用的断流
+ * 错误类型，⛔ **不与 `DiagnoseStreamAborted` 共用**。
+ *
+ * 这不是"多起一个名字"：此前 `provisionPresetImage` 复用 `DiagnoseStreamAborted`，而它的
+ * 构造函数写死了「诊断流在收到汇总帧之前中断了」——`usePresetImageProvision` 把
+ * `e.message` 原样上屏（`setError(e instanceof Error ? e.message : ...)`），于是用户在
+ * [准备镜像] 搬运断流时会看到一句提「诊断流」的话，而他压根没碰过诊断卡。两条流各自的
+ * 断流要有各自准确的说法。
+ */
+export class ProvisionStreamAborted extends Error {
+  constructor() {
+    super('镜像搬运流在收到完成帧之前中断了');
+    this.name = 'ProvisionStreamAborted';
+  }
+}
+
 export interface DiagnoseCallbacks {
   /** 首帧：八项清单 + 单项超时预算。**照它渲染占位**，不要用本地 `DIAGNOSE_CHECK_IDS`。 */
   onStart: (frame: DiagnoseStartFrame) => void;
@@ -383,7 +400,9 @@ export async function provisionPresetImage(
   }
 
   const body = response.body;
-  if (body === null) throw new DiagnoseStreamAborted();
+  // ⚠️ **`ProvisionStreamAborted`，不是 `DiagnoseStreamAborted`**——这是搬运镜像的流，
+  //    用户从没碰过诊断卡，看到「诊断流……中断」这句话会一头雾水。
+  if (body === null) throw new ProvisionStreamAborted();
 
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -417,7 +436,7 @@ export async function provisionPresetImage(
     void reader.cancel().catch(() => undefined);
   }
 
-  if (!sawDone) throw new DiagnoseStreamAborted();
+  if (!sawDone) throw new ProvisionStreamAborted();
 }
 
 /**

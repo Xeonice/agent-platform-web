@@ -200,12 +200,12 @@ describe('两栏分组（Phase 1 补做：design/design-notes.md §1「系统状
     const rightHeadings = within(right)
       .getAllByRole('heading', { level: 2 })
       .map((h) => h.textContent.trim());
-    expect(rightHeadings).toEqual(['🏃 沙箱环境状态', '🌐 连接状态']);
+    expect(rightHeadings).toEqual(['沙箱环境状态', '连接状态']);
 
     const leftHeadings = within(left)
       .getAllByRole('heading', { level: 2 })
       .map((h) => h.textContent.trim());
-    expect(leftHeadings).toEqual(['📊 本机资源水位', '🔧 诊断']);
+    expect(leftHeadings).toEqual(['本机资源水位', '诊断']);
 
     // ⛔ 不强制等高：v1 被推翻的「三列卡片强制等高空出一大截」（design-notes.md §1）
     // 在这里落地为两列各自 `flex flex-col`，不给 `items-stretch`/固定高度。

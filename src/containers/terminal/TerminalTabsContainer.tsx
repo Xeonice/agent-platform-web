@@ -29,12 +29,20 @@ export interface TerminalTabsContainerProps {
    * ⛔ 由上层从**沙箱 DTO** 传下来，⛔ 不在这里用 `/api/runtimes` 全集现算。
    */
   availableRuntimes?: readonly string[];
+  /**
+   * 仪表壳工具栏的面包屑（design-notes.md §4 Phase 3 / 原型 `renderTerminal()`：
+   * `${项目名} / ${任务名}`）。**同一个 Task 下的每个标签都用同一句**——它说的是
+   * "这个终端属于哪个项目/哪个任务"，不是"这个标签叫什么"（标签名已经由
+   * `TerminalTabBarView` 单独顶栏显示，两者不重复）。
+   */
+  breadcrumb?: string;
 }
 
 export function TerminalTabsContainer({
   sandboxId,
   socketConfig,
   availableRuntimes = [],
+  breadcrumb,
 }: TerminalTabsContainerProps) {
   /**
    * runtimeId → 展示名。⚠️ 只拿**名字**：能开哪几个由沙箱行说了算（上面那个 prop），
@@ -178,6 +186,7 @@ export function TerminalTabsContainer({
                   onShellId={cb.onShellId}
                   onShells={cb.onShells}
                   registerSend={cb.registerSend}
+                  {...(breadcrumb === undefined ? {} : { breadcrumb })}
                 />
               </div>
             );

@@ -345,9 +345,11 @@ test.describe('F21-5 审计流', () => {
     // 四张卡各自的标题都在（组件树 §3）。
     //
     // ⚠️ **用子串匹配，⛔ 不钉完整标题**：这条用例要证明的是「五块内容同屏且互不合并」，
-    //    标题只是定位手段。逐字钉整句的话，每一次文案巡检都会把它打红 —— 实际已经发生过：
-    //    `资源池水位` → `本机资源`、`Provider 状态` → `这台机器的沙箱环境`，
-    //    两次改名都很对（前者是内部叫法，后者是代码术语），错的是这里钉得太死。
+    //    标题只是定位手段。逐字钉整句的话，每一次文案巡检都会把它打红 —— 实际已经发生
+    //    **三轮**：`资源池水位` → `本机资源` → `本机资源水位`，`Provider 状态` →
+    //    `这台机器的沙箱环境` → `沙箱环境状态`，外加设计改造把标题前的 emoji 统一去掉。
+    //    每一次改名都很对（内部叫法 / 代码术语 / emoji 不该当图标用），错的是这里钉得太死。
+    // ⇒ 正则对**带 emoji 与不带 emoji**、**改名前后**都成立，不必每轮回来改一次。
     await expect(page.getByRole('heading', { name: /本机资源/ })).toBeVisible();
     await expect(page.getByRole('heading', { name: /沙箱环境/ })).toBeVisible();
     await expect(page.getByRole('heading', { name: /连接状态/ })).toBeVisible();
@@ -356,8 +358,8 @@ test.describe('F21-5 审计流', () => {
     await expect(page.getByRole('heading', { name: /审计流/ })).toBeVisible();
     await expect(page.getByTestId('audit-row-1200')).toBeVisible();
 
-    // ⭐ 取最差维度：平均会把这台机器算成健康，而它一个 Task 都建不出来。
-    // ⚠️ 同理钉意思不钉整句：文案巡检把代码术语 `Task` 换成了「任务」
+    // ⭐ 取最差维度：平均会把这台机器算成健康，而它一个任务都建不出来。
+    // ⚠️ 同理钉意思不钉整句：术语巡检把代码术语 `Task` 换成了「任务」
     //    （`资源耗尽，无法创建新 Task` → `资源耗尽，现在建不了新任务`）。
     await expect(page.getByText(/资源耗尽/)).toBeVisible();
     await expect(page.getByText('资源充足')).toHaveCount(0);

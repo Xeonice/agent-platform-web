@@ -34,6 +34,8 @@ const meta: Meta<typeof DiagnosticItemView> = {
       detailText: '/var/run/docker.sock，142ms · Docker/27.3.1 (linux)。',
       durationText: '142ms',
     },
+    // `container-runtime` 是 `DIAGNOSE_CHECK_IDS` 第 1 项 ⇒ ①。各故事按自己的 id 覆盖。
+    ordinal: 1,
     expanded: false,
     onCopyHint: fn(),
   },
@@ -46,10 +48,13 @@ type Story = StoryObj<typeof DiagnosticItemView>;
 export const Ok: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('diagnostic-item-container-runtime')).toHaveAttribute(
-      'data-status',
-      'ok',
-    );
+    const row = canvas.getByTestId('diagnostic-item-container-runtime');
+    await expect(row).toHaveAttribute('data-status', 'ok');
+    // ⭐ design/design-notes.md §4 Phase 1「诊断项序号 ①–⑧」：`ordinal: 1` ⇒ 圆标是①。
+    // ⚠️ MUTATION：把 `DiagnosticItemView` 里 `ORDINAL_GLYPHS[ordinal - 1]` 写死成
+    //    某个固定字符（如永远显示 ①），这条会在其它 ordinal 不为 1 的故事里保持绿——
+    //    真正锁住"跟着 ordinal 走"的是下面 `PortConflictFail`（ordinal 4 ⇒ ④）那一条。
+    await expect(row).toHaveTextContent('①');
     // ⚠️ 默认只看到一句结论：证据在展开层里。
     await expect(canvas.getByTestId('diagnostic-headline-container-runtime')).toHaveTextContent(
       '容器服务可达',
@@ -59,7 +64,7 @@ export const Ok: Story = {
 };
 
 export const Pending: Story = {
-  args: { item: { id: 'ws-loopback', label: '实时推送自检' } },
+  args: { item: { id: 'ws-loopback', label: '实时推送自检' }, ordinal: 6 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByText('检查中…')).toBeInTheDocument();
@@ -88,6 +93,7 @@ export const Warning: Story = {
       nextStep: '重跑一次看它稳不稳定：偶发多半只是慢；每次都这样就在系统设置里填代理后重试。',
       durationText: '7s',
     },
+    ordinal: 5,
     expanded: true,
   },
   play: async ({ canvasElement, args }) => {
@@ -122,11 +128,15 @@ export const PortConflictFail: Story = {
       command: 'lsof -nP -iTCP:3000 -sTCP:LISTEN',
       durationText: '312ms',
     },
+    ordinal: 4,
     expanded: true,
   },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     const row = canvas.getByTestId('diagnostic-item-port-conflict');
+    // ⭐ `ordinal: 4` ⇒ 圆标是④，不是 `Ok` 故事那条①——锁的是"圆标跟着 `ordinal` prop
+    //    走"，不是"组件里写死了一个①"。
+    await expect(row).toHaveTextContent('④');
     // 第一眼看到的是结论 + 挡不挡我干活。
     await expect(row).toHaveTextContent('端口 3000 被占用，平台起不来');
     // ⚠️ 证据一个字都不许丢：用户下一步要做的是**找出占它的东西**——且**不需要点开**，
@@ -157,6 +167,7 @@ export const PresetImageStagedInfo: Story = {
       nextStep: '不需要做任何事，第一个任务会自动下载。',
       durationText: '431ms',
     },
+    ordinal: 8,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -200,6 +211,7 @@ export const PresetImageLineageFail: Story = {
       command: 'bash scripts/build-sandbox-image.sh',
       durationText: '88ms',
     },
+    ordinal: 8,
     expanded: true,
   },
   play: async ({ canvasElement }) => {
@@ -228,6 +240,7 @@ export const TimedOut: Story = {
       nextStep: '看这一项依赖的东西是卡住了还是在报错；再跑一次诊断，看它是不是每次都超时。',
       durationText: '10s',
     },
+    ordinal: 5,
     expanded: true,
   },
   play: async ({ canvasElement }) => {
@@ -253,6 +266,7 @@ export const TimedOutWithBudget: Story = {
       durationText: '7s',
       timeoutText: '超时时限 7s',
     },
+    ordinal: 5,
     expanded: true,
   },
   play: async ({ canvasElement }) => {
@@ -281,6 +295,7 @@ export const MarkdownIsNotRendered: Story = {
       detailText: '这里如果写 **加粗**，用户读到的就是这五个字符本身。',
       durationText: '9ms',
     },
+    ordinal: 7,
     expanded: true,
   },
   play: async ({ canvasElement }) => {

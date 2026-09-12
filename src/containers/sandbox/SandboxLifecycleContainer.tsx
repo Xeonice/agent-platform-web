@@ -22,6 +22,11 @@ export interface SandboxLifecycleContainerProps {
   /** 后端派生的默认任务名（10 §7.3）；前端不自己从 prompt 派生。 */
   taskName?: string;
   /**
+   * 终端仪表壳工具栏的面包屑（design-notes.md §4 Phase 3），只在 `running` 分支
+   * 转发给 `TerminalTabsContainer`——启动中/失败/结束态没有终端可挂工具栏。
+   */
+  breadcrumb?: string;
+  /**
    * 无头 Task 面板（S6）。**只在 running 分支渲染**：沙箱还没起来时发无头任务必然失败，
    * 入口不该存在。用插槽而不是在本层直接装配，是为了让本容器继续只依赖 sandbox 生命周期，
    * 不必知道 provider 能力位/runtime 这些与它无关的东西（与 WorkbenchShellView 的 terminalSlot 同一手法）。
@@ -36,6 +41,7 @@ export function SandboxLifecycleContainer({
   onRetry,
   taskName,
   headlessSlot,
+  breadcrumb,
 }: SandboxLifecycleContainerProps) {
   const {
     decision,
@@ -82,6 +88,7 @@ export function SandboxLifecycleContainer({
             sandboxId={sandboxId}
             socketConfig={socketConfig}
             {...(availableRuntimes === undefined ? {} : { availableRuntimes })}
+            {...(breadcrumb === undefined ? {} : { breadcrumb })}
           />
         </div>
         {headlessSlot}

@@ -10,10 +10,11 @@ function model(over: Partial<ResourcePoolCardModel> = {}): ResourcePoolCardModel
       { id: 'ram', label: '内存', level: 'ok', usedPercent: 36.3, amountText: '5.8 / 16 GB' },
       {
         id: 'disk',
-        label: '磁盘（/data）',
+        label: '磁盘',
         level: 'ok',
         usedPercent: 60,
         amountText: '120 / 200 GB',
+        pathText: '/data',
       },
     ],
     overallLevel: 'ok',
@@ -70,10 +71,11 @@ export const Warning: Story = {
         { id: 'ram', label: '内存', level: 'ok', usedPercent: 40, amountText: '6.4 / 16 GB' },
         {
           id: 'disk',
-          label: '磁盘（/data）',
+          label: '磁盘',
           level: 'ok',
           usedPercent: 60,
           amountText: '120 / 200 GB',
+          pathText: '/data',
         },
       ],
       overallLevel: 'warn',
@@ -91,10 +93,11 @@ export const DiskOnlyCritical: Story = {
         { id: 'ram', label: '内存', level: 'ok', usedPercent: 20, amountText: '3.2 / 16 GB' },
         {
           id: 'disk',
-          label: '磁盘（/data）',
+          label: '磁盘',
           level: 'critical',
           usedPercent: 96,
           amountText: '192 / 200 GB',
+          pathText: '/data',
         },
       ],
       overallLevel: 'critical',
@@ -109,6 +112,57 @@ export const DiskOnlyCritical: Story = {
     await expect(canvas.queryByText('资源充足')).not.toBeInTheDocument();
     // 磁盘触发时要有它**自己的**出路：停 Task 不释放保留卷。
     await expect(canvas.getByRole('button', { name: '清理保留卷' })).toBeInTheDocument();
+    // ⭐ design/design-notes.md §4 Phase 1：`critical` 映射到 `StatusPill` 的 `fail`
+    // （红），不是 `warn`（琥珀）——磁盘/CPU/内存耗尽与"确定坏了"共用同一套视觉严重度。
+    // MUTATION：把 `ResourcePoolCard.view.tsx` 里 `LEVEL_PILL_STATUS.critical` 从
+    // `'fail'` 改成 `'warn'` ⇒ 这两条其中一条会红（磁盘那一行的 pill 颜色、以及整体
+    // 那一行的 pill 颜色都会变成 warn）。
+    await expect(
+      canvas.getByTestId('resource-gauge-disk').querySelector('[data-status]'),
+    ).toHaveAttribute('data-status', 'fail');
+    await expect(
+      canvas.getByTestId('resource-overall').querySelector('[data-status]'),
+    ).toHaveAttribute('data-status', 'fail');
+  },
+};
+
+/**
+ * ⭐ 真实布局 bug 回归：磁盘的挂载路径可以比 `/data` 长得多（如
+ * `/Users/xxx/Library/Application Support/agent-platform/data-root`）。此前
+ * `resourceModel.ts` 把它拼进 `label`（`磁盘（${path}）`），在窄一点的卡片宽度下会把
+ * 状态行撑到换行，连带把「正常」pill 挤成两行。⇒ 路径必须独立成行、且允许截断，
+ * 不与状态 pill 抢同一行的宽度。
+ */
+export const DiskPathIsolatedFromLabel: Story = {
+  args: {
+    model: model({
+      gauges: [
+        { id: 'cpu', label: 'CPU', level: 'ok', usedPercent: 10, amountText: '0.8 / 8 核' },
+        { id: 'ram', label: '内存', level: 'ok', usedPercent: 20, amountText: '3.2 / 16 GB' },
+        {
+          id: 'disk',
+          label: '磁盘',
+          level: 'ok',
+          usedPercent: 75,
+          amountText: '150 / 200 GB',
+          pathText:
+            '/Users/xeonice/Library/Application Support/agent-platform/very-long-data-root-path-for-layout-regression',
+        },
+      ],
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // ⚠️ MUTATION：把 view 里 `gauge.label` 换回 `` `磁盘（${gauge.pathText}）` `` 拼接，
+    //    这条会先变红——标题行必须**只**是「磁盘」，长路径不许混进同一个文本节点。
+    await expect(canvas.getByTestId('resource-gauge-label-disk')).toHaveTextContent('磁盘');
+    await expect(canvas.getByTestId('resource-gauge-label-disk')).not.toHaveTextContent(
+      'very-long-data-root-path',
+    );
+    // 路径本身仍然完整可见（只是挪到了自己的一行），⛔ 不是被拿掉了。
+    await expect(canvas.getByTestId('resource-gauge-path-disk')).toHaveTextContent(
+      'very-long-data-root-path',
+    );
   },
 };
 

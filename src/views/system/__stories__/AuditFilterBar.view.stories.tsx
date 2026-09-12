@@ -32,6 +32,13 @@ export const AlertsOnly: Story = {
   args: { alertsOnly: true, category: 'sandbox' },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
+    // ⭐ design/design-notes.md §4 Phase 1 第四条：「仅告警」是开关语义（shadcn `Switch`，
+    // Radix `role="switch"`），⛔ 不是原生 `<input type="checkbox">`（`role="checkbox"`）。
+    // MUTATION：把 `AuditFilterBarView` 里的 `Switch` 换回
+    // `<input type="checkbox" checked={alertsOnly} onChange={...} />` ⇒ 这条
+    // `getByRole('switch', …)` 会找不到元素而红——`getByLabelText('仅告警')` 那种查法
+    // 对 checkbox / switch 都能命中，锁不住"到底换没换成 Switch"。
+    await expect(canvas.getByRole('switch', { name: '仅告警' })).toBeChecked();
     await expect(canvas.getByLabelText('仅告警')).toBeChecked();
     await userEvent.click(canvas.getByLabelText('仅告警'));
     // 产品只给**一个开关**，不是三选一：回调收到的就是布尔。

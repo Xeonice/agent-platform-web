@@ -10,14 +10,24 @@
 // ⚠️ **展开在行内，不弹层**（与 provider [查看日志] 同姿态）：`AuditDetailPanelView`
 // 就渲染在这个 `<li>` 里面，story 的 play 断言的就是"父节点是列表行，不是 dialog"。
 import { Button } from '@/components/ui/button';
+import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import { AuditDetailPanelView } from '@/views/system/AuditDetailPanel.view';
 import type { AuditRowModel, AuditSeverity } from '@/types/audit';
 
-/** 三重线索：图标 / 文字 / 颜色。缺一不可。 */
-const SEVERITY_META: Record<AuditSeverity, { icon: string; label: string; className: string }> = {
-  info: { icon: 'ℹ️', label: '信息', className: 'text-muted-foreground' },
-  warn: { icon: '⚠️', label: '警告', className: 'text-amber-400' },
-  error: { icon: '❌', label: '错误', className: 'text-red-400' },
+/**
+ * 三重线索：图标 / 文字 / 颜色——现在交给 `StatusPill`（design/design-notes.md §4 Phase 1
+ * 第五条：审计行状态换 `StatusPill`，与 design/prototype.html 的 `SEVERITY_MAP` 一致：
+ * `info → info`、`warn → warn`、`error → fail`）。
+ */
+const SEVERITY_PILL_STATUS: Readonly<Record<AuditSeverity, StatusPillStatus>> = {
+  info: 'info',
+  warn: 'warn',
+  error: 'fail',
+};
+const SEVERITY_LABEL: Readonly<Record<AuditSeverity, string>> = {
+  info: '信息',
+  warn: '警告',
+  error: '错误',
 };
 
 const OUTCOME_TEXT: Record<'ok' | 'failed' | 'skipped', string> = {
@@ -39,7 +49,6 @@ export function AuditEventRowView({
   onToggleDetail,
   onOpenTimeline,
 }: AuditEventRowProps) {
-  const severity = SEVERITY_META[row.severity];
   const expandable = row.detailText !== undefined;
 
   const header = (
@@ -48,10 +57,9 @@ export function AuditEventRowView({
         {expandable ? (expanded ? '▾' : '▸') : ''}
       </span>
       <time className="shrink-0 font-mono text-[11px] text-muted-foreground">{row.timeText}</time>
-      <span className={`flex shrink-0 items-center gap-1 text-[11px] ${severity.className}`}>
-        <span aria-hidden="true">{severity.icon}</span>
-        <span>{severity.label}</span>
-      </span>
+      <StatusPill status={SEVERITY_PILL_STATUS[row.severity]} className="shrink-0">
+        {SEVERITY_LABEL[row.severity]}
+      </StatusPill>
       <span className="min-w-0 flex-1 truncate text-left text-xs">{row.summary}</span>
       {row.durationText !== undefined && (
         <span className="shrink-0 font-mono text-[11px] text-muted-foreground">

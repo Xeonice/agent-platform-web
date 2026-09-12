@@ -8,6 +8,17 @@ import { WriteBatcher } from '@/lib/_shared/writeBatcher';
 import { buildTerminalOptions } from '@/lib/terminal/terminalTheme';
 import type { RendererKind } from '@/stores/createTerminalRegistrySlice';
 
+/**
+ * 终端工具栏 [A-]/[A+] 的默认值 + 边界（design-notes.md §4 Phase 3）。containers 层
+ * 按 boundaries 规则不许直接 `import '@/lib/*'`（07 §4.1），这里代为重导出——与
+ * `buildTerminalOptions` 同一个唯一实现点，⛔ 不是另起一份数值。
+ */
+export {
+  DEFAULT_TERMINAL_FONT_SIZE,
+  MIN_TERMINAL_FONT_SIZE,
+  MAX_TERMINAL_FONT_SIZE,
+} from '@/lib/terminal/terminalTheme';
+
 interface ManagedInstance {
   terminal: Terminal;
   fit: FitAddon;
@@ -34,6 +45,25 @@ export interface TerminalInstanceApi {
   resync(sessionId: string): void;
   getRenderer(sessionId: string): RendererKind | undefined;
   dispose(sessionId: string): void;
+  /**
+   * 终端工具栏 [清屏]（design-notes.md §4 Phase 3）。只清画布可见内容，⛔ 不影响
+   * PTY 那一端的进程状态——这与 tmux `clear`/`Ctrl+L` 是同一种"只清屏幕"的语义。
+   */
+  clear(sessionId: string): void;
+  /**
+   * 终端工具栏 [复制]（design-notes.md §4 Phase 3）：**真的读终端里的内容**，
+   * ⛔ 不是原型那种 `copyText('复制终端内容')` 式的固定字符串。
+   *
+   * 有手选内容 ⇒ 复制那一段（尊重用户已经做的选择）；没有 ⇒ 全选整个画布后取文本，
+   * 取完随手把全选状态清掉（不留一整屏高亮，那不是点 [复制] 的人想要的视觉结果）。
+   * 没有实例 / 画布是空的 ⇒ 返回空串，调用方（container）据此决定要不要提示"没有可复制的内容"。
+   */
+  getSelectionText(sessionId: string): string;
+  /**
+   * 终端工具栏 [A-]/[A+]（design-notes.md §4 Phase 3）。改字号后必须补一次 `fit`——
+   * 字形变了，能塞进画布的列数/行数也跟着变，PTY 侧需要一帧新的 resize 才不会错位。
+   */
+  setFontSize(sessionId: string, size: number): void;
 }
 
 /** 管理会话粒度的 xterm 实例。实例活在 React 树外（存 ref，不进 state），08 §7.4。 */
@@ -215,6 +245,28 @@ export function useTerminalInstance(): TerminalInstanceApi {
     [],
   );
 
+  const clear = useCallback((sessionId: string): void => {
+    instances.current.get(sessionId)?.terminal.clear();
+  }, []);
+
+  const getSelectionText = useCallback((sessionId: string): string => {
+    const managed = instances.current.get(sessionId);
+    if (!managed) return '';
+    const { terminal } = managed;
+    if (terminal.hasSelection()) return terminal.getSelection();
+    terminal.selectAll();
+    const text = terminal.getSelection();
+    terminal.clearSelection();
+    return text;
+  }, []);
+
+  const setFontSize = useCallback((sessionId: string, size: number): void => {
+    const managed = instances.current.get(sessionId);
+    if (!managed) return;
+    managed.terminal.options.fontSize = size;
+    doFit(managed);
+  }, []);
+
   const dispose = useCallback((sessionId: string): void => {
     // ★ 代次**无条件**递增，哪怕表里已有实例。
     // 表里没有 ≠ 没有东西要清：attach 可能正在途中（它要到最后才写表）。此前这里
@@ -232,8 +284,18 @@ export function useTerminalInstance(): TerminalInstanceApi {
   // 返回值必须 useMemo 稳定引用：否则每次渲染都是新对象，下游 useCallback([term,...])
   // 身份抖动 → useSandboxTerminalSocket 连接 effect 反复 close+重连（08 §7.4）。
   return useMemo(
-    () => ({ attach, write, fit, resync, getRenderer, dispose }),
-    [attach, write, fit, resync, getRenderer, dispose],
+    () => ({
+      attach,
+      write,
+      fit,
+      resync,
+      getRenderer,
+      dispose,
+      clear,
+      getSelectionText,
+      setFontSize,
+    }),
+    [attach, write, fit, resync, getRenderer, dispose, clear, getSelectionText, setFontSize],
   );
 }
 

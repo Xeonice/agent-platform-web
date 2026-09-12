@@ -338,7 +338,12 @@ describe('VS-3 失败路径 · 失败不许伪装成空', () => {
     serve(() => new HttpResponse(null, { status: 500 }));
 
     renderPanel();
-    await screen.findByText('❌ 审计流加载失败');
+    const failText = await screen.findByText('审计流加载失败');
+    // ⭐ emoji 收口回归：这句话不再靠拼进文案的 `❌` 字符表意，而是 `StatusPill status="fail"`。
+    // MUTATION：把 `AuditStreamCard.view.tsx` 改回 `<span>❌ 审计流加载失败</span>` ⇒ 上面
+    // 那条 `findByText` 依然绿（去掉 emoji 后文案没变），只有这条 `data-status` 断言会红——
+    // 单靠文案断言锁不住"真的换成组件了"。
+    expect(failText.closest('[data-status="fail"]')).not.toBeNull();
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument();
     // ⛔ 否定断言是关键：把 isError 窄化掉之后，UI 会平静地显示「暂无记录」，
     //    所有肯定断言都还是绿的，只有这一条会红。
@@ -359,7 +364,7 @@ describe('VS-3 失败路径 · 失败不许伪装成空', () => {
     });
 
     renderPanel();
-    await screen.findByText('❌ 审计流加载失败');
+    await screen.findByText('审计流加载失败');
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
     expect(await screen.findByText('事件 100')).toBeInTheDocument();
   });
@@ -370,7 +375,7 @@ describe('VS-3 失败路径 · 失败不许伪装成空', () => {
     renderPanel();
     expect(await screen.findByText('暂无记录')).toBeInTheDocument();
     expect(screen.getByText(/当前无筛选条件/)).toBeInTheDocument();
-    expect(screen.queryByText('❌ 审计流加载失败')).not.toBeInTheDocument();
+    expect(screen.queryByText('审计流加载失败')).not.toBeInTheDocument();
     // 三态互相可区分：新加的「尚未记录」不许把这一档盖掉。
     expect(screen.queryByText('该类事件平台尚未记录')).not.toBeInTheDocument();
     // ⛔ 真·无记录**没有** [清除筛选]：没有筛选可清，给了反而暗示"是你自己筛掉的"。
@@ -469,7 +474,7 @@ describe('§3A ⑦ · 增量轮询挂了要说出来，但不许盖住列表', (
     );
     // ⛔ 否定断言是关键：用整块错误态盖住列表的那一版，前一条肯定断言照样绿。
     expect(seqsOnScreen()).toEqual([100, 99]);
-    expect(screen.queryByText('❌ 审计流加载失败')).not.toBeInTheDocument();
+    expect(screen.queryByText('审计流加载失败')).not.toBeInTheDocument();
   });
 
   it('增量好着的时候**不许**挂这一行（提示只在真中断时出现）', async () => {
@@ -486,7 +491,7 @@ describe('§3A ⑦ · 增量轮询挂了要说出来，但不许盖住列表', (
     serve(() => new HttpResponse(null, { status: 500 }));
 
     renderPanel();
-    await screen.findByText('❌ 审计流加载失败');
+    await screen.findByText('审计流加载失败');
     expect(screen.queryByTestId('audit-live-update-error')).not.toBeInTheDocument();
   });
 });

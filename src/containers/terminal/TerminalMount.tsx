@@ -2,10 +2,17 @@
 // 真正实例化 xterm 的子层（08 §2.2）：仅由 TerminalContainer 经 next/dynamic({ssr:false}) 懒加载。
 // xterm.css 由 useTerminalInstance（唯一 @xterm/* import 点）随 terminal chunk 注入（08 §2.3）。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTerminalInstance } from '@/hooks/terminal/useTerminalInstance';
+import { toast } from 'sonner';
+import {
+  useTerminalInstance,
+  MIN_TERMINAL_FONT_SIZE,
+  MAX_TERMINAL_FONT_SIZE,
+} from '@/hooks/terminal/useTerminalInstance';
 import { useSandboxTerminalSocket } from '@/hooks/terminal/useSandboxTerminalSocket';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
+import { useAppStore } from '@/stores';
 import { TerminalPaneView } from '@/views/terminal/TerminalPane.view';
+import { TerminalToolbarView } from '@/views/terminal/TerminalToolbar.view';
 import { ConnectionStatusView } from '@/views/terminal/ConnectionStatus.view';
 import type {
   TerminalClientFrame,
@@ -44,6 +51,12 @@ export interface TerminalMountProps {
    * 还挂着的标签里借一条代发 `close_shell`（帧里带 shellId，见 10 §7.4）。
    */
   registerSend?: (send: ((frame: TerminalClientFrame) => boolean) | null) => void;
+  /**
+   * 仪表壳内工具栏的面包屑（design-notes.md §4 Phase 3 / 原型 `renderTerminal()`：
+   * `${项目名} / ${任务名}`）。缺席 ⇒ 不渲染工具栏——纯终端场景（没有项目/任务上下文
+   * 可供拼接）不该憋出一句空面包屑。
+   */
+  breadcrumb?: string;
 }
 
 export default function TerminalMount({
@@ -53,10 +66,67 @@ export default function TerminalMount({
   onShellId,
   onShells,
   registerSend,
+  breadcrumb,
 }: TerminalMountProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const term = useTerminalInstance();
   const sendRef = useRef<(frame: TerminalClientFrame) => boolean>(() => false);
+
+  /**
+   * 终端工具栏 [A-]/[A+]（design-notes.md §4 Phase 3 / P21-1 §6「字号 persist」）。
+   *
+   * ⚠️ **接的是 `uiSlice.terminalFontSize`，不是本地 `useState`**——这个 persist 字段与
+   * `setTerminalFontSize` action 在这一轮之前就已经存在（`createUiSlice.ts`），却和
+   * `toggleProjectFold` 一样，从来没有任何 UI 调用过：字号有地方记，却没有输入它的入口。
+   * 接上 store 而不是新起一份本地 state，才是真的把"字号记忆"这句话落地——刷新页面、
+   * 换个任务打开终端，字号都还是上次调过的那个值。
+   *
+   * 已知取舍：多个终端标签**共用同一个全局字号**（Zustand 的订阅是全局的，任意一个
+   * 标签调 [A+] 都会让所有订阅了这个字段的组件重渲染），但**不会**反过来把已经挂载
+   * 的、当下不是这次点击来源的其它标签的 xterm 实例也现改字号——那需要每个挂载点
+   * 反应式监听这个字段的变化并主动调 `term.setFontSize()`，复杂度换不回明显的收益
+   * （多标签同时开着还要眼看字号跳变的场景很少），本轮不做。
+   */
+  const fontSize = useAppStore((s) => s.terminalFontSize);
+  const setTerminalFontSize = useAppStore((s) => s.setTerminalFontSize);
+  // 只在这个挂载点第一次渲染时取一次快照，供下面的 attach effect 用——
+  // 见该 effect 里的注释。
+  const initialFontSizeRef = useRef(fontSize);
+
+  const handleCopy = useCallback((): void => {
+    const text = term.getSelectionText(sessionId);
+    if (text.trim() === '') {
+      toast.error('终端里还没有可复制的内容');
+      return;
+    }
+    // ⚠️ 剪贴板写在 container（07 §3 规则 2）：非 HTTPS 局域网部署下 `navigator.clipboard`
+    // 可能压根不存在，读 `.writeText` 会当场抛 TypeError——失败不许静默
+    // （与 `SandboxLifecycleContainer.handleCopyDiagnostics` 同一条纪律）。
+    void navigator.clipboard.writeText(text).then(
+      () => {
+        toast.success('已复制到剪贴板');
+      },
+      () => {
+        toast.error('复制失败，请手动选中终端内容复制');
+      },
+    );
+  }, [term, sessionId]);
+
+  const handleClear = useCallback((): void => {
+    term.clear(sessionId);
+  }, [term, sessionId]);
+
+  const handleDecreaseFontSize = useCallback((): void => {
+    const next = Math.max(MIN_TERMINAL_FONT_SIZE, fontSize - 1);
+    term.setFontSize(sessionId, next);
+    setTerminalFontSize(next);
+  }, [term, sessionId, fontSize, setTerminalFontSize]);
+
+  const handleIncreaseFontSize = useCallback((): void => {
+    const next = Math.min(MAX_TERMINAL_FONT_SIZE, fontSize + 1);
+    term.setFontSize(sessionId, next);
+    setTerminalFontSize(next);
+  }, [term, sessionId, fontSize, setTerminalFontSize]);
 
   /**
    * 会话已结束（收到 `exit`）。**必须接线**：`useSandboxTerminalSocket` 的 `endedRef`
@@ -172,6 +242,12 @@ export default function TerminalMount({
     void term.attach({
       sessionId,
       container,
+      // 首次创建时的字号取「挂载那一刻」persist 回来的值（`initialFontSizeRef`），
+      // 不直接读 `fontSize` state——这个 effect 的 deps 是 `[term, sessionId]`
+      // （理由见下方 resize 注释：进 deps 的东西一变就重连），把 `fontSize` 放进去会让
+      // 每次调 [A-]/[A+] 都重新 attach 一次。之后的字号变化统一走 `term.setFontSize()`
+      // 直接改已存在的实例，不依赖重新 attach。
+      fontSize: initialFontSizeRef.current,
       onInput: (d) => sendRef.current({ type: 'input', data: d }),
       onResize: (cols, rows) => {
         // 首次 fit：记下尺寸放行连接（此时还没有 socket，send 必然返回 false，正常）。
@@ -243,7 +319,24 @@ export default function TerminalMount({
         {...(endedMessage === null ? {} : { sessionEndedMessage: endedMessage })}
       />
       <div className="min-h-0 flex-1">
-        <TerminalPaneView ref={containerRef} />
+        <TerminalPaneView
+          ref={containerRef}
+          {...(breadcrumb === undefined
+            ? {}
+            : {
+                toolbar: (
+                  <TerminalToolbarView
+                    breadcrumb={breadcrumb}
+                    onCopy={handleCopy}
+                    onClear={handleClear}
+                    onDecreaseFontSize={handleDecreaseFontSize}
+                    onIncreaseFontSize={handleIncreaseFontSize}
+                    canDecreaseFontSize={fontSize > MIN_TERMINAL_FONT_SIZE}
+                    canIncreaseFontSize={fontSize < MAX_TERMINAL_FONT_SIZE}
+                  />
+                ),
+              })}
+        />
       </div>
     </div>
   );

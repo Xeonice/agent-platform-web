@@ -5,6 +5,7 @@ import { server } from '@/mocks/node';
 import {
   AuditCursorConflictError,
   DiagnoseStreamAborted,
+  ProvisionStreamAborted,
   diagnose,
   exportAudit,
   getInitStatus,
@@ -13,6 +14,7 @@ import {
   getSettings,
   init,
   listAudit,
+  provisionPresetImage,
   putSettings,
 } from '@/services/api/system.service';
 import { ApiErrorException } from '@/services/api/apiError';
@@ -540,5 +542,72 @@ describe('diagnose() —— 逐项回调（container 与 view 不感知传输细
     controller.abort();
     const { cb } = collector();
     await expect(diagnose(cb, controller.signal)).rejects.toThrow();
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// SSE 镜像搬运流（P21-8 §2 ⇒ 新判据）
+//
+// ⚠️ 本节存在的头号理由：`provisionPresetImage` 此前断流时抛的是 `DiagnoseStreamAborted`，
+// 构造函数写死了「诊断流在收到汇总帧之前中断了」——`usePresetImageProvision` 把
+// `e.message` 原样上屏，用户在 [准备镜像] 搬运断流时会看到一句提「诊断流」的话，
+// 而他压根没碰过诊断卡。两条流各自的断流现在要抛各自的错误类型、各自的文案。
+// ————————————————————————————————————————————————————————————————
+
+function serveProvision(chunks: readonly string[]): void {
+  server.use(
+    http.post(`${API_BASE}/api/system/preset-image/provision`, () => {
+      return new HttpResponse(sseStream(chunks), {
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    }),
+  );
+}
+
+const PROVISION_STAGE = {
+  event: 'stage',
+  stage: 'fetch',
+  status: 'running',
+  message: '正在下载',
+  progress: 0.5,
+};
+const PROVISION_DONE = { event: 'done', ok: true };
+
+describe('provisionPresetImage() —— 断流要抛「镜像搬运」自己的错误，不是诊断的', () => {
+  it('断流（没有 done 帧）⇒ 抛 `ProvisionStreamAborted`，且**不是** `DiagnoseStreamAborted`', async () => {
+    serveProvision([frameText(PROVISION_STAGE)]);
+    // MUTATION：把 `provisionPresetImage` 里两处 `throw` 换回
+    // `new DiagnoseStreamAborted()` ⇒ 下面这条 `toBeInstanceOf(ProvisionStreamAborted)`
+    // 当场红，`not.toBeInstanceOf(DiagnoseStreamAborted)` 也会变成假的通过（其实是同一个类）。
+    await expect(
+      provisionPresetImage({ onStage: () => undefined, onDone: () => undefined }),
+    ).rejects.toBeInstanceOf(ProvisionStreamAborted);
+  });
+
+  it('断流错误的 `message` 说的是「镜像搬运流」，⛔ 不是「诊断流」——这句话会被原样上屏', async () => {
+    serveProvision([frameText(PROVISION_STAGE)]);
+    try {
+      await provisionPresetImage({ onStage: () => undefined, onDone: () => undefined });
+      expect.unreachable('应该抛出');
+    } catch (e) {
+      expect(e).toBeInstanceOf(Error);
+      const message = e instanceof Error ? e.message : '';
+      // ⚠️ 正向 + 否定各锁一半：message 里必须有「镜像搬运」，⛔ 不许出现「诊断」二字
+      // ——那正是用户看到的、会让他以为自己点错功能的那句话。
+      expect(message).toContain('镜像搬运');
+      expect(message).not.toContain('诊断');
+    }
+  });
+
+  it('正常收到 stage + done ⇒ 不抛错（对照组：断流那条不是"这个函数永远抛"）', async () => {
+    serveProvision([frameText(PROVISION_STAGE), frameText(PROVISION_DONE)]);
+    const stages: unknown[] = [];
+    const dones: unknown[] = [];
+    await provisionPresetImage({
+      onStage: (f) => stages.push(f),
+      onDone: (f) => dones.push(f),
+    });
+    expect(stages).toHaveLength(1);
+    expect(dones).toHaveLength(1);
   });
 });

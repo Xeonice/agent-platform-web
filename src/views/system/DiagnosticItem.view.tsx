@@ -51,8 +51,17 @@ const STATUS_TEXT: Readonly<Record<DiagnoseStatus, string>> = {
   timeout: '未得出结论',
 };
 
+/**
+ * ①–⑧：固定顺序的序号圆标（design/prototype.html `'①②③④⑤⑥⑦⑧'[d.id-1]`）。⚠️ 八项
+ * 的展示顺序恒来自服务端首帧（`DiagnosticsCardModel.items`），这里只是把"它在这一次
+ * 首帧里排第几"翻成一个圆圈数字，⛔ 不是把某个 check id 写死绑定到某个序号。
+ */
+const ORDINAL_GLYPHS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'];
+
 export interface DiagnosticItemProps {
   item: DiagnosticItemModel;
+  /** 这一项在本轮首帧里排第几（从 1 开始）——只用来选一个圆标数字，纯展示。 */
+  ordinal: number;
   /**
    * 这一项当前是否展开。由父级 `DiagnosticsCardView` 依据
    * 「非 ok/info 默认展开」的规则 + 用户手动切换的 override 算好，这里只负责渲染。
@@ -62,11 +71,12 @@ export interface DiagnosticItemProps {
   onCopyHint: (hint: string) => void;
 }
 
-export function DiagnosticItemView({ item, expanded, onCopyHint }: DiagnosticItemProps) {
+export function DiagnosticItemView({ item, ordinal, expanded, onCopyHint }: DiagnosticItemProps) {
   const pending = item.status === undefined;
   const pillStatus: StatusPillStatus = item.status ?? 'pending';
   const hasMore =
     item.detailText !== undefined || item.nextStep !== undefined || item.command !== undefined;
+  const ordinalGlyph = ORDINAL_GLYPHS[ordinal - 1];
 
   return (
     <AccordionItem
@@ -77,19 +87,32 @@ export function DiagnosticItemView({ item, expanded, onCopyHint }: DiagnosticIte
       className="flex flex-col gap-1 rounded-md border border-b border-border/60 px-3 py-2 text-sm"
     >
       <span className="flex flex-wrap items-center gap-2">
+        {/* 序号圆标（design/design-notes.md §4 Phase 1：诊断项 ①–⑧），紧跟展开箭头之后、
+            状态 pill 之前——与 design/prototype.html 的顺序一致。`ordinal` 超出 8 项时
+            （契约扩容/schema 不匹配的边角）宁可不画，也不许显示 `undefined`。 */}
+        {ordinalGlyph === undefined ? null : (
+          <span
+            aria-hidden="true"
+            className="w-4 flex-none font-mono text-xs text-muted-foreground"
+          >
+            {ordinalGlyph}
+          </span>
+        )}
         <StatusPill status={pillStatus}>
           {pending ? '检查中…' : STATUS_TEXT[item.status ?? 'ok']}
         </StatusPill>
-        <span className="font-medium">{item.label}</span>
+        {/* `flex-1` 让 label 占满中间空间，把耗时推到行尾右对齐
+            （design/prototype.html：`flex-1 truncate` 在 label 上，耗时是最后一个 flex 子项）。 */}
+        <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
         {item.durationText === undefined ? null : (
-          <span className="text-xs text-muted-foreground">{item.durationText}</span>
+          <span className="flex-none text-xs text-muted-foreground">{item.durationText}</span>
         )}
         {/* 只有第 ⑤ 项（联网检查）有这句，且数字读的是服务端首帧下发的配置
             （见 `types/system.ts` 里 `timeoutText` 的字段注释）。 */}
         {item.timeoutText === undefined ? null : (
           <span
             data-testid={`diagnostic-timeout-${item.id}`}
-            className="text-xs text-muted-foreground"
+            className="flex-none text-xs text-muted-foreground"
           >
             {item.timeoutText}
           </span>

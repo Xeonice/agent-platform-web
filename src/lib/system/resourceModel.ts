@@ -128,10 +128,13 @@ export function resourcePoolModel(dto: SystemResourcesDto, now: Date): ResourceP
     },
     {
       id: 'disk',
-      label: `磁盘（${dto.disk.path}）`,
+      label: '磁盘',
       level: dto.disk.level,
       usedPercent: dto.disk.usedPercent,
       amountText: formatAmount(dto.disk.usedBytes, dto.disk.totalBytes),
+      // ⚠️ 路径独立成字段，⛔ 不拼进 `label`（真实布局 bug：真实路径比 `/data` 长得多，
+      //    拼进标题会把状态行撑到换行）。
+      pathText: dto.disk.path,
     },
   ];
 

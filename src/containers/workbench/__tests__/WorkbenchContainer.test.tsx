@@ -4,7 +4,7 @@
 //  ③ 项目只读条（远端/分支/基线体积/最后同步）+ [重新同步]；
 //  ④ 新建项目弹窗补上**分支输入**（`repoBranch` 契约里一直有，表单此前没接）。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, within, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
@@ -1194,5 +1194,87 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     fireEvent.click(screen.getByTestId('locate-current-project'));
     expect(useAppStore.getState().taskListFolds['p1']).toBe(false);
     expect(useAppStore.getState().selectedProjectId).toBe('p1');
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// ⑤ 搜索防抖 200ms（P21-1 §6；F21-1 §9.1 #15 记录的偏离，这一轮补齐）
+// ————————————————————————————————————————————————————————————————
+/**
+ * ⚠️ 硬要求（用户裁决）：不许只断言"最终过滤对了"——那样把防抖整段删掉（容器直接把
+ * `searchQuery` 喂给 `useProjectTaskTree`）用例照样绿。必须假定时器推进时间，
+ * 证明"200ms 前没有过滤、200ms 后才过滤"。
+ */
+describe('WorkbenchContainer · 搜索防抖 200ms', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function sandboxDto(id: string, name: string): unknown {
+    return {
+      id,
+      projectId: 'p1',
+      runtime: 'codex',
+      provider: 'aio',
+      name,
+      status: 'running',
+      headless: false,
+      timeoutMinutes: null,
+      idleTimeoutSec: 1800,
+      waitingInput: false,
+      version: 0,
+    };
+  }
+
+  /**
+   * MUTATION：把 `WorkbenchContainer` 里喂给 `useProjectTaskTree` 的实参从
+   * `debouncedSearchQuery` 改回 `searchQuery`（即删掉防抖）⇒ 199ms 那条断言会红——
+   * 不匹配的任务会在按键后立刻消失，而不是等满 200ms。
+   */
+  it('199ms 时过滤还没生效，满 200ms 才按输入过滤（真防抖）', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 2 })]);
+    mockSandboxes([sandboxDto('sbx-1', '重构支付模块'), sandboxDto('sbx-2', '修复终端断线')]);
+    renderWorkbench();
+
+    // 先等两条任务都真的渲染出来，再开始计时——避免把初次拉取的网络延迟算进 200ms 里。
+    await screen.findByRole('button', { name: /重构支付模块/ });
+    await screen.findByRole('button', { name: /修复终端断线/ });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.change(screen.getByTestId('task-search-input'), { target: { value: '支付' } });
+
+    // ⭐ 关键断言：199ms 时两条任务都还在——过滤还没发生。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(199);
+    });
+    expect(screen.getByRole('button', { name: /重构支付模块/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /修复终端断线/ })).toBeInTheDocument();
+
+    // ⭐ 关键断言：再过 1ms（凑满 200ms），不匹配的任务被过滤掉。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /修复终端断线/ })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /重构支付模块/ })).toBeInTheDocument();
+  });
+
+  /**
+   * 输入框本身不受防抖影响：敲的字符立刻回显（⛔ 不能等 200ms 才显示用户刚敲的字），
+   * 只有"用来真过滤的那份值"延迟。
+   */
+  it('输入框回显不受防抖影响：敲完立刻显示，不用等 200ms', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 1 })]);
+    mockSandboxes([sandboxDto('sbx-1', '重构支付模块')]);
+    renderWorkbench();
+    await screen.findByRole('button', { name: /重构支付模块/ });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const input = screen.getByTestId<HTMLInputElement>('task-search-input');
+    fireEvent.change(input, { target: { value: '支付' } });
+
+    // 0ms：没有推进任何时间，输入框已经是新值——受控输入不等防抖。
+    expect(input.value).toBe('支付');
   });
 });

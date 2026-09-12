@@ -16,10 +16,19 @@ export interface TerminalFrameProps extends React.HTMLAttributes<HTMLDivElement>
    * `useTerminalInstance.attach()` 需要拿到的是这个节点。
    */
   canvasTestId?: string;
+  /**
+   * 仪表壳内、画布上方的工具栏行（design-notes.md §4 Phase 3 / 原型 `.terminal-shell`
+   * 内的面包屑 + [复制][清屏][A-][A+] 那一行）。
+   *
+   * ⚠️ **纯新增的可选插槽，不改变任何既有调用点的外观**——不传时（现有全部消费方）
+   * 渲染结果与改动前逐字节相同；仪表壳本身（背景色/边框/圆角/跟随主题）一个字都没动，
+   * 这是本组件在这一轮唯一的改动。
+   */
+  toolbar?: React.ReactNode;
 }
 
 export const TerminalFrame = React.forwardRef<HTMLDivElement, TerminalFrameProps>(
-  ({ className, canvasClassName, canvasTestId, ...shellProps }, ref) => {
+  ({ className, canvasClassName, canvasTestId, toolbar, ...shellProps }, ref) => {
     return (
       <div
         data-slot="terminal-shell"
@@ -31,6 +40,7 @@ export const TerminalFrame = React.forwardRef<HTMLDivElement, TerminalFrameProps
         )}
         {...shellProps}
       >
+        {toolbar}
         <div
           ref={ref}
           data-slot="terminal-canvas"

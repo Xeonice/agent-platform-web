@@ -60,6 +60,13 @@ export interface ResourceGaugeModel {
   usedPercent: number;
   /** `'4.2 / 8 核'`、`'5.8 / 16 GB'`、`'150 / 200 GB'`。 */
   amountText: string;
+  /**
+   * 仅磁盘维度有；本机文件系统挂载路径。⚠️ **独立成行，不并进 `label`**——真实路径
+   * （如 `/Users/xxx/Library/Application Support/...`）比 `/data` 长得多，拼进
+   * `磁盘（${path}）` 会把状态行撑到换行，连带把状态 pill 挤成两行（真实布局 bug，
+   * design/design-notes.md §4 Phase 1 收口时发现）。
+   */
+  pathText?: string;
 }
 
 /** 保留卷占用行（P21-5 §9C）。 */

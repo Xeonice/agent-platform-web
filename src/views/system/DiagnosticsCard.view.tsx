@@ -57,7 +57,7 @@ export function DiagnosticsCardView({
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="diagnostics-heading" className="text-base font-semibold">
-          🔧 诊断
+          诊断
         </h2>
         <span className="flex items-center gap-2">
           <Button type="button" size="sm" disabled={isDiagnosing} onClick={onDiagnose}>
@@ -102,10 +102,11 @@ export function DiagnosticsCardView({
           onValueChange={onOpenIdsChange}
           className="flex flex-col gap-2"
         >
-          {model.items.map((item) => (
+          {model.items.map((item, index) => (
             <DiagnosticItemView
               key={item.id}
               item={item}
+              ordinal={index + 1}
               expanded={openIds.includes(item.id)}
               onCopyHint={onCopyHint}
             />

@@ -3,7 +3,7 @@
 // 这次改动里风险最高的恰恰是胶水本身——effect 依赖数组、prop 优先级、状态接管顺序
 // ——而不是被测过的 `resync()` / `sessionEnded` 单点逻辑。下面按真实时序钉住它们。
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, cleanup } from '@testing-library/react';
+import { render, screen, act, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import type {
   TerminalClientFrame,
   TerminalServerFrame,
@@ -11,6 +11,10 @@ import type {
 } from '@/types/ws-protocol';
 import { WS_SCHEMA_HASH } from '@/lib/terminal/terminalSocket';
 import { TERMINAL_EXIT_ATTACH_FAILED, type TerminalSocketConfig } from '@/types/terminal';
+import { useAppStore } from '@/stores';
+
+const sonnerToast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock('sonner', () => ({ toast: sonnerToast }));
 
 const term = vi.hoisted(() => ({
   attach: vi.fn(() => Promise.resolve()),
@@ -19,6 +23,11 @@ const term = vi.hoisted(() => ({
   resync: vi.fn(),
   dispose: vi.fn(),
   getRenderer: vi.fn(),
+  // 工具栏三个新方法（design-notes.md §4 Phase 3）：本文件测的是装配时序，
+  // 不重复测这几个方法本身的行为（那在 useTerminalInstance.test.tsx 里）。
+  clear: vi.fn(),
+  getSelectionText: vi.fn(() => ''),
+  setFontSize: vi.fn(),
   lastArgs: null as {
     onInput?: (d: string) => void;
     onResize?: (c: number, r: number) => void;
@@ -38,9 +47,17 @@ const termApi = {
   resync: term.resync,
   dispose: term.dispose,
   getRenderer: term.getRenderer,
+  clear: term.clear,
+  getSelectionText: term.getSelectionText,
+  setFontSize: term.setFontSize,
 };
 vi.mock('@/hooks/terminal/useTerminalInstance', () => ({
   useTerminalInstance: () => termApi,
+  // 三个常量本轮改用重导出（`@/lib/terminal/terminalTheme` 的唯一实现点，
+  // containers 层按 boundaries 规则不许直接 import lib，见该文件头注释）。
+  DEFAULT_TERMINAL_FONT_SIZE: 14,
+  MIN_TERMINAL_FONT_SIZE: 10,
+  MAX_TERMINAL_FONT_SIZE: 22,
 }));
 
 const sock = vi.hoisted(() => ({
@@ -112,6 +129,10 @@ beforeEach(() => {
   sock.connState = 'connecting';
   sock.sessionEnded = undefined;
   term.lastArgs = null;
+  // 字号本轮改接 `uiSlice.terminalFontSize`（真实、跨用例持续存在的全局 store，
+  // 07 §4 的分层规则允许 container 用它）——不重置的话，前一条用例点过 [A+]/[A-]
+  // 留下的字号会带进下一条，"从默认值开始点 N 次"这类断言会因为起点不对而误报。
+  useAppStore.getState().setTerminalFontSize(14);
 });
 
 describe('TerminalMount · 尺寸与会话终止的接线', () => {
@@ -362,5 +383,167 @@ describe('TerminalMount · 后端清单帧（06 §5.5）', () => {
     });
     expect(term.write.mock.calls.length).toBe(before);
     expect(sock.sessionEnded).toBe(false);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// 终端仪表壳工具栏（design-notes.md §4 Phase 3）：面包屑 + 复制/清屏/字号。
+// ⚠️ 硬要求自查：这里钉的是**接线**（点按钮 → 调用了哪个 `term.*` 方法、传了什么参数），
+// 方法本身的行为已经在 `useTerminalInstance.test.tsx` 用真实 xterm 实例测过。
+// ————————————————————————————————————————————————————————————————
+describe('TerminalMount · 终端工具栏接线', () => {
+  beforeEach(() => {
+    sonnerToast.success.mockClear();
+    sonnerToast.error.mockClear();
+    term.clear.mockClear();
+    term.getSelectionText.mockClear();
+    term.setFontSize.mockClear();
+  });
+
+  /**
+   * ⭐ 没传 `breadcrumb` ⇒ 工具栏整个不渲染——纯终端场景没有项目/任务上下文可拼。
+   * 变异：把渲染条件从 `breadcrumb === undefined` 改成恒渲染 ⇒ 本例会在没有
+   * breadcrumb 时也找到 `terminal-toolbar`。
+   */
+  it('未传 breadcrumb ⇒ 不渲染工具栏', () => {
+    render(<TerminalMount sessionId="s1" sandboxId="s1" socketConfig={CFG} />);
+    expect(screen.queryByTestId('terminal-toolbar')).not.toBeInTheDocument();
+  });
+
+  it('传了 breadcrumb ⇒ 工具栏渲染，面包屑原样显示', () => {
+    render(
+      <TerminalMount
+        sessionId="s1"
+        sandboxId="s1"
+        socketConfig={CFG}
+        breadcrumb="ProjectA / Codex · 重构支付模块的类型定义"
+      />,
+    );
+    expect(screen.getByTestId('terminal-toolbar-breadcrumb')).toHaveTextContent(
+      'ProjectA / Codex · 重构支付模块的类型定义',
+    );
+  });
+
+  /**
+   * ⭐ [复制] 有内容 ⇒ 真的写剪贴板并提示成功。
+   * 变异：把 `handleCopy` 里 `term.getSelectionText(sessionId)` 的 `sessionId` 传成
+   * 别的字符串（比如写死 's0'）⇒ 多会话场景下会复制到错误标签的内容——本例虽是
+   * 单会话测不出串号，但下面这句直接钉参数值。
+   */
+  it('[复制] 有内容 ⇒ 写剪贴板并提示成功，且传的是这个挂载点自己的 sessionId', async () => {
+    term.getSelectionText.mockReturnValue('HELLO');
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    render(
+      <TerminalMount sessionId="s-copy" sandboxId="sbx" socketConfig={CFG} breadcrumb="A / B" />,
+    );
+    fireEvent.click(screen.getByTestId('terminal-toolbar-copy'));
+
+    expect(term.getSelectionText).toHaveBeenCalledWith('s-copy');
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('HELLO');
+    });
+    await waitFor(() => {
+      expect(sonnerToast.success).toHaveBeenCalled();
+    });
+  });
+
+  /** ⭐ 空内容 ⇒ ⛔ 不写剪贴板，提示"没有可复制的内容"（不是静默复制一个空字符串）。 */
+  it('[复制] 终端为空 ⇒ 不写剪贴板，提示没有可复制的内容', () => {
+    term.getSelectionText.mockReturnValue('   ');
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    render(<TerminalMount sessionId="s1" sandboxId="s1" socketConfig={CFG} breadcrumb="A / B" />);
+    fireEvent.click(screen.getByTestId('terminal-toolbar-copy'));
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(sonnerToast.error).toHaveBeenCalled();
+  });
+
+  it('[清屏] 调用 term.clear(sessionId)', () => {
+    render(
+      <TerminalMount sessionId="s-clear" sandboxId="sbx" socketConfig={CFG} breadcrumb="A / B" />,
+    );
+    fireEvent.click(screen.getByTestId('terminal-toolbar-clear'));
+    expect(term.clear).toHaveBeenCalledWith('s-clear');
+  });
+
+  /**
+   * ⭐ [A+]/[A-] 调 `term.setFontSize(sessionId, size)`，且每次点击都在上一次的基础上
+   * 累加/递减（不是每次都从默认值重算）。
+   *
+   * 变异（已验证会让本例变红）：把步长从 `prev + 1` 改成 `prev + 2` ⇒ 第二次调用的
+   * 参数值变成 17，与断言的 16 不符。
+   *
+   * ⚠️ 自查记录：最初想用"改成从闭包里的 `fontSize` 而不是函数式更新 `(prev) => …`
+   * 取值"这个变异（经典 stale closure 写法）来证明这条测试的价值，实测**这个变异
+   * 不会让本例变红**——`fireEvent.click` 之间 React 已经把上一次的 state 更新同步
+   * flush 完，第二次点击时闭包读到的 `fontSize` 已经是最新值，两种写法在这个测试
+   * 用例的时序下等价。换成上面"改步长"这个变异后确认能抓到，才收进正式用例。
+   */
+  it('[A+] 连续点击两次 ⇒ 字号累加，不是每次都从默认值重算', () => {
+    render(
+      <TerminalMount sessionId="s-font" sandboxId="sbx" socketConfig={CFG} breadcrumb="A / B" />,
+    );
+    fireEvent.click(screen.getByTestId('terminal-toolbar-font-increase'));
+    fireEvent.click(screen.getByTestId('terminal-toolbar-font-increase'));
+    expect(term.setFontSize).toHaveBeenNthCalledWith(1, 's-font', 15);
+    expect(term.setFontSize).toHaveBeenNthCalledWith(2, 's-font', 16);
+  });
+
+  /** ⭐ 到下限后 [A-] 置灰，⛔ 不是可以一直点到字号变成负数。 */
+  it('[A-] 连续点到下限 ⇒ 按钮置灰，不再继续调小', () => {
+    render(
+      <TerminalMount sessionId="s-min" sandboxId="sbx" socketConfig={CFG} breadcrumb="A / B" />,
+    );
+    const decrease = screen.getByTestId('terminal-toolbar-font-decrease');
+    // 默认 14，下限 10：点 4 次到底，第 5 次应该已经置灰、不再触发。
+    for (let i = 0; i < 4; i += 1) fireEvent.click(decrease);
+    expect(term.setFontSize).toHaveBeenLastCalledWith('s-min', 10);
+    expect(decrease).toBeDisabled();
+    term.setFontSize.mockClear();
+    fireEvent.click(decrease);
+    expect(term.setFontSize).not.toHaveBeenCalled();
+  });
+
+  /**
+   * ⭐ 「字号 persist」（P21-1 §6）的核心钉子：调过字号后**卸载重挂**（模拟换任务/
+   * 刷新页面回来），新的挂载点从上次调到的值开始，而不是又回到默认的 14。
+   *
+   * 变异：把 `fontSize`/`setTerminalFontSize` 换回本地 `useState(DEFAULT_TERMINAL_FONT_SIZE)`
+   * ⇒ 本例会红——重挂后的第一次 [A+] 会算出 15 而不是断言的 19。
+   */
+  it('字号改动跨挂载点持续存在（卸载重挂后接着上次的值调，不回默认值）', () => {
+    const { unmount } = render(
+      <TerminalMount
+        sessionId="s-persist-1"
+        sandboxId="sbx"
+        socketConfig={CFG}
+        breadcrumb="A / B"
+      />,
+    );
+    fireEvent.click(screen.getByTestId('terminal-toolbar-font-increase'));
+    fireEvent.click(screen.getByTestId('terminal-toolbar-font-increase'));
+    fireEvent.click(screen.getByTestId('terminal-toolbar-font-increase'));
+    fireEvent.click(screen.getByTestId('terminal-toolbar-font-increase'));
+    // 14 → 18，四次 [A+]。
+    expect(term.setFontSize).toHaveBeenLastCalledWith('s-persist-1', 18);
+    unmount();
+
+    term.setFontSize.mockClear();
+    // 换一个任务/标签（不同 sessionId），模拟"打开另一个终端"——字号记忆是全局的。
+    render(
+      <TerminalMount
+        sessionId="s-persist-2"
+        sandboxId="sbx"
+        socketConfig={CFG}
+        breadcrumb="C / D"
+      />,
+    );
+    fireEvent.click(screen.getByTestId('terminal-toolbar-font-increase'));
+    // 接着上次的 18 往上加，不是回到 14 再 +1。
+    expect(term.setFontSize).toHaveBeenLastCalledWith('s-persist-2', 19);
   });
 });

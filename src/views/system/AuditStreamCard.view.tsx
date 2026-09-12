@@ -29,8 +29,10 @@
 // 仍为 true（更老的那一页里才有匹配行）。footer 被关在 `rows.length > 0` 里的那一版，
 // 用户看到的是"当前筛选无匹配记录"**且没有任何继续加载的入口**，读出来的结论是"没有"。
 import { Fragment, type ReactNode } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StatusPill } from '@/components/ui/status-pill';
 import { AuditEventRowView } from '@/views/system/AuditEventRow.view';
 import { AuditGapNoticeView } from '@/views/system/AuditGapNotice.view';
 import type { AuditEmptyKind, AuditGap, AuditRowModel } from '@/types/audit';
@@ -108,7 +110,7 @@ export function AuditStreamCardView({
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="audit-stream-heading" className="text-base font-semibold">
-          🧾 审计流
+          审计流
         </h2>
         {/* ⚠️ **[导出日志] 不在这里** —— 它的规格归属 `DiagnosticsCard`（F21-5 §3）。
             诊断卡落地之前它临时挂在本卡上，两张卡同屏之后就成了**同一页上两个同名按钮**：
@@ -118,13 +120,17 @@ export function AuditStreamCardView({
 
       {filterBar}
 
+      {/* ⚠️ emoji 收口：这一行原来是 `⚠️ 实时更新已中断…`。此处不是"某一行的严重度"，
+          而是一整条横幅提示，塞一个 `StatusPill` 会把长句挤成一枚不换行的 pill、很别扭；
+          改用 `status-pill.tsx` 里 `warn` 态本来就在用的同一个 lucide 图标（`AlertTriangle`），
+          图标语义与颜色（amber）都不新起一套。 */}
       {!isError && isLiveUpdateError && (
         <div
           role="status"
           data-testid="audit-live-update-error"
           className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-1.5 text-xs"
         >
-          <span aria-hidden="true">⚠️</span>
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-600" />
           <span>实时更新已中断，列表可能不是最新的</span>
           <Button type="button" size="sm" variant="ghost" onClick={onRetryLiveUpdate}>
             重试
@@ -132,12 +138,15 @@ export function AuditStreamCardView({
         </div>
       )}
 
+      {/* ⚠️ emoji 收口：`❌ 审计流加载失败` 换成 `StatusPill status="fail"`——与审计行
+          severity=error 时用的是同一个组件、同一个 `fail` variant（`AuditEventRow.view.tsx`
+          的 `SEVERITY_PILL_STATUS`），不是另起一套图标方案。 */}
       {isError ? (
         <div
           role="alert"
           className="flex flex-wrap items-center gap-3 rounded-md border border-red-500/50 bg-red-500/5 p-4 text-sm"
         >
-          <span>❌ 审计流加载失败</span>
+          <StatusPill status="fail">审计流加载失败</StatusPill>
           <Button type="button" size="sm" variant="outline" onClick={onRetry}>
             重试
           </Button>
