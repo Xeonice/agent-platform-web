@@ -1,28 +1,34 @@
 // 全局横幅栈（07 §8.4「BannerStack + useGlobalBanner」/ P21-1 §9）的视图模型。
 //
-// ⚠️ **只有 `blocking` 一档，`warning`/`info` 没有写进这个联合类型** —— 07 §8.4 定义了三档
-// （🔴 阻断 / ⚠️ 治理 / ℹ️ 提示），但今天只有阻断类有生产方。加另外两个取值的代价不是
-// "多两行"，而是**它让人以为治理类横幅接好了**：`createUiSlice` 里那对
-// `bannerDismissedToday` / `dismissBannerToday`（"关闭后当天不再弹"，专属治理类）至今
-// 一个写入方都没有，正是这种"只在类型里存在"的东西。与 `currentModal` 删掉 `'wizard'`
-// 是同一条纪律：**取值与它的生产方、消费方必须同一轮落地**。
+// ⚠️ **只有 `blocking`/`warning` 两档，`info` 没有写进这个联合类型** —— 07 §8.4 定义了三档
+// （🔴 阻断 / ⚠️ 治理 / ℹ️ 提示）。`warning`（治理）本轮随第一个真生产方
+// （`lib/automation/automationAttention.ts`「定时规则自动停用/被放慢」，接线见
+// `lib/system/globalBanner.ts`）一起落地——production 与 consumption 同一轮，`warning`
+// 不是只在类型里存在的东西。`info` 仍然没有：今天没有任何一处判定要产出「提示」级别的
+// 全局横幅，加这个取值只会重复 `currentModal` 删掉 `'wizard'` 那同一个教训
+// （"只在类型里存在的取值比没有更坏"）——等第一个 info 生产方出现时再加。
 //
-// ⛔ 同理没有实现的：「⚠️ 最多堆叠 2 条 + 『还有 N 条』折叠」。今天最多同时 2 条，
+// ⛔ 同理没有实现的：「⚠️ 最多堆叠 2 条 + 『还有 N 条』折叠」。今天最多同时 3 条，
 //    折叠计数**恒为 0** —— 一个永远是 0 的 `collapsedCount` 与一个接好了的折叠 UI
-//    在界面上长得一模一样，而后者不存在。等第三个生产方出现时连着它一起加。
+//    在界面上长得一模一样，而后者不存在。等第四个生产方出现时连着它一起加。
+import type { AutomationAttention } from '@/types/automation';
 import type { ConnectivityCheckModel } from '@/types/init';
 
 /**
- * 横幅等级。07 §8.4：🔴 阻断类**不自动收起，须显式关闭**。
+ * 横幅等级。07 §8.4：优先级 🔴 阻断 > ⚠️ 治理 > ℹ️ 提示（`info` 暂无生产方，见文件头）。
  *
- * ⚠️ 阻断类的"关闭"是**会话级**的，⛔ 不写 `bannerDismissedToday`（那是治理类的
- * "当天不再弹"）。差别在一台真的离线的机器上：关一次就当天不再提示，等于让
- * 「[+ 新任务] 为什么是灰的」永久失去解释，而它恰恰是最需要解释的时刻。
+ * ⚠️ 两档的「关闭」语义不同，⛔ 不要混用：
+ *   · `blocking` 是**会话级**——关一次这次会话内不再出现，⛔ 不写 `bannerDismissedToday`。
+ *     差别在一台真的离线的机器上：如果按"当天"记，关一次就当天不再提示，等于让
+ *     「[+ 新任务] 为什么是灰的」永久失去解释，而它恰恰是最需要解释的时刻。
+ *   · `warning`（治理）是**当天级**——关闭写 `bannerDismissedToday`，同一天内即使判定
+ *     再次命中也不重新弹出；跨天则自然失效（`lib/system/globalBanner.ts` 的
+ *     `isDismissedToday` 按日期字符串比对，不需要额外的回收步骤）。
  */
-export type BannerSeverity = 'blocking';
+export type BannerSeverity = 'blocking' | 'warning';
 
-/** 今天的两个生产方。**新增一个就在这里加一个字面量**（穷尽性由 `BANNER_RANK` 兜住）。 */
-export type BannerId = 'platform-state-unknown' | 'offline';
+/** 今天的三个生产方。**新增一个就在这里加一个字面量**（穷尽性由 `BANNER_RANK` 兜住）。 */
+export type BannerId = 'platform-state-unknown' | 'offline' | 'automation-needs-attention';
 
 export interface GlobalBannerModel {
   id: BannerId;
@@ -55,4 +61,9 @@ export interface GlobalBannerInput {
    * ⚠️ 它**不是**"离线"的同义词，见 `globalBanner.ts` ①。
    */
   statusUnavailableReason?: string;
+  /**
+   * 自动化侧「需要用户知道的事」（`lib/automation/automationAttention.ts` 的产出）。
+   * **可选**：省略等同「没有数据」（`hasData:false`），既有调用点不必逐个改。
+   */
+  automation?: AutomationAttention;
 }

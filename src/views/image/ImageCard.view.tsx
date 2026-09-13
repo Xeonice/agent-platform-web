@@ -9,6 +9,7 @@
 //   [重新验证] 问「这个 digest 还合格吗」——只改三级结论，不动 digest、不动 isActive；
 //   [检查更新] 问「这个 tag 现在还指向它吗」——才谈得上换镜像。
 import { useState, type ReactNode } from 'react';
+import { AlertTriangle, Circle, Loader2, RefreshCw, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ValidationResultView } from '@/views/image/ValidationResult.view';
 import type { ImageCardModel } from '@/types/image';
@@ -103,8 +104,17 @@ export function ImageCardView({
           </h3>
           <span className="font-mono text-xs text-muted-foreground">{model.refDisplay}</span>
         </div>
-        <span className="shrink-0 text-xs text-muted-foreground" data-testid="enable-state">
-          {model.isActive ? '🟢 已启用' : '⚪ 已禁用'}
+        <span
+          className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+          data-testid="enable-state"
+        >
+          <Circle
+            aria-hidden="true"
+            data-testid="enable-state-icon"
+            data-active={String(model.isActive)}
+            className={`h-2 w-2 fill-current ${model.isActive ? 'text-success' : 'text-muted-foreground'}`}
+          />
+          {model.isActive ? '已启用' : '已禁用'}
         </span>
       </header>
 
@@ -120,9 +130,10 @@ export function ImageCardView({
           <span
             role="status"
             data-testid="revalidating-spinner"
-            className="absolute right-3 top-3 text-xs text-muted-foreground"
+            className="absolute right-3 top-3 flex items-center gap-1 text-xs text-muted-foreground"
           >
-            ⏳ 重新验证中…
+            <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />
+            重新验证中…
           </span>
         )}
       </div>
@@ -165,8 +176,9 @@ export function ImageCardView({
           </>
         ) : (
           // 不留白、不显示假哈希：留白读作"没有 digest"，假哈希读作"已钉死"，两句都是假话。
-          <span className="text-amber-400" data-testid="digest-unresolved">
-            ⚠️ 版本未确定
+          <span className="flex items-center gap-1 text-amber-400" data-testid="digest-unresolved">
+            <AlertTriangle aria-hidden="true" className="h-3 w-3" />
+            版本未确定
           </span>
         )}
 
@@ -199,9 +211,13 @@ export function ImageCardView({
         data-lineage={model.lineage.kind}
       >
         <span
-          className={model.lineage.kind === 'unknown' ? 'text-amber-400' : 'text-muted-foreground'}
+          className={`flex items-center gap-1 ${
+            model.lineage.kind === 'unknown' ? 'text-amber-400' : 'text-muted-foreground'
+          }`}
         >
-          {model.lineage.kind === 'unknown' ? '⚠️ ' : ''}
+          {model.lineage.kind === 'unknown' && (
+            <AlertTriangle aria-hidden="true" className="h-3 w-3 shrink-0" />
+          )}
           {model.lineage.text}
         </span>
         {model.lineage.note !== undefined && (
@@ -216,7 +232,10 @@ export function ImageCardView({
           data-tone="info"
           className="flex items-center gap-2 rounded-md border border-sky-500/40 px-2 py-1 text-xs text-sky-400"
         >
-          <span>🔄 下载源上这个 tag 已经指向另一版（{upstreamUpdate.newDigestShort}）</span>
+          <span className="flex items-center gap-1">
+            <RefreshCw aria-hidden="true" className="h-3 w-3 shrink-0" />
+            下载源上这个 tag 已经指向另一版（{upstreamUpdate.newDigestShort}）
+          </span>
           {onViewUpstreamChange !== undefined && (
             <button
               type="button"
@@ -232,7 +251,10 @@ export function ImageCardView({
       {/* ——— 🔧 运行参数区（P21-4 §10.2）——— */}
       <div className="flex flex-col gap-1 rounded-md border border-border p-2 text-xs">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-muted-foreground">🔧 运行参数</span>
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <Wrench aria-hidden="true" className="h-3 w-3" />
+            运行参数
+          </span>
           <Button type="button" variant="ghost" size="sm" onClick={onEditRunParams}>
             编辑环境变量
           </Button>

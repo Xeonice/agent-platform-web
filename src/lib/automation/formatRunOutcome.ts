@@ -45,7 +45,6 @@ export function formatRunOutcome(run: {
     case 'success':
       return {
         category: 'success',
-        icon: '✅',
         label: '成功',
         detail: '任务跑完了，成功。之前累计的失败次数已经清零。',
         countsTowardFailure: false,
@@ -67,7 +66,6 @@ export function formatRunOutcome(run: {
       if (run.errorCode === 'RESOURCE_EXHAUSTED') {
         return {
           category: 'failure',
-          icon: '❌',
           label: '没排到资源',
           detail: `一直没排到资源，等了 ${String(AUTOMATION_MAX_RETRIES)} 次还是没跑起来，这一次就不再等了。任务没有真正开始，所以没有输出可看。这次算一次失败：累计 ${String(DEGRADE_AFTER_FAILURES)} 次会自动放慢（每天只试一次）。`,
           countsTowardFailure: true,
@@ -75,7 +73,6 @@ export function formatRunOutcome(run: {
       }
       return {
         category: 'failure',
-        icon: '❌',
         label: '失败',
         detail: `任务真的跑起来了，但没跑成。这次算一次失败：累计 ${String(DEGRADE_AFTER_FAILURES)} 次会自动放慢（每天只试一次）。`,
         countsTowardFailure: true,
@@ -86,7 +83,6 @@ export function formatRunOutcome(run: {
       // 但原因完全不同 —— 用户该做的是调大超时档位，不是查代码。
       return {
         category: 'failure',
-        icon: '❌',
         label: '超时',
         detail:
           '跑到了规则里设的最长运行时间，被强制结束，按失败处理。这次算一次失败；' +
@@ -98,7 +94,6 @@ export function formatRunOutcome(run: {
       const n = run.retryCount ?? 0;
       return {
         category: 'waiting',
-        icon: '⚠️',
         label: `排队重试中 ${String(n)}/${String(AUTOMATION_MAX_RETRIES)}`,
         detail: `触发的时候没有空闲资源，正在按 24 分钟一次的间隔排队重试（最多 ${String(AUTOMATION_MAX_RETRIES)} 次）。还没有结果，这次不算失败。`,
         countsTowardFailure: false,
@@ -112,7 +107,6 @@ export function formatRunOutcome(run: {
           : undefined;
       return {
         category: 'skipped',
-        icon: '⏭️',
         label: '跳过',
         // ⏳ 后端补上 error_code 之前只能给通用文案（契约缺口见 types/automation 文件头）。
         detail: `${detail ?? '这次没有触发（后端没有下发原因）。'}这次没有执行，不算失败。`,
@@ -123,7 +117,6 @@ export function formatRunOutcome(run: {
     case 'missed':
       return {
         category: 'missed',
-        icon: '🕳️',
         label: '错过',
         detail:
           '平台的定时调度当时没在运行，错过了这个时刻。这不是规则的问题；按设计也不会补跑（补跑会让凌晨的任务在中午执行）。这次不算失败。',
@@ -133,7 +126,6 @@ export function formatRunOutcome(run: {
     case 'running':
       return {
         category: 'running',
-        icon: '⏳',
         label: '运行中',
         detail: '任务正在跑。',
         countsTowardFailure: false,
@@ -142,7 +134,6 @@ export function formatRunOutcome(run: {
     case 'pending':
       return {
         category: 'waiting',
-        icon: '⏳',
         label: '待执行',
         detail: '已经触发，正在创建任务。',
         countsTowardFailure: false,

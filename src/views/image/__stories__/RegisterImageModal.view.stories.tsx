@@ -35,6 +35,14 @@ export const Empty: Story = {
     await expect(document.activeElement).toBe(input);
     // 还没验证 ⇒ [保存] 根本不渲染。
     await expect(canvas.queryByRole('button', { name: '保存' })).toBeNull();
+    // MUTATION：把标题的 `<Package>` 换回 📦 字符或换成另一个图标 ⇒ 这条先红——
+    // 只锁标题文字锁不住"真的换成了哪个图标组件"。
+    await expect(canvas.getByRole('heading').querySelector('svg.lucide-package')).not.toBeNull();
+    await expect(
+      canvas
+        .getByTestId('register-lineage-constraint-icon')
+        .classList.contains('lucide-triangle-alert'),
+    ).toBe(true);
   },
 };
 

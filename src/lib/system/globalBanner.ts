@@ -36,10 +36,26 @@ export const OFFLINE_ACTION_DISABLED_REASON = '离线模式：需连接网络才
 /**
  * 渲染顺序。**`platform-state-unknown` 在前**：它否定的是"这一屏的判定作不作数"，
  * 排在离线之下时，用户会先读到一个可能根本不成立的结论。
+ *
+ * ⚠️ 排序同时编码了**优先级分层**（design-notes.md §4 Phase 3 第 3 条：阻断 > 治理 > 提示）：
+ * 两条 blocking（0、1）排在 `automation-needs-attention` 这条 warning（2）之前。今天只有
+ * 三个生产方、每个 id 至多出现一条，靠这张表的先后顺序就足够表达"阻断压过治理"，不需要
+ * 另起一个按 `severity` 分组再排序的通用比较器——等哪天同一档出现第二个生产方、需要按
+ * 到达顺序或时间戳再决出同档内的先后时，再在这里升级排序逻辑（不要为了这一天还没到的
+ * 需求先搭一个通用框架）。
  */
 const BANNER_RANK: Readonly<Record<BannerId, number>> = {
   'platform-state-unknown': 0,
   offline: 1,
+  'automation-needs-attention': 2,
+};
+
+/** 没有数据 / 没有生产方时的兜底（`GlobalBannerInput.automation` 缺席即视为这个）。 */
+const NO_AUTOMATION_ATTENTION: NonNullable<GlobalBannerInput['automation']> = {
+  hasData: false,
+  autoDisabledCount: 0,
+  degradedCount: 0,
+  needsAttention: false,
 };
 
 /** 判定 → 横幅清单（未排序、未剔除已关闭项）。纯函数，无 `Date.now()`。 */
@@ -75,7 +91,49 @@ export function globalBanners(input: GlobalBannerInput): GlobalBannerModel[] {
     });
   }
 
+  // ⚠️ 治理类（`lib/automation/automationAttention.ts` 是唯一的生产方，见该文件文末的
+  // 接线记录）。文案**直接取它产出的三个字段**，不在这里另写一份——两份文案迟早分叉。
+  const automation = input.automation ?? NO_AUTOMATION_ATTENTION;
+  if (
+    automation.needsAttention &&
+    automation.title !== undefined &&
+    automation.description !== undefined
+  ) {
+    out.push({
+      id: 'automation-needs-attention',
+      severity: 'warning',
+      title: automation.title,
+      description: automation.description,
+      ...(automation.actionLabel === undefined ? {} : { actionLabel: automation.actionLabel }),
+    });
+  }
+
   return out;
+}
+
+/** `'YYYY-MM-DD'`（本机时区）。治理类横幅「关闭后当天不再弹」拿它当比对键。 */
+export function todayKey(now: Date): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${String(y)}-${m}-${d}`;
+}
+
+/**
+ * 治理类「今天关过」判定：记录的日期字符串等于**今天**才算数。
+ *
+ * ⚠️ 与 `pruneDismissed`（阻断类的"判定不再命中就回收关闭记录"）是**两套不同的失效机制**，
+ * 不要互相借用：阻断类的关闭要在"这次离线过去、又重新离线"时重新出现，靠的是"判定消失
+ * 就回收"；治理类的关闭要撑到**这一天结束**，哪怕期间规则状态抖动（先恢复又再次触发）
+ * 也不重新弹——这正是"当天不再弹"字面的意思。所以这里**不需要**也不做任何回收：日期一变，
+ * 字符串比对自然不再相等，记录留在 store 里不会造成任何错误判定，只是不再生效的旧数据。
+ */
+export function isDismissedToday(
+  id: BannerId,
+  dismissedToday: Readonly<Record<string, string>>,
+  now: Date,
+): boolean {
+  return dismissedToday[id] === todayKey(now);
 }
 
 /**

@@ -207,7 +207,7 @@ test.describe('F21-8 · 首次冷启动的阻塞式向导', () => {
     await expect(page.getByTestId('init-wizard')).toBeVisible();
     // ⚠️ 两条否定断言：设置页的内容一点都不许渲染，而 URL 也不许被改写
     //    —— redirect 会让用户完成初始化后回不到他原本要去的地方。
-    await expect(page.getByRole('heading', { name: '🖼️ 镜像管理' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: '镜像管理' })).toHaveCount(0);
     expect(new URL(page.url()).pathname).toBe('/settings/images');
   });
 

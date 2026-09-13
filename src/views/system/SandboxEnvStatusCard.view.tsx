@@ -10,14 +10,21 @@
 // ⏳ **[查看日志] 本轮没有**：`ProviderLogPanel` 要的"最近 20 行运行日志"在契约里还没有
 // 端点（10 §6.6 只有 providers 概览）。摆一个点了什么都不会发生的按钮，比暂时没有它更糟
 // ——用户会以为日志功能坏了。缺口记在本轮报告里。
+import { XCircle } from 'lucide-react';
+import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { ProviderHealthLevel, SandboxEnvStatusCardModel } from '@/types/system';
 
-const SANDBOX_ENV_ICON: Readonly<Record<ProviderHealthLevel, string>> = {
-  ok: '✅',
-  warning: '⚠️',
-  error: '❌',
-  // ⚠️ 单独一个图标：它既不是"好"也不是"坏"，而是"没有数据可以下结论"。
-  'no-sample': '⚪',
+/**
+ * `ProviderHealthLevel` → `StatusPill` 八态（design/design-notes.md §4 Phase 1 第三条：
+ * 沙箱环境状态换 `StatusPill`）。⚠️ **`no-sample` 映射到 `unknown`**（虚线灰）而不是
+ * `ok`/`pending`——它既不是"好"也不是"坏"，而是"没有数据可以下结论"，与诊断的
+ * `timeout ≠ fail` 是同一条纪律的另一处落地。
+ */
+const SANDBOX_ENV_PILL_STATUS: Readonly<Record<ProviderHealthLevel, StatusPillStatus>> = {
+  ok: 'ok',
+  warning: 'warn',
+  error: 'fail',
+  'no-sample': 'unknown',
 };
 const SANDBOX_ENV_LEVEL_TEXT: Readonly<Record<ProviderHealthLevel, string>> = {
   ok: '正常',
@@ -38,19 +45,24 @@ export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCar
       className="flex flex-col gap-3 rounded-lg border border-border p-4"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-2">
+        {/* ⚠️ 只改可见文案，不改文件名/组件名/类型名（design-notes §4 Phase 1 +
+            §5 拍板点 1：`SandboxEnvStatusCard` 这个名字已经在上一轮改过，这一轮
+            只把标题从「这台机器的沙箱环境」换成「沙箱环境状态」，与同页其它三张卡
+            「X状态」的命名对齐）。 */}
         <h2 id="sandbox-env-status-heading" className="text-base font-semibold">
-          🏃 这台机器的沙箱环境
+          沙箱环境状态
         </h2>
         {model === null ? null : (
           <span className="text-xs text-muted-foreground">
-            健康统计窗口：{model.windowText}（阈值 &gt;1% ⚠️ · &gt;10% ❌）
+            健康统计窗口：{model.windowText}（阈值 &gt;1% 警告 · &gt;10% 故障）
           </span>
         )}
       </header>
 
       {isError ? (
-        <p role="alert" className="text-sm text-red-500">
-          ❌ 沙箱环境概览读取失败 —— 这里的空白不代表这台机器上没有沙箱环境
+        <p role="alert" className="flex items-center gap-1.5 text-sm text-red-500">
+          <XCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
+          沙箱环境概览读取失败 —— 这里的空白不代表这台机器上没有沙箱环境
         </p>
       ) : model === null ? (
         <p className="text-sm text-muted-foreground">读取中…</p>
@@ -64,14 +76,13 @@ export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCar
                 className="flex flex-col gap-0.5 rounded-md border border-border/60 px-3 py-2 text-sm"
               >
                 <span className="flex flex-wrap items-center gap-2">
-                  <span aria-hidden="true">{SANDBOX_ENV_ICON[p.level]}</span>
+                  <StatusPill status={SANDBOX_ENV_PILL_STATUS[p.level]}>
+                    {SANDBOX_ENV_LEVEL_TEXT[p.level]}
+                  </StatusPill>
                   {/* ⚠️ 光一个 `aio` / `boxlite`，用户无从判断哪个是哪个（映射在 lib，
                       未知 provider 原样用 id —— 开放注册表，猜一个描述比不给更贵）。 */}
                   <span className="font-medium" data-testid={`sandbox-env-name-${p.id}`}>
                     {p.displayName}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {SANDBOX_ENV_LEVEL_TEXT[p.level]}
                   </span>
                   {p.isDefault ? (
                     <span className="rounded bg-muted px-1.5 py-0.5 text-xs">默认</span>
@@ -87,9 +98,20 @@ export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCar
             <h3 className="text-sm font-medium">Agent</h3>
             <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
               {model.runtimes.map((r) => (
-                <li key={r.id} data-testid={`runtime-row-${r.id}`}>
-                  <span aria-hidden="true">{r.credentialConfigured ? '✅' : '⏸️'}</span>{' '}
-                  {r.displayName}（{r.vendor}）· {r.credentialText} · 授权方式 {r.authMethodsText}
+                <li
+                  key={r.id}
+                  data-testid={`runtime-row-${r.id}`}
+                  className="flex items-center gap-2"
+                >
+                  {/* 紧凑型：只留图标（design/prototype.html Agent 分组的 `status-pill`
+                      同样只给 18px 高、无文字，行内密度高不需要重复的文字标签）。 */}
+                  <StatusPill
+                    status={r.credentialConfigured ? 'ok' : 'unknown'}
+                    className="h-[18px] px-1"
+                  />
+                  <span>
+                    {r.displayName}（{r.vendor}）· {r.credentialText} · 授权方式 {r.authMethodsText}
+                  </span>
                 </li>
               ))}
             </ul>

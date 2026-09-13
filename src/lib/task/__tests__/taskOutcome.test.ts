@@ -218,6 +218,41 @@ describe('describeTaskErrorCode · 码 → 人话', () => {
   });
 });
 
+/**
+ * ⭐ **架构收口**：`STATUS_TITLE` 此前用字面 emoji（✅/❌/⛔/⏱️）编码"这是哪一类结果"，
+ * 本轮拆成 `TaskOutcomeCopy.severity` 结构化字段（与 `sandboxErrorCopy.ts` 的
+ * `SandboxErrorCopy.severity` 是同一次拆分）。逐状态精确断言，不是只断言"字段存在"——
+ * 否则把全部状态错记成同一个 severity，断言照样全绿。
+ *
+ * MUTATION：把 `killed` 的 severity 从 `'fail'` 改成别的值，或把 `timed_out` 从
+ * `'timeout'` 改回 `'fail'` ⇒ 对应那一行精确变红。
+ */
+describe('describeTaskOutcome · severity（title 不再夹字面 emoji）', () => {
+  // 用交替（|）而不是字符类：⏱️ 是"基础符号 + FE0F 变体选择符"两码位组成一个字形，
+  // 塞进 `[...]` 会被 eslint `no-misleading-character-class` 判定为误导写法。
+  const EMOJI_PATTERN = /\u{2705}|\u{274C}|\u{26D4}|\u{23F1}\u{FE0F}?/u;
+
+  it('title 不含字面 emoji 字符（成功/失败/终止/超时四种终态都不含）', () => {
+    expect(describeTaskOutcome({ exit: { status: 'succeeded', exitCode: 0 } }).title).not.toMatch(
+      EMOJI_PATTERN,
+    );
+    expect(describeTaskOutcome({ exit: { status: 'failed', exitCode: 1 } }).title).not.toMatch(
+      EMOJI_PATTERN,
+    );
+    expect(describeTaskOutcome({ exit: { status: 'killed' } }).title).not.toMatch(EMOJI_PATTERN);
+    expect(describeTaskOutcome({ exit: { status: 'timed_out' } }).title).not.toMatch(EMOJI_PATTERN);
+  });
+
+  it('severity 逐状态精确匹配', () => {
+    expect(describeTaskOutcome({ exit: { status: 'succeeded', exitCode: 0 } }).severity).toBe('ok');
+    expect(describeTaskOutcome({ exit: { status: 'failed', exitCode: 1 } }).severity).toBe('fail');
+    // killed 与 failed 共用 'fail'：两者原本就同落 tone==='failed' 的红字调性，
+    // OutcomeSeverity 没有专门给"被终止"开第六态。
+    expect(describeTaskOutcome({ exit: { status: 'killed' } }).severity).toBe('fail');
+    expect(describeTaskOutcome({ exit: { status: 'timed_out' } }).severity).toBe('timeout');
+  });
+});
+
 describe('formatArtifactSize', () => {
   it('按二进制进位给可读体积', () => {
     expect(formatArtifactSize(0)).toBe('0 B');

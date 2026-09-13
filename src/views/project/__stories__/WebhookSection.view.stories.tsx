@@ -69,16 +69,19 @@ export const Testing: Story = {
 export const TestOk: Story = {
   args: { testPhase: 'ok' },
   play: async ({ canvasElement }) => {
-    await expect(within(canvasElement).getByTestId('webhook-test-ok')).toBeInTheDocument();
+    const el = within(canvasElement).getByTestId('webhook-test-ok');
+    await expect(el).toBeInTheDocument();
+    // MUTATION：把 `<Check>` 换回 ✅ 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(el.querySelector('svg.lucide-check')).not.toBeNull();
   },
 };
 
 export const TestFailed: Story = {
   args: { testPhase: 'error', testErrorMessage: '目标地址不可达' },
   play: async ({ canvasElement }) => {
-    await expect(within(canvasElement).getByTestId('webhook-test-error')).toHaveTextContent(
-      '目标地址不可达',
-    );
+    const el = within(canvasElement).getByTestId('webhook-test-error');
+    await expect(el).toHaveTextContent('目标地址不可达');
+    await expect(el.querySelector('svg.lucide-x')).not.toBeNull();
   },
 };
 

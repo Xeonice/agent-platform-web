@@ -6,6 +6,7 @@
 //  ② P22 §1：人话 + 可操作动作一起给；错误码只作诊断小字。
 import type { TaskArtifactView, TaskOutcomeCopy } from '@/types/taskStream';
 import { Button } from '@/components/ui/button';
+import { OutcomeIcon } from '@/components/ui/outcome-icon';
 
 export interface TaskOutcomeProps {
   copy: TaskOutcomeCopy;
@@ -53,8 +54,13 @@ export function TaskOutcomeView({
     >
       <p
         {...(failed ? { role: 'alert' as const } : { role: 'status' as const })}
-        className={failed ? 'text-sm text-red-400' : 'text-sm text-foreground'}
+        className={
+          failed
+            ? 'flex items-center gap-1.5 text-sm text-red-400'
+            : 'flex items-center gap-1.5 text-sm text-foreground'
+        }
       >
+        <OutcomeIcon severity={copy.severity} />
         {copy.title}
       </p>
 

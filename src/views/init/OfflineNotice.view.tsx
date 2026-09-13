@@ -14,6 +14,7 @@
 // 上一版在这里**又抄了一遍**，于是同一句话有两份复制、并且都点名了 codex / claude code
 // ——而 runtime 是开放注册表，那句点名在装了第三方 runtime 的平台上是错的。两份复制的代价
 // 不是多几行字，而是**改一处、漏一处**：向导里说的和横幅里说的会分叉，说的却是同一件事。
+import { Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export interface OfflineNoticeProps {
@@ -35,13 +36,22 @@ export function OfflineNoticeView({ verdictText, acknowledged, onContinue }: Off
       role="alert"
       className="flex flex-col gap-2 rounded-md border border-red-500/50 bg-red-500/5 p-3 text-sm"
     >
-      <p className="font-medium text-red-500">🔴 {verdictText}</p>
+      <p className="flex items-center gap-1.5 font-medium text-red-500">
+        <X aria-hidden="true" className="h-4 w-4 shrink-0" />
+        {verdictText}
+      </p>
       {/* 只有这一句是本页独有的：它回答"那我现在装了，以后网通了怎么办"。 */}
       <p className="text-muted-foreground">网络恢复后无需重装，回系统状态页重新检测即可。</p>
       {acknowledged ? (
-        <p data-testid="offline-acknowledged" className="text-xs text-muted-foreground">
-          ✅ 已确认以离线模式继续 —— 完成初始化后，工作台会常驻一条离线横幅，
-          发起任务的入口会置灰（只置灰、不隐藏）。
+        <p
+          data-testid="offline-acknowledged"
+          className="flex items-start gap-1.5 text-xs text-muted-foreground"
+        >
+          <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 translate-y-0.5" />
+          <span>
+            已确认以离线模式继续 —— 完成初始化后，工作台会常驻一条离线横幅，
+            发起任务的入口会置灰（只置灰、不隐藏）。
+          </span>
         </p>
       ) : (
         <div className="flex items-center gap-2">

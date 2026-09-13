@@ -4,6 +4,7 @@
 //
 // ⚠️ 格的**顺序由 props.phases 决定**（容器从 lib/sandboxLifecycle 取，展示序刻意 ≠ 状态机序）；
 // 本视图不排序、不重排、不硬编码任何阶段名。
+import { Check, Circle } from 'lucide-react';
 
 export interface SandboxStartupProgressProps {
   /** 四阶段标签（顺序即展示顺序，由 container 注入）。 */
@@ -88,20 +89,25 @@ export function SandboxStartupProgressView({
             const state = i < activeIndex ? 'done' : i === activeIndex ? 'active' : 'pending';
             const note = phaseNote?.phaseKey === phase.key ? phaseNote.text : null;
             return (
-              <li key={phase.key} className="flex flex-col gap-1 text-sm">
+              // ⚠️ `data-phase-state` 是**给测试用的语义出口**：三态的视觉差别现在只剩
+              //    图标 class（`done` 是 `lucide-check`，`active`/`pending` 都是
+              //    `lucide-circle`，只靠 `fill-current`/`animate-pulse` 区分）——
+              //    按 class 断言太脆，改个动效就红。⛔ 也不能退回用 `●` 这种字符当标记。
+              <li key={phase.key} data-phase-state={state} className="flex flex-col gap-1 text-sm">
                 <span className="flex items-center gap-2">
-                  <span
-                    aria-hidden
-                    className={
-                      state === 'done'
-                        ? 'text-primary'
-                        : state === 'active'
-                          ? 'animate-pulse text-primary'
-                          : 'text-muted-foreground'
-                    }
-                  >
-                    {state === 'done' ? '✓' : state === 'active' ? '●' : '○'}
-                  </span>
+                  {state === 'done' ? (
+                    <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  ) : state === 'active' ? (
+                    <Circle
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0 animate-pulse fill-current text-primary"
+                    />
+                  ) : (
+                    <Circle
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                    />
+                  )}
                   <span
                     className={state === 'pending' ? 'text-muted-foreground' : 'text-foreground'}
                   >

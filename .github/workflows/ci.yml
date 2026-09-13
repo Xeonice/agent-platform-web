@@ -42,6 +42,8 @@ jobs:
         run: pnpm check:stories
       - name: 替身响应锚定契约类型（29 §3.2 第三条）
         run: pnpm check:mock-contracts
+      - name: 渲染文本不许有 emoji（图标走 lucide）
+        run: pnpm check:no-emoji
 
   # 第 2 道门（并行）：单测
   unit-tests:

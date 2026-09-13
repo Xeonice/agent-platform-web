@@ -4,7 +4,7 @@
 //  ③ 项目只读条（远端/分支/基线体积/最后同步）+ [重新同步]；
 //  ④ 新建项目弹窗补上**分支输入**（`repoBranch` 契约里一直有，表单此前没接）。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent, within, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
@@ -27,6 +27,8 @@ vi.mock('@/hooks/sandbox/useSandboxEventsSocket', () => ({
 }));
 
 import { WorkbenchContainer } from '@/containers/workbench/WorkbenchContainer';
+import { NewTaskDeepLinkContainer } from '@/containers/sandbox/NewTaskDeepLinkContainer';
+import { healthKeys } from '@/hooks/_shared/useHealth';
 import { useAppStore } from '@/stores';
 import type { ProjectDto } from '@/types/project';
 import type { InitStatusDto } from '@/types/system';
@@ -162,6 +164,71 @@ describe('WorkbenchContainer · [+ 新任务] 入口', () => {
 // ————————————————————————————————————————————————————————————————
 // ② 两个弹层形态对称（§9.1 #2）
 // ————————————————————————————————————————————————————————————————
+// ————————————————————————————————————————————————————————————————
+// ⭐ 「[+ 新任务]」与 `/new` 深链打开**同一个**弹层（design-notes.md §4 Phase 3 第 5 条）：
+// 两条路径都只是把 store 上的 `currentModal` 置成 `'newTask'`——落地渲染的是
+// `SandboxTerminalContainer` 里**同一处** JSX，不是深链专门另画一份。
+// ————————————————————————————————————————————————————————————————
+describe('WorkbenchContainer · [+ 新任务] 与 /new 深链是同一个弹层', () => {
+  afterEach(() => {
+    // jsdom 的 `window.location` 跨用例持续存在，不清掉会让后面的用例平白带着
+    // `?new=1&project=p1` 启动。
+    window.history.replaceState(null, '', '/');
+  });
+
+  /**
+   * ⭐⭐ **核心断言**：深链打开一次、关掉，再站内点开一次——两次落地的必须是
+   * 同一个 `data-testid="modal-new-task"`（标题/副标题一字不差），且任意时刻
+   * 都只有一份（`getAllByTestId` 长度恒为 1），⛔ 不是深链专属渲染一份、
+   * 按钮点开另渲染一份长得像的。
+   *
+   * 变异：把 `NewTaskDeepLinkContainer` 消费深链后改成 set 一个不同的 modal key
+   * （比如 `'newTaskFromLink'`）并在 `WorkbenchContainer`/`SandboxTerminalContainer`
+   * 里另开一个分支渲染"看起来一样"的弹层 ⇒ 深链那次的 `currentModal` 断言与
+   * "同一个 modal-new-task" 的字符串比较都会变红。
+   */
+  it('⭐⭐ 深链打开与站内点击打开落地同一个 modal-new-task', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
+    window.history.pushState(null, '', '/?new=1&project=p1');
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    }
+    render(
+      <>
+        <NewTaskDeepLinkContainer />
+        <WorkbenchContainer />
+      </>,
+      { wrapper: Wrapper },
+    );
+
+    // ① 深链直接打开。
+    const deepLinkModal = await screen.findByTestId('modal-new-task');
+    expect(screen.getAllByTestId('modal-new-task')).toHaveLength(1);
+    expect(useAppStore.getState().currentModal).toBe('newTask');
+    expect(within(deepLinkModal).getByText('在「ProjectA」中发起')).toBeInTheDocument();
+
+    // 关掉这一份。
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByTestId('modal-new-task')).not.toBeInTheDocument();
+    });
+    expect(useAppStore.getState().currentModal).toBeNull();
+
+    // ② 同一个项目，改走站内点击 [+ 新任务]。
+    fireEvent.click(screen.getByRole('button', { name: /新任务/ }));
+    const clickModal = await screen.findByTestId('modal-new-task');
+    expect(screen.getAllByTestId('modal-new-task')).toHaveLength(1);
+    expect(useAppStore.getState().currentModal).toBe('newTask');
+    // 同一个标题、同一句副标题——不是"深链版"与"点击版"两份长得像但各自独立的渲染。
+    expect(within(clickModal).getByText('新建任务')).toBeInTheDocument();
+    expect(within(clickModal).getByText('在「ProjectA」中发起')).toBeInTheDocument();
+  });
+});
+
 describe('WorkbenchContainer · 两个「新建」形态对称', () => {
   /**
    * ⚠️ 病根：`currentModal==='createProject'` 此前被 return 成 `mainContent` ——
@@ -181,12 +248,26 @@ describe('WorkbenchContainer · 两个「新建」形态对称', () => {
     expect(screen.getByLabelText('项目分组任务树')).toBeInTheDocument();
   });
 
-  it('两个弹层用同一套 overlay 类名（形态对称，不是各画各的）', async () => {
+  /**
+   * ⚠️ **本例在 Phase 3 被改写，不是删掉**（design-notes.md §4 Phase 3 第 5 条）：
+   * 「新建任务」弹层这一轮换成了 shadcn `Dialog`（Radix），「新建项目」维持原有的
+   * `ModalShellView` 手写实现——两者不再共用同一套 class 字符串是**刻意的、已记录的
+   * 偏离**，不是谁改坏了谁。"形态对称"这条纪律改为在**语义**层面钉住（真 overlay、
+   * role=dialog、aria-modal、Esc 都能关），不再钉字面 className——后者绑定了"两个弹层
+   * 必须是同一份手写实现"这个已经不成立的前提。
+   *
+   * 变异：把「新建任务」的 `DialogPrimitive.Content` 上的 `data-testid`/`role` 拿掉
+   * ⇒ 下面 `toHaveAttribute('role', 'dialog')` 那句变红；把 Esc 处理去掉 ⇒ 最后的
+   * `waitFor` 超时。
+   */
+  it('两个弹层都是真 overlay（role=dialog + aria-modal），Esc 都能关（新建任务本轮换用 shadcn Dialog，与新建项目不再共用同一份手写外壳）', async () => {
     mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
     renderWorkbench();
 
     fireEvent.click(await screen.findByRole('button', { name: /新建项目/ }));
-    const projectModalClass = (await screen.findByTestId('modal-new-project')).className;
+    const projectModal = await screen.findByTestId('modal-new-project');
+    expect(projectModal).toHaveAttribute('role', 'dialog');
+    expect(projectModal).toHaveAttribute('aria-modal', 'true');
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => {
       expect(screen.queryByTestId('modal-new-project')).not.toBeInTheDocument();
@@ -197,10 +278,18 @@ describe('WorkbenchContainer · 两个「新建」形态对称', () => {
       expect(screen.getByRole('button', { name: /新任务/ })).toBeEnabled();
     });
     fireEvent.click(screen.getByRole('button', { name: /新任务/ }));
-    const taskModalClass = (await screen.findByTestId('modal-new-task')).className;
+    const taskModal = await screen.findByTestId('modal-new-task');
+    expect(taskModal).toHaveAttribute('role', 'dialog');
+    expect(taskModal).toHaveAttribute('aria-modal', 'true');
 
-    expect(taskModalClass).toBe(projectModalClass);
-    expect(projectModalClass).toContain('fixed inset-0 z-50');
+    // Esc 派给 `document`：Radix 的 `DismissableLayer` 监听 `ownerDocument`（捕获阶段），
+    // 与旧版 `window` 监听同属"抢在 xterm stopPropagation 之前"这条纪律，但合成事件要
+    // 落在 document 的事件路径上才收得到（真实按键天然如此，见 `SandboxTerminalContainer.test.tsx`
+    // 同一处注释）。
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByTestId('modal-new-task')).not.toBeInTheDocument();
+    });
   });
 
   it('Esc 关闭新建项目弹层（与新建任务同一个动作）', async () => {
@@ -604,6 +693,55 @@ describe('WorkbenchContainer · 左侧任务树接真实列表', () => {
 // 空串 ⇒ socket.io 按相对路径解析，补当前页面的 host 与协议（https 自动 wss），
 // 再由 next.config.mjs 的 `/socket.io` rewrite 转给后端。
 // ────────────────────────────────────────────────────────────────────────
+// ————————————————————————————————————————————————————————————————
+// 顶栏健康提示：正常时不渲染（design-notes.md §1 问题 5 / §4 Phase 3 第 4 条）
+// ————————————————————————————————————————————————————————————————
+describe('顶栏健康提示（正常时不渲染，异常时才挂载）', () => {
+  /**
+   * ⭐ 覆盖**切换**，不是两个静态态：先异常（挂载）再恢复正常（卸载）。
+   * 只测两个独立渲染的静态 story/用例测不出"切换"这件事本身——`healthLabel` 有可能是
+   * 一个只在初次渲染算一次、之后再也不更新的死值，两个孤立的静态断言看不出这个缺陷。
+   *
+   * 变异：把 `healthLabel = health.isError ? '后端不可用' : null` 改成
+   * `health.data !== undefined ? '后端健康...' : ...`（抄回旧逻辑）⇒ 本例第一句
+   * （异常时挂载）不受影响，但如果同时把 `null` 分支去掉、常驻渲染一个空字符串，
+   * 第二句（恢复后卸载）会变红——`queryByTestId` 会找到一个内容是空字符串的节点。
+   */
+  it('⭐ 后端不可用 ⇒ 顶栏挂载红字；恢复正常后 ⇒ 该节点整个卸载', async () => {
+    mockProjects([]);
+    server.use(
+      http.get(`${API_BASE}/api/health`, () =>
+        HttpResponse.json({ code: 'INTERNAL', message: '挂了', retryable: true }, { status: 500 }),
+      ),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    }
+    render(<WorkbenchContainer />, { wrapper: Wrapper });
+
+    const label = await screen.findByTestId('health-label');
+    expect(label).toHaveTextContent('后端不可用');
+
+    // 后端恢复：替身改回默认成功响应，主动使 health 查询失效触发重新取数。
+    server.resetHandlers();
+    await client.invalidateQueries({ queryKey: healthKeys.all() });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('health-label')).not.toBeInTheDocument();
+    });
+  });
+
+  it('正常（health 请求成功）⇒ 从一开始就不挂载', async () => {
+    mockProjects([]);
+    renderWorkbench();
+    await screen.findByLabelText('项目分组任务树');
+    expect(screen.queryByTestId('health-label')).not.toBeInTheDocument();
+  });
+});
+
 describe('WS 基址', () => {
   it('默认走同源：传给 /events 通道的 base 是空串，不是任何绝对地址', async () => {
     mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 0 })]);
@@ -1056,5 +1194,87 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     fireEvent.click(screen.getByTestId('locate-current-project'));
     expect(useAppStore.getState().taskListFolds['p1']).toBe(false);
     expect(useAppStore.getState().selectedProjectId).toBe('p1');
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// ⑤ 搜索防抖 200ms（P21-1 §6；F21-1 §9.1 #15 记录的偏离，这一轮补齐）
+// ————————————————————————————————————————————————————————————————
+/**
+ * ⚠️ 硬要求（用户裁决）：不许只断言"最终过滤对了"——那样把防抖整段删掉（容器直接把
+ * `searchQuery` 喂给 `useProjectTaskTree`）用例照样绿。必须假定时器推进时间，
+ * 证明"200ms 前没有过滤、200ms 后才过滤"。
+ */
+describe('WorkbenchContainer · 搜索防抖 200ms', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function sandboxDto(id: string, name: string): unknown {
+    return {
+      id,
+      projectId: 'p1',
+      runtime: 'codex',
+      provider: 'aio',
+      name,
+      status: 'running',
+      headless: false,
+      timeoutMinutes: null,
+      idleTimeoutSec: 1800,
+      waitingInput: false,
+      version: 0,
+    };
+  }
+
+  /**
+   * MUTATION：把 `WorkbenchContainer` 里喂给 `useProjectTaskTree` 的实参从
+   * `debouncedSearchQuery` 改回 `searchQuery`（即删掉防抖）⇒ 199ms 那条断言会红——
+   * 不匹配的任务会在按键后立刻消失，而不是等满 200ms。
+   */
+  it('199ms 时过滤还没生效，满 200ms 才按输入过滤（真防抖）', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 2 })]);
+    mockSandboxes([sandboxDto('sbx-1', '重构支付模块'), sandboxDto('sbx-2', '修复终端断线')]);
+    renderWorkbench();
+
+    // 先等两条任务都真的渲染出来，再开始计时——避免把初次拉取的网络延迟算进 200ms 里。
+    await screen.findByRole('button', { name: /重构支付模块/ });
+    await screen.findByRole('button', { name: /修复终端断线/ });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.change(screen.getByTestId('task-search-input'), { target: { value: '支付' } });
+
+    // ⭐ 关键断言：199ms 时两条任务都还在——过滤还没发生。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(199);
+    });
+    expect(screen.getByRole('button', { name: /重构支付模块/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /修复终端断线/ })).toBeInTheDocument();
+
+    // ⭐ 关键断言：再过 1ms（凑满 200ms），不匹配的任务被过滤掉。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /修复终端断线/ })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /重构支付模块/ })).toBeInTheDocument();
+  });
+
+  /**
+   * 输入框本身不受防抖影响：敲的字符立刻回显（⛔ 不能等 200ms 才显示用户刚敲的字），
+   * 只有"用来真过滤的那份值"延迟。
+   */
+  it('输入框回显不受防抖影响：敲完立刻显示，不用等 200ms', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 1 })]);
+    mockSandboxes([sandboxDto('sbx-1', '重构支付模块')]);
+    renderWorkbench();
+    await screen.findByRole('button', { name: /重构支付模块/ });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const input = screen.getByTestId<HTMLInputElement>('task-search-input');
+    fireEvent.change(input, { target: { value: '支付' } });
+
+    // 0ms：没有推进任何时间，输入框已经是新值——受控输入不等防抖。
+    expect(input.value).toBe('支付');
   });
 });

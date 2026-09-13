@@ -38,8 +38,17 @@ type Story = StoryObj<typeof ProjectMenuPanelView>;
 export const Normal: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('open-retained-volumes')).toBeInTheDocument();
-    await expect(canvas.getByTestId('open-automations')).toBeInTheDocument();
+    const retainedBtn = canvas.getByTestId('open-retained-volumes');
+    const automationsBtn = canvas.getByTestId('open-automations');
+    await expect(retainedBtn).toBeInTheDocument();
+    await expect(automationsBtn).toBeInTheDocument();
+    // ⭐ emoji 收口：这两个入口此前拼的是 🎁/⚙️ 字符，现在是 lucide 组件。
+    // MUTATION：把 `<Gift>`/`<Settings>` 换回文案里的 emoji 或换成另一个图标 ⇒ 下面
+    // 两条先红——只锁按钮文案（上面两条）在两种写法下都绿，锁不住"真的换成了哪个图标"。
+    await expect(retainedBtn.querySelector('svg.lucide-gift')).not.toBeNull();
+    await expect(automationsBtn.querySelector('svg.lucide-settings')).not.toBeNull();
+    await expect(retainedBtn).toHaveTextContent('保留下来的成果');
+    await expect(automationsBtn).toHaveTextContent('自动化规则');
 
     await userEvent.click(canvas.getByTestId('project-delete-entry'));
     await expect(args.onRequestDelete).toHaveBeenCalled();

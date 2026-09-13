@@ -3,6 +3,7 @@
 // Device/SetupToken/ApiKey 面板。**粘贴的 code / API key 只作为本层 useState，提交即清空、不进全局 store、
 // 不进 persist（15 §3.5 安全红线）**——切 Tab / 卸载即随组件 key 重挂而丢弃。
 import { useEffect, useState } from 'react';
+import { Check } from 'lucide-react';
 import { useRuntimeAuthFlow, type AuthSuccess } from '@/hooks/credential/useRuntimeAuthFlow';
 import {
   AuthGatePanelView,
@@ -146,7 +147,12 @@ function AuthBranchSlot({
   const authPage = useOpenAuthPage();
 
   if (state.phase === 'success') {
-    return <p className="text-xs text-green-400">✅ 已连上</p>;
+    return (
+      <p className="flex items-center gap-1 text-xs text-green-400" data-testid="auth-gate-success">
+        <Check aria-hidden="true" className="h-3 w-3 shrink-0" />
+        已连上
+      </p>
+    );
   }
 
   if (state.branch === 'api-key') {

@@ -22,7 +22,31 @@ export interface Sandbox {
   /** running 的子态：等待用户输入（10 §7.4 派生字段 waitingInput）。 */
   waitingInput: boolean;
   lastActiveAt: number;
+  /**
+   * 任务树副行「活跃于 X 前」（design-notes.md §4 Phase 3 第 2 条 / 原型 `renderTaskTree()`）。
+   * 由 `useProjectTaskTree` 基于 `lastActiveAt` 派生（`@/lib/project/taskActivity`）。
+   *
+   * ⚠️ **`undefined` ⇒ 调用方整段不渲染这一句**，⛔ 不许拿估算值顶替——今天
+   * `useSandboxes` 把 `lastActiveAt` 硬编码成 `0`（后端 `SandboxDto` 还不带时间戳），
+   * 这一位因此恒为 `undefined`，直到那个字段真的接上后端契约。
+   */
+  activityLabel?: string;
 }
+
+/**
+ * 左侧任务树筛选 chips（P21-1 §6 六档口径 + 用户裁决新增的第七档）：
+ * 全部/准备中/运行中/等待输入/已暂停/异常/已停止。design-notes.md 原型只画了四档
+ * （缺准备中、异常），已按产品文档裁决补齐（F21-1 §9.1 #15 记录的偏离在那一轮收口）。
+ *
+ * ⚠️ 2026-09-13 用户裁决补的第七档 `stopped`（已停止）：`SandboxStatus` 的 6 个值
+ * 此前只有 5 个有对应 chip——停掉一个任务之后想找回来却没有筛选入口，这是规格的
+ * 空白，不是"产品文档口径本身的取舍"（上一轮的判断被推翻）。现在 6 个具体 chip
+ * 与 6 个 `SandboxStatus` 一一对应，`all` 之外不再有无家可归的状态。
+ *
+ * ⚠️ `paused`（已暂停，可恢复）与 `stopped`（已停止，终态）是两件事，不合并成一档。
+ */
+export type TaskStatusFilter =
+  'all' | 'preparing' | 'running' | 'waitingInput' | 'paused' | 'error' | 'stopped';
 
 /** selectProjectTaskTree 的派生输出（15 §5）。 */
 export interface ProjectGroup {

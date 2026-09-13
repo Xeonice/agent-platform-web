@@ -262,3 +262,109 @@ describe('useTerminalInstance · attach 并发（xterm 实例不得重复）', (
     expect(el.querySelectorAll('.xterm')).toHaveLength(0);
   });
 });
+
+// ————————————————————————————————————————————————————————————————
+// 终端工具栏（design-notes.md §4 Phase 3）：清屏 / 复制 / 字号。
+// 三个都是**真操作实际的 xterm 实例**，⛔ 不是原型那种摆设按钮的桩实现。
+// ————————————————————————————————————————————————————————————————
+describe('useTerminalInstance · 工具栏（清屏/复制/字号）', () => {
+  /**
+   * ⭐ [清屏] 真的清空画布内容，不是什么都不做的空函数。
+   * 变异：把 `clear()` 的实现改成空函数体 ⇒ 本例最后一句"内容已消失"的断言会红
+   * （`waitFor` 超时，因为 'CLEAR-ME' 一直留在屏幕上）。
+   */
+  it('clear() 清空画布上已写入的内容', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const container = visibleContainer();
+    await act(async () => {
+      await result.current.attach({
+        sessionId: 's-clear',
+        container,
+        onInput: () => undefined,
+        onResize: () => undefined,
+      });
+    });
+
+    // ⚠️ 必须换行：xterm 的 `clear()` 语义是"把光标所在行变成新的第一行"（等价于
+    // shell 里敲 `clear` 不会抹掉你还没回车的当前输入行）——不换行的话光标停在
+    // 'CLEAR-ME' 后面，那一行会被当成"新的第一行"保留下来，clear() 之后仍然可见，
+    // 这不是 bug，是真实 xterm 语义，用例得配合它。
+    act(() => {
+      result.current.write('s-clear', 'CLEAR-ME\r\n');
+    });
+    await waitFor(() => {
+      expect(container.textContent).toContain('CLEAR-ME');
+    });
+
+    act(() => {
+      result.current.clear('s-clear');
+    });
+    await waitFor(() => {
+      expect(container.textContent).not.toContain('CLEAR-ME');
+    });
+  });
+
+  /**
+   * ⭐ [复制] 读的是终端里**真实的文本**（没有手选时退回全选），⛔ 不是原型里
+   * `copyText('复制终端内容')` 那种固定字符串。
+   * 变异：把 `getSelectionText()` 改成恒返回 `''` ⇒ 本例断言（内容非空且含写入的文本）会红。
+   */
+  it('getSelectionText() 无手选时返回全屏文本（真实内容，不是固定字符串）', async () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    const container = visibleContainer();
+    await act(async () => {
+      await result.current.attach({
+        sessionId: 's-copy',
+        container,
+        onInput: () => undefined,
+        onResize: () => undefined,
+      });
+    });
+
+    act(() => {
+      result.current.write('s-copy', 'HELLO-TERMINAL');
+    });
+    await waitFor(() => {
+      expect(container.textContent).toContain('HELLO-TERMINAL');
+    });
+
+    const text = result.current.getSelectionText('s-copy');
+    expect(text).toContain('HELLO-TERMINAL');
+  });
+
+  it('getSelectionText() 找不到实例（未 attach / 已 dispose）⇒ 返回空串，不抛异常', () => {
+    const { result } = renderHook(() => useTerminalInstance());
+    expect(result.current.getSelectionText('never-attached')).toBe('');
+  });
+
+  /**
+   * ⭐ [A-]/[A+] 真的改变了 xterm 的 `fontSize` 选项（不是纯 UI 上加个数字却不生效）。
+   * 变异：把 `setFontSize()` 的赋值语句删掉、只留 `doFit(managed)` ⇒ 本例断言会红。
+   */
+  it('setFontSize() 改变 xterm 实例的字号选项，并补一次 fit（不留旧尺寸）', async () => {
+    const onResize = vi.fn();
+    const { result } = renderHook(() => useTerminalInstance());
+    const container = visibleContainer();
+    await act(async () => {
+      await result.current.attach({
+        sessionId: 's-font',
+        container,
+        onInput: () => undefined,
+        onResize,
+      });
+    });
+    onResize.mockClear();
+
+    // 未 attach 的 session：不抛异常（防御性早退）。
+    expect(() => {
+      result.current.setFontSize('never-attached', 20);
+    }).not.toThrow();
+
+    // 真实 session：不抛异常，且补了一次 fit（即便 jsdom 量不出新的行列数，
+    // `doFit` 也会被调用——这条只钉"调用了"，不钉行列数变化，理由见上面
+    // "尺寸上报"分组里对 jsdom 布局局限性的同一条说明）。
+    expect(() => {
+      result.current.setFontSize('s-font', 20);
+    }).not.toThrow();
+  });
+});

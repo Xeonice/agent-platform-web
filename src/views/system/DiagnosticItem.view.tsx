@@ -1,12 +1,15 @@
-// 单项诊断结果（F21-5 §3 · P21-5 §9A/§9B）。纯展示、props 驱动、零副作用。
+// 单项诊断结果（F21-5 §3 · P21-5 §9A/§9B · design/design-notes.md §4 Phase 1）。
+// 纯展示、props 驱动、零副作用。
 //
-// ⚠️ **`info` 渲染 ℹ️，不是 ⚠️。** 这是本文件存在的头号理由。预制镜像那一项的第 5 步
-// （镜像已就绪但还没下载到本机）常态就是 `info`：镜像是好的，只是首个任务要多等几分钟。
-// 渲染成 ⚠️ 会让用户去修一个不需要修的东西，而他能想到的"修法"是删了重推——那会让情况
-// 更糟。⇒ 下面这张表里 `info` 与 `warn` 是**两行**，谁把它们合并谁当场改到这里。
+// ⚠️ **`info` 渲染 `Info` 图标，不是 `AlertTriangle`。** 这是本文件存在的头号理由。
+// 预制镜像那一项的第 5 步（镜像已就绪但还没下载到本机）常态就是 `info`：镜像是好的，
+// 只是首个任务要多等几分钟。渲染成警告色会让用户去修一个不需要修的东西，而他能想到的
+// "修法"是删了重推——那会让情况更糟。⇒ `StatusPill` 的八态 variant 已经把 `info`/`warn`
+// 分成两套独立颜色 + 独立图标（design-notes §1 问题 2），这里只管把 `item.status` 原样
+// 交给它，⛔ 不许在这个文件里再长出一份自己的图标/颜色查表。
 //
-// ⚠️ **`timeout` 也有自己的图标。** 「没查出来」不是「查出来是坏的」：前者常见于
-// 「系统好像坏了」的场景，而它**不构成**这一项坏了的结论。
+// ⚠️ **`timeout` 也有自己的图标（`Clock`，`StatusPill` 已定）。** 「没查出来」不是
+// 「查出来是坏的」：前者常见于「系统好像坏了」的场景，而它**不构成**这一项坏了的结论。
 //
 // ── 三层信息，三种渲染（2026-09-11 拆的）──────────────────────────────────────
 //
@@ -26,19 +29,18 @@
 //
 // ⚠️ **预制镜像那一项的 `stepText` 与 `errorCode` 各自成行**，⛔ 不与结论拼成一句：
 // 五步的下一步动作完全不同，合成一条等于把诊断退化成一个红灯（P21-5 §9A）。
-import { useState } from 'react';
+//
+// ⚠️ **展开状态不再是本地 `useState`。** Phase 1 接入「非 ok/info 默认展开」
+// （design-notes §1 问题 1）：哪几项默认展开由 `DiagnosticsCardView` 的 Accordion
+// 统一算（`lib/system/diagnosticsDisclosure.ts`），本组件只管接一个 `expanded: boolean`
+// 照着画——放回本地 state 会让"结果一到达就该展开"这条规则无从生效（组件早就带着
+// 上一次的展开状态挂在那儿，不会因为 status 从 undefined 变成 fail 而自动打开）。
+import { AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
+import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { DiagnoseStatus } from '@/types/sse-protocol';
 import type { DiagnosticItemModel } from '@/types/system';
 
-/** ⚠️ 五个状态五个图标 —— `info` 与 `warn` 分开、`timeout` 与 `fail` 分开。 */
-const STATUS_ICON: Readonly<Record<DiagnoseStatus, string>> = {
-  ok: '✅',
-  info: 'ℹ️',
-  warn: '⚠️',
-  fail: '❌',
-  timeout: '⌛',
-};
 const STATUS_TEXT: Readonly<Record<DiagnoseStatus, string>> = {
   ok: '正常',
   // ⚠️ 「提示」而不是「警告」：`info` 是"没有任何东西需要修"。
@@ -49,35 +51,71 @@ const STATUS_TEXT: Readonly<Record<DiagnoseStatus, string>> = {
   timeout: '未得出结论',
 };
 
+/**
+ * ①–⑧：固定顺序的序号圆标（design/prototype.html `'①②③④⑤⑥⑦⑧'[d.id-1]`）。⚠️ 八项
+ * 的展示顺序恒来自服务端首帧（`DiagnosticsCardModel.items`），这里只是把"它在这一次
+ * 首帧里排第几"翻成一个圆圈数字，⛔ 不是把某个 check id 写死绑定到某个序号。
+ */
+const ORDINAL_GLYPHS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'];
+
 export interface DiagnosticItemProps {
   item: DiagnosticItemModel;
+  /** 这一项在本轮首帧里排第几（从 1 开始）——只用来选一个圆标数字，纯展示。 */
+  ordinal: number;
+  /**
+   * 这一项当前是否展开。由父级 `DiagnosticsCardView` 依据
+   * 「非 ok/info 默认展开」的规则 + 用户手动切换的 override 算好，这里只负责渲染。
+   */
+  expanded: boolean;
   /** 命令 [复制]（clipboard + toast 在 container）。 */
   onCopyHint: (hint: string) => void;
 }
 
-export function DiagnosticItemView({ item, onCopyHint }: DiagnosticItemProps) {
+export function DiagnosticItemView({ item, ordinal, expanded, onCopyHint }: DiagnosticItemProps) {
   const pending = item.status === undefined;
-  // ⚠️ **默认收起**。展开状态是纯粹的每一项自己的事，不进 model —— 它不该跨重新诊断
-  //    保留，也不该让 lib 层多一个与结论无关的字段。
-  const [expanded, setExpanded] = useState(false);
+  const pillStatus: StatusPillStatus = item.status ?? 'pending';
   const hasMore =
     item.detailText !== undefined || item.nextStep !== undefined || item.command !== undefined;
+  const ordinalGlyph = ORDINAL_GLYPHS[ordinal - 1];
 
   return (
-    <li
+    <AccordionItem
+      value={item.id}
       data-testid={`diagnostic-item-${item.id}`}
       data-status={item.status ?? 'pending'}
       data-expanded={expanded ? 'true' : 'false'}
-      className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
+      className="flex flex-col gap-1 rounded-md border border-b border-border/60 px-3 py-2 text-sm"
     >
       <span className="flex flex-wrap items-center gap-2">
-        <span aria-hidden="true">{pending ? '⏳' : STATUS_ICON[item.status ?? 'ok']}</span>
-        <span className="font-medium">{item.label}</span>
-        <span className="text-xs text-muted-foreground">
+        {/* 序号圆标（design/design-notes.md §4 Phase 1：诊断项 ①–⑧），紧跟展开箭头之后、
+            状态 pill 之前——与 design/prototype.html 的顺序一致。`ordinal` 超出 8 项时
+            （契约扩容/schema 不匹配的边角）宁可不画，也不许显示 `undefined`。 */}
+        {ordinalGlyph === undefined ? null : (
+          <span
+            aria-hidden="true"
+            className="w-4 flex-none font-mono text-xs text-muted-foreground"
+          >
+            {ordinalGlyph}
+          </span>
+        )}
+        <StatusPill status={pillStatus}>
           {pending ? '检查中…' : STATUS_TEXT[item.status ?? 'ok']}
-        </span>
+        </StatusPill>
+        {/* `flex-1` 让 label 占满中间空间，把耗时推到行尾右对齐
+            （design/prototype.html：`flex-1 truncate` 在 label 上，耗时是最后一个 flex 子项）。 */}
+        <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
         {item.durationText === undefined ? null : (
-          <span className="text-xs text-muted-foreground">{item.durationText}</span>
+          <span className="flex-none text-xs text-muted-foreground">{item.durationText}</span>
+        )}
+        {/* 只有第 ⑤ 项（联网检查）有这句，且数字读的是服务端首帧下发的配置
+            （见 `types/system.ts` 里 `timeoutText` 的字段注释）。 */}
+        {item.timeoutText === undefined ? null : (
+          <span
+            data-testid={`diagnostic-timeout-${item.id}`}
+            className="flex-none text-xs text-muted-foreground"
+          >
+            {item.timeoutText}
+          </span>
         )}
       </span>
 
@@ -95,26 +133,27 @@ export function DiagnosticItemView({ item, onCopyHint }: DiagnosticItemProps) {
       )}
 
       {hasMore ? (
-        <button
-          type="button"
+        <AccordionTrigger
           data-testid={`diagnostic-toggle-${item.id}`}
-          aria-expanded={expanded}
-          className="self-start text-xs text-muted-foreground underline underline-offset-2"
-          onClick={() => {
-            setExpanded((v) => !v);
-          }}
+          className="self-start py-0 text-xs font-normal text-muted-foreground underline underline-offset-2 [&>svg]:h-3 [&>svg]:w-3"
         >
           {expanded ? '收起' : '展开详情'}
-        </button>
+        </AccordionTrigger>
       ) : null}
 
-      {expanded ? (
-        <>
+      {/* ⚠️ 交给 `AccordionContent` 自己的开合动画，⛔ 不要从外部用 `expanded` 再关一道。
+          曾经这里是 `hasMore && expanded ?`，为的是躲开一处假红：Radix `Presence` 靠
+          `animationend` 决定何时把内容移出 DOM，满负载跑一整批 story 时那个事件会被挤占，
+          断言在收起动画播完前就跑了。但那是**断言没等**，不是动画有问题 ——
+          为了让测试稳定而砍掉过渡动效，是拿产品观感去迁就用例。
+          ⇒ 动画留着，story 那边改成 `waitFor` 等它真的消失。 */}
+      {hasMore ? (
+        <AccordionContent className="pb-0 pt-1">
           {/* 第二层 ①：证据、例外条款、为什么。⛔ 一个字都不许截断（§9B）。 */}
           {item.detailText === undefined ? null : (
             <span
               data-testid={`diagnostic-detail-${item.id}`}
-              className="whitespace-pre-wrap break-words text-muted-foreground"
+              className="block whitespace-pre-wrap break-words text-muted-foreground"
             >
               {item.detailText}
             </span>
@@ -123,7 +162,7 @@ export function DiagnosticItemView({ item, onCopyHint }: DiagnosticItemProps) {
           {item.errorCode === undefined ? null : (
             <span
               data-testid={`diagnostic-code-${item.id}`}
-              className="text-xs text-muted-foreground"
+              className="block text-xs text-muted-foreground"
             >
               错误码 {item.errorCode}
             </span>
@@ -133,7 +172,7 @@ export function DiagnosticItemView({ item, onCopyHint }: DiagnosticItemProps) {
           {item.nextStep === undefined ? null : (
             <span
               data-testid={`diagnostic-next-${item.id}`}
-              className="whitespace-pre-wrap break-words"
+              className="block whitespace-pre-wrap break-words"
             >
               {item.nextStep}
             </span>
@@ -160,8 +199,8 @@ export function DiagnosticItemView({ item, onCopyHint }: DiagnosticItemProps) {
               </Button>
             </span>
           )}
-        </>
+        </AccordionContent>
       ) : null}
-    </li>
+    </AccordionItem>
   );
 }

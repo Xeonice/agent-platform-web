@@ -7,6 +7,7 @@
 //   （凭证过期 / 上次没跑完）在没有它的时候，会和 ❌ 失败一起被读成"我的规则一直在挂"，
 //   而这三件事该做的处置完全不同。⚠️ 但它的**视觉权重**要比"算一次失败"低一档，
 //   理由见下面那段注释。
+import { AlertTriangle, Check, Circle, Loader2, Minus, X, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { RunOutcomeCategory, RunRow } from '@/types/automation';
 
@@ -29,6 +30,28 @@ const CATEGORY_CLASS: Record<RunOutcomeCategory, string> = {
   running: 'text-sky-400',
 };
 
+/**
+ * `outcome.category` → 图标（07 §4.1：lib 只给 `category` 这个语义字段，这里是唯一
+ * 决定"画哪个 lucide 图标"的地方）。图标选择尽量对齐 `StatusPill` 的八态同款：
+ * success→ok(Check)、failure→fail(X)、skipped→skipped(Minus)。
+ * `waiting`/`running` 统一用 `Loader2`（转）——两者都是"还没有结果"，与 `StatusPill`
+ * 的 `pending` 态同一个图标；`missed` 用 `Circle`（`StatusPill` 的 `unknown` 态同款）：
+ * ⚠️ **这不是完美匹配**——`missed` 说的是"平台没跑"，`unknown` 字面意思是"不知道"，
+ * 两者不完全是一回事，八态里确实没有专门表达"错过"的一态。选它是因为它是八态里
+ * 视觉权重最轻、最不像"警告/失败"的一个，与 `missed` 文案"这不是规则的问题、
+ * 不算失败"的语气最接近。交付报告已把这处判断单独列出来，供拍板。
+ */
+const CATEGORY_ICON: Record<RunOutcomeCategory, LucideIcon> = {
+  success: Check,
+  failure: X,
+  skipped: Minus,
+  missed: Circle,
+  waiting: Loader2,
+  running: Loader2,
+};
+
+const CATEGORY_SPINS: ReadonlySet<RunOutcomeCategory> = new Set(['waiting', 'running']);
+
 export function RunHistoryItemView({
   row,
   expanded = false,
@@ -36,6 +59,7 @@ export function RunHistoryItemView({
   onOpenTask,
 }: RunHistoryItemProps) {
   const { outcome } = row;
+  const OutcomeIcon = CATEGORY_ICON[outcome.category];
   return (
     <li
       className="rounded border border-border px-3 py-2"
@@ -44,7 +68,14 @@ export function RunHistoryItemView({
       data-counts-toward-failure={String(outcome.countsTowardFailure)}
     >
       <div className="flex items-center gap-2">
-        <span aria-hidden="true">{outcome.icon}</span>
+        <OutcomeIcon
+          aria-hidden="true"
+          data-testid="run-outcome-icon"
+          data-outcome-category={outcome.category}
+          className={`h-3.5 w-3.5 shrink-0 ${CATEGORY_CLASS[outcome.category]} ${
+            CATEGORY_SPINS.has(outcome.category) ? 'animate-spin' : ''
+          }`}
+        />
         <span
           className={`text-xs font-medium ${CATEGORY_CLASS[outcome.category]}`}
           data-testid="run-label"
@@ -85,7 +116,10 @@ export function RunHistoryItemView({
         }`}
         data-testid="run-failure-accounting"
       >
-        {outcome.countsTowardFailure ? '⚠️ 这次算一次失败' : '这次不算失败'}
+        {outcome.countsTowardFailure && (
+          <AlertTriangle aria-hidden="true" className="mr-1 inline h-3 w-3 text-warning" />
+        )}
+        {outcome.countsTowardFailure ? '这次算一次失败' : '这次不算失败'}
       </p>
 
       {expanded && (

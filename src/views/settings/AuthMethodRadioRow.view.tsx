@@ -1,6 +1,7 @@
-// 模式单选行（F21-3 §3，P21-3 §6）：◉/○ 单选 + [当前使用] 徽标 + 帐号尾号 + 有效期（⚠️<7天 / ❌过期）
-// **+ 到期后该做什么** + 行内动作。
+// 模式单选行（F21-3 §3，P21-3 §6）：◉/○ 单选 + [当前使用] 徽标 + 帐号尾号 + 有效期
+// （警告 <7 天 / 已过期）**+ 到期后该做什么** + 行内动作。
 // 点未配置项 → onNeedSetup（就地补配，不报错）而非 onSwitch（F21-3 §5 / §7.2 play）。纯展示、props 驱动、零副作用。
+import { AlertTriangle, X, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { AuthModeRow } from '@/types/runtimeCredential';
 
@@ -29,11 +30,20 @@ export interface AuthMethodRadioRowProps {
  * ⚠️ `hint` 只说「该做什么」，**不承诺时间、不编数字**：「还剩多久」由 `expiryLabel`
  *    （lib `formatDaysLeft` 算出来的那一份）负责，这里不再算第二遍、也不复述。
  */
-function expiryMarker(row: AuthModeRow): { text: string; className: string; hint?: string } | null {
+interface ExpiryMarker {
+  text: string;
+  className: string;
+  /** 装饰图标；缺席 = 普通有效期（既不警告也没过期），不需要图标提醒。 */
+  icon?: LucideIcon;
+  hint?: string;
+}
+
+function expiryMarker(row: AuthModeRow): ExpiryMarker | null {
   if (row.expiryState === 'warning') {
     return {
-      text: `⚠️ ${row.expiryLabel ?? '快到期了'}`,
+      text: row.expiryLabel ?? '快到期了',
       className: 'text-amber-400',
+      icon: AlertTriangle,
       // ⚠️ 不在这里重算天数、也不重复念一遍 —— 「还剩多久」就在旁边那个标记里（`expiryLabel`），
       //    这一句只负责补上它缺的那一半：**该做什么**。
       hint: '建议在它到期前重新登录一次，免得任务跑到一半断掉。',
@@ -41,8 +51,9 @@ function expiryMarker(row: AuthModeRow): { text: string; className: string; hint
   }
   if (row.expiryState === 'expired') {
     return {
-      text: '❌ 已过期',
+      text: '已过期',
       className: 'text-red-400',
+      icon: X,
       hint: '现在用它发任务会失败，点 [重新登录] 换一份。',
     };
   }
@@ -88,7 +99,17 @@ export function AuthMethodRadioRowView({
             </span>
           )}
         </label>
-        {marker !== null && <span className={'text-xs ' + marker.className}>{marker.text}</span>}
+        {marker !== null && (
+          <span
+            className={'flex items-center gap-1 text-xs ' + marker.className}
+            data-testid="auth-expiry-marker"
+          >
+            {marker.icon !== undefined && (
+              <marker.icon aria-hidden="true" className="h-3 w-3 shrink-0" />
+            )}
+            {marker.text}
+          </span>
+        )}
       </div>
 
       {marker?.hint !== undefined && (

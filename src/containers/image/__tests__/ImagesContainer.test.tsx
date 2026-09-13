@@ -446,9 +446,28 @@ describe('ImagesContainer · 镜像要求（注册前就说 + 常驻面板）', 
   it('⭐ 一张都没注册时，空态也说明这条硬约束', async () => {
     seedList([]);
     renderPage();
-    expect(await screen.findByTestId('images-empty-constraint')).toHaveTextContent(
-      '必须从平台的预制镜像改起',
-    );
+    const hint = await screen.findByTestId('images-empty-constraint');
+    expect(hint).toHaveTextContent('必须从平台的预制镜像改起');
+    // MUTATION：把 `<AlertTriangle>` 换回 ⚠️ 字符或换成另一个图标 ⇒ 这条先红——
+    // 只锁文案（上面那条）在两种写法下都绿，锁不住"真的换成了图标组件"。
+    expect(
+      screen
+        .getByTestId('images-empty-constraint-icon')
+        .classList.contains('lucide-triangle-alert'),
+    ).toBe(true);
+  });
+
+  /** F21-4 §2 状态过滤按钮：图标对齐 `StatusPill` 三态同款（valid→Check/warning→AlertTriangle/invalid→X）。 */
+  it('⭐ 状态过滤按钮的图标不是拼在文案里的 emoji，而是各自锁定的 lucide 图标', async () => {
+    seedList([manifest({ id: 'm1', imageId: 'i1' })]);
+    renderPage();
+    await screen.findAllByTestId('image-card');
+    const validBtn = screen.getByRole('button', { name: '有效' });
+    const warningBtn = screen.getByRole('button', { name: '警告' });
+    const invalidBtn = screen.getByRole('button', { name: '无效' });
+    expect(validBtn.querySelector('svg.lucide-check')).not.toBeNull();
+    expect(warningBtn.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
+    expect(invalidBtn.querySelector('svg.lucide-x')).not.toBeNull();
   });
 
   /**

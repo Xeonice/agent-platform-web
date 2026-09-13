@@ -6,9 +6,44 @@
 //   ⇒ F21-7 §3 组件树里的 `DeleteRuleConfirm.view` 因此**没有作为独立弹层组件落地**，
 //     它的职责在本文件内的 `confirming` 分支里，交付报告已列出这处偏离。
 import { useState } from 'react';
+import { AlertTriangle, Check, Pause, X, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RunHistoryListView } from '@/views/project/RunHistoryList.view';
 import type { AutomationRow, RunRow } from '@/types/automation';
+
+/** 与 `AutomationListItem.view` 同一张表（`row.status` → 图标/颜色，复用 StatusPill 三态）。 */
+const STATUS_ICON: Record<'ok' | 'warn' | 'fail', LucideIcon> = {
+  ok: Check,
+  warn: AlertTriangle,
+  fail: X,
+};
+const STATUS_ICON_CLASS: Record<'ok' | 'warn' | 'fail', string> = {
+  ok: 'text-success',
+  warn: 'text-warning',
+  fail: 'text-error',
+};
+
+function LifecycleIcon({ status }: { status: AutomationRow['status'] }) {
+  if (status === undefined) {
+    return (
+      <Pause
+        aria-hidden="true"
+        data-testid="detail-lifecycle-icon"
+        data-lifecycle-status="off"
+        className="h-4 w-4 shrink-0 text-muted-foreground"
+      />
+    );
+  }
+  const Icon = STATUS_ICON[status];
+  return (
+    <Icon
+      aria-hidden="true"
+      data-testid="detail-lifecycle-icon"
+      data-lifecycle-status={status}
+      className={`h-4 w-4 shrink-0 ${STATUS_ICON_CLASS[status]}`}
+    />
+  );
+}
 
 export interface AutomationDetailProps {
   row: AutomationRow;
@@ -64,7 +99,7 @@ export function AutomationDetailView({
 
       <div>
         <h3 className="flex items-center gap-1.5 text-base font-semibold">
-          <span aria-hidden="true">{row.icon}</span>
+          <LifecycleIcon status={row.status} />
           {row.name}
         </h3>
         <p

@@ -165,7 +165,17 @@ export const Failed: Story = {
   args: { rows: [], isError: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByText('❌ 审计流加载失败')).toBeInTheDocument();
+    const failPill = canvas.getByText('审计流加载失败');
+    await expect(failPill).toBeInTheDocument();
+    // ⭐ emoji 收口回归：文案不再拼 `❌`，改用 `StatusPill status="fail"`——
+    // 三重线索里的"图标"这次不是拼进文案的字符，是 `data-status="fail"` 的组件。
+    // MUTATION：把 `AuditStreamCard.view.tsx` 里的 `<StatusPill status="fail">` 换回
+    // `<span>❌ 审计流加载失败</span>` ⇒ 下面两条 `data-status` / lucide class 断言先红
+    // ——只断言文案本身（上面那条）在两种写法下都绿，锁不住"真的换成组件了"。
+    const pillRoot = failPill.closest('[data-status]');
+    await expect(pillRoot).not.toBeNull();
+    await expect(pillRoot).toHaveAttribute('data-status', 'fail');
+    await expect(pillRoot?.querySelector('svg.lucide-x')).not.toBeNull();
     await expect(canvas.getByRole('button', { name: '重试' })).toBeInTheDocument();
     // ⛔ 失败**绝不**退化成「暂无记录」——那是本页最坏的谎。
     await expect(canvas.queryByText('暂无记录')).toBeNull();
@@ -212,7 +222,14 @@ export const LiveUpdateInterrupted: Story = {
     // ⛔ 关键是这三条否定/肯定的组合：**它是一行，不是一块**——列表照旧全在，
     //    也不许顺手把整块「审计流加载失败」搬过来（那把一次轮询失败放大成面板不可用）。
     await expect(canvas.getAllByTestId(/^audit-row-/)).toHaveLength(20);
-    await expect(canvas.queryByText('❌ 审计流加载失败')).toBeNull();
+    await expect(canvas.queryByText('审计流加载失败')).toBeNull();
+    // 顶部这一行用的是 `AlertTriangle`（warn 态同款图标），不是整块失败态的 `fail` pill。
+    const banner = canvas.getByTestId('audit-live-update-error');
+    // ⚠️ `AlertTriangle` 是 lucide 的历史别名，实际组件/渲染出的 class 是
+    // `lucide-triangle-alert`（新名 `TriangleAlert`）——断言写错这个名字会一直找不到，
+    // 表面像是"图标没渲染"，实际是断言本身认错了 class。
+    await expect(banner.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
+    await expect(banner.querySelector('[data-status="fail"]')).toBeNull();
   },
 };
 

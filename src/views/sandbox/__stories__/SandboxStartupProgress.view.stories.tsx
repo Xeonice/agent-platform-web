@@ -34,7 +34,29 @@ export const PullingImage: Story = {
 export const Workspace: Story = {
   args: { activeIndex: 2, percent: 40, dataStatus: 'preparing-workspace' },
 };
-export const Starting: Story = { args: { activeIndex: 3, percent: 80, dataStatus: 'starting' } };
+export const Starting: Story = {
+  args: { activeIndex: 3, percent: 80, dataStatus: 'starting' },
+  /**
+   * ⭐ 三种步骤态的字符画（✓/●/○）换成了 lucide 图标：done → `Check`
+   * （class `lucide-check`）、active → 实心 `Circle`（`fill-current`）、
+   * pending → 空心 `Circle`（同一个组件，不带 fill）。用 class 而不是文字断言，
+   * 否则"字符换了图标但类型/填充状态弄反"这类改动照样能骗过纯文本断言。
+   */
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const items = canvas.getAllByRole('listitem');
+    // 前 3 格（init/image/workspace）已完成 → Check。
+    for (const item of items.slice(0, 3)) {
+      const icon = item.querySelector('.lucide-check');
+      await expect(icon).not.toBeNull();
+    }
+    // 第 4 格（instance）进行中 → 实心圆点，带 pulse 动画。
+    const activeIcon = items[3]?.querySelector('.lucide-circle');
+    await expect(activeIcon).not.toBeNull();
+    await expect(activeIcon).toHaveClass('fill-current');
+    await expect(activeIcon).toHaveClass('animate-pulse');
+  },
+};
 
 /** 后端派生的默认任务名（前端不自己从 prompt 派生）。 */
 export const WithTaskName: Story = {

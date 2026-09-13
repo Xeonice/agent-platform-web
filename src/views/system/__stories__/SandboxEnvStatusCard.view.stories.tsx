@@ -122,6 +122,13 @@ export const NoSample: Story = {
     //    上面那条肯定断言换成 getByText('0%') 也照样绿。
     await expect(row).not.toHaveTextContent('0%');
     await expect(row).not.toHaveTextContent('正常');
+    // ⭐ design/design-notes.md §4 Phase 1：`no-sample` 映射到 `StatusPill` 的 `unknown`
+    // （虚线灰），⛔ 不是 `ok`/`pending`。上面几条只锁**文字**，锁不住 pill 的视觉语义
+    // ——`SANDBOX_ENV_LEVEL_TEXT` 与 `SANDBOX_ENV_PILL_STATUS` 是两张独立的表，只改
+    // 后者文字断言不会变。
+    // MUTATION：把 `SandboxEnvStatusCard.view.tsx` 里 `SANDBOX_ENV_PILL_STATUS['no-sample']`
+    // 从 `'unknown'` 改成 `'ok'` ⇒ 这条会红，而上面三条文字断言全部照样绿。
+    await expect(row.querySelector('[data-status]')).toHaveAttribute('data-status', 'unknown');
   },
 };
 
@@ -151,6 +158,8 @@ export const LoadFailed: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('alert')).toHaveTextContent('沙箱环境概览读取失败');
+    // ⭐ 换成了 lucide `XCircle`（class `lucide-circle-x`），不再是标题里的字面 ❌ 字符。
+    await expect(canvas.getByRole('alert').querySelector('.lucide-circle-x')).not.toBeNull();
     // 空白 ≠ 没有 provider。
     await expect(canvas.queryByTestId('sandbox-env-row-aio')).not.toBeInTheDocument();
   },

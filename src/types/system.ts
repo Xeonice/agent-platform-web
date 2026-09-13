@@ -60,6 +60,13 @@ export interface ResourceGaugeModel {
   usedPercent: number;
   /** `'4.2 / 8 核'`、`'5.8 / 16 GB'`、`'150 / 200 GB'`。 */
   amountText: string;
+  /**
+   * 仅磁盘维度有；本机文件系统挂载路径。⚠️ **独立成行，不并进 `label`**——真实路径
+   * （如 `/Users/xxx/Library/Application Support/...`）比 `/data` 长得多，拼进
+   * `磁盘（${path}）` 会把状态行撑到换行，连带把状态 pill 挤成两行（真实布局 bug，
+   * design/design-notes.md §4 Phase 1 收口时发现）。
+   */
+  pathText?: string;
 }
 
 /** 保留卷占用行（P21-5 §9C）。 */
@@ -183,6 +190,14 @@ export interface DiagnosticItemModel {
   errorCode?: string;
   /** `'1.2s'`；未返回时不产出。 */
   durationText?: string;
+  /**
+   * 只在第 ⑤ 项（`outbound-network`，联网检查）出现：`'超时时限 10s'`。
+   *
+   * ⚠️ 数值**来自服务端首帧 `start.timeoutMs`**（`diagnosticsCardModel` 里算好），
+   * ⛔ 不许在这里或调用方写死一个字面量秒数——`design/prototype.html` 那份静态原型
+   * 里写的 `10s` 只是示例数据，落地时必须原样跟着配置走（design-notes §4 Phase 1）。
+   */
+  timeoutText?: string;
 }
 
 /** 整轮诊断的阶段。 */

@@ -63,6 +63,10 @@ export const AllPassed: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('preset-image-check')).toHaveAttribute('data-ready', 'true');
     await expect(canvas.queryByTestId('preset-image-blocked')).toBeNull();
+    // ⚠️ 状态用 `StatusPill`：通过 ⇒ `ok`（design/design-notes.md §2）。
+    await expect(
+      canvas.getByTestId('preset-step-staged').querySelector('[data-status="ok"]'),
+    ).not.toBeNull();
   },
 };
 
@@ -70,6 +74,30 @@ export const Checking: Story = {
   args: {
     model: { phase: 'running', steps: chain('config', 'pending').steps, ready: false },
     isChecking: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // ⚠️ 整轮一起转：正在检查中的 `pending` 步骤用会转的 `pending`（灰底 + loader），
+    // ⛔ 不是「链停下、没被检查到」那个 `unknown`（虚线灰）——两者产品事实不同。
+    const configStep = canvas.getByTestId('preset-step-config');
+    await expect(configStep.querySelector('[data-status="pending"]')).not.toBeNull();
+    await expect(configStep).toHaveTextContent('检查中…');
+  },
+};
+
+/**
+ * ⭐ **链停下之后，后面几步是"没被检查"，不是"检查中"、也不是"失败了"**——`unknown`
+ * （虚线灰边框，design/design-notes.md §2："无样本/未知，≠ 0，≠ 失败"）。
+ */
+export const StoppedStepsAreUnknownNotPending: Story = {
+  args: { model: chain('lineage', 'fail') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const registration = canvas.getByTestId('preset-step-registration');
+    await expect(registration).toHaveAttribute('data-state', 'pending');
+    await expect(registration.querySelector('[data-status="unknown"]')).not.toBeNull();
+    await expect(registration.querySelector('[data-status="pending"]')).toBeNull();
+    await expect(registration).toHaveTextContent('未检查');
   },
 };
 
@@ -134,7 +162,10 @@ export const LineageFailed: Story = {
     );
     await expect(canvas.getByTestId('preset-step-action-lineage')).not.toHaveTextContent('血统');
     // ⭐ 唯一一处「放行了但功能不可用」必须写出来。
-    await expect(canvas.getByTestId('preset-image-blocked')).toHaveTextContent('无法发起任何任务');
+    const blocked = canvas.getByTestId('preset-image-blocked');
+    await expect(blocked).toHaveTextContent('无法发起任何任务');
+    // MUTATION：把 `<AlertTriangle>` 换回 ⚠️ 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(blocked.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
 
     await userEvent.click(canvas.getByRole('button', { name: '复制' }));
     await expect(args.onCopyFix).toHaveBeenCalledWith(
@@ -172,6 +203,12 @@ export const Aborted: Story = {
       abortedText: '镜像检查中断：这一轮没有拿到结论，可点 [重新检测] 重跑。',
     },
   },
+  play: async ({ canvasElement }) => {
+    const notice = within(canvasElement).getByTestId('preset-image-aborted');
+    await expect(notice).toHaveTextContent('镜像检查中断');
+    // MUTATION：把 `<AlertTriangle>` 换回 ⚠️ 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(notice.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,6 +239,14 @@ export const Provisionable: Story = {
     // ⛔ 能自己搬时**不许**还渲染那条 `docker build` 命令：两个都给等于让用户在
     //    「点按钮」和「敲命令」之间选，而正确答案只有一个。
     await expect(canvas.queryByText(/docker build/)).toBeNull();
+    // ⭐ design/design-notes.md §4 收口第 2 项：provision 提示框改用 `--info` token，
+    //    ⛔ 不是硬编码的 `emerald`。
+    // MUTATION：把 `PresetImageCheck.view.tsx` 里那个 `className` 换回
+    //    `border-emerald-500/40 bg-emerald-500/5` ⇒ 下面两条都会红（class 名字
+    //    完全不同，不是"改了个数值"）。
+    const provisionBlock = canvas.getByTestId('preset-step-provision-registry');
+    await expect(provisionBlock.className).toContain('hsl(var(--info)');
+    await expect(provisionBlock.className).not.toContain('emerald');
   },
 };
 
@@ -226,16 +271,54 @@ export const ProvisionableWithSize: Story = {
   },
 };
 
+/**
+ * ⭐ **进度是真实的 `Progress` + 计时器，数据源来自真实的 provision 事件流**
+ * （design/design-notes.md §1 问题 3 · §4 Phase 2 第 3 条）——⛔ 不是原型里那个自转的
+ * `setInterval` 演示。两个数字各自独立：百分比来自 `progress`，用时来自挂钟时间。
+ */
 export const Provisioning: Story = {
   args: {
     model: provisionable(),
     isProvisioning: true,
     provisionStatusText: '推送到 registry：Pushing 9d6e6fb71054 · 87%',
+    provisionProgress: 0.87,
+    provisionElapsedSeconds: 99,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('preset-provision-button')).toBeDisabled();
     await expect(canvas.getByTestId('preset-provision-status')).toHaveTextContent('87%');
+    await expect(canvas.getByTestId('preset-provision-percent')).toHaveTextContent('87%');
+    const bar = canvas
+      .getByTestId('preset-provision-progress')
+      .querySelector('[role="progressbar"]');
+    await expect(bar).not.toBeNull();
+    // ⚠️ 已用时是**独立于百分比**的第二个数字——两个都在跳，才是"没有卡死"的证据。
+    await expect(canvas.getByTestId('preset-provision-elapsed')).toHaveTextContent('1 分 39 秒');
+  },
+};
+
+/**
+ * ⭐ **进度给不出分母 ⇒ 画不确定态，⛔ 不许显示一个停在原地的假百分比**（`progress: null`
+ * 是合法取值——docker 的进度帧不一定带 `total`，见 `usePresetImageProvision.ts`）。
+ */
+export const ProvisioningWithoutKnownProgress: Story = {
+  args: {
+    model: provisionable(),
+    isProvisioning: true,
+    provisionStatusText: '推送到 registry：Pushing 9d6e6fb71054',
+    provisionProgress: null,
+    provisionElapsedSeconds: 12,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const block = canvas.getByTestId('preset-provision-progress');
+    // 否定断言：⛔ 不许出现任何百分比数字或进度条。
+    await expect(canvas.queryByTestId('preset-provision-percent')).toBeNull();
+    await expect(block.querySelector('[role="progressbar"]')).toBeNull();
+    await expect(block).toHaveTextContent('进度未知');
+    // 已用时仍然是真的——它与"给不出百分比"是两件独立的事。
+    await expect(canvas.getByTestId('preset-provision-elapsed')).toHaveTextContent('12 秒');
   },
 };
 
@@ -247,8 +330,9 @@ export const ProvisionFailed: Story = {
   },
   play: async ({ canvasElement }) => {
     // ⛔ 失败**在哪一步**必须看得出来 —— 五个阶段的下一步各不相同。
-    await expect(within(canvasElement).getByTestId('preset-provision-error')).toHaveTextContent(
-      '校验',
-    );
+    const err = within(canvasElement).getByTestId('preset-provision-error');
+    await expect(err).toHaveTextContent('校验');
+    // MUTATION：把 `<X>` 换回 ❌ 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(err.querySelector('svg.lucide-x')).not.toBeNull();
   },
 };

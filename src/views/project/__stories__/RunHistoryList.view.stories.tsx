@@ -6,7 +6,6 @@ import type { RunOutcome, RunRow } from '@/types/automation';
 
 const OK: RunOutcome = {
   category: 'success',
-  icon: '✅',
   label: '成功',
   detail: '任务执行完成。连续失败计数已清零。',
   countsTowardFailure: false,

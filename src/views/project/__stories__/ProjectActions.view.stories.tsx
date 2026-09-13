@@ -17,10 +17,14 @@ type Story = StoryObj<typeof ProjectActionsView>;
 export const OnlyDelete: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('project-delete-entry')).toBeEnabled();
+    const entry = canvas.getByTestId('project-delete-entry');
+    await expect(entry).toBeEnabled();
     // ⛔ 占位灰按钮一个都不许有。
     await expect(canvas.queryByText(/重命名/)).not.toBeInTheDocument();
     await expect(canvas.queryByText(/归档/)).not.toBeInTheDocument();
+    // MUTATION：把 `<Trash2>` 换回 🗑 字符或换成另一个图标 ⇒ 这条先红。
+    // ⚠️ 渲染出的 class 是 `lucide-trash2`（没有连字符），不是 `lucide-trash-2`。
+    await expect(entry.querySelector('svg.lucide-trash2')).not.toBeNull();
   },
 };
 

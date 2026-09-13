@@ -58,7 +58,7 @@ export function ConnectivityCheckView({
 
       {model.rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {isChecking ? '正在检测出网可达性…' : '还没有检测结果，点 [重新检测] 跑一轮。'}
+          {isChecking ? '正在检测联网状况…' : '还没有检测结果，点 [重新检测] 跑一轮。'}
         </p>
       ) : (
         <ul className="flex flex-col gap-2">

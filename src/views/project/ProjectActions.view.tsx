@@ -3,6 +3,7 @@
 // ⚠️ **这一期只有 [删除] 一个真按钮。** 重命名 / 归档见 §10.2 D（2026-08-31 裁决：不做
 // —— 端点都不存在，且「归档」的语义从未定义过）。⛔ 不出占位灰按钮：一个点不动的按钮
 // 比没有更让人困惑，它会让用户以为"功能在，只是我这会儿用不了"，然后去找那个不存在的条件。
+import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export interface ProjectActionsProps {
@@ -25,7 +26,8 @@ export function ProjectActionsView({ busy = false, onRequestDelete }: ProjectAct
           onRequestDelete();
         }}
       >
-        🗑 删除项目…
+        <Trash2 aria-hidden="true" className="h-4 w-4" />
+        删除项目…
       </Button>
     </div>
   );

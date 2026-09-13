@@ -12,6 +12,12 @@
 // ⚠️ [仅告警] 是一个**服务端**筛选（wire 上是 `severity=warn,error`，10 §6.6.1 的多值），
 // 不是"把已加载的行藏起来"。这一点在 UI 上完全看不出来，却决定了空态说的是
 // 「全表没有告警」还是「最近 200 条里没有告警」——后者会让用户读出"平台从没告警过"。
+//
+// ⚠️ **「仅告警」是开关语义，不是勾选框**（design/design-notes.md §4 Phase 1 第四条 /
+// design/prototype.html `.switch-track`）：这是一个即时生效的二元状态切换，不是"选中几项
+// 中的一项再提交"，所以换成 shadcn `Switch`（Radix `role="switch"`），⛔ 不是原生
+// `<input type="checkbox">`。
+import { Switch } from '@/components/ui/switch';
 import type { AuditCategory } from '@/types/audit';
 
 const CATEGORY_OPTIONS: { value: AuditCategory; label: string }[] = [
@@ -72,14 +78,8 @@ export function AuditFilterBarView({
         </select>
       </label>
 
-      <label className="flex items-center gap-1">
-        <input
-          type="checkbox"
-          checked={alertsOnly}
-          onChange={(e) => {
-            onAlertsOnlyChange(e.target.checked);
-          }}
-        />
+      <label className="flex items-center gap-1.5">
+        <Switch checked={alertsOnly} onCheckedChange={onAlertsOnlyChange} />
         <span>仅告警</span>
       </label>
 

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { expect, fn, within } from 'storybook/test';
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { WorkbenchShellView } from '@/views/workbench/WorkbenchShell.view';
 import type { ProjectGroup } from '@/types/domain';
 
@@ -61,6 +61,69 @@ const terminalSlot = (
 
 export const MultiProject: Story = {
   args: { groups, waitingInputCount: 1, healthLabel: '后端健康：ok（v1.0.0）', terminalSlot },
+};
+
+/**
+ * ⭐ 顶部"等待你输入"汇总条：⚡ 换成 lucide `Zap`（class `lucide-zap`），装饰性
+ * （`aria-hidden`）——去掉图标之后「N 个任务等待你输入」这句话本身仍然完整，
+ * 不依赖图标传递唯一信息。
+ */
+export const WaitingInputBannerHasIcon: Story = {
+  args: { groups, waitingInputCount: 3, healthLabel: null, terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText('3 个任务等待你输入')).toBeInTheDocument();
+    const icon = canvasElement.querySelector('.lucide-zap');
+    await expect(icon).not.toBeNull();
+    await expect(icon).toHaveAttribute('aria-hidden', 'true');
+  },
+};
+
+/**
+ * ⭐ 任务树状态点接入 `StatusPill` 的极简变体（design-notes.md §4 Phase 3 第 2 条）：
+ * 等待输入 → warn dot，运行中 → ok dot。⛔ 不再是文字前缀 🔵。
+ *
+ * 变异：把 `task.waitingInput ? 'warn' : 'ok'` 写反 ⇒ 本例两句 `data-status` 断言都会红
+ * （一个该是 warn 却读到 ok，反之亦然）。
+ */
+export const TaskTreeStatusDots: Story = {
+  args: { groups, waitingInputCount: 1, healthLabel: null, terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const waitingRow = canvas.getByRole('button', { name: /等待你输入的任务/ });
+    const runningRow = canvas.getByRole('button', { name: /运行中的任务/ });
+    await expect(waitingRow.querySelector('[data-slot="status-dot"]')).toHaveAttribute(
+      'data-status',
+      'warn',
+    );
+    await expect(runningRow.querySelector('[data-slot="status-dot"]')).toHaveAttribute(
+      'data-status',
+      'ok',
+    );
+  },
+};
+
+/**
+ * ⭐ 「正常时不渲染」（design-notes.md §1 问题 5 / §4 Phase 3 第 4 条）：`healthLabel: null`
+ * ⇒ 顶栏那个 `data-testid="health-label"` 的节点**整个不挂载**，⛔ 不是挂载了一个空字符串。
+ */
+export const HealthLabelHidden: Story = {
+  args: { groups, waitingInputCount: 0, healthLabel: null, terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.queryByTestId('health-label')).toBeNull();
+  },
+};
+
+/** 异常时才挂载：非空字符串 ⇒ 节点出现，且样式是错误色（不是中性灰）。 */
+export const HealthLabelShown: Story = {
+  args: { groups, waitingInputCount: 0, healthLabel: '后端不可用', terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const label = canvas.getByTestId('health-label');
+    await expect(label).toHaveTextContent('后端不可用');
+    await expect(label.className).toContain('text-error');
+  },
 };
 
 /**
@@ -132,6 +195,342 @@ export const NewTaskDisabled: Story = {
     healthLabel: '后端健康：ok',
     terminalSlot,
     newTaskDisabledReason: '先选中一个就绪的项目',
+  },
+};
+
+// —— 搜索 + 状态筛选（design-notes.md §4 Phase 3；硬要求：真过滤，非摆设）——
+/**
+ * ⭐ 搜索框是受控输入：键入的字符经 `onSearchQueryChange` 原样上抛给 container
+ * （真正的过滤发生在 `useProjectTaskTree`/`filterProjectGroups`，这里只测 view 把输入
+ * 忠实转发出去，不吞字符、不做防抖静默丢弃）。
+ *
+ * 变异：把 `onChange` 里的 `e.target.value` 改成写死的字符串 ⇒ 本例的 `toHaveBeenCalledWith`
+ * 断言会读到错误的值。
+ */
+export const SearchInputForwardsValue: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+    onSearchQueryChange: fn(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const input = canvas.getByTestId('task-search-input');
+    // 单字符输入：`searchQuery` 是受控 prop，story 里不回填 args，所以每次按键后
+    // DOM 值都被拉回初始的空字符串——这里只需证明"敲了什么字符就原样上抛"，不测多字符累加。
+    await userEvent.type(input, 'x');
+    await expect(args.onSearchQueryChange).toHaveBeenCalledWith('x');
+  },
+};
+
+/**
+ * ⭐ P21-1 §6 七档筛选 chip（全部/准备中/运行中/等待输入/已暂停/异常/已停止，
+ * 2026-09-13 用户裁决新增「已停止」）逐一可点，点哪个就上抛哪个
+ * （`aria-pressed` 标出当前激活项）。
+ * 变异：把某个 chip 的 `data-testid`/点击值写错（比如「已暂停」点了传 'running'）
+ * ⇒ 对应断言的 `toHaveBeenCalledWith` 会读到错误的枚举值。
+ */
+export const FilterChipsEachEmitOwnValue: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+    onStatusFilterChange: fn(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByTestId('task-filter-preparing'));
+    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('preparing');
+    await userEvent.click(canvas.getByTestId('task-filter-running'));
+    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('running');
+    await userEvent.click(canvas.getByTestId('task-filter-waitingInput'));
+    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('waitingInput');
+    await userEvent.click(canvas.getByTestId('task-filter-paused'));
+    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('paused');
+    await userEvent.click(canvas.getByTestId('task-filter-error'));
+    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('error');
+    await userEvent.click(canvas.getByTestId('task-filter-stopped'));
+    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('stopped');
+    await userEvent.click(canvas.getByTestId('task-filter-all'));
+    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('all');
+  },
+};
+
+/**
+ * ⭐ 七档放不下 400px 侧栏一行（「异常」会被挤到第二行）：用户裁决走**横向滚动**，
+ * ⛔ 不换行、⛔ 不缩短文案。钉住的是结构事实（`flex-nowrap` + `overflow-x-auto`），
+ * 不是视觉——`flex-wrap` 悄悄加回来不会改变每个 chip 各自的可见文字，只有类名断言
+ * 才拦得住。
+ * 变异：把容器 className 里的 `flex-nowrap` 改回 `flex-wrap`（或删掉
+ * `overflow-x-auto`）⇒ 本条红。
+ */
+export const FilterChipsScrollHorizontallyNoWrap: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+  },
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const chipsRow = canvas.getByTestId('task-filter-chips');
+    await expect(chipsRow.className).toContain('flex-nowrap');
+    await expect(chipsRow.className).toContain('overflow-x-auto');
+    // "flex-nowrap" 本身不含 "flex-wrap" 子串（no 隔开了 wrap），这里显式钉一遍
+    // 防止有人手滑把 nowrap 删成 wrap。
+    await expect(chipsRow.className.split(/\s+/)).not.toContain('flex-wrap');
+    // 七个 chip 都在场，且没有一个换了行（每个按钮自己也不许折行/收缩到看不清文字）。
+    for (const status of [
+      'all',
+      'preparing',
+      'running',
+      'waitingInput',
+      'paused',
+      'error',
+      'stopped',
+    ]) {
+      const chip = canvas.getByTestId(`task-filter-${status}`);
+      await expect(chip.className).toContain('whitespace-nowrap');
+      await expect(chip.className).toContain('shrink-0');
+    }
+  },
+};
+
+/** 激活的 chip 有 `aria-pressed="true"`，其余为 `false`——不是只有背景色区分。 */
+export const FilterChipActiveState: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+    statusFilter: 'waitingInput',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('task-filter-waitingInput')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(canvas.getByTestId('task-filter-all')).toHaveAttribute('aria-pressed', 'false');
+  },
+};
+
+/**
+ * ⭐ 「搜不到时说什么」硬要求钉子：`hasNoFilterMatches` 为真 ⇒ 渲染空态文案而不是
+ * 空的项目树（用户分不清"没有匹配"和"这个项目本来就没有任务"）。
+ * 变异：把渲染条件从 `hasNoFilterMatches` 改成 `groups.length === 0`
+ * ⇒ 普通空项目（没过滤时就是空）也会被误判成"没有找到匹配的任务"。
+ */
+/**
+ * ⭐ 自查钉子：`groups` 为空**不等于** `hasNoFilterMatches`——这是两种不同的空态
+ * （"这个人还没建过任务" vs "搜不到"）。没有这一条时，`NoSearchResults` 那条 story
+ * 的变异自查（把渲染条件从 `hasNoFilterMatches` 换成 `groups.length === 0`）测不出来：
+ * 之前所有 story 里 `groups` 为空必然伴随 `hasNoFilterMatches: true`，两个条件永远
+ * 同真同假，那样的变异不会让任何用例变红。这一条专门造出"groups 为空但
+ * hasNoFilterMatches 为假"的组合，才把两者的差异钉住。
+ */
+export const EmptyGroupsWithoutActiveFilter: Story = {
+  args: { groups: [], waitingInputCount: 0, healthLabel: null, terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // 没有过滤 ⇒ 不该出现"没有找到匹配的任务"这句话——那句话专属于"搜/筛之后 0 条"。
+    await expect(canvas.queryByTestId('task-search-no-results')).not.toBeInTheDocument();
+  },
+};
+
+export const NoSearchResults: Story = {
+  args: {
+    groups: [],
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+    searchQuery: '不存在的任务',
+    hasNoFilterMatches: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('task-search-no-results')).toHaveTextContent(
+      '没有找到匹配“不存在的任务”的任务',
+    );
+  },
+};
+
+/** 状态筛选（无搜索词）搜不到时，文案说的是筛选档而不是搜索词。 */
+export const NoFilterResultsWithoutQuery: Story = {
+  args: {
+    groups: [],
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+    statusFilter: 'paused',
+    hasNoFilterMatches: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('task-search-no-results')).toHaveTextContent(
+      '没有已暂停的任务',
+    );
+  },
+};
+
+// —— 项目组折叠箭头（design-notes.md §4 Phase 3）——
+/**
+ * ⭐ 点折叠箭头只切折叠，不选中项目——两个是不同动作（与 `ProjectGroupHeader` 那条
+ * story 同一条纪律，这里在工作台整体装配层面再钉一次接线）。
+ */
+export const ToggleGroupCollapse: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+    onToggleGroupCollapse: fn(),
+    onSelectProject: fn(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const [firstToggle] = canvas.getAllByTestId('project-group-toggle');
+    if (!firstToggle) throw new Error('project-group-toggle 节点缺失');
+    await userEvent.click(firstToggle);
+    await expect(args.onToggleGroupCollapse).toHaveBeenCalledWith('p1');
+    await expect(args.onSelectProject).not.toHaveBeenCalled();
+  },
+};
+
+// —— 任务副行「活跃于 X 前」（design-notes.md §4 Phase 3）——
+/**
+ * ⭐ 硬要求钉子：没有真实时间戳（`activityLabel: undefined`）⇒ 不渲染「活跃于」，
+ * 但等待输入是独立真实字段，照常显示。
+ * 变异：把渲染条件从 `activityLabel !== undefined || waitingInput` 改成恒真
+ * ⇒ 本例第一个任务（两者都没有）也会渲染出一个空的副行节点。
+ */
+export const TaskActivitySubtitle: Story = {
+  args: {
+    groups: [
+      {
+        projectId: 'p1',
+        projectName: '项目 A',
+        cloneStatus: 'ready',
+        collapsed: false,
+        taskCount: 3,
+        tasks: [
+          {
+            id: 't-no-data',
+            projectId: 'p1',
+            name: '没有真实时间戳的任务',
+            status: 'running',
+            waitingInput: false,
+            lastActiveAt: 0,
+          },
+          {
+            id: 't-active',
+            projectId: 'p1',
+            name: '有真实活跃时间的任务',
+            status: 'running',
+            waitingInput: false,
+            lastActiveAt: 1,
+            activityLabel: '活跃于 3 分钟前',
+          },
+          {
+            id: 't-waiting-only',
+            projectId: 'p1',
+            name: '只有等待输入、没有时间戳',
+            status: 'running',
+            waitingInput: true,
+            lastActiveAt: 0,
+          },
+        ],
+      },
+    ],
+    waitingInputCount: 1,
+    healthLabel: null,
+    terminalSlot,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // 没有真实数据 ⇒ 整段副行不渲染（⛔ 不是渲染一个空字符串占位）。
+    await expect(canvas.queryByTestId('task-activity-t-no-data')).not.toBeInTheDocument();
+    // 有真实时间戳 ⇒ 渲染「活跃于 3 分钟前」。
+    await expect(canvas.getByTestId('task-activity-t-active')).toHaveTextContent('活跃于 3 分钟前');
+    // 只有等待输入 ⇒ 只渲染「等待输入」，不编造一个假的活跃时间。
+    const waitingOnly = canvas.getByTestId('task-activity-t-waiting-only');
+    await expect(waitingOnly).toHaveTextContent('等待输入');
+    await expect(waitingOnly.textContent).not.toContain('活跃于');
+  },
+};
+
+// —— 顶栏：⌘K 提示（design-notes.md §4 Phase 3 第 4 条）——
+export const TopBarShortcutHint: Story = {
+  args: { groups, waitingInputCount: 0, healthLabel: null, terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('command-palette-hint')).toHaveTextContent('⌘K');
+  },
+};
+
+// —— 顶栏：设置菜单收口（P20 §8.2；design-notes.md §4 Phase 3 第 4 条原写
+// 「镜像管理落地时，这两条直链再收进一个真菜单」——`/settings/images` 已经落地，本轮收口）——
+/**
+ * ⭐ 凭证管理 / 镜像管理 / 系统状态三个直链收成一个 shadcn `DropdownMenu`：
+ *  · 触发器可见文字本身就是无障碍名（不额外拿 `aria-label` 盖掉它）；
+ *  · 键盘：聚焦触发器后 `Enter` 展开（Radix `DropdownMenuTrigger` 自己处理
+ *    Enter/Space/ArrowDown，不依赖浏览器对 `<button>` 的原生激活行为——jsdom 里
+ *    这条也成立），展开后第一项自动拿到焦点，`ArrowDown` 在三项间移动，`Escape` 收起；
+ *  · 每个子项各自断言跳对了地方（`href`），⛔ 不是只测"菜单展开了"。
+ *
+ * ⚠️ `DropdownMenuContent` 经 Radix `Portal` 挂到 `document.body`，⛔ 不在
+ * `canvasElement` 子树内——菜单展开后的断言改用 `within(document.body)`
+ * （与 `InitWizardShell` 那几条 `BlockingDialog` 断言同一条纪律）。
+ *
+ * MUTATION：
+ *  · 把三个 `<a href>` 中任意一个的地址写错 ⇒ 对应 `toHaveAttribute('href', …)` 读到错误值；
+ *  · 把 `DropdownMenuItem` 的渲染顺序打乱 ⇒ `ArrowDown` 焦点顺序断言错位；
+ *  · 把触发器的可见文字删空、只留 `aria-label` ⇒ `toHaveAccessibleName` 那条不动
+ *    （name 计算优先取可见文字，这里只是确认"文字本身够格当无障碍名"，不依赖额外属性）。
+ */
+export const SettingsMenuOpensWithThreeItems: Story = {
+  args: { groups, waitingInputCount: 0, healthLabel: null, terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const trigger = canvas.getByTestId('nav-settings-menu-trigger');
+    // 齿轮换成了 lucide `Settings`（class `lucide-settings`），前面不再是字面 emoji
+    // 字符——图标是 `aria-hidden`，无障碍名仍然只由可见文字「设置」决定。
+    await expect(trigger).toHaveAccessibleName('设置');
+    const triggerIcon = trigger.querySelector('svg');
+    await expect(triggerIcon).toHaveClass('lucide-settings');
+    await expect(triggerIcon).toHaveAttribute('aria-hidden', 'true');
+
+    // 键盘展开：聚焦 + Enter，不摸鼠标。
+    trigger.focus();
+    await userEvent.keyboard('{Enter}');
+
+    const body = within(document.body);
+    const credentialsItem = await body.findByTestId('nav-settings-credentials');
+    const imagesItem = body.getByTestId('nav-settings-images');
+    const systemItem = body.getByTestId('nav-settings-system');
+
+    await expect(credentialsItem).toHaveAttribute('href', '/settings/credentials');
+    await expect(imagesItem).toHaveAttribute('href', '/settings/images');
+    await expect(systemItem).toHaveAttribute('href', '/settings/system');
+
+    // 展开后第一项自动获得焦点；ArrowDown 逐项移动——全程键盘可达。
+    await expect(credentialsItem).toHaveFocus();
+    await userEvent.keyboard('{ArrowDown}');
+    await expect(imagesItem).toHaveFocus();
+    await userEvent.keyboard('{ArrowDown}');
+    await expect(systemItem).toHaveFocus();
+
+    // Escape 收起——菜单不是"打开了就关不掉"。⚠️ 关闭走 Radix 的退出动画
+    // （`data-[state=closed]:animate-out`），DOM 节点要等动画结束才真正卸载，
+    // 故用 `waitFor` 而不是关键字之后立即同步断言。
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(body.queryByTestId('nav-settings-credentials')).not.toBeInTheDocument(),
+    );
   },
 };
 

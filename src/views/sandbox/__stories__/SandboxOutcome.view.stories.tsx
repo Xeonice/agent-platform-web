@@ -10,7 +10,7 @@ const meta: Meta<typeof SandboxOutcomeView> = {
   title: 'Sandbox/Outcome',
   component: SandboxOutcomeView,
   parameters: { layout: 'fullscreen' },
-  args: { onAction: noop, onCopyDiagnostics: copyNoop, tone: 'failed' },
+  args: { onAction: noop, onCopyDiagnostics: copyNoop, tone: 'failed', severity: 'fail' },
 };
 export default meta;
 
@@ -21,7 +21,7 @@ type Story = StoryObj<typeof SandboxOutcomeView>;
  */
 export const InstallFailed: Story = {
   args: {
-    title: '❌ Agent 的命令行工具没能装上（这张镜像里没有预装它）',
+    title: 'Agent 的命令行工具没能装上（这张镜像里没有预装它）',
     advice:
       '安装是在「启动运行环境」这一步做的，失败时任务已经停下了。可以重试一次；反复失败就换一张预装了这个工具的镜像 —— 没预装的镜像现装可能要十几分钟。',
     actions: [
@@ -54,6 +54,12 @@ export const InstallFailed: Story = {
       'data-diagnostic-text',
       expect.stringContaining('INSTALL_FAILED'),
     );
+    // ⭐ 图标语义真的换成了 severity='fail' 对应的那一个（lucide `X` → class
+    // `lucide-x`），不是仍然靠标题里的字面 emoji 字符——那个字符已经被拆走了。
+    const icon = canvasElement.querySelector('[data-outcome-severity="fail"]');
+    await expect(icon).not.toBeNull();
+    await expect(icon).toHaveClass('lucide-x');
+    await expect(icon).toHaveAttribute('aria-hidden', 'true');
   },
 };
 
@@ -63,7 +69,7 @@ export const InstallFailed: Story = {
  */
 export const ImageContractViolation: Story = {
   args: {
-    title: '❌ 这张镜像缺少 tmux，任务已停止',
+    title: '这张镜像缺少 tmux，任务已停止',
     advice:
       '注册这张镜像时校验是过的，真正启动时实测发现里面没有 tmux（镜像换了版本，或者上游改了内容）。tmux 不能少：没有它，平台一重启就会丢掉正在跑的 agent 会话，所以这里不做静默降级。换一张带 tmux 的镜像再发起。',
     actions: [{ key: 'reconfigure', label: '换一张含 tmux 的镜像' }],
@@ -81,7 +87,7 @@ export const ImageContractViolation: Story = {
  */
 export const UnknownFailure: Story = {
   args: {
-    title: '❌ 操作没有完成',
+    title: '操作没有完成',
     advice: '未能获取具体原因，可以重试一次；若持续失败请查看系统状态。',
     actions: [
       { key: 'retry', label: '重试' },
@@ -103,6 +109,7 @@ export const UnknownFailure: Story = {
 export const Ended: Story = {
   args: {
     tone: 'ended',
+    severity: 'info',
     title: '任务已停止',
     advice:
       '这个任务的运行环境已经回收了。可以再发起一个 —— 那是全新的一轮，从头开始，不会接着上次的进度。',
@@ -113,5 +120,10 @@ export const Ended: Story = {
     await expect(canvasElement.textContent).not.toContain('诊断码');
     await expect(canvasElement.textContent).not.toContain('stopped');
     await expect(within(canvasElement).queryByTestId('copy-diagnostics')).toBeNull();
+    // ⭐ severity='info' → lucide `Info`（class `lucide-info`）——与失败态的
+    // `lucide-x` 是两个不同的图标，不是同一张图标换了颜色。
+    const icon = canvasElement.querySelector('[data-outcome-severity="info"]');
+    await expect(icon).not.toBeNull();
+    await expect(icon).toHaveClass('lucide-info');
   },
 };

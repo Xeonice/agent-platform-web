@@ -23,7 +23,12 @@ import type { TerminalSocketConfig } from '@/types/terminal';
  * 照样绿 —— 一个比生产代码宽松的替身测出来的只是替身（12 §3.4 同一课）。
  */
 const mounts = vi.hoisted(() => ({
-  rendered: [] as { sessionId: string; active: boolean; query: Record<string, string> }[],
+  rendered: [] as {
+    sessionId: string;
+    active: boolean;
+    query: Record<string, string>;
+    breadcrumb?: string;
+  }[],
   sent: [] as { sessionId: string; frame: TerminalClientFrame }[],
   /** 每个挂载点收到的 `onShells`（只有 Agent 那条会被后端真的调到）。 */
   onShells: new Map<string, (shells: { shellId: string; runtimeId?: string }[] | null) => void>(),
@@ -35,14 +40,21 @@ vi.mock('@/containers/terminal/TerminalContainer', () => ({
     active,
     registerSend,
     onShells,
+    breadcrumb,
   }: {
     sessionId: string;
     socketConfig: TerminalSocketConfig;
     active?: boolean;
     registerSend?: (send: ((f: TerminalClientFrame) => boolean) | null) => void;
     onShells?: (shells: { shellId: string; runtimeId?: string }[] | null) => void;
+    breadcrumb?: string;
   }) => {
-    mounts.rendered.push({ sessionId, active: active ?? true, query: socketConfig.query });
+    mounts.rendered.push({
+      sessionId,
+      active: active ?? true,
+      query: socketConfig.query,
+      breadcrumb,
+    });
     if (onShells !== undefined) mounts.onShells.set(sessionId, onShells);
     useEffect(() => {
       registerSend?.((frame) => {
@@ -84,7 +96,7 @@ afterEach(cleanup);
  * ⚠️ **拿不到展示名不阻断**：标签回落「终端 N」、下拉回落显示 id —— 这正是这里不给
  * 任何真实响应也能跑的原因，也是生产里请求还没回来那一瞬间的样子。
  */
-function mount(availableRuntimes: string[] = []) {
+function mount(availableRuntimes: string[] = [], breadcrumb?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -92,6 +104,7 @@ function mount(availableRuntimes: string[] = []) {
         sandboxId={SANDBOX}
         socketConfig={BASE}
         availableRuntimes={availableRuntimes}
+        {...(breadcrumb === undefined ? {} : { breadcrumb })}
       />
     </QueryClientProvider>,
   );
@@ -272,5 +285,27 @@ describe('TerminalTabsContainer —— 后端清单接线', () => {
 
     expect(screen.getByTestId(`terminal-tab-${SANDBOX}:shell:1`)).toBeInTheDocument();
     expect(screen.getByTestId(`terminal-tab-${SANDBOX}:shell:2`)).toBeInTheDocument();
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// 终端仪表壳工具栏的面包屑（design-notes.md §4 Phase 3）：`TerminalTabsContainer`
+// 只是这条链路中间的一段转发——真正的渲染在 `TerminalMount`（那边已经测过），
+// 这里只钉"转发没有被中途弄丢"。
+// ————————————————————————————————————————————————————————————————
+describe('TerminalTabsContainer —— breadcrumb 透传', () => {
+  it('传了 breadcrumb ⇒ 每个挂载点（含新开的标签）都收到同一句', () => {
+    mount([], 'ProjectA / Codex · 重构支付模块的类型定义');
+    clickNewTerminal();
+
+    expect(
+      mounts.rendered.every((m) => m.breadcrumb === 'ProjectA / Codex · 重构支付模块的类型定义'),
+    ).toBe(true);
+    expect(mounts.rendered.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('未传 breadcrumb ⇒ 挂载点收到的是 undefined，不是空字符串（两者是不同的信号）', () => {
+    mount();
+    expect(mounts.rendered.every((m) => m.breadcrumb === undefined)).toBe(true);
   });
 });

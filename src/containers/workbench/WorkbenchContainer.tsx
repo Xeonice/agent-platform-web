@@ -19,6 +19,7 @@ import {
 import { useProjectRecovery } from '@/hooks/project/useProjectRecovery';
 import { useSyncProject } from '@/hooks/project/useProjectBranches';
 import { useProjectTaskTree } from '@/hooks/project/useProjectTaskTree';
+import { useDebouncedValue } from '@/hooks/project/useDebouncedValue';
 import { useSandboxes, sandboxListKeys } from '@/hooks/sandbox/useSandboxes';
 import { useSandboxEventsSocket } from '@/hooks/sandbox/useSandboxEventsSocket';
 import { useRuntimeAuthSync } from '@/hooks/credential/useRuntimeAuthSync';
@@ -38,7 +39,7 @@ import { RetainedVolumesContainer } from '@/containers/project/RetainedVolumesCo
 import { ProjectMenuContainer } from '@/containers/project/ProjectMenuContainer';
 import { ProjectGroupMenuView } from '@/views/project/ProjectGroupMenu.view';
 import { AutomationsPanelContainer } from '@/containers/project/AutomationsPanelContainer';
-import type { Project, Sandbox } from '@/types/domain';
+import type { Project, Sandbox, TaskStatusFilter } from '@/types/domain';
 
 /**
  * WS 基址。**默认空串 = 同源**，与 `services/api/client.ts` 的 `API_BASE_URL` 对齐。
@@ -59,6 +60,9 @@ const WS_BASE_URL = process.env['NEXT_PUBLIC_WS_BASE_URL'] ?? '';
 /** 稳定引用：每次渲染新建 [] 会让 useMemo 依赖每次都变。 */
 const EMPTY_TASKS: Sandbox[] = [];
 
+/** P21-1 §6：搜索客户端实时过滤，防抖 200ms（F21-1 §9.1 #15 记录的偏离，这一轮补上）。 */
+const SEARCH_DEBOUNCE_MS = 200;
+
 export function WorkbenchContainer() {
   const health = useHealth();
   // 离线模式（F21-8 §4「本页唯一持续影响其他页面的输出」）：只读缓存，不发请求。
@@ -75,6 +79,17 @@ export function WorkbenchContainer() {
   const setSelectedProjectForMenu = useAppStore((s) => s.setSelectedProjectForMenu);
   const expandProject = useAppStore((s) => s.expandProject);
   const taskListFolds = useAppStore((s) => s.taskListFolds);
+  const toggleProjectFold = useAppStore((s) => s.toggleProjectFold);
+
+  // 左侧任务树的搜索 + 状态筛选（P21-1 §6）：瞬时 UI 态，不进 store——与组头「⋯」下拉
+  // 同一条纪律（`groupMenuProjectId` 那句注释），关掉工作台就该清空，不该持久化成
+  // "下次打开还带着上次搜索词"这种令人困惑的记忆。
+  const [searchQuery, setSearchQuery] = useState('');
+  // ⚠️ **两根线分开**：`searchQuery` 原样喂给受控输入（敲什么立刻回显什么，⛔ 不能等
+  // 防抖跑完才回显，那是另一种更糟的卡顿感）；真正喂给 `useProjectTaskTree` 去过滤的
+  // 是这里派生出的防抖值——200ms 内的连续按键只会在最后一次之后触发一次真过滤。
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
+  const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>('all');
   const { reportRestError, reportUnauthorized } = useReportUnauthorized();
   const queryClient = useQueryClient();
   const syncProject = useSyncProject();
@@ -128,11 +143,13 @@ export function WorkbenchContainer() {
     [projects.data],
   );
 
-  const { groups, waitingInputCount } = useProjectTaskTree(
+  const { groups, waitingInputCount, hasNoFilterMatches } = useProjectTaskTree(
     domainProjects,
     sandboxes.data ?? EMPTY_TASKS,
     taskListFolds,
     selectedProjectId,
+    debouncedSearchQuery,
+    statusFilter,
   );
 
   const selectedProject = projects.data?.find((p) => p.id === selectedProjectId) ?? null;
@@ -144,12 +161,16 @@ export function WorkbenchContainer() {
   const groupMenuProject = projects.data?.find((p) => p.id === groupMenuProjectId) ?? null;
   const menuProject = projects.data?.find((p) => p.id === selectedProjectForMenu) ?? null;
 
-  const healthLabel =
-    health.data !== undefined
-      ? `后端健康（HTTP ${String(health.data.status)}）`
-      : health.isError
-        ? '后端不可用'
-        : '正在检查后端…';
+  /**
+   * 「正常时整行不渲染」（design-notes.md §1 问题 5 / §4 Phase 3 第 4 条）：一句
+   * 「后端健康（HTTP 200）」的常驻文案，用户拿它做不了任何决定，只会占地方，异常时才
+   * 挂载。**「检查中」也不算异常**——它同样没有可操作性，一闪而过挂载又卸载反而更显眼；
+   * 唯一值得说一句的是"读不到"（`health.isError`）。
+   *
+   * ⚠️ `null` ⇒ `WorkbenchShellView` 整个不渲染那个 `<span>`，⛔ 不是渲染一个空字符串
+   * （空字符串仍然是"挂载了，只是看不见内容"，与"正常时不渲染"要的东西不一样）。
+   */
+  const healthLabel = health.isError ? '后端不可用' : null;
 
   const handleSelectProject = (projectId: string): void => {
     setReadyProjectId(null); // 手动切换：就绪判定回到列表口径
@@ -361,6 +382,14 @@ export function WorkbenchContainer() {
       }}
       openMenuProjectId={groupMenuProjectId}
       onOpenGroupMenu={handleOpenGroupMenu}
+      // 组头折叠箭头（design-notes.md §4 Phase 3）：`toggleProjectFold` 这个 store action
+      // 在本轮之前一直存在却从未被任何 UI 调用过——折叠状态有地方存，却没有入口写它。
+      onToggleGroupCollapse={toggleProjectFold}
+      searchQuery={searchQuery}
+      onSearchQueryChange={setSearchQuery}
+      statusFilter={statusFilter}
+      onStatusFilterChange={setStatusFilter}
+      hasNoFilterMatches={hasNoFilterMatches}
       groupMenuSlot={
         groupMenuProject === null ? undefined : (
           <ProjectGroupMenuView

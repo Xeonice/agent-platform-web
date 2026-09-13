@@ -37,6 +37,8 @@ export const Offline: Story = {
     // ⛔ 不点名具体 runtime：runtime 是开放注册表，点名的那句在装了第三方 runtime 的
     //    平台上是错的（判定与文案都在 lib，本页只负责把它原样说出来）。
     await expect(canvas.getByTestId('offline-notice')).not.toHaveTextContent(/codex|claude/i);
+    // MUTATION：把 `<X>` 换回 🔴 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(canvas.getByTestId('offline-notice').querySelector('svg.lucide-x')).not.toBeNull();
     await userEvent.click(button);
     await expect(args.onContinue).toHaveBeenCalled();
   },
@@ -47,9 +49,9 @@ export const Acknowledged: Story = {
   args: { acknowledged: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('offline-acknowledged')).toHaveTextContent(
-      '已确认以离线模式继续',
-    );
+    const ack = canvas.getByTestId('offline-acknowledged');
+    await expect(ack).toHaveTextContent('已确认以离线模式继续');
+    await expect(ack.querySelector('svg.lucide-check')).not.toBeNull();
     await expect(canvas.queryByRole('button', { name: '我知道，继续' })).toBeNull();
   },
 };

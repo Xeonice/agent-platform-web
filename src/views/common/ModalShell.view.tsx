@@ -10,6 +10,7 @@
 // `onKeyDown` 只有焦点已经进了弹层才收得到 —— 那会让 Esc 时灵时不灵。
 // 由 container 调 `useEscapeKey`（hooks/）统一处理。
 import type { ReactNode } from 'react';
+import { X } from 'lucide-react';
 
 export interface ModalShellProps {
   /**
@@ -77,7 +78,7 @@ export function ModalShellView({
             data-modal-close=""
             onClick={close}
           >
-            ✕
+            <X aria-hidden="true" className="h-4 w-4" />
           </button>
         </div>
         {children}

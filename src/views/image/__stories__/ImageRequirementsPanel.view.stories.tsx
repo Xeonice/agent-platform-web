@@ -50,6 +50,10 @@ export const Default: Story = {
     // ③ 不点耗时数字。
     await expect(panel).not.toHaveTextContent('12.5');
     await expect(panel).not.toHaveTextContent('分钟');
+    // MUTATION：把标题的 `<ClipboardList>` 换回 📋 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(
+      canvas.getByRole('heading').querySelector('svg.lucide-clipboard-list'),
+    ).not.toBeNull();
   },
 };
 

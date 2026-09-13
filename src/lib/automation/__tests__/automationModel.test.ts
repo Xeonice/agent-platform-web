@@ -83,19 +83,19 @@ describe('automationRow', () => {
     expect(row.timezone).toBe('Mars/Olympus');
   });
 
-  it('四态图标齐（🟡/🔴 需要处置）', () => {
-    expect(automationRows([dto()], NOW, 'UTC')[0]?.icon).toBe('✅');
-    expect(automationRows([dto({ enabled: false })], NOW, 'UTC')[0]?.icon).toBe('⏸️');
+  it('四态语义状态齐（warn/fail 需要处置；off 没有 status，见交付报告）', () => {
+    expect(automationRows([dto()], NOW, 'UTC')[0]?.status).toBe('ok');
+    expect(automationRows([dto({ enabled: false })], NOW, 'UTC')[0]?.status).toBeUndefined();
     expect(
       automationRows([dto({ degraded: true, consecutiveFailures: 3 })], NOW, 'UTC')[0],
-    ).toMatchObject({ icon: '🟡', needsAttention: true });
+    ).toMatchObject({ status: 'warn', needsAttention: true });
     expect(
       automationRows(
         [dto({ enabled: false, degraded: true, consecutiveFailures: 10 })],
         NOW,
         'UTC',
       )[0],
-    ).toMatchObject({ icon: '🔴', needsAttention: true });
+    ).toMatchObject({ status: 'fail', needsAttention: true });
   });
 });
 

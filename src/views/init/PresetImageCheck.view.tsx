@@ -14,16 +14,13 @@
 //  ③ **[稍后配置] 放行了，但「在此之前无法发起任何任务」必须写在按钮旁边。** 这是整个向导里
 //     唯一一处「放行了但功能不可用」——其余步骤放行后功能都是可用的。这句话不说，用户会在
 //     最挫败的时机发现：建好项目、选完运行时、填完指令、点下 [发起] 的那一刻。
+import { AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { PresetImageChainModel, PresetImageStepState } from '@/types/init';
 
 /** ⚠️ ② `info` 与 `fail` 分开、`pending`（没检查到）与 `fail` 也分开。 */
-const STATE_ICON: Readonly<Record<PresetImageStepState, string>> = {
-  pass: '✅',
-  info: 'ℹ️',
-  fail: '❌',
-  pending: '⏸',
-};
 const STATE_TEXT: Readonly<Record<PresetImageStepState, string>> = {
   pass: '通过',
   // ⚠️ 「提示」不是「警告」：`info` 是"没有任何东西需要修"。
@@ -32,6 +29,21 @@ const STATE_TEXT: Readonly<Record<PresetImageStepState, string>> = {
   // ⚠️ 链在前面就停了，后面几步**没有被检查**——不是"失败了"。
   pending: '未检查',
 };
+
+/**
+ * `PresetImageStepState` → `StatusPill` 八态。
+ *
+ * ⚠️ **`pending` 分两支**（design/design-notes.md §2）：正在整轮检查中的那些用会转的
+ * `pending`（灰底 + loader）；链已经停下、这几步压根没被检查到的用 `unknown`（虚线灰边框，
+ * 语义"无样本/未知，≠ 失败"）——两者的产品事实不同：前者"马上有结论"，后者"这一轮结论
+ * 没有覆盖到这里"，⛔ 不能用同一个视觉表达两件不同的事。
+ */
+function statusPillStatusFor(state: PresetImageStepState, isChecking: boolean): StatusPillStatus {
+  if (state === 'pass') return 'ok';
+  if (state === 'info') return 'info';
+  if (state === 'fail') return 'fail';
+  return isChecking ? 'pending' : 'unknown';
+}
 
 export interface PresetImageCheckProps {
   model: PresetImageChainModel;
@@ -45,6 +57,21 @@ export interface PresetImageCheckProps {
   /** 当前阶段的一句话（`plan/fetch/verify/load/register`）。⛔ 失败在哪一步必须说得出。 */
   provisionStatusText?: string;
   provisionError?: string;
+  /**
+   * 当前帧的 0–1 进度，原样来自 `usePresetImageProvision`。`undefined` = 还没开始；
+   * `null` = 这一帧给不出分母——⛔ **画不确定态，不画一个停在某处不动的假条**（那与
+   * "卡死了"在观感上无法区分）。只在 `isProvisioning` 时渲染这一块。
+   */
+  provisionProgress?: number | null;
+  /** 本次搬运已经跑了多少秒——真实挂钟时间，不是估算（同一份来源）。 */
+  provisionElapsedSeconds?: number;
+}
+
+/** `1 分 39 秒` 这种口语化时长——与 `s.provision.sizeBytes` 那处内联换算同一惯例（本文件只做展示）。 */
+function formatElapsed(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${String(minutes)} 分 ${String(seconds)} 秒` : `${String(seconds)} 秒`;
 }
 
 export function PresetImageCheckView({
@@ -57,6 +84,8 @@ export function PresetImageCheckView({
   isProvisioning,
   provisionStatusText,
   provisionError,
+  provisionProgress,
+  provisionElapsedSeconds,
 }: PresetImageCheckProps) {
   const cooling = cooldownSec > 0;
   return (
@@ -81,8 +110,13 @@ export function PresetImageCheckView({
       </div>
 
       {model.abortedText === undefined ? null : (
-        <p role="alert" data-testid="preset-image-aborted" className="text-sm text-red-500">
-          ⚠️ {model.abortedText}
+        <p
+          role="alert"
+          data-testid="preset-image-aborted"
+          className="flex items-start gap-1.5 text-sm text-red-500"
+        >
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 translate-y-0.5" />
+          <span>{model.abortedText}</span>
         </p>
       )}
 
@@ -95,14 +129,11 @@ export function PresetImageCheckView({
             className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
           >
             <span className="flex flex-wrap items-center gap-2">
-              <span aria-hidden="true">
-                {isChecking && s.state === 'pending' ? '⏳' : STATE_ICON[s.state]}
-              </span>
+              <StatusPill status={statusPillStatusFor(s.state, isChecking)}>
+                {isChecking && s.state === 'pending' ? '检查中…' : STATE_TEXT[s.state]}
+              </StatusPill>
               <span className="font-medium">
                 第 {String(s.ordinal)} 步（共 {String(model.steps.length)} 步） · {s.label}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {isChecking && s.state === 'pending' ? '检查中…' : STATE_TEXT[s.state]}
               </span>
             </span>
 
@@ -145,7 +176,14 @@ export function PresetImageCheckView({
             {s.provision === undefined ? null : (
               <span
                 data-testid={`preset-step-provision-${s.step}`}
-                className="flex flex-col gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-2"
+                // ⚠️ **`--info` token，不是硬编码 emerald**：这一块说的是"平台自己能搬"，
+                // 语义与第 5 步本身渲染 `info`（提示，不是警告/错误）是同一件事——
+                // design/prototype.html 的 provision 区块同样直接取
+                // `hsl(var(--info)/.3)` / `hsl(var(--info)/.06)`，这里逐值抄过来，不让
+                // 两处颜色各自漂移。用 `[hsl(var(--info)/…)]` 而不是 `info/30` 修饰符写法，
+                // 与 `components/ui/status-pill.tsx` 已经在用的写法一致（该文件同样发现过
+                // 类修饰符对 CSS 变量颜色不总是可靠）。
+                className="flex flex-col gap-2 rounded-md border border-[hsl(var(--info)/0.3)] bg-[hsl(var(--info)/0.06)] p-2"
               >
                 <span className="text-xs text-muted-foreground">{s.provision.why}</span>
                 <span className="flex flex-wrap items-center gap-2">
@@ -167,6 +205,40 @@ export function PresetImageCheckView({
                       : ` · 约 ${String(Math.round(s.provision.sizeBytes / 1024 / 1024))} MB`}
                   </span>
                 </span>
+                {/* ⚠️ **只在真的在跑时画这一块**——数据源是真实的 provision 事件流
+                    （`usePresetImageProvision`），⛔ 不是原型里那个自转的 `setInterval` 演示。
+                    进度百分比与已用时长是**两个独立的、各自跳动的数字**：字节分数长时间不变
+                    时，仍在走的用时才是"没有卡死，正在写盘"的证据（design/design-notes.md
+                    §1 问题 3）。 */}
+                {isProvisioning ? (
+                  <span data-testid="preset-provision-progress" className="flex flex-col gap-1">
+                    {provisionProgress === null || provisionProgress === undefined ? (
+                      <span className="text-xs text-muted-foreground">
+                        {/* ⛔ 给不出分母就不画百分比/进度条——一个停在原地不动的假条比什么都
+                            不画更像"卡死了"。 */}
+                        进度未知（后端这一帧给不出分母）——期间数字没变不代表卡死，正在持续写入。
+                      </span>
+                    ) : (
+                      <>
+                        <span
+                          data-testid="preset-provision-percent"
+                          className="font-mono text-sm font-medium"
+                        >
+                          {String(Math.round(provisionProgress * 100))}%
+                        </span>
+                        <Progress value={Math.round(provisionProgress * 100)} />
+                      </>
+                    )}
+                    {provisionElapsedSeconds === undefined ? null : (
+                      <span
+                        data-testid="preset-provision-elapsed"
+                        className="text-xs text-muted-foreground"
+                      >
+                        已用时 {formatElapsed(provisionElapsedSeconds)}
+                      </span>
+                    )}
+                  </span>
+                ) : null}
                 {provisionStatusText === undefined ? null : (
                   <span
                     data-testid="preset-provision-status"
@@ -179,9 +251,10 @@ export function PresetImageCheckView({
                   <span
                     role="alert"
                     data-testid="preset-provision-error"
-                    className="whitespace-pre-wrap break-words text-xs text-red-500"
+                    className="flex items-start gap-1 whitespace-pre-wrap break-words text-xs text-red-500"
                   >
-                    ❌ {provisionError}
+                    <X aria-hidden="true" className="h-3 w-3 shrink-0 translate-y-0.5" />
+                    <span>{provisionError}</span>
                   </span>
                 )}
               </span>
@@ -213,9 +286,10 @@ export function PresetImageCheckView({
         <p
           role="alert"
           data-testid="preset-image-blocked"
-          className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-amber-600"
+          className="flex items-start gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-amber-600"
         >
-          ⚠️ {model.blockedText}
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 translate-y-0.5" />
+          <span>{model.blockedText}</span>
         </p>
       )}
     </section>

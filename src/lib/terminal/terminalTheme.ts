@@ -13,6 +13,12 @@ export const TERMINAL_FONT_FAMILY =
   "'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace";
 
 export const DEFAULT_TERMINAL_FONT_SIZE = 14;
+/**
+ * 终端工具栏 [A-]/[A+] 的字号边界（design-notes.md §4 Phase 3）。下限保证可读性，
+ * 上限避免一屏挤不下几个字符——两个数字都不是精确计算出来的，是常见终端应用的经验值。
+ */
+export const MIN_TERMINAL_FONT_SIZE = 10;
+export const MAX_TERMINAL_FONT_SIZE = 22;
 
 /** LRU 并发实例上限（webgl 渲染器下 4–6，留 WebGL 上下文预算余量，08 §5.2）。 */
 export const TERMINAL_LRU_LIMIT_WEBGL = 6;

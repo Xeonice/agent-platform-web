@@ -211,7 +211,7 @@ describe('⛔ 不许合成一个红灯：每一步都有自己的下一步动作
     });
     expect(model.steps[1]?.fixCommand).not.toContain('重跑一次');
     // 后端没给命令 ⇒ 回落到本地兜底的**命令形态**，⛔ 不是那段散文。
-    expect(model.steps[1]?.fixCommand).toBe('docker push <镜像仓库>/platform/sandbox:<标签>');
+    expect(model.steps[1]?.fixCommand).toBe('docker push <镜像下载源>/platform/sandbox:<标签>');
   });
 });
 

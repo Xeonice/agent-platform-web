@@ -24,6 +24,7 @@
 // 行卸载再挂回来，展开的仍然是展开的。这也是它没被下放到容器的原因：纯 UI 披露态，
 // 与任何副作用/服务端状态无关。
 import { memo, useCallback, useState, type ReactNode, type Ref } from 'react';
+import { Wrench } from 'lucide-react';
 import type { TaskStreamItem, TaskToolCall, VirtualWindow } from '@/types/taskStream';
 import type { ConnState } from '@/types/terminal';
 import { Button } from '@/components/ui/button';
@@ -151,7 +152,8 @@ const TaskStreamRow = memo(function TaskStreamRow({
                 : 'cursor-pointer px-2 py-1 text-sky-300'
             }
           >
-            🔧 工具调用：{tool.name ?? item.text}
+            <Wrench aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-1px]" />
+            工具调用：{tool.name ?? item.text}
             <span
               className={tool.failed === true ? 'ml-2 text-red-400' : 'ml-2 text-muted-foreground'}
               data-testid="tool-status"

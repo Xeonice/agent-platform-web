@@ -292,7 +292,7 @@ export function AutomationFormView({
               ⚠️ 这句里的按钮名必须与 `ProjectMenuPanel.view` 的那一个**逐字一致**，
                  否则这条指路指向一个界面上找不到的名字。 */}
           <span className="text-[11px] text-muted-foreground" data-testid="form-retention-note">
-            成果会留在项目的「🎁 保留下来的成果」里，到期自动清理；到期之前都可以下载。
+            成果会留在项目的「保留下来的成果」里，到期自动清理；到期之前都可以下载。
           </span>
         </fieldset>
       </details>

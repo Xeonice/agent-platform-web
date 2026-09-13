@@ -23,6 +23,8 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
 import { useProviders } from '@/hooks/sandbox/useProviders';
 import { useRuntimes } from '@/hooks/credential/useRuntimes';
 import { useCreateSandbox, useCreateSandboxErrorView } from '@/hooks/sandbox/useCreateSandbox';
@@ -30,13 +32,11 @@ import { useSandboxRestore } from '@/hooks/sandbox/useSandboxRestore';
 import { useTerminalSocketConfig } from '@/hooks/terminal/useTerminalSocketConfig';
 import { useActiveSandbox } from '@/hooks/sandbox/useActiveSandbox';
 import { useProjectBranches } from '@/hooks/project/useProjectBranches';
-import { useEscapeKey } from '@/hooks/_shared/useEscapeKey';
 import { readNewTaskDeepLink } from '@/hooks/_shared/useDeepLinkModal';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
 import { useAppStore } from '@/stores';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
-import { ModalShellView } from '@/views/common/ModalShell.view';
-import { useModalFocus } from '@/hooks/_shared/useModalFocus';
+import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/dialog';
 import { AuthGateContainer } from '@/containers/credential/AuthGateContainer';
 import { invalidateRuntimeAuth } from '@/hooks/credential/useRuntimeAuthMutations';
 import { SandboxLifecycleContainer } from '@/containers/sandbox/SandboxLifecycleContainer';
@@ -162,6 +162,12 @@ export function SandboxTerminalContainer({
   const restored = useSandboxRestore(restoreId, projectId);
   const sandboxId = localTask?.id ?? (restored.notFound ? null : restoreId);
   const taskName = localTask?.name ?? restored.name;
+  /**
+   * 终端仪表壳工具栏的面包屑（design-notes.md §4 Phase 3 / 原型 `renderTerminal()`：
+   * `${t.project} / ${t.name}`）。任务名缺席时（还没拿到名字的极短窗口）只给项目名，
+   * ⛔ 不拼一个空的 `/ undefined`。
+   */
+  const terminalBreadcrumb = taskName === undefined ? projectName : `${projectName} / ${taskName}`;
   // 无头任务打给沙箱自己的 runtime（本会话取创建响应，刷新后取 DTO）。
   const sandboxRuntime = localTask?.runtime ?? restored.runtime;
   /**
@@ -292,12 +298,6 @@ export function SandboxTerminalContainer({
     setCurrentModal(null);
   }, [createSandbox, setCurrentModal]);
 
-  // Esc 关弹窗（与 [✕] / [取消] 同一个动作）；创建中不响应，免得误关。
-  useEscapeKey(currentModal === 'newTask' && !createSandbox.isPending, handleCloseModal);
-  // 同上：焦点必须移进弹层，否则打字会进正在跑的终端（实测复现过）。
-  const taskModalRef = useRef<HTMLDivElement>(null);
-  useModalFocus(currentModal === 'newTask', taskModalRef);
-
   const handleRetry = (): void => {
     if (sandboxId !== null) clearSandboxStatus(sandboxId);
     setTask(null);
@@ -315,111 +315,161 @@ export function SandboxTerminalContainer({
    *
    * ⚠️ 鉴权闸门仍然在 `authGateSlot` 里**就地展开**：不跳步、不新开弹层
    *（那两步壳从来就不存在，§3）。
+   *
+   * ⚠️ **弹层外壳本轮从手写 `ModalShellView` 换成 shadcn `Dialog`**（design-notes.md
+   * §4 Phase 3 第 5 条 / §1「弹层组件选型」）——**普通、可关闭的那一份**，不是向导专用的
+   * `BlockingDialog`（那份靠"没有 `onOpenChange` 出口"保证关不掉，语义完全相反）。
+   * 焦点陷阱 / `aria-modal` / 背景滚动锁定 / 关闭后焦点归位全部交给 Radix：
+   *   · 关闭事件统一走 `onOpenChange`，`busy`（创建中）时直接吞掉 —— 与此前
+   *     `ModalShellView` 的 `busy` 参数、`useEscapeKey` 的 `!createSandbox.isPending`
+   *     是同一条纪律，只是不再需要手动接两个 hook；
+   *   · 不用共享的 `DialogContent`（它内置的关闭按钮无障碍名是英文 "Close"）——这里手写
+   *     `DialogPrimitive.Close`，无障碍名保持中文「关闭」，与关掉这份弹层的既有断言对齐；
+   *   · **DOM 顺序**：标题/副标题在前、`NewSandboxPanelView` 内容次之、关闭按钮**最后**
+   *     （视觉上用 `absolute` 摆回右上角）——Radix 的自动聚焦取的是"容器内第一个可
+   *     聚焦元素"，顺序反了就会把首次打开的焦点误放到 [✕] 上（回车就把弹层关了）。
    */
   const newTaskModal =
     currentModal !== 'newTask' ? null : (
-      <ModalShellView
-        shellRef={taskModalRef}
-        title="新建任务"
-        subtitle={`在「${projectName}」中发起`}
-        onClose={handleCloseModal}
-        busy={createSandbox.isPending}
-        testId="modal-new-task"
+      <Dialog
+        open
+        onOpenChange={(next) => {
+          // busy 时忽略 Esc / 点遮罩 / [✕] 触发的关闭请求——与此前 `ModalShellView`
+          // 的 `busy` 语义一致："创建中被误关会留下一个用户以为没发生过的请求"。
+          if (!next && !createSandbox.isPending) handleCloseModal();
+        }}
       >
-        <NewSandboxPanelView
-          runtimes={runtimeList}
-          runtime={runtime}
-          onSelectRuntime={setPickedRuntime}
-          loadingRuntimes={runtimes.isPending}
-          runtimesErrorMessage={runtimes.isError ? runtimes.error.message || '请求失败' : undefined}
-          onRetryRuntimes={() => {
-            void runtimes.refetch();
-          }}
-          hostProvider={hostProvider}
-          onCreate={handleCreate}
-          creating={createSandbox.isPending}
-          loadingProviders={providers.isPending}
-          providersErrorMessage={
-            providers.isError ? providers.error.message || '请求失败' : undefined
-          }
-          onRetryProviders={() => {
-            void providers.refetch();
-          }}
-          authGateSlot={
-            authBlocked && selectedRuntimeDto !== undefined ? (
-              <AuthGateContainer
-                runtimeId={selectedRuntimeDto.id}
-                runtimeName={selectedRuntimeDto.displayName}
-                methods={selectedRuntimeDto.authMethods}
-                apiKeyPrefix={selectedRuntimeDto.apiKeyPrefix}
-                // 一次性语义文案只在"从未配置"那支出现;已过期是**再来一次**,那句
-                //「只需配置一次」在这里是假话(P20 §5.1 分支③走同一面板但说法不同)。
-                showOneTimeNotice={credentialStatus === 'none'}
-                onOpenCredentials={() => {
-                  router.push('/settings/credentials');
-                }}
-                // 配置成功 ⇒ 让 runtimes 列表重取,`credentialStatus` 翻成 active 后
-                // 闸门自行消失、发起按钮解禁。不在本层记任何凭证态(单一来源在服务端)。
-                onSuccess={() => {
-                  invalidateRuntimeAuth(queryClient);
-                }}
-              />
-            ) : undefined
-          }
-          runtimeIdentityNotice={
-            credentialStatus === 'active' || credentialStatus === 'expiring'
-              ? `将以 ${selectedRuntimeDto?.maskedIdentifier ?? '已配置凭证'} 身份运行${
-                  credentialStatus === 'expiring' ? '（凭证即将到期，建议尽快重新授权）' : ''
-                }`
-              : undefined
-          }
-          // 闸门在场时按钮是禁着的 —— 把"是谁在拦"说出来（见 view 里 `authGateRuntimeName` 的注释）。
-          {...(selectedRuntimeDto === undefined
-            ? {}
-            : { authGateRuntimeName: selectedRuntimeDto.displayName })}
-          createDisabledReason={
-            // ⚠️ 原文案是「请改选其它运行档位」——**现在用户改不了了**（档位由宿主平台决定）。
-            //    一条指向不存在的操作的提示，比不提示更贵：它让人在界面上找一个不存在的开关。
-            //
-            // ⚠️⚠️ **这里不许写 `**重点**`**：它渲染在 `NewSandboxPanel.view` 的纯文本
-            //    `<p>{createDisabledReason}</p>` 里，全仓没有 markdown 渲染器 ⇒ 屏幕上会
-            //    真的出现两颗星号。（同一份面板 199 行用的是 `<strong>`，说明这是笔误。）
-            //    要强调就改句序，把重点放句首。
-            ttyUnsupported
-              ? '这台机器的沙箱环境开不了终端。' +
-                '跑在哪种沙箱环境上是这台机器的事实，不是一个可以在这里改的选项；' +
-                '改发无头任务就可以——不开终端，agent 启动就开始执行。'
-              : undefined
-          }
-          // 两条**互斥**的错误呈现路径（P22 §1 / 04 §5）：
-          //  · rejection = 后端显式标了 `sideEffectFree` 的门口拒绝，请求在落库前被拒（没有
-          //    sandbox id、列表不留 failed 记录）⇒ 就地提示改配置，绝不走"创建失败可重试"。
-          //    ⚠️ 判据不是 HTTP 码：这六条拒绝散在 400/404/409 上，反推必漏（见 lib 里的注释）；
-          //  · errorMessage = 其余创建期失败（含后端**漏标**时的保守回落），人话 + 建议。
-          rejectionMessage={createErrorView.rejection}
-          errorMessage={
-            createErrorView.failure === undefined
-              ? undefined
-              : `${createErrorView.failure.title} —— ${createErrorView.failure.advice}`
-          }
-          initialPrompt={initialPrompt}
-          onInitialPromptChange={setInitialPrompt}
-          // 深链把弹窗与项目上下文恢复回来了，**但指令没有**（它只在这个容器的局部
-          // state 里，既不进 URL 也不进 localStorage，15 §3.5）。所以要**明说**一句——
-          // 用户看见弹窗还在，会默认自己写的东西也还在。站内点开时不给这句。
-          {...(openedFromDeepLink ? { promptNotice: DEEP_LINK_PROMPT_NOTICE } : {})}
-          // —— 分支选择器（§N.1）——
-          // 空项目**整块不渲染**（没有 git，谈不上分支）；加载失败只降级、不拦创建。
-          showBranchPicker={isGitProject}
-          branches={branches.branches}
-          branch={branch}
-          onSelectBranch={setBranch}
-          loadingBranches={branches.isPending}
-          branchesErrorMessage={branches.isError ? '读取本地引用失败' : undefined}
-          projectName={projectName}
-          onCancel={handleCloseModal}
-        />
-      </ModalShellView>
+        <DialogPortal>
+          <DialogOverlay />
+          <DialogPrimitive.Content
+            data-testid="modal-new-task"
+            // ⚠️ Radix 这个版本的 `DialogPrimitive.Content` **不会自己加 `aria-modal`**
+            // （`dialog.tsx`/`blocking-dialog.tsx` 两份共享封装同样没有）——它把这一位
+            // 留给调用方显式声明，不是漏了。`ModalShellView` 此前手写了这个属性，这里
+            // 照抄，不能指望换个组件就白拿。
+            aria-modal="true"
+            className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-lg border border-border bg-background focus:outline-none"
+          >
+            <div className="flex items-start gap-3 border-b border-border px-5 py-3">
+              <div className="min-w-0 flex-1 text-left">
+                <DialogPrimitive.Title className="text-base font-semibold">
+                  新建任务
+                </DialogPrimitive.Title>
+                {/* ⚠️ 精确串（不是正则）：`NewSandboxPanelView` 的首句也以同样的话开头，
+                    用正则会同时命中这里与那句，触发 strict-mode 二义匹配。 */}
+                <DialogPrimitive.Description className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {`在「${projectName}」中发起`}
+                </DialogPrimitive.Description>
+              </div>
+            </div>
+            <NewSandboxPanelView
+              runtimes={runtimeList}
+              runtime={runtime}
+              onSelectRuntime={setPickedRuntime}
+              loadingRuntimes={runtimes.isPending}
+              runtimesErrorMessage={
+                runtimes.isError ? runtimes.error.message || '请求失败' : undefined
+              }
+              onRetryRuntimes={() => {
+                void runtimes.refetch();
+              }}
+              hostProvider={hostProvider}
+              onCreate={handleCreate}
+              creating={createSandbox.isPending}
+              loadingProviders={providers.isPending}
+              providersErrorMessage={
+                providers.isError ? providers.error.message || '请求失败' : undefined
+              }
+              onRetryProviders={() => {
+                void providers.refetch();
+              }}
+              authGateSlot={
+                authBlocked && selectedRuntimeDto !== undefined ? (
+                  <AuthGateContainer
+                    runtimeId={selectedRuntimeDto.id}
+                    runtimeName={selectedRuntimeDto.displayName}
+                    methods={selectedRuntimeDto.authMethods}
+                    apiKeyPrefix={selectedRuntimeDto.apiKeyPrefix}
+                    // 一次性语义文案只在"从未配置"那支出现;已过期是**再来一次**,那句
+                    //「只需配置一次」在这里是假话(P20 §5.1 分支③走同一面板但说法不同)。
+                    showOneTimeNotice={credentialStatus === 'none'}
+                    onOpenCredentials={() => {
+                      router.push('/settings/credentials');
+                    }}
+                    // 配置成功 ⇒ 让 runtimes 列表重取,`credentialStatus` 翻成 active 后
+                    // 闸门自行消失、发起按钮解禁。不在本层记任何凭证态(单一来源在服务端)。
+                    onSuccess={() => {
+                      invalidateRuntimeAuth(queryClient);
+                    }}
+                  />
+                ) : undefined
+              }
+              runtimeIdentityNotice={
+                credentialStatus === 'active' || credentialStatus === 'expiring'
+                  ? `将以 ${selectedRuntimeDto?.maskedIdentifier ?? '已配置凭证'} 身份运行${
+                      credentialStatus === 'expiring' ? '（凭证即将到期，建议尽快重新授权）' : ''
+                    }`
+                  : undefined
+              }
+              // 闸门在场时按钮是禁着的 —— 把"是谁在拦"说出来（见 view 里 `authGateRuntimeName` 的注释）。
+              {...(selectedRuntimeDto === undefined
+                ? {}
+                : { authGateRuntimeName: selectedRuntimeDto.displayName })}
+              createDisabledReason={
+                // ⚠️ 原文案是「请改选其它运行档位」——**现在用户改不了了**（档位由宿主平台决定）。
+                //    一条指向不存在的操作的提示，比不提示更贵：它让人在界面上找一个不存在的开关。
+                //
+                // ⚠️⚠️ **这里不许写 `**重点**`**：它渲染在 `NewSandboxPanel.view` 的纯文本
+                //    `<p>{createDisabledReason}</p>` 里，全仓没有 markdown 渲染器 ⇒ 屏幕上会
+                //    真的出现两颗星号。（同一份面板 199 行用的是 `<strong>`，说明这是笔误。）
+                //    要强调就改句序，把重点放句首。
+                ttyUnsupported
+                  ? '这台机器的沙箱环境开不了终端。' +
+                    '跑在哪种沙箱环境上是这台机器的事实，不是一个可以在这里改的选项；' +
+                    '改发无头任务就可以——不开终端，agent 启动就开始执行。'
+                  : undefined
+              }
+              // 两条**互斥**的错误呈现路径（P22 §1 / 04 §5）：
+              //  · rejection = 后端显式标了 `sideEffectFree` 的门口拒绝，请求在落库前被拒（没有
+              //    sandbox id、列表不留 failed 记录）⇒ 就地提示改配置，绝不走"创建失败可重试"。
+              //    ⚠️ 判据不是 HTTP 码：这六条拒绝散在 400/404/409 上，反推必漏（见 lib 里的注释）；
+              //  · errorMessage = 其余创建期失败（含后端**漏标**时的保守回落），人话 + 建议。
+              rejectionMessage={createErrorView.rejection}
+              errorMessage={
+                createErrorView.failure === undefined
+                  ? undefined
+                  : `${createErrorView.failure.title} —— ${createErrorView.failure.advice}`
+              }
+              initialPrompt={initialPrompt}
+              onInitialPromptChange={setInitialPrompt}
+              // 深链把弹窗与项目上下文恢复回来了，**但指令没有**（它只在这个容器的局部
+              // state 里，既不进 URL 也不进 localStorage，15 §3.5）。所以要**明说**一句——
+              // 用户看见弹窗还在，会默认自己写的东西也还在。站内点开时不给这句。
+              {...(openedFromDeepLink ? { promptNotice: DEEP_LINK_PROMPT_NOTICE } : {})}
+              // —— 分支选择器（§N.1）——
+              // 空项目**整块不渲染**（没有 git，谈不上分支）；加载失败只降级、不拦创建。
+              showBranchPicker={isGitProject}
+              branches={branches.branches}
+              branch={branch}
+              onSelectBranch={setBranch}
+              loadingBranches={branches.isPending}
+              branchesErrorMessage={branches.isError ? '读取本地引用失败' : undefined}
+              projectName={projectName}
+              onCancel={handleCloseModal}
+            />
+            <DialogPrimitive.Close asChild>
+              <button
+                type="button"
+                aria-label="关闭"
+                disabled={createSandbox.isPending}
+                className="absolute right-4 top-3 rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                <X aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </DialogPrimitive.Close>
+          </DialogPrimitive.Content>
+        </DialogPortal>
+      </Dialog>
     );
 
   if (sandboxId === null || socketConfig === null) {
@@ -479,6 +529,7 @@ export function SandboxTerminalContainer({
         socketConfig={socketConfig}
         onRetry={handleRetry}
         taskName={taskName}
+        breadcrumb={terminalBreadcrumb}
         headlessSlot={
           sandboxRuntime === undefined || sandboxHeadless !== true ? undefined : (
             <HeadlessTaskContainer

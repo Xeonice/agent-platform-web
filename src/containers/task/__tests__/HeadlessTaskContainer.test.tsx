@@ -438,7 +438,11 @@ describe('HeadlessTaskContainer · 事件渲染分类', () => {
     const tool = pane.querySelector('[data-kind="tool"] details');
     expect(tool).not.toBeNull();
     expect(tool).not.toHaveAttribute('open');
-    expect(within(pane).getByText(/🔧 工具调用：write_file/)).toBeInTheDocument();
+    expect(within(pane).getByText(/工具调用：write_file/)).toBeInTheDocument();
+    // ⭐ 🔧 换成了 lucide `Wrench`（class `lucide-wrench`），不再是文案里的字面字符——
+    // 上面那条 `getByText` 正则去掉 emoji 之后照样能绿（RTL 按文本节点匹配，SVG 不算
+    // 文本），必须再钉一条"图标真的在场"才拦得住"删了图标标签但正则漏改"。
+    expect(tool?.querySelector('.lucide-wrench')).not.toBeNull();
 
     // 错误：高亮 + 归入**唯一**的活区。逐条 role="alert" 会让 20 条错误变成 20 次抢播
     // （读屏被刷屏），所以活区只有一个：整段输出的 role="log"（隐含 aria-live=polite）。
@@ -459,8 +463,9 @@ describe('HeadlessTaskContainer · 事件渲染分类', () => {
 
     emitEvent(1, 'tool-call', { status: 'started', id: 'c1', name: 'bash', input: { cmd: 'ls' } });
     const pane = screen.getByTestId('task-output-pane');
-    await within(pane).findByText(/🔧 工具调用：bash/);
+    await within(pane).findByText(/工具调用：bash/);
     expect(within(pane).getByText('运行中…')).toBeInTheDocument();
+    expect(pane.querySelector('.lucide-wrench')).not.toBeNull();
 
     emitEvent(2, 'tool-call', { status: 'completed', id: 'c1', exitCode: 0, output: 'a.ts' });
 

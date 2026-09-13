@@ -16,6 +16,7 @@
 //
 // ⛔ **不许在这里写耗时数字。** 现装 CLI 的耗时按沙箱环境差一个数量级（「实测约 12.5 分钟」
 //    是 aio 那一档的数字），而这一页拿不到当前是哪一档 ⇒ 只说"会明显变慢"。
+import { ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 /** 一条要求：标题 + 展开说明 + 是否会**拦住注册**。 */
@@ -81,7 +82,10 @@ export function ImageRequirementsPanelView({ onClose }: ImageRequirementsPanelPr
     >
       <header className="flex items-start justify-between gap-2">
         <div className="flex flex-col gap-1">
-          <h3 className="text-base font-semibold">📋 平台对镜像的要求</h3>
+          <h3 className="flex items-center gap-1.5 text-base font-semibold">
+            <ClipboardList aria-hidden="true" className="h-4 w-4" />
+            平台对镜像的要求
+          </h3>
           <p className="text-xs text-muted-foreground">
             前两条不满足会 <strong className="font-medium text-foreground">拦住注册</strong>
             ，后两条不会。这个面板不会自动关掉 —— 改 Dockerfile 时可以一直开着对照。

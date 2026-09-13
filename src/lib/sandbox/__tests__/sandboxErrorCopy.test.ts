@@ -170,6 +170,10 @@ describe('错误码 → 人话 + 可操作建议（P22 §1）', () => {
 
   it('ended 与 failed 分开：结束态不复用失败文案', () => {
     expect(SANDBOX_ENDED_COPY.title).not.toContain('❌');
+    // severity 才是 view 拿去选图标的那个字段——文案不出现「❌」只是表面，
+    // 真正把 ended 与 failed 分开的是这里：'info' ≠ 各条失败码共用的 'fail'。
+    expect(SANDBOX_ENDED_COPY.severity).toBe('info');
+    expect(SANDBOX_ENDED_COPY.severity).not.toBe('fail');
     expect(SANDBOX_ENDED_COPY.actions.map((a) => a.key)).toEqual(['reconfigure']);
   });
 
@@ -264,7 +268,7 @@ describe('错误码 → 人话 + 可操作建议（P22 §1）', () => {
   it('⭐ 未收录码的兜底标题不提「任务」（镜像管理页也在复用这张表）', () => {
     const copy = describeSandboxError({ code: 'SOME_IMAGE_PAGE_CODE' });
     expect(copy.title).not.toContain('任务');
-    expect(copy.title).toBe('❌ 操作没有完成');
+    expect(copy.title).toBe('操作没有完成');
   });
 });
 
@@ -326,7 +330,7 @@ describe('零副作用拒绝（后端显式声明 sideEffectFree）≠ 创建失
         `${rejection.code} 掉进了 fallbackCopy（带 [重试]），说明 COPY_TABLE 里没有它`,
       ).not.toContain('retry');
       // 文案得是为这条码写的，不是兜底那段。
-      expect(copy.title).not.toBe('❌ 操作没有完成');
+      expect(copy.title).not.toBe('操作没有完成');
     }
   });
 
@@ -393,7 +397,7 @@ describe('零副作用拒绝（后端显式声明 sideEffectFree）≠ 创建失
       expect(copy.actions.map((a) => a.key)).not.toContain('retry');
       expect(copy.actions.length).toBeGreaterThan(0);
       // 兜底文案（'❌ 操作没有完成 / 可以重试一次'）是**没收录**的表现，这几条必须已收录。
-      expect(copy.title).not.toBe('❌ 操作没有完成');
+      expect(copy.title).not.toBe('操作没有完成');
     }
   });
 
@@ -444,7 +448,7 @@ describe('镜像错误码：顶层的配文案，details[]/warnings[] 里的一�
     for (const code of TOP_LEVEL_IMAGE_CODES) {
       const copy = describeSandboxError({ code });
       expect(copy.advice, `${code} 掉进了 fallbackCopy`).not.toContain('未能获取具体原因');
-      expect(copy.title).not.toBe('❌ 操作没有完成');
+      expect(copy.title).not.toBe('操作没有完成');
       expect(copy.actions.length).toBeGreaterThan(0);
       expect(copy.title).not.toContain(code);
     }
@@ -505,5 +509,71 @@ describe('镜像错误码：顶层的配文案，details[]/warnings[] 里的一�
     expect(runTime.title).toContain('任务已停止');
     // 两条文案不许是同一句——那正是"合并成一段话"之后的样子。
     expect(registerTime.advice).not.toBe(runTime.advice);
+  });
+});
+
+/**
+ * ⭐ **架构收口（design/design-notes.md「lib 返回语义状态，view 负责渲染成图标」）**：
+ * `title` 此前用一个字面 emoji 字符（❌/🔴/⏱️/⚠️）编码"这是哪一类结果"，本轮拆成
+ * `severity` 结构化字段。这里既钉住"文案里不再夹字符画"，也逐码钉住 severity 的具体值——
+ * 只断言"有 severity 字段"不够：那样即使把所有码的 severity 都错记成同一个值，
+ * 断言照样全绿（假绿）。
+ *
+ * MUTATION：把 `TIMEOUT` 的 severity 从 `'timeout'` 改成 `'fail'`，或把
+ * `INVALID_STATE` 从 `'warn'` 改成 `'fail'`，或删掉 `SANDBOX_ENDED_COPY.severity`
+ * 的 `'info'` 改回 `'fail'` ⇒ 对应那一行精确变红（不是整个 describe 块一起红）。
+ */
+describe('severity：title 不再夹字面 emoji，图标语义改由结构化字段承载', () => {
+  // Unicode 转义而不是直接贴 emoji 字符——避免这条断言本身在 diff/终端里被误当成
+  // "还有一个 emoji 没删掉"。覆盖本表出现过的几种：❌ ✅ 🔴 ⏱️ ⚠️ ⛔ 🎁。
+  // ⚠️ 用交替（|）而不是字符类（[...]）：⏱️/⚠️ 是"基础符号 + FE0F 变体选择符"两个码位
+  // 组成的一个字形，塞进 `[...]` 会被 eslint `no-misleading-character-class` 判定
+  // 为误导性写法（字符类逐码位匹配，与"组合字形"的直觉不符）。
+  const EMOJI_PATTERN =
+    /\u{2705}|\u{274C}|\u{1F534}|\u{23F1}\u{FE0F}?|\u{26A0}\u{FE0F}?|\u{26D4}|\u{1F381}/u;
+
+  it('已收录码 + 兜底 + 结束态：title 都不含字面 emoji 字符', () => {
+    const codes = [
+      'INSTALL_FAILED',
+      'IMAGE_CONTRACT_VIOLATION',
+      'UNKNOWN_PROVIDER',
+      'UNKNOWN_RUNTIME',
+      'PROJECT_NOT_FOUND',
+      'PROJECT_NOT_READY',
+      'BRANCH_NOT_FOUND',
+      'UNSUPPORTED_CAPABILITY',
+      'IMAGE_NOT_REGISTERED',
+      'INVALID_IMAGE_REFERENCE',
+      'IMAGE_PROVIDER_MISMATCH',
+      'DISK_INSUFFICIENT',
+      'WORKSPACE_PREPARE_FAILED',
+      'IMAGE_PULL_FAILED',
+      'IMAGE_DIGEST_GONE',
+      'MANIFEST_INVALID',
+      'REF_NOT_FOUND',
+      'REGISTRY_UNREACHABLE',
+      'RESOURCE_EXHAUSTED',
+      'PROVIDER_UNAVAILABLE',
+      'TIMEOUT',
+      'INVALID_STATE',
+      'THIS_CODE_DOES_NOT_EXIST',
+    ];
+    for (const code of codes) {
+      expect(describeSandboxError({ code }).title).not.toMatch(EMOJI_PATTERN);
+    }
+    expect(SANDBOX_ENDED_COPY.title).not.toMatch(EMOJI_PATTERN);
+  });
+
+  it('severity 逐码精确匹配（不是"有字段就行"）', () => {
+    expect(describeSandboxError({ code: 'TIMEOUT' }).severity).toBe('timeout');
+    expect(describeSandboxError({ code: 'INVALID_STATE' }).severity).toBe('warn');
+    expect(describeSandboxError({ code: 'REGISTRY_UNREACHABLE' }).severity).toBe('fail');
+    expect(describeSandboxError({ code: 'PROVIDER_UNAVAILABLE' }).severity).toBe('fail');
+    expect(describeSandboxError({ code: 'INSTALL_FAILED' }).severity).toBe('fail');
+    expect(describeSandboxError({ code: 'IMAGE_PROVIDER_MISMATCH' }).severity).toBe('fail');
+    // 未收录码 → fallbackCopy → 'fail'（兜底仍是"这是一次失败"，不是别的语义）。
+    expect(describeSandboxError({ code: 'THIS_CODE_DOES_NOT_EXIST' }).severity).toBe('fail');
+    // 结束态是 P22 §1 之外唯一非 'fail' 的既有分支：正常收场，不该染成失败色。
+    expect(SANDBOX_ENDED_COPY.severity).toBe('info');
   });
 });

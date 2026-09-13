@@ -1,4 +1,4 @@
-// 「保留下来的成果」面板（F21-6 §3.3 项目菜单「🎁 保留下来的成果」/ P20 §6 决策 2）。纯展示、props 驱动。
+// 「保留下来的成果」面板（F21-6 §3.3 项目菜单「保留下来的成果」/ P20 §6 决策 2）。纯展示、props 驱动。
 //
 // ⚠️ 屏上一律叫**「保留下来的成果」**，代码里的 volume / retained volume 是内部词。
 // 此前同一条路上出现过「已保留卷 / 保留卷 / 成果卷 / 工作区卷」四种叫法，而删除确认恰恰
@@ -21,6 +21,7 @@
 //    现有工作区？来源项目已删时怎么办？三个问题的答案会决定端点形态。⛔ 先定语义再做，
 //    在 UI 上摆一个禁用的 [恢复] 同样不行（那是在承诺一件还没决定的事）。
 import { useState } from 'react';
+import { Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { RetainedVolumeRow, RetainedVolumeTotals } from '@/types/retainedVolume';
 
@@ -103,7 +104,7 @@ export function RetainedVolumesPanelView({
                   className="flex flex-col gap-1 rounded border border-border px-3 py-2"
                 >
                   <div className="flex items-center gap-2">
-                    <span aria-hidden="true">🎁</span>
+                    <Gift aria-hidden="true" className="h-4 w-4 shrink-0" />
                     {/* 完整 id 只进 `title`：行上给的是可读的短形（见 retainedVolumeModel）。 */}
                     <span
                       className="min-w-0 flex-1 truncate text-xs"

@@ -1174,6 +1174,15 @@ describe('SandboxTerminalContainer · 新建任务弹层形态', () => {
     expect(within(dialog).queryByLabelText(/项目/)).not.toBeInTheDocument();
   });
 
+  /**
+   * ⚠️ **Esc 派给 `document`，不是 `window`**（Phase 3 起弹层外壳换成 shadcn `Dialog`，
+   * design-notes.md §4 Phase 3 第 5 条）：Radix 的 `DismissableLayer` 监听的是
+   * `ownerDocument`（捕获阶段，与旧版 `useEscapeKey` 挂在 `window` 上同一个理由——
+   * 都是为了抢在 xterm 的 `stopPropagation` 之前拿到事件），但合成事件必须落在
+   * `document` 的事件路径上才收得到；真实按键天然如此（会从聚焦的元素冒泡经过
+   * `document` 再到 `window`），只有 `fireEvent.keyDown(window, …)` 这种把 `window`
+   * 自己当 target 的合成写法会绕开 `document`。
+   */
   it('Esc 关闭弹层，且**指令随之清空**（重开不会带着上次的敏感上下文）', async () => {
     mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
     mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
@@ -1182,7 +1191,7 @@ describe('SandboxTerminalContainer · 新建任务弹层形态', () => {
     const textarea = await screen.findByLabelText('任务指令（可选）');
     fireEvent.change(textarea, { target: { value: '迁移 acme-billing 内部系统' } });
 
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
@@ -1229,6 +1238,40 @@ describe('SandboxTerminalContainer · 新建任务弹层形态', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+  });
+
+  /**
+   * ⭐ **busy 时 Esc / [✕] 都关不掉**（`Dialog` 的 `onOpenChange` 里 `!createSandbox.isPending`
+   * 这个守卫，Phase 3 从 `ModalShellView` 的 `busy` 参数照抄过来的同一条纪律：
+   * "创建中被误关会留下一个用户以为没发生过的请求"）。
+   *
+   * 变异：把 `onOpenChange` 里的 `!createSandbox.isPending` 去掉 ⇒ 本例两句
+   * `queryByRole('dialog')` 断言都会变红（Esc / [✕] 都能把创建中的弹层关掉）。
+   */
+  it('⭐ 创建中（isPending）⇒ Esc 与 [✕] 都关不掉弹层', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([runtimeDto({ id: 'codex' })]);
+    server.use(
+      http.post(`${API_BASE}/api/sandboxes`, async () => {
+        await new Promise(() => undefined); // 永挂起：让 createSandbox.isPending 恒为 true
+        return HttpResponse.json(sandboxDto({ id: 'sb-modal' }), { status: 201 });
+      }),
+    );
+    renderContainer();
+    await chooseRuntime('codex');
+    fireEvent.click(screen.getByRole('button', { name: '发起任务并打开终端' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '创建中…' })).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    // 给一拍机会：如果守卫失效，Dialog 会在这之后立刻卸载。
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it('门口拒绝（sideEffectFree）⇒ 弹层**不关**，就地提示改配置', async () => {

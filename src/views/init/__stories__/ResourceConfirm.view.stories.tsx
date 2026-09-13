@@ -45,6 +45,10 @@ export const Healthy: Story = {
     await expect(canvas.getByTestId('resource-reserved')).toHaveTextContent('总容量的 15%');
     await expect(canvas.getByTestId('resource-row-disk')).toHaveTextContent('镜像缓存');
     await expect(canvas.queryByTestId('resource-low')).toBeNull();
+    // ⚠️ 状态用 `StatusPill`（design/design-notes.md §2）：不偏低 ⇒ `ok`。
+    await expect(
+      canvas.getByTestId('resource-row-cpu').querySelector('[data-status="ok"]'),
+    ).not.toBeNull();
   },
 };
 
@@ -98,6 +102,10 @@ export const LowResources: Story = {
     await expect(canvas.getByRole('button', { name: '确认，开始使用' })).toBeEnabled();
     // ⭐ 一块 926GB、只剩 29GB 的盘必须报偏低（只报总量会让人以为宽裕）。
     await expect(canvas.getByTestId('resource-row-disk')).toHaveAttribute('data-low', 'true');
+    // ⚠️ 偏低 ⇒ `warn`（黄），⛔ 不是禁用按钮那条门——颜色仅是提示。
+    await expect(
+      canvas.getByTestId('resource-row-disk').querySelector('[data-status="warn"]'),
+    ).not.toBeNull();
   },
 };
 

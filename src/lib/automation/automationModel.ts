@@ -41,7 +41,7 @@ export function automationRow(
     id: dto.id,
     name: dto.name,
     lifecycle,
-    icon: presentation.icon,
+    ...(presentation.status === undefined ? {} : { status: presentation.status }),
     statusText: presentation.text,
     summaryText: `${dto.runtime} · ${describeSchedule(dto.scheduleKind, dto.scheduleConfig)}`,
     ...(nextText === undefined ? {} : { nextTriggerText: nextText }),
