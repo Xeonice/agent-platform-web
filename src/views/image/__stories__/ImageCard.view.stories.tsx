@@ -31,6 +31,8 @@ const customWarning: ImageCardModel = {
   isActive: true,
   canDelete: true,
   canCheckUpdate: true,
+  // ⭐ 来源（后端 `derivedFromDigest`）—— 此前 DTO 里有、界面上一处不渲染。
+  lineage: { kind: 'derived', text: '来源：从预制镜像 sha256:9f2ab…c31 改来的' },
 };
 
 /** 预置 AIO：`canDelete:false` ⇒ **不渲染 [删除]**（P21-4 §9）。 */
@@ -45,6 +47,8 @@ const builtinValid: ImageCardModel = {
   supportedRuntimes: ['Codex', 'Claude Code'],
   canDelete: false,
   resolvedAtLabel: '解析于 2 小时前',
+  // 预置镜像**自己就是**来源起点：`derivedFromDigest === null` 在它身上是**事实**，不是缺值。
+  lineage: { kind: 'anchor', text: '来源：这就是平台的预制镜像（其他镜像从它改起）' },
 };
 
 const meta: Meta<typeof ImageCardView> = {
@@ -136,6 +140,45 @@ export const Revalidating: Story = {
   },
 };
 
+/**
+ * ⭐ 来源三档 —— play 钉住这一版补上的那一行。
+ *
+ * ⚠️ **「不知道」不能说成「没有」**：一张自定义镜像上的 `derivedFromDigest === null` 是
+ * "平台没记下来"，⛔ 不许渲染成"它没有来源"，也⛔ 不许在前端替它算一个兼容性结论。
+ */
+export const LineageUnknown: Story = {
+  args: {
+    model: {
+      ...customWarning,
+      lineage: {
+        kind: 'unknown',
+        text: '来源未确定',
+        note: '平台没有记下这张镜像是从哪一张预制镜像改来的。这不等于它没有来源，只是这一行没有这个记录（来源是注册那一刻判定并写下的）。',
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const row = canvas.getByTestId('image-lineage');
+    await expect(row).toHaveAttribute('data-lineage', 'unknown');
+    await expect(row).toHaveTextContent('来源未确定');
+    // 「不知道」不许被写成「没有」。
+    await expect(row).toHaveTextContent('这不等于它没有来源');
+    // ⛔ 前端不算兼容性：不许出现"能用/不能用/不兼容"这类结论。
+    await expect(row).not.toHaveTextContent('不兼容');
+  },
+};
+
+/** 来源已知：如实说它从哪一张锚点改来。 */
+export const LineageDerived: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const row = canvas.getByTestId('image-lineage');
+    await expect(row).toHaveAttribute('data-lineage', 'derived');
+    await expect(row).toHaveTextContent('sha256:9f2ab…c31');
+  },
+};
+
 /** ⑥ 已禁用：卡片置灰 + [启用]（同一缓存派生 ⇒ 向导下拉里同时消失）。 */
 export const Disabled: Story = {
   args: { model: { ...customWarning, isActive: false } },
@@ -199,12 +242,12 @@ export const DigestUnresolved: Story = {
       digestShort: undefined,
       digestFull: undefined,
       canCheckUpdate: false,
-      checkUpdateDisabledReason: '该镜像尚未解析出 digest，没有可比对的基准',
+      checkUpdateDisabledReason: '这张镜像还没有确定版本，没有可比对的基准',
     },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('digest-unresolved')).toHaveTextContent('未解析');
+    await expect(canvas.getByTestId('digest-unresolved')).toHaveTextContent('版本未确定');
     await expect(canvasElement.textContent).not.toContain(SENTINEL);
     await expect(canvas.getByRole('button', { name: '检查更新' })).toBeDisabled();
   },

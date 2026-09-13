@@ -20,6 +20,11 @@ import {
 } from '@/services/api/automation.service';
 import { ApiErrorException } from '@/services/api/apiError';
 import { automationRows } from '@/lib/automation/automationModel';
+import { automationErrorMessage } from '@/lib/automation/automationErrorCopy';
+import {
+  automationAttention,
+  type AutomationAttention,
+} from '@/lib/automation/automationAttention';
 import { resolveEnvironmentTimeZone } from '@/lib/automation/timeZone';
 import {
   AUTOMATION_RULE_LIMIT,
@@ -55,17 +60,46 @@ export const automationKeys = {
   run: (runId: string) => [...automationKeys.all(), 'run', runId] as const,
 };
 
-/** 后端信封 → 人话。裸抛 `HTTP 500` 给用户看没有意义。 */
+/**
+ * 后端信封 → 人话。裸抛 `HTTP 500` 给用户看没有意义。
+ *
+ * ★ **判据从 HTTP 状态码改成信封里的码**（与 `useProjectBranches` 的裁决同一条）。
+ *   旧写法两处都有问题：
+ *   ① `httpStatus === 409` 一律说成"规则数已达上限" —— 后端在这个上下文里还会发别的
+ *      409（规则状态机违规），那时用户会被告知一个假的原因，然后去删一条本不用删的规则；
+ *   ② 其余一律 `return error.envelope.message` ⇒ 后端那三句英文原文直通用户
+ *      （非法时区那条甚至带一整段解释设计取舍的英文散文）。中文兜底恒不执行，因为
+ *      `message` 永远非空。
+ *   ⇒ 现在按码查 `AUTOMATION_ERROR_COPY`；未知码给通用话 + traceId。
+ */
 export function describeAutomationError(error: unknown): string | undefined {
   if (error === null || error === undefined) return undefined;
-  if (error instanceof ApiErrorException) {
-    if (error.httpStatus === 404) return '这条规则已经不存在了（可能在别处被删掉了）。';
-    if (error.httpStatus === 409) {
-      return `这个项目的自动化规则已达上限（${String(AUTOMATION_RULE_LIMIT)} 条）。`;
-    }
-    return error.envelope.message !== '' ? error.envelope.message : '操作失败，请稍后重试。';
-  }
-  return '网络错误，请稍后重试。';
+  if (!(error instanceof ApiErrorException)) return '网络不通，请稍后再试。';
+  return automationErrorMessage(
+    error.envelope.code,
+    error.envelope.traceId,
+    '操作失败，请稍后重试。',
+  );
+}
+
+/**
+ * 自动化侧「需要用户知道的事」的只读订阅 —— **给全局横幅层用的那一位**。
+ *
+ * ★ **⛔ 不新拉一次数据**（与 `useGlobalBanner` 文件头纪律 ① 同一手法）：`enabled:false`
+ *   ⇒ queryFn 永不执行，只读 `automationKeys.list(projectId)` 这份**已经在缓存里**的
+ *   规则列表。写成一个会自己发请求的 hook，代价是每次挂载都多打一次列表接口，
+ *   而横幅挂在工作台外壳上、随每一次页面加载而挂载。
+ *
+ * ⚠️ 缓存里没有 ⇒ `hasData:false`，含义是**「这一刻我们不知道」**，
+ *   ⛔ 不是「没有问题」。判定与文案见 `lib/automation/automationAttention`。
+ */
+export function useAutomationAttention(projectId: string | null): AutomationAttention {
+  const query = useQuery<AutomationDto[]>({
+    queryKey: automationKeys.list(projectId ?? ''),
+    enabled: false,
+  });
+  const data = query.data;
+  return useMemo(() => automationAttention(data), [data]);
 }
 
 export interface UseAutomationsResult {

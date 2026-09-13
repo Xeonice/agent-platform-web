@@ -77,7 +77,7 @@ function diagnoseFrames(
       id: 'outbound-network',
       label: '外网连通（模型 API / 镜像仓库）',
       status: outboundOk ? 'ok' : 'warn',
-      summary: '探测完成',
+      headline: '探测完成',
       detail: {
         results: [
           { target: 'api.openai.com', ok: true, latencyMs: 291, modelApi: true },
@@ -92,7 +92,7 @@ function diagnoseFrames(
       label: '预制镜像就绪',
       status: over.presetStatus ?? 'ok',
       step: over.presetStep ?? 'staged',
-      summary: '预制镜像就绪',
+      headline: '预制镜像就绪',
       durationMs: 22,
     }),
     sse({ event: 'done', okCount: 2, infoCount: 0, warnCount: 0, failCount: 0, totalMs: 300 }),

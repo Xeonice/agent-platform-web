@@ -29,6 +29,7 @@ describe('错误码 → 人话 + 可操作建议（P22 §1）', () => {
       'UNKNOWN_PROVIDER',
       'UNKNOWN_RUNTIME',
       'INVALID_IMAGE_REFERENCE',
+      'IMAGE_PROVIDER_MISMATCH',
     ]) {
       const copy = describeSandboxError({ code });
       expect(copy.title.length).toBeGreaterThan(0);
@@ -41,7 +42,8 @@ describe('错误码 → 人话 + 可操作建议（P22 §1）', () => {
 
   it('INSTALL_FAILED：已落库、中途失败 → **给 [重试]** + 换预装镜像的建议', () => {
     const copy = describeSandboxError({ code: 'INSTALL_FAILED' });
-    expect(copy.title).toContain('运行时 CLI 安装失败');
+    // ⚠️ 上屏词是「Agent」：`runtime` 是内部词，`运行时` 又与「容器运行时」同名不同物。
+    expect(copy.title).toContain('Agent 的命令行工具');
     expect(copy.actions.map((a) => a.key)).toContain('retry');
     expect(copy.actions.some((a) => a.label.includes('镜像'))).toBe(true);
   });
@@ -76,11 +78,24 @@ describe('错误码 → 人话 + 可操作建议（P22 §1）', () => {
     expect(copy.actions.some((a) => a.label === '重试')).toBe(false);
   });
 
-  it('WORKSPACE_PREPARE_FAILED：平台侧故障 → 给 [重试]，并指向 traceId 报障', () => {
+  /**
+   * ⚠️ **2026-09-11：不再让用户去找 `traceId`。**
+   *
+   * 旧文案是「反复失败请带上下方的 traceId 报障」，两个问题叠在一起：
+   *   · `traceId` 是**内部字段名**，属于"只进日志与 data 属性"那一层（P22 §6）；
+   *   · **下方未必真有它** —— 失败卡只渲染 `detail`（`failureMessage`），
+   *     后端没给 traceId 时那句话指向一个屏幕上根本不存在的东西。
+   * 现在说的是"把这张卡上的诊断信息交给管理员"，而那份信息由 [复制诊断信息] 一键给出。
+   *
+   * MUTATION: 把 `traceId` 写回 advice ⇒ 第三条断言红。
+   */
+  it('WORKSPACE_PREPARE_FAILED：平台侧故障 → 给 [重试]，且**不点名 traceId**', () => {
     const copy = describeSandboxError({ code: 'WORKSPACE_PREPARE_FAILED' });
-    expect(copy.title).toContain('工作区');
+    // 上屏词：工作区 → 代码副本。
+    expect(copy.title).toContain('代码副本');
     expect(copy.advice).not.toContain('未能获取具体原因');
-    expect(copy.advice).toContain('traceId');
+    expect(copy.advice).not.toContain('traceId');
+    expect(copy.advice).toContain('诊断信息');
     expect(copy.actions.some((a) => a.key === 'retry')).toBe(true);
   });
 
@@ -157,6 +172,100 @@ describe('错误码 → 人话 + 可操作建议（P22 §1）', () => {
     expect(SANDBOX_ENDED_COPY.title).not.toContain('❌');
     expect(SANDBOX_ENDED_COPY.actions.map((a) => a.key)).toEqual(['reconfigure']);
   });
+
+  /**
+   * ⭐ **结束态那两句话本轮改了两件事**（2026-09-11）。
+   *
+   * ① P21-1 §9：界面上永不出现 sandbox / 容器 措辞 —— 旧文案是
+   *    「沙箱已停止 / 该任务的沙箱已结束，可以重新创建一个」，两句都在说「沙箱」。
+   * ② **「回收后重启」≠「断线重连」**：后者确实恢复现场（终端 attach 的是一直活着的
+   *    那个会话），前者是**全新一轮**。旧文案那句"可以重新创建一个"不置可否，
+   *    而用户默认会当成"接着上次继续" —— 这一条纪律要求**明示**它不接。
+   *
+   * MUTATION: 把 advice 改回「该任务的沙箱已结束，可以重新创建一个。」⇒ 三条断言全红。
+   */
+  it('⭐ 结束态：不出现「沙箱」，且**明说新的一轮不接上次进度**', () => {
+    const text = `${SANDBOX_ENDED_COPY.title}${SANDBOX_ENDED_COPY.advice}`;
+    expect(text).not.toContain('沙箱');
+    expect(text).not.toContain('容器');
+    // 「回收后重启不恢复现场」必须写出来，不能靠用户自己猜。
+    expect(SANDBOX_ENDED_COPY.advice).toContain('从头开始');
+    expect(SANDBOX_ENDED_COPY.advice).toContain('不会接着上次');
+  });
+
+  /**
+   * ⭐ **`IMAGE_PROVIDER_MISMATCH` 必须在表里，且 ⛔ 不给 [重试]**（2026-09-11 补）。
+   *
+   * 它此前不在 `COPY_TABLE` 里 ⇒ 掉进 `fallbackCopy`：标题「任务启动失败」＋一个裸
+   * [重试]。而两档镜像不可互换 —— 重试用的还是同一张镜像、同一台机器，**必然再失败**。
+   * 这正是本文件注释里 `BRANCH_NOT_FOUND` 那次警告过的漏收形状，换了一个码重演。
+   *
+   * MUTATION: 把 `IMAGE_PROVIDER_MISMATCH` 从 `COPY_TABLE` 删掉 ⇒ 三条断言全红。
+   */
+  it('⭐ IMAGE_PROVIDER_MISMATCH：说清两档镜像不可互换，指向镜像管理，且**不给 [重试]**', () => {
+    const copy = describeSandboxError({ code: 'IMAGE_PROVIDER_MISMATCH' });
+    expect(copy.advice).not.toContain('未能获取具体原因'); // 没掉进兜底
+    expect(copy.actions.some((a) => a.key === 'retry')).toBe(false);
+    expect(copy.advice).toContain('镜像管理');
+  });
+
+  /**
+   * ⭐ **全表禁止 Markdown**（2026-09-11）。
+   *
+   * 三个消费点（`SandboxOutcome.view` / `TaskOutcome.view` / `NewSandboxPanel.view`）
+   * 都是 `<p>{advice}</p>`，全仓**没有任何 markdown 渲染器** ⇒ `**重点**` 会让屏幕上
+   * 真的出现两颗星号。本轮之前全表有 11 处这么写。
+   *
+   * MUTATION: 给任意一条 advice 加一对 `**` ⇒ 本条红。
+   */
+  it('⭐ 全表不含 Markdown 标记（`<p>{advice}</p>` 会把星号原样上屏）', () => {
+    const codes = [
+      'INSTALL_FAILED',
+      'IMAGE_CONTRACT_VIOLATION',
+      'UNKNOWN_PROVIDER',
+      'UNKNOWN_RUNTIME',
+      'PROJECT_NOT_FOUND',
+      'PROJECT_NOT_READY',
+      'BRANCH_NOT_FOUND',
+      'UNSUPPORTED_CAPABILITY',
+      'IMAGE_NOT_REGISTERED',
+      'INVALID_IMAGE_REFERENCE',
+      'IMAGE_PROVIDER_MISMATCH',
+      'DISK_INSUFFICIENT',
+      'WORKSPACE_PREPARE_FAILED',
+      'IMAGE_PULL_FAILED',
+      'IMAGE_DIGEST_GONE',
+      'MANIFEST_INVALID',
+      'REF_NOT_FOUND',
+      'REGISTRY_UNREACHABLE',
+      'RESOURCE_EXHAUSTED',
+      'PROVIDER_UNAVAILABLE',
+      'TIMEOUT',
+      'INVALID_STATE',
+      'WHATEVER_UNKNOWN_CODE',
+    ];
+    for (const code of codes) {
+      const copy = describeSandboxError({ code });
+      const surface = [copy.title, copy.advice, ...copy.actions.map((a) => a.label)].join('␟');
+      expect(surface, `${code} 的文案里有 Markdown 标记`).not.toContain('**');
+    }
+    expect(`${SANDBOX_ENDED_COPY.title}${SANDBOX_ENDED_COPY.advice}`).not.toContain('**');
+  });
+
+  /**
+   * ⭐ **兜底标题必须中性**（2026-09-11）。
+   *
+   * `describeSandboxError` 不只服务任务发起卡 —— 镜像管理页（注册 / 预检 / 重验证）
+   * 也在用它。写死「任务启动失败」的话，一个从未涉及任何任务的镜像注册弹窗上会冒出
+   * "任务启动失败"，说的是一件没发生过的事。
+   *
+   * MUTATION: 把 `fallbackCopy` 的 title 改回「❌ 任务启动失败」⇒ 本条红。
+   */
+  it('⭐ 未收录码的兜底标题不提「任务」（镜像管理页也在复用这张表）', () => {
+    const copy = describeSandboxError({ code: 'SOME_IMAGE_PAGE_CODE' });
+    expect(copy.title).not.toContain('任务');
+    expect(copy.title).toBe('❌ 操作没有完成');
+  });
 });
 
 /**
@@ -217,7 +326,7 @@ describe('零副作用拒绝（后端显式声明 sideEffectFree）≠ 创建失
         `${rejection.code} 掉进了 fallbackCopy（带 [重试]），说明 COPY_TABLE 里没有它`,
       ).not.toContain('retry');
       // 文案得是为这条码写的，不是兜底那段。
-      expect(copy.title).not.toMatch(/任务启动失败/);
+      expect(copy.title).not.toBe('❌ 操作没有完成');
     }
   });
 
@@ -283,8 +392,8 @@ describe('零副作用拒绝（后端显式声明 sideEffectFree）≠ 创建失
       expect(copy.code).toBe(code);
       expect(copy.actions.map((a) => a.key)).not.toContain('retry');
       expect(copy.actions.length).toBeGreaterThan(0);
-      // 兜底文案（'❌ 任务启动失败 / 可以重试一次'）是**没收录**的表现，这几条必须已收录。
-      expect(copy.title).not.toBe('❌ 任务启动失败');
+      // 兜底文案（'❌ 操作没有完成 / 可以重试一次'）是**没收录**的表现，这几条必须已收录。
+      expect(copy.title).not.toBe('❌ 操作没有完成');
     }
   });
 
@@ -335,7 +444,7 @@ describe('镜像错误码：顶层的配文案，details[]/warnings[] 里的一�
     for (const code of TOP_LEVEL_IMAGE_CODES) {
       const copy = describeSandboxError({ code });
       expect(copy.advice, `${code} 掉进了 fallbackCopy`).not.toContain('未能获取具体原因');
-      expect(copy.title).not.toBe('❌ 任务启动失败');
+      expect(copy.title).not.toBe('❌ 操作没有完成');
       expect(copy.actions.length).toBeGreaterThan(0);
       expect(copy.title).not.toContain(code);
     }
@@ -387,8 +496,9 @@ describe('镜像错误码：顶层的配文案，details[]/warnings[] 里的一�
     for (const banned of ['任务', '实例', '停止']) {
       expect(`${registerTime.title}${registerTime.advice}`).not.toContain(banned);
     }
-    // 它要说清的是"什么都没落库"（后端 24 §7.2「invalid 不落库」）。
-    expect(registerTime.advice).toContain('落库');
+    // 它要说清的是"什么记录都没建"（后端 24 §7.2「invalid 不落库」）。
+    // ⚠️ 上屏词：落库 → 创建（「落库」是内部词）。
+    expect(registerTime.advice).toContain('没有创建');
 
     // 运行期那条反过来：它必须说"任务停了"，且仍然点名 tmux（实测缺的就是它）。
     expect(runTime.title).toContain('tmux');

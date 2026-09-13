@@ -51,3 +51,6 @@ export const CloneReturnBanner: Story = {
     pendingRetry: { name: 'acme/web', retrying: false, onRetry: noop, onDiscard: noop },
   },
 };
+
+/** 列表加载失败：分区里给失败卡片 + [重试]，不退化成「未配置」。 */
+export const LoadError: Story = { args: { cards: [], loadError: true, onRetryLoad: noop } };

@@ -82,6 +82,23 @@ export const ProxySkippable: Story = {
  * 这是全局 Esc 分层规则（P20 §8.4）的唯一例外 —— 关掉向导之后没有"回到哪里"，
  * `AppBootGate` 在 `initialized === false` 时压根不挂载工作台。
  */
+/**
+ * ⭐ **第一屏的第一行字要说得出"要做什么、多长"。**
+ * 原文只有「平台初始化」四个字 —— 用户的第一反应是"还要装多久"，而屏幕上没有任何答案。
+ * ⛔ **不许承诺时间**（"约 5 分钟"是编的）：说得出的是**步数**与**哪一步要离开这一页**。
+ */
+export const TitleSaysWhatAndHowLong: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const heading = canvas.getByRole('heading', { level: 1 });
+    await expect(heading).toHaveTextContent('共 5 步');
+    const wizard = canvas.getByTestId('init-wizard');
+    await expect(wizard).toHaveTextContent('只有配模型帐号那一步需要你离开这一页');
+    // ⛔ 不许承诺时间。
+    await expect(heading).not.toHaveTextContent('分钟');
+  },
+};
+
 export const NoCancelNoEscape: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

@@ -114,6 +114,15 @@ export class PtySocket {
   private connectedAt: number | null = null;
   // 后端随开会话首帧下发的重连凭据（08 §3）；仅存内存/不进 persist；重连时并入 query 回带（08 §11.6）。
   private socketSessionKey: string | null = null;
+  /**
+   * 后端为**这个用户终端标签**分配的 tmux 会话 id（06 §5；agent 标签恒为 null）。
+   *
+   * ⚠️ 与 `socketSessionKey` 一样存在这里、而**不是**回灌给 React 的 query —— query 在
+   * `useSandboxTerminalSocket` 的连接 effect 依赖里，每变一次就 close + 重连。
+   * 首帧刚拿到 shellId 就改 query 的话，等于每开一个新终端都白白重连一次
+   *（与 `fittedSize` 那条"只认第一次"是同一个坑）。
+   */
+  private shellId: string | null = null;
   private readonly opts: Required<Pick<PtySocketOptions, 'maxReconnect' | 'socketFactory'>> &
     PtySocketOptions;
 
@@ -127,8 +136,18 @@ export class PtySocket {
 
   /** 重连必须带回 socketSessionKey，否则后端认不出同一会话、会开新 pty（08 §11.6）。 */
   private buildQuery(): Record<string, string> {
-    if (this.socketSessionKey === null) return this.opts.query;
-    return { ...this.opts.query, socketSessionKey: this.socketSessionKey };
+    // 重连时把已知的 shellId 一并带回：少了它，后端会当作"给我开一个新的"，
+    // 于是每断一次线就在沙箱里多一个没人认领的 tmux 会话，而用户看到的是一个空终端。
+    return {
+      ...this.opts.query,
+      ...(this.socketSessionKey === null ? {} : { socketSessionKey: this.socketSessionKey }),
+      ...(this.shellId === null ? {} : { shellId: this.shellId }),
+    };
+  }
+
+  /** 后端下发的 shellId（agent 标签为 null）；供上层记进标签状态，重建时带回。 */
+  getShellId(): string | null {
+    return this.shellId;
   }
 
   connect(): void {
@@ -223,6 +242,9 @@ export class PtySocket {
     // session 首帧：存下重连凭据（08 §3）；同时仍向下游转发（registry 可持有）。
     if (result.data.type === 'session') {
       this.socketSessionKey = result.data.socketSessionKey;
+      // ⚠️ **只在带了的时候记**：agent 连接不带这个字段，把它写成 null 覆盖是对的，
+      //    但 shell 连接一旦拿到就不该被后续帧抹掉（首帧只有一次，这里从简即可）。
+      if (result.data.shellId !== undefined) this.shellId = result.data.shellId;
     }
     this.opts.onFrame(result.data);
   }

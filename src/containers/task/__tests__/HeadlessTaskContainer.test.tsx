@@ -125,7 +125,6 @@ function renderContainer(
       runtime={RUNTIME}
       wsBaseUrl="ws://localhost:3001"
       headlessTaskSupported
-      providerName="aio"
       socketFactory={socketFactory}
       {...props}
     />,
@@ -249,30 +248,34 @@ afterEach(() => {
 // ————————————————————————————————————————————————————————————————
 describe('HeadlessTaskContainer · 能力位显隐（headlessTask）', () => {
   /**
-   * ⚠️ 这里**故意用第三方名字 `acme-box`，不用 `boxlite`**。
-   * 原来写的是 `providerName: 'boxlite'`，读起来像"boxlite 不支持无头任务"——那在今天是
-   * **假的**：后端 `boxlite-sandbox.provider.ts` 与 `aio-sandbox.provider.ts` 两个内置档位
-   * 的 `headlessTask` 现在都是 `true`（S6 已落地）。用一个真实存在的档位名去演它没有的
-   * 短板，等于在测试里写一条关于后端的错误事实，下一个人照着它做判断就会踩空。
+   * ⚠️ **2026-09-11：置灰理由里不再出现档位名，也不再出现字段名。**
    *
-   * 而这条用例真正要证的东西跟叫什么名字无关：**能力位为 false 时入口置灰、且原因里带上
-   * 那个档位的名字**。开放 registry 里第三方档位不支持无头任务是完全可能的，用第三方名
-   * 既准确又把"名字要原样透出"这一点钉得更死（写死 'boxlite' 时它可能只是碰巧对上）。
+   * 旧断言是 `/acme-box.*headlessTask=false/` —— 它钉住的恰恰是两件本该消失的东西：
+   *   · `acme-box` 是**运行档位名**，而「运行档位」这个开关已从界面退休（选择权收回
+   *     后端）。把用户既选不了、也在别处看不到的名字摆给他，只会让他去找一个不存在的下拉；
+   *   · `headlessTask=false` 是**能力位的字段名**，属于"只进日志与 data 属性"那一层。
+   * 现在钉的是"说人话 + 给出两条真出路"，而不是"把内部标识原样打印出来"。
+   *
+   * MUTATION: 把 `disabledReason` 改回带档位名与 `headlessTask=false` 的旧句 ⇒ 本条红。
    */
-  const NO_HEADLESS_PROVIDER = 'acme-box';
-
-  it('headlessTask=false ⇒ [发起无头运行] 入口置灰 + 给出原因（与 spawnTty=false 同一套做法）', async () => {
-    renderContainer({ headlessTaskSupported: false, providerName: NO_HEADLESS_PROVIDER });
+  it('headlessTask=false ⇒ [发起无头运行] 入口置灰 + 给出人话原因（不出档位名、不出字段名）', async () => {
+    renderContainer({ headlessTaskSupported: false });
 
     // 能力位判定前移到了**入口**上：连发起表单都打不开，比"打开一张全禁用的表单"更诚实。
     const entry = await screen.findByRole('button', { name: '发起无头运行' });
     expect(entry).toBeDisabled();
-    expect(screen.getByRole('alert')).toHaveTextContent(/acme-box.*headlessTask=false/);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('无头任务');
+    // 两条相反的出路都要摆出来，不替用户选。
+    expect(alert).toHaveTextContent('交互式终端');
+    // ⛔ 内部词与字段名不上屏。
+    expect(alert.textContent).not.toContain('headlessTask');
+    expect(alert.textContent).not.toContain('运行档位');
   });
 
   it('headlessTask=false ⇒ 点击不发任何请求，界面停在非发起态', async () => {
     const run = mockRun();
-    renderContainer({ headlessTaskSupported: false, providerName: NO_HEADLESS_PROVIDER });
+    renderContainer({ headlessTaskSupported: false });
     await screen.findByRole('button', { name: '发起无头运行' });
 
     fireEvent.click(screen.getByRole('button', { name: '发起无头运行' }));
@@ -295,10 +298,10 @@ describe('HeadlessTaskContainer · 能力位显隐（headlessTask）', () => {
   it('能力位未知（刷新后拿不到 provider）⇒ 不置灰，但就地说明以后端校验为准', async () => {
     renderContainer({ headlessTaskSupported: null });
     // 引导态先说一次（入口不禁），打开表单后仍然说 —— 两处同源。
-    expect(await screen.findByRole('status')).toHaveTextContent(/无法确认.*以后端校验为准/);
+    expect(await screen.findByRole('status')).toHaveTextContent(/还不确定.*以平台的校验结果为准/);
     const textarea = await openLauncher();
     expect(textarea).toBeEnabled();
-    expect(screen.getByRole('status')).toHaveTextContent(/无法确认.*以后端校验为准/);
+    expect(screen.getByRole('status')).toHaveTextContent(/还不确定.*以平台的校验结果为准/);
   });
 });
 
@@ -382,7 +385,7 @@ describe('HeadlessTaskContainer · 发起', () => {
     fireEvent.change(textarea, { target: { value: '跑一下' } });
     fireEvent.click(screen.getByRole('button', { name: '发起无头任务' }));
 
-    const alert = await screen.findByText(/不支持无头任务/);
+    const alert = await screen.findByText(/跑不了无头任务|不支持无头运行/);
     expect(alert).toBeInTheDocument();
     expect(alert.textContent).not.toBe('UNSUPPORTED_CAPABILITY');
   });
@@ -920,7 +923,7 @@ describe('HeadlessTaskContainer · 刷新恢复与续接', () => {
     const detail = await screen.findByTestId('headless-task-detail');
     // 措辞刻意避开裸的"任务"：左侧树的 `项目 · N` 数的是 Sandbox，这里数的是
     // 沙箱内部的无头运行，同名不同物会让两处读数互相打架。
-    expect(within(detail).getByText(/这个沙箱还没跑过无头运行/)).toBeInTheDocument();
+    expect(within(detail).getByText(/这里还没跑过无头运行/)).toBeInTheDocument();
     expect(screen.queryByLabelText('任务指令')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发起无头运行' })).toBeEnabled();
 

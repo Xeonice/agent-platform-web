@@ -12,6 +12,7 @@ import type {
   ImageCardInput,
   ImageCardModel,
   ImageDigestState,
+  ImageLineageModel,
   ImageRefInput,
   ImageRefKind,
 } from '@/types/image';
@@ -28,8 +29,9 @@ const DIGEST_HEAD = 12;
 const DIGEST_TAIL = 3;
 
 /** [检查更新] 置灰理由——**置灰并说明，不隐藏**（F21-4 §5.1）。 */
-export const CHECK_UPDATE_DISABLED_DIGEST_REF = '该镜像以 digest 注册（无 tag），不存在上游漂移';
-export const CHECK_UPDATE_DISABLED_UNRESOLVED = '该镜像尚未解析出 digest，没有可比对的基准';
+export const CHECK_UPDATE_DISABLED_DIGEST_REF =
+  '这张镜像是直接按版本注册的（没有 tag），所以不会有新版本';
+export const CHECK_UPDATE_DISABLED_UNRESOLVED = '这张镜像还没有确定版本，没有可比对的基准';
 
 /** digest 是否为空 / 哨兵值 ⇒ 「未解析」（不留白、不显示假哈希，F21-4 §5.1）。 */
 export function digestStateOf(digest: string | undefined): ImageDigestState {
@@ -76,6 +78,43 @@ export function formatResolvedAt(iso: string | undefined, now: number): string |
   return relative === undefined ? undefined : `解析于 ${relative}`;
 }
 
+/**
+ * 「来源」那一行 —— 后端 `derivedFromDigest` 的**如实**呈现（04 §7 ★血统，注册期算好落库）。
+ *
+ * ⚠️ **这个字段一直在 DTO 里，却一处都没有渲染。** 代价很具体：用户在镜像页拿到 ✅、
+ * 到建任务时才撞上 `IMAGE_PROVIDER_MISMATCH` —— 而「注册期就把这件事判掉」这套设计
+ * 存在的全部意义，就是不让这一幕发生。答案在手上，就得说出来。
+ *
+ * ⚠️ **三档，⛔ 不许压成两档：**
+ *  · `anchor` —— 预置镜像**本身就是**来源起点，它没有更早的祖先。`derivedFromDigest`
+ *    在它身上是 `null`，而那是**事实**（后端注释：「A ROOT'S LINEAGE IS `null`, AND THAT
+ *    IS THE FACT, NOT A MISSING VALUE」）。
+ *  · `derived` —— 记下了它从哪一张锚点改来。
+ *  · `unknown` —— 一张自定义镜像上的 `null`：平台**没记下**它的来源。这与"没有来源"
+ *    不是一回事（「不知道」不能说成「没有」），所以它要自带一句说明。
+ *
+ * ⛔ **这里不算兼容性。** 「这张镜像能不能跑在当前这台机器的沙箱环境上」取决于锚点属于
+ * 哪一档，而那是平台自己的配置（`image-facade.port.ts` 写着这条），不是一个 digest 能推出
+ * 来的。前端在这里替用户下一个"应该能用/不能用"的结论，就是造一个第二判据。
+ */
+export function imageLineage(input: {
+  isBuiltin: boolean;
+  derivedFromDigest?: string | null;
+}): ImageLineageModel {
+  if (input.isBuiltin) {
+    return { kind: 'anchor', text: '来源：这就是平台的预制镜像（其他镜像从它改起）' };
+  }
+  const from = input.derivedFromDigest;
+  if (from === undefined || from === null || from === '') {
+    return {
+      kind: 'unknown',
+      text: '来源未确定',
+      note: '平台没有记下这张镜像是从哪一张预制镜像改来的。这不等于它没有来源，只是这一行没有这个记录（来源是注册那一刻判定并写下的）。',
+    };
+  }
+  return { kind: 'derived', text: `来源：从预制镜像 ${shortenDigest(from)} 改来的` };
+}
+
 /** 派生镜像卡片视图模型。`now` 显式可注入，便于单测钉死相对时间。 */
 export function imageCardModel(input: ImageCardInput, now: number = Date.now()): ImageCardModel {
   const refKind = refKindOf(input.ref);
@@ -99,6 +138,8 @@ export function imageCardModel(input: ImageCardInput, now: number = Date.now()):
     ...(pinned === undefined ? {} : { digestShort: shortenDigest(pinned), digestFull: pinned }),
     // 缺席 ⇒ 字段不存在，view 据此整行不渲染（而不是渲染「解析于 NaN 前」）。
     ...(resolvedAtLabel === undefined ? {} : { resolvedAtLabel }),
+    // ⚠️ **恒存在**：缺席那一行读起来就是"这张镜像没有来源"，而三档里有一档恰恰是"不知道"。
+    lineage: imageLineage(input),
     validationStatus: input.validationStatus,
     warnings: input.warnings ?? [],
     errors: input.errors ?? [],

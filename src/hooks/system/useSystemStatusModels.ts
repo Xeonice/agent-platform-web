@@ -11,20 +11,20 @@ import { useMemo } from 'react';
 import { useAppStore } from '@/stores';
 import { connectionStatusModel } from '@/lib/system/connectionModel';
 import { diagnosticsCardModel } from '@/lib/system/diagnoseModel';
-import { providerStatusModel } from '@/lib/system/providerModel';
+import { sandboxEnvStatusModel } from '@/lib/system/sandboxEnvModel';
 import { resourcePoolModel } from '@/lib/system/resourceModel';
 import type { UseSystemStatusResult } from '@/hooks/system/useSystemStatus';
 import type {
   ConnectionStatusCardModel,
   DiagnosticsCardModel,
-  ProviderStatusCardModel,
+  SandboxEnvStatusCardModel,
   ResourcePoolCardModel,
 } from '@/types/system';
 
 export interface SystemStatusModels {
   /** `null` = 还没取到（加载中或失败）。 */
   resourcePool: ResourcePoolCardModel | null;
-  providerStatus: ProviderStatusCardModel | null;
+  providerStatus: SandboxEnvStatusCardModel | null;
   connection: ConnectionStatusCardModel;
   diagnostics: DiagnosticsCardModel;
 }
@@ -42,7 +42,7 @@ export function useSystemStatusModels(status: UseSystemStatusResult): SystemStat
 
   const providers = status.providers;
   const providerStatus = useMemo(
-    () => (providers === undefined ? null : providerStatusModel(providers)),
+    () => (providers === undefined ? null : sandboxEnvStatusModel(providers)),
     [providers],
   );
 

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { expect, fn, within } from 'storybook/test';
 import { WorkbenchShellView } from '@/views/workbench/WorkbenchShell.view';
 import type { ProjectGroup } from '@/types/domain';
 
@@ -62,6 +63,19 @@ export const MultiProject: Story = {
   args: { groups, waitingInputCount: 1, healthLabel: '后端健康：ok（v1.0.0）', terminalSlot },
 };
 
+/**
+ * ⭐ **空组那句「发起第一个任务 →」必须是可点的**（2026-09-11 修）。
+ *
+ * 它此前是个 `<p>`，却带着一个 `→` —— 箭头是"这里能点"的承诺，而它点不动。
+ * 用户点上去没有任何反应，比不给这句话更糟。
+ *
+ * ⚠️ 可见文案**刻意不含项目名**（项目名放 `title`）：组头就在上一行，上下文不丢；
+ * 含了的话，`getByRole('button', { name: /项目名/ })` 会同时命中组头按钮与这一条，
+ * 全仓（含 e2e）按项目名点项目的地方一起变成 strict-mode 二义匹配 ——
+ * 与同组「⋯」按钮上那条注释是同一条纪律。
+ *
+ * MUTATION: 把它改回 `<p>` ⇒ 第一条断言找不到按钮。
+ */
 export const EmptyGroup: Story = {
   args: {
     groups: [
@@ -77,6 +91,18 @@ export const EmptyGroup: Story = {
     waitingInputCount: 0,
     healthLabel: '正在检查后端…',
     terminalSlot,
+    onSelectProject: fn(),
+    onNewTask: fn(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cta = canvas.getByRole('button', { name: /发起第一个任务/ });
+    // 项目名不进无障碍名（否则与组头按钮撞名），但进 title —— 上下文没丢。
+    await expect(cta).toHaveAttribute('title', '在 空项目 中发起第一个任务');
+    cta.click();
+    // 点它 = 先定归属、再开弹层（弹窗里没有项目下拉）。
+    await expect(args.onSelectProject).toHaveBeenCalledWith('p3');
+    await expect(args.onNewTask).toHaveBeenCalled();
   },
 };
 

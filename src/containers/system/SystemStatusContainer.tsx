@@ -15,7 +15,7 @@ import { useSystemStatus } from '@/hooks/system/useSystemStatus';
 import { useSystemStatusModels } from '@/hooks/system/useSystemStatusModels';
 import { useExportAuditLogs } from '@/hooks/system/useExportAuditLogs';
 import { ResourcePoolCardView } from '@/views/system/ResourcePoolCard.view';
-import { ProviderStatusCardView } from '@/views/system/ProviderStatusCard.view';
+import { SandboxEnvStatusCardView } from '@/views/system/SandboxEnvStatusCard.view';
 import { ConnectionStatusCardView } from '@/views/system/ConnectionStatusCard.view';
 import { DiagnosticsCardView } from '@/views/system/DiagnosticsCard.view';
 
@@ -54,7 +54,7 @@ export function SystemStatusContainer({ onCleanupRetained }: SystemStatusContain
         onRefresh={status.refresh}
         onCleanupRetained={cleanup}
       />
-      <ProviderStatusCardView model={models.providerStatus} isError={status.providersError} />
+      <SandboxEnvStatusCardView model={models.providerStatus} isError={status.providersError} />
       <ConnectionStatusCardView model={models.connection} />
       <DiagnosticsCardView
         model={models.diagnostics}

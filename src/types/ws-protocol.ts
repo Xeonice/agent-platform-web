@@ -25,6 +25,18 @@ export const TerminalClientFrameSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('input'), data: z.string() }),
   z.object({ type: z.literal('resize'), cols: z.number().int(), rows: z.number().int() }),
   z.object({ type: z.literal('ping') }),
+  /**
+   * 「我**主动**关掉了这个终端标签，销毁它背后那个 tmux 会话」（06 §5 / 08 §5.2）。
+   *
+   * ⚠️ **只由 [×] 触发，绝不由断连触发**。刷新、网络抖动、被 LRU 淘汰都只是断连，
+   * 后端一律只 detach —— 那个标签里可能正跑着一个长构建。
+   *
+   * ⚠️ 载荷是 `shellId` 而不是"我这条连接对应的那个"：被淘汰的标签**没有连接**，
+   * 而用户照样会点它的 [×]。带上 id 之后，同一沙箱的任意一条连接都能代发这次销毁。
+   *
+   * ⛔ agent 标签**没有** shellId，所以这帧永远碰不到 agent 会话。
+   */
+  z.object({ type: z.literal('close_shell'), shellId: z.string() }),
 ]);
 export type TerminalClientFrame = z.infer<typeof TerminalClientFrameSchema>;
 
@@ -33,9 +45,73 @@ export const TerminalServerFrameSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('data'), data: z.string() }), // plain string，xterm 直接 write
   z.object({ type: z.literal('exit'), code: z.number().int() }),
   z.object({ type: z.literal('pong') }),
-  z.object({ type: z.literal('session'), socketSessionKey: z.string() }), // 开会话首帧下发重连凭据
+  // 开会话首帧下发重连凭据。
+  // `shellId` **只在用户自己开的终端标签上出现**（握手带了 kind=shell）：它是这个标签
+  // 背后那个 tmux 会话的 id，同样 128-bit、同样**服务端生成**（审计 P2-9，⛔ 前端不许
+  // 自造 —— 它会进后端 `tmux -s` 的 argv）。前端只负责记住并在重连/重建时带回去。
+  // ⚠️ agent 标签上它**缺席**，而不是空串：「没有」与「有一个空的」在下游是两条分支。
+  z.object({
+    type: z.literal('session'),
+    socketSessionKey: z.string(),
+    shellId: z.string().optional(),
+  }),
+  /**
+   * 这个 Task 下**已经存在**的用户终端会话清单（06 §5.5）。刷新页面之后，标签栏靠它
+   * 重建 —— 否则那些 tmux 会话还活着、界面上却没有了，成了只能等沙箱回收的孤儿。
+   *
+   * ⚠️ **三态，`null` 不是凑数**：
+   *   · `[...]` 有这些（**顺序即 tmux 创建顺序**，前端按它编「终端 1..n」）；
+   *   · `[]`    确认没有；
+   *   · `null`  **问不出来**（tmux server 不在 / 沙箱不通）。
+   * ⛔ 第三态不许渲染成「你没有开过终端」——用户看到的会是一句假话，而真相可能是他有
+   *   三个终端正跑着东西。标签栏要就地说出"查不到"（`TerminalTabBar` 的
+   *   `inventoryUnavailable`）。
+   */
+  z.object({
+    type: z.literal('shells'),
+    shells: z
+      .array(
+        z.object({
+          shellId: z.string(),
+          /**
+           * 这个标签里跑的是哪个 agent CLI（06 §5.6）。
+           * ⚠️ **缺席 = 纯终端**（或沙箱里的 tmux 老到读不出那个标记）。
+           * ⛔ 缺席不许被当成某个默认 runtime：那会让一个纯终端标签顶着「Codex」的名字。
+           */
+          runtimeId: z.string().optional(),
+        }),
+      )
+      .nullable(),
+  }),
 ]);
 export type TerminalServerFrame = z.infer<typeof TerminalServerFrameSchema>;
+
+/**
+ * 清单里的一条用户终端（06 §5.5/§5.6）：会话 id + 里面跑的是哪个 agent CLI。
+ * 从 zod schema 反推，⛔ 不手抄一份 —— 手抄的那份迟早与运行时校验说两句话。
+ */
+export type TerminalShellSummary = NonNullable<
+  Extract<TerminalServerFrame, { type: 'shells' }>['shells']
+>[number];
+
+/**
+ * `/terminal` 握手 query 的 `kind=`：这条连接要连**哪一个** tmux 会话（06 §5）。
+ *
+ * ⚠️ 它必须存在，是 tmux 的语义决定的：两个客户端 attach **同一个** session 时看到的是
+ * 同一块屏幕（pane 属于 session、不属于 client，后端实测记录在 `tmux-command.policy.ts`）。
+ * 所以「开第二个终端标签」不能是"再连一次"，必须是"连另一个 session"。
+ *
+ *   · `agent` —— 缺省，attach 后端在启动实例时就起好的那个 Agent 会话；
+ *   · `shell` —— 用户自己开的独立终端（[+ 新终端] → 「终端」）；
+ *   · `runtime` —— 用户自己开的 **agent CLI 标签**（[+ 新终端] → 「Codex」/「Claude Code」），
+ *     必须同时带 `?runtimeId=`。机制上与 `shell` 完全一样（独立会话、可关），
+ *     只是跑的命令是那个 CLI 而不是 `$SHELL`。
+ *
+ * ⚠️ **`agent` 与 `runtime` 是两个东西，别混**：前者是**这个任务自己**那个会话
+ * （后端在启动实例时起的、关不掉）；后者是用户随手开的一个 CLI，跟任务没关系。
+ * ⛔ 它也不是「发起一个任务」：任务有产物 / 审计 / 超时 / 可取消，标签一样都没有。
+ */
+export type TerminalSessionKind = 'agent' | 'shell' | 'runtime';
 
 /**
  * runtime CLI 安装状态（10 §7.1 `RuntimeInstallStatus`，对应 13 `runtime_installations.status`）。
@@ -311,8 +387,9 @@ export type TaskServerFrame = z.infer<typeof TaskServerFrameSchema>;
  * 格式：`通道:帧名{字段,可选字段?},…|通道:…`；判别键本身不列（它就是帧名）。
  */
 export const WS_PROTOCOL_CANONICAL =
-  'terminal.client:input{data},resize{cols,rows},ping|' +
-  'terminal.server:data{data},exit{code},pong,session{socketSessionKey}|' +
+  'terminal.client:input{data},resize{cols,rows},ping,close_shell{shellId}|' +
+  'terminal.server:data{data},exit{code},pong,session{socketSessionKey,shellId?},' +
+  'shells{shells[shellId,runtimeId?]}|' +
   'events:sandbox.created{sandboxId,projectId},sandbox.status_changed{sandboxId,status,phase?,errorCode?},' +
   'sandbox.removed{sandboxId},sandbox.waiting_input{sandboxId,waiting,sessionId?},' +
   'project.clone_progress{projectId,phase,stage?,percent?,objectsDone?,objectsTotal?,' +

@@ -51,6 +51,15 @@ export interface ImageCardInput {
   isBuiltin: boolean;
   /** 上一次解析/验证时刻（ISO）。**缺席时不渲染时间行**，而不是渲染「解析于 NaN 前」（F21-4 §7.1 ③）。 */
   lastValidatedAt?: string;
+  /**
+   * 注册期算好并落库的**来源锚点**（后端 `derivedFromDigest`：这张镜像是从哪一张平台预制
+   * 镜像改来的）。
+   *
+   * ⚠️ **`null` 在预置镜像上与在自定义镜像上不是同一件事**：预置镜像本身就是锚点，
+   * 它没有更早的祖先——那是**事实**，不是缺值；而一张自定义镜像上的 `null` 是
+   * 「平台没记下它的来源」，那是**不知道**。⛔ 两者不许合成一句（见 `imageLineage`）。
+   */
+  derivedFromDigest?: string | null;
   /** ⚠️ 档的后果说明（P21-4 §5：当前真实存在的只有「未预装 claude-code」一档）。 */
   warnings?: readonly string[];
   /** ❌ 档的失败原因列表。 */
@@ -65,6 +74,24 @@ export interface ImageCardInput {
  * 「这个 tag 现在还指向它吗」——那是 [检查更新] 回答的问题，不是卡片自己随时间变黄。
  * 留一个口子，「7 天变黄」那种设计就会从别处偷偷长回来。这条落成 `__tests__` 里的否定断言。
  */
+/**
+ * 卡面上「来源」那一行（后端 `derivedFromDigest` 的如实呈现）。
+ *
+ * ⚠️ **答案一直在 DTO 里，却一处都没渲染** —— 于是用户在镜像页拿到一个 ✅、到建任务时才
+ * 撞上 `IMAGE_PROVIDER_MISMATCH`，而「注册期就判掉」这套设计的全部意义就是避免这一幕。
+ *
+ * ⛔ **前端不算兼容性。** 「这张镜像能不能跑在这台机器的沙箱环境上」牵扯锚点属于哪一档，
+ * 那是平台自己的配置（`image-facade.port.ts`），不是卡片能从一个 digest 推出来的。
+ * 这里只陈述事实：它是锚点 / 它从哪张锚点改来 / 平台没记下来。
+ */
+export interface ImageLineageModel {
+  /** `anchor` = 它自己就是平台预制镜像；`derived` = 记下了来源；`unknown` = 没记下来。 */
+  kind: 'anchor' | 'derived' | 'unknown';
+  text: string;
+  /** ⚠️ `unknown` 档必须说清"这是**没记下来**，不是没有来源"——「不知道」不能说成「没有」。 */
+  note?: string;
+}
+
 export interface ImageCardModel {
   id: string;
   name: string;
@@ -81,6 +108,8 @@ export interface ImageCardModel {
   digestFull?: string;
   /** 「解析于 3 天前」。`lastValidatedAt` 缺席/不可解析时为 `undefined` ⇒ view 整行不渲染。 */
   resolvedAtLabel?: string;
+  /** 「来源」那一行。**恒存在**（三档之一），⛔ 不许缺席——缺席读起来就是"这张镜像没有来源"。 */
+  lineage: ImageLineageModel;
   validationStatus: ImageValidationStatus;
   warnings: readonly string[];
   errors: readonly string[];

@@ -6,6 +6,7 @@ import {
   createTerminalRegistrySlice,
   type TerminalRegistrySlice,
 } from '@/stores/createTerminalRegistrySlice';
+import { createTerminalTabsSlice, type TerminalTabsSlice } from '@/stores/createTerminalTabsSlice';
 import { createAccessSlice, type AccessSlice } from '@/stores/createAccessSlice';
 import {
   createSandboxStatusSlice,
@@ -15,6 +16,7 @@ import { createProjectCloneSlice, type ProjectCloneSlice } from '@/stores/create
 
 export type AppState = UiSlice &
   TerminalRegistrySlice &
+  TerminalTabsSlice &
   AccessSlice &
   SandboxStatusSlice &
   ProjectCloneSlice;
@@ -69,6 +71,8 @@ export const useAppStore = create<AppState>()(
     (...args) => ({
       ...createUiSlice(...args),
       ...createTerminalRegistrySlice(...args),
+      // ⛔ **不进 partialize 白名单**：`shellId` 是后端会话凭据（15 §3.5 同类）。
+      ...createTerminalTabsSlice(...args),
       ...createAccessSlice(...args),
       ...createSandboxStatusSlice(...args),
       ...createProjectCloneSlice(...args),

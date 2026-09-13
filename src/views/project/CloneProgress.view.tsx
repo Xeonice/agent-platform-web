@@ -53,7 +53,7 @@ export function CloneProgressView({
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-5 p-6 text-center">
       <div>
         <h2 className="text-lg font-semibold">
-          {phase === 'done' ? '项目已就绪' : phase === 'failed' ? '克隆失败' : '正在克隆项目…'}
+          {phase === 'done' ? '项目可用了' : phase === 'failed' ? '克隆失败' : '正在克隆项目…'}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">{projectName}</p>
       </div>
@@ -82,9 +82,16 @@ export function CloneProgressView({
               <span className="shrink-0 tabular-nums">{elapsedLabel}</span>
             </div>
           ) : null}
+          {/*
+            ⚠️ **这句话此前和下面那个按钮在同一屏里自相矛盾。**
+               旧文案是「请继续等待…」，而按钮写着「返回（后台继续克隆）」——
+               一句叫你别走，一句说走了也没事。两句都在，用户只能猜哪句算数。
+               实际语义是后者：克隆跑在后台，关掉这一屏不会中断它。
+               ⇒ 这句只报"还在跑、可能比较久"，⛔ 不再要求用户守在这里。
+          */}
           {phase === 'slow' && (
             <p className="mt-2 text-xs text-yellow-300">
-              仍在克隆，仓库较大或网络较慢，请继续等待…
+              还在克隆。仓库比较大或者网络比较慢，可能要等一会儿——不用一直守在这一屏。
             </p>
           )}
           {onCancel !== undefined && (
@@ -124,10 +131,19 @@ export function CloneProgressView({
                 重试克隆
               </Button>
             )}
+            {/*
+              ⚠️ **标签逐字对齐 `ProjectGroupMenu.view` 的 [改为空项目]**（产品文档全线用的
+                 也是这个）。此前两处一个写「转为空项目」一个写「改为空项目」——同一个动作
+                 两个名字，用户没有任何办法确认它们是不是同一件事。
+            */}
             <Button variant="ghost" disabled={busy} onClick={onConvertToEmpty}>
-              转为空项目
+              改为空项目
             </Button>
           </div>
+          {/* [改为空项目] 留下什么，说法与 `ProjectGroupMenu.view` 那条保持一致。 */}
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            [改为空项目]：项目留着、已有的任务也留着，只是工作区从空的开始，不再关联这个仓库。
+          </p>
         </div>
       )}
     </div>

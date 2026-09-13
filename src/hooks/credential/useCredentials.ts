@@ -15,11 +15,17 @@ import {
   switchModeDecision,
   revokeConfirmConfig,
   switchModeConfirmText,
+  switchModeTitle,
+  switchAfterRevokeText,
+  authModeLabel,
   RUNTIME_REVOKE_WARNING,
+  RUNTIME_REVOKE_FOLLOW_UP,
+  RUNTIME_CREDENTIAL_STORAGE_NOTE,
   type SwitchModeDecision,
 } from '@/lib/credential/runtimeCredential';
 import { matchesRuntimeSearch } from '@/lib/credential/maskAccount';
-import { affectedRunningTasks, type AffectedTasksResult } from '@/lib/credential/affectedTasks';
+import { useAffectedTasks } from '@/hooks/credential/useAffectedTasks';
+import type { AffectedTasksResult } from '@/lib/credential/affectedTasks';
 import { ApiErrorException } from '@/services/api/apiError';
 import type {
   RuntimeCredentialCardModel,
@@ -33,27 +39,64 @@ export interface ExpandedAuthPanel {
   method: RuntimeAuthMethod;
 }
 
-/** 切模式确认弹层状态。 */
+/** 切「当前使用」确认弹层状态。 */
 export interface PendingModeSwitch {
   runtimeId: string;
   mode: RuntimeAuthMode;
+  /** 弹层标题（术语表：不说「切换生效模式」，说「切换到 X」）。 */
+  title: string;
   message: string;
+  /** 确认按钮文案。 */
+  confirmLabel: string;
 }
 
-/** 吊销确认弹层状态（受影响 Task + P0-4 文案）。 */
+/** 删除确认弹层状态（受影响的正在跑的任务 + P0-4 文案）。 */
 export interface PendingRevoke {
+  runtimeId: string;
+  runtimeName: string;
+  mode: RuntimeAuthMode;
+  /** 模式展示名（用户语境）。 */
+  modeLabel: string;
+  credentialId: string;
+  warnActiveMode: boolean;
+  otherModeConfigured: boolean;
+  affected: AffectedTasksResult;
+  /**
+   * 受影响清单是否**可信**（false ⇒ 弹层必须说「查不到」，不许说「没有」）。
+   * 见 `useAffectedTasks` —— 这一位是本弹层里最要紧的那一位。
+   */
+  affectedKnown: boolean;
+  warningText: string;
+  /** P0-4 断言之后**能做的那件事**（去厂商后台作废）。 */
+  followUpText: string;
+}
+
+/**
+ * 弹层内部持有的**身份快照**（不含受影响清单 —— 那一份必须现算，见 `pendingRevokeView`）。
+ */
+interface PendingRevokeIdentity {
   runtimeId: string;
   runtimeName: string;
   mode: RuntimeAuthMode;
   credentialId: string;
   warnActiveMode: boolean;
   otherModeConfigured: boolean;
-  affected: AffectedTasksResult;
-  warningText: string;
+  otherMode: RuntimeAuthMode | null;
 }
 
 export interface CredentialsRuntimeManager {
   loading: boolean;
+  /**
+   * 列表**加载失败**（`useRuntimes` 的 `isError`）。
+   *
+   * ⛔ 此前全仓无人读它 ⇒ 接口挂了照样渲染「没有匹配的 runtime」，而用户根本没搜索过。
+   * 「查不动」与「查到了但是空的」必须分开说，这一位就是那道分界。
+   */
+  loadError: boolean;
+  /** [重试] 重新拉取列表。 */
+  retryLoad: () => void;
+  /** 分区就近的存放承诺（lib 常量透传；container 不得 import lib）。 */
+  storageNote: string;
   cards: RuntimeCredentialCardModel[];
   search: string;
   setSearch: (q: string) => void;
@@ -74,7 +117,7 @@ export interface CredentialsRuntimeManager {
   cancelSwitch: () => void;
   switching: boolean;
 
-  /** [吊销]：打开二次确认（列受影响运行中 Task + P0-4 文案）。 */
+  /** [删除]：打开二次确认（列出会被重启的任务 + P0-4 文案）。 */
   requestRevoke: (runtimeId: string, mode: RuntimeAuthMode) => void;
   pendingRevoke: PendingRevoke | null;
   confirmRevoke: () => void;
@@ -98,13 +141,14 @@ function errorMessageOf(error: unknown, fallback: string): string {
 export function useCredentials(): CredentialsRuntimeManager {
   const queryClient = useQueryClient();
   const runtimes = useRuntimes();
+  const affectedTasks = useAffectedTasks();
   const setAuthModeMutation = useSetAuthMode();
   const revokeMutation = useRevokeRuntimeCredential();
 
   const [search, setSearch] = useState('');
   const [expandedPanel, setExpandedPanel] = useState<ExpandedAuthPanel | null>(null);
   const [pendingSwitch, setPendingSwitch] = useState<PendingModeSwitch | null>(null);
-  const [pendingRevoke, setPendingRevoke] = useState<PendingRevoke | null>(null);
+  const [pendingRevoke, setPendingRevoke] = useState<PendingRevokeIdentity | null>(null);
 
   const allCards = useMemo<RuntimeCredentialCardModel[]>(
     () => (runtimes.data ?? []).map((rt) => runtimeCardModel(rt)),
@@ -156,7 +200,13 @@ export function useCredentials(): CredentialsRuntimeManager {
         // 切到未配置模式：不报错，就地展开该模式配置面板（F21-3 §5）。
         setExpandedPanel({ runtimeId, method: decision.method });
       } else {
-        setPendingSwitch({ runtimeId, mode, message: switchModeConfirmText(mode) });
+        setPendingSwitch({
+          runtimeId,
+          mode,
+          title: switchModeTitle(mode),
+          message: switchModeConfirmText(mode),
+          confirmLabel: '切换',
+        });
       }
       return decision;
     },
@@ -170,7 +220,7 @@ export function useCredentials(): CredentialsRuntimeManager {
       { runtimeId, method: mode },
       {
         onSuccess: () => {
-          toast.success('已切换生效模式');
+          toast.success(`已切换到${authModeLabel(mode)}`);
           setPendingSwitch(null);
         },
         onError: (error) => {
@@ -192,8 +242,8 @@ export function useCredentials(): CredentialsRuntimeManager {
       const config = revokeConfirmConfig(card, mode);
       const row = card.rows.find((r) => r.mode === mode);
       if (config === null || row?.credentialId === undefined) return;
-      // 受影响运行中 Task：来自 sandbox 列表（本切片暂无 sandbox 列表 query → 空；接入后传入即联动）。
-      const affected = affectedRunningTasks([], runtimeId);
+      // ⚠️ 这里**只存身份**，受影响清单在下面按 live query 现算 —— 快照会让「点开时列表还没到、
+      //    到了之后弹层仍然写着查不到」永久定格在屏幕上。
       setPendingRevoke({
         runtimeId,
         runtimeName: card.displayName,
@@ -201,25 +251,53 @@ export function useCredentials(): CredentialsRuntimeManager {
         credentialId: row.credentialId,
         warnActiveMode: config.warnActiveMode,
         otherModeConfigured: config.otherModeConfigured,
-        affected,
-        warningText: RUNTIME_REVOKE_WARNING,
+        otherMode: config.otherMode,
       });
     },
     [cardOf],
   );
 
+  /** 弹层对外形状：身份快照 + **当下**的受影响清单（含「算不算得出」那一位）。 */
+  const pendingRevokeView = useMemo<PendingRevoke | null>(() => {
+    if (pendingRevoke === null) return null;
+    return {
+      runtimeId: pendingRevoke.runtimeId,
+      runtimeName: pendingRevoke.runtimeName,
+      mode: pendingRevoke.mode,
+      modeLabel: authModeLabel(pendingRevoke.mode),
+      credentialId: pendingRevoke.credentialId,
+      warnActiveMode: pendingRevoke.warnActiveMode,
+      otherModeConfigured: pendingRevoke.otherModeConfigured,
+      affected: affectedTasks.affectedFor(pendingRevoke.runtimeId),
+      affectedKnown: affectedTasks.known,
+      warningText: RUNTIME_REVOKE_WARNING,
+      followUpText: RUNTIME_REVOKE_FOLLOW_UP,
+    };
+  }, [pendingRevoke, affectedTasks]);
+
   const confirmRevoke = useCallback((): void => {
     if (pendingRevoke === null) return;
-    const { runtimeId, credentialId } = pendingRevoke;
+    const { runtimeId, credentialId, warnActiveMode, otherMode } = pendingRevoke;
     revokeMutation.mutate(
       { runtimeId, credentialId },
       {
         onSuccess: () => {
-          toast.success('凭证已吊销');
+          toast.success('已删除');
           setPendingRevoke(null);
+          // 产品 §9：删掉的正是当前在用的那份，而另一种登录方式还留着 ⇒ 问一句要不要切过去。
+          // ⛔ 不问的后果是**静默留下一个没有可用凭证的 Agent**，下次发任务才撞上。
+          if (warnActiveMode && otherMode !== null) {
+            setPendingSwitch({
+              runtimeId,
+              mode: otherMode,
+              title: switchModeTitle(otherMode),
+              message: switchAfterRevokeText(otherMode),
+              confirmLabel: '切过去',
+            });
+          }
         },
         onError: (error) => {
-          toast.error(errorMessageOf(error, '吊销失败，请稍后重试。'));
+          toast.error(errorMessageOf(error, '删除失败，请稍后重试。'));
           setPendingRevoke(null);
         },
       },
@@ -256,8 +334,15 @@ export function useCredentials(): CredentialsRuntimeManager {
     [switching, pendingSwitch, revoking, pendingRevoke],
   );
 
+  const retryLoad = useCallback((): void => {
+    void runtimes.refetch();
+  }, [runtimes]);
+
   return {
     loading: runtimes.isPending,
+    loadError: runtimes.isError,
+    retryLoad,
+    storageNote: RUNTIME_CREDENTIAL_STORAGE_NOTE,
     cards,
     search,
     setSearch,
@@ -272,7 +357,7 @@ export function useCredentials(): CredentialsRuntimeManager {
     cancelSwitch,
     switching,
     requestRevoke,
-    pendingRevoke,
+    pendingRevoke: pendingRevokeView,
     confirmRevoke,
     cancelRevoke,
     revoking,

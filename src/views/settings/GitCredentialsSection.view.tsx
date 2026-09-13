@@ -1,5 +1,9 @@
-// Git 凭证分区（F21-3 §3，P21-3 §10）：📦 标题 + 选型引导 + clone 回程重试横幅 + 已配置/未配置卡片 +
-// 打开的表单 slot + 页底安全承诺。纯展示、props 驱动、零副作用；一切决策/网络在容器。
+// Git 凭证分区（F21-3 §3，P21-3 §10）：📦 标题 + 选型引导 + clone 回程重试横幅 + 已配置/未配置/加载失败
+// 卡片 + 打开的表单 slot。纯展示、props 驱动、零副作用；一切决策/网络在容器。
+//
+// ⚠️ **安全承诺不在这里了。** 它此前是本分区的 `<footer>`，于是「凭证加密保存在本机不上传」这句
+//    只对 Git 那半边说过，Agent 帐号区对「我的模型帐号存在哪」一个字都没说 —— 而用户真正紧张的
+//    恰恰是模型帐号。承诺已移到页底 `CredentialsSecurityFooter`，跨两个分区。
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { GitCredentialCardView } from '@/views/settings/GitCredentialCard.view';
@@ -13,6 +17,9 @@ export type { GitCredentialCardModel };
 
 export interface GitCredentialsSectionProps {
   loading?: boolean;
+  /** 列表**加载失败**：卡片区渲染失败态 + [重试]，**不**退化成「○ 未配置」。 */
+  loadError?: boolean;
+  onRetryLoad?: () => void;
   cards: GitCredentialCardModel[];
   /** 尚未配置、可新增的类型（渲染 CTA）。 */
   missingTypes: GitCredentialType[];
@@ -37,6 +44,8 @@ export interface GitCredentialsSectionProps {
 
 export function GitCredentialsSectionView({
   loading = false,
+  loadError = false,
+  onRetryLoad,
   cards,
   missingTypes,
   guidanceText,
@@ -108,13 +117,16 @@ export function GitCredentialsSectionView({
             />
           ))}
 
-          {cards.length === 0 && (
-            <GitCredentialCardView
-              credential={null}
-              onConfigureSsh={onConfigureSsh}
-              onConfigureHttps={onConfigureHttps}
-            />
-          )}
+          {cards.length === 0 &&
+            (loadError ? (
+              <GitCredentialCardView credential={null} loadFailed onRetryLoad={onRetryLoad} />
+            ) : (
+              <GitCredentialCardView
+                credential={null}
+                onConfigureSsh={onConfigureSsh}
+                onConfigureHttps={onConfigureHttps}
+              />
+            ))}
 
           {cards.length > 0 && missingTypes.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
@@ -135,10 +147,6 @@ export function GitCredentialsSectionView({
       )}
 
       {formSlot}
-
-      <footer className="mt-2 border-t border-border pt-3 text-xs text-muted-foreground">
-        凭证已加密保存在本机，不上传；SSH 私钥与 Token 明文永不回显，仅保留指纹 / 尾号用于识别。
-      </footer>
     </section>
   );
 }

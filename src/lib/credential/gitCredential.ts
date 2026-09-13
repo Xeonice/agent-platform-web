@@ -69,7 +69,10 @@ export function gitTestErrorMessage(errorCode: string | undefined): string {
       return '网络错误，请检查网络后重试。';
     case 'TIMEOUT':
     case 'TIMEOUT_LOCAL':
-      return '测试连接超时（15 秒），仓库较大或网络较慢，请稍后重试。';
+      // ⛔ **超时 ≠ 知道为什么超时。** 原文写的是「仓库较大或网络较慢」—— 那是**猜测**：
+      //    超时同样可能是 host 不可达、凭证被卡在交互式提问上、或者对端根本没在监听。
+      //    把一个猜出来的归因说成事实，用户会照着它去等、去重试，而真正的毛病一直在那儿。
+      return '测试连接超时（等了 15 秒没有结果）。这只说明没等到回应，不代表凭证有问题。';
     default:
       return '连接失败，请检查凭证与仓库地址后重试。';
   }

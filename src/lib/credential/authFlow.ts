@@ -50,7 +50,19 @@ export type AuthFlowState =
   | { branch: 'device-code'; phase: 'starting' }
   | { branch: 'device-code'; phase: 'polling'; challenge: AuthChallenge; pollError: boolean }
   | { branch: 'device-code'; phase: 'success'; maskedIdentifier?: string }
-  | { branch: 'device-code'; phase: 'expired'; challenge: AuthChallenge }
+  | {
+      branch: 'device-code';
+      phase: 'expired';
+      challenge: AuthChallenge;
+      /**
+       * **为什么停下来的** —— 两种情况，说法不同（P0）：
+       *  · `'expired'`  设备码真的到点了（服务端说 expired，或倒计时归零）。
+       *  · `'gave-up'`  前端 10 分钟硬性兜底（`MAX_POLL_DURATION_MS`）触发 —— 这是**我们**不等了，
+       *    码**可能完全没过期**。把它也说成「设备码已过期」，会让用户去重新获取一个其实还能用的码，
+       *    也掩盖了真正的毛病（后端漏发 expiresAt / 授权回程根本没通）。
+       */
+      reason: 'expired' | 'gave-up';
+    }
   | { branch: 'device-code'; phase: 'error'; message: string }
   // —— B · setup-token ——
   | { branch: 'setup-token'; phase: 'idle' }
@@ -78,6 +90,8 @@ export type AuthFlowAction =
   | { type: 'POLL_NETWORK_ERROR' }
   | { type: 'POLL_FAILED'; message: string }
   | { type: 'POLL_EXPIRED' }
+  /** 前端硬性上限到点：**我们不等了**，不等于码过期了。 */
+  | { type: 'POLL_GAVE_UP' }
   | { type: 'PASTE_SUBMIT_START' }
   | { type: 'PASTE_SUBMIT_ERROR'; message: string }
   | { type: 'APIKEY_SUBMIT_START' }
@@ -141,7 +155,20 @@ function deviceReducer(
       return { branch: 'device-code', phase: 'error', message: action.message };
     case 'POLL_EXPIRED':
       if (state.phase !== 'polling') return state;
-      return { branch: 'device-code', phase: 'expired', challenge: state.challenge };
+      return {
+        branch: 'device-code',
+        phase: 'expired',
+        challenge: state.challenge,
+        reason: 'expired',
+      };
+    case 'POLL_GAVE_UP':
+      if (state.phase !== 'polling') return state;
+      return {
+        branch: 'device-code',
+        phase: 'expired',
+        challenge: state.challenge,
+        reason: 'gave-up',
+      };
     default:
       return state;
   }

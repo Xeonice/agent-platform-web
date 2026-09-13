@@ -90,7 +90,13 @@ export const ValidatedInvalid: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.queryByRole('button', { name: '保存' })).toBeNull();
-    await expect(canvas.getByRole('button', { name: '查看镜像要求' })).toBeInTheDocument();
+    // ⚠️ 两处都有：结论区那颗（❌ 的出路）+ 弹窗顶部硬约束那一句里的链接。
+    //    ⭐ 后者是这一版补的 —— 注册**前**就说清"必须从平台预制镜像改起"，
+    //    否则每个新用户都必然先失败一次（`IMAGE_BASE_REQUIRED` 此前一个字都没提）。
+    await expect(canvas.getAllByRole('button', { name: '查看镜像要求' })).toHaveLength(2);
+    await expect(canvas.getByTestId('register-lineage-constraint')).toHaveTextContent(
+      '必须从平台的预制镜像改起',
+    );
   },
 };
 

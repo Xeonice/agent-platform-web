@@ -39,6 +39,14 @@ export function AutomationsPanelContainer({
   const [view, setView] = useState<AutomationPanelView>(initialView);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
+  /**
+   * 这一次进详情是不是从 [查看原因] 来的。为真 ⇒ 运行历史自动展开最近一次算失败的那条。
+   *
+   * ⚠️ 单独一位而不是复用 `selectedId`：从规则名进来和从 [查看原因] 进来是**两个意图**，
+   *    前者是"我想看看这条规则"，后者是"告诉我它为什么出问题"。合成一个的话，
+   *    每次点规则名都会自动展开一条失败记录——那是另一种噪音。
+   */
+  const [focusLatestFailure, setFocusLatestFailure] = useState(false);
   // ⚠️ 草稿（含 prompt）只活在这里与 useAutomationForm 的 useState 里：15 §3.5 安全红线。
   const [formSeed, setFormSeed] = useState<AutomationDraft>(() => emptyDraft());
   const form = useAutomationForm(formSeed);
@@ -69,6 +77,7 @@ export function AutomationsPanelContainer({
 
   const handleSelectRule = useCallback((id: string) => {
     setSelectedId(id);
+    setFocusLatestFailure(false);
     setView('detail');
   }, []);
 
@@ -119,8 +128,16 @@ export function AutomationsPanelContainer({
     [automations],
   );
 
+  /**
+   * 列表行的 [查看原因]。
+   *
+   * ⚠️ 此前它只做了 `setView('detail')` —— 按钮承诺了"原因"，给到的却是一个原因仍然
+   *    折叠着的页面。现在多带一位 `focusLatestFailure`，让运行历史把最近一次算失败的
+   *    那条直接展开。⛔ 不许退回"只切视图"：那等于按钮上的字是假的。
+   */
   const handleShowFailure = useCallback((id: string) => {
     setSelectedId(id);
+    setFocusLatestFailure(true);
     setView('detail');
   }, []);
 
@@ -169,6 +186,7 @@ export function AutomationsPanelContainer({
     return (
       <AutomationDetailView
         row={selectedRow}
+        focusLatestFailure={focusLatestFailure}
         configLines={presentation.configLines}
         promptPreview={presentation.promptPreview}
         busy={automations.togglingId === selectedRow.id}

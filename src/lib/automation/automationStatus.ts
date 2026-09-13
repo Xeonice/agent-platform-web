@@ -47,20 +47,30 @@ export function describeLifecycle(
 ): LifecyclePresentation {
   switch (lifecycle) {
     case 'on':
-      return { icon: '✅', text: '已启用', needsAttention: false };
+      return { icon: '✅', text: '已开启', needsAttention: false };
     case 'off':
       // ⚠️ 不写"已停止"：停止说的是运行中的东西，这里是"到点不会被触发"。
-      return { icon: '⏸️', text: '已禁用（不会触发）', needsAttention: false };
+      return { icon: '⏸️', text: '已关掉（到点不会触发）', needsAttention: false };
     case 'degraded':
       return {
         icon: '🟡',
-        text: `已降频：每日重试一次（连续失败 ${String(consecutiveFailures)} 次）`,
+        text: `连着失败 ${String(consecutiveFailures)} 次，已经放慢：现在每天只试一次`,
         needsAttention: true,
       };
+    /**
+     * ★ **两个数一起给。**
+     *
+     * 界面上只写「连续失败 10 次」，而产品文档说的是「放慢之后再连续失败 7 次就停用」——
+     * 用户拿这两个数对不上，会以为其中一个是错的。它们其实是同一件事的两种数法：
+     * 总共 10 次，其中前 3 次让规则放慢、之后又失败了 7 次。
+     * ⇒ 把换算直接写出来，⛔ 不许只留一个数让用户自己去猜另一个是怎么来的。
+     */
     case 'autoDisabled':
       return {
         icon: '🔴',
-        text: `连续失败 ${String(consecutiveFailures)} 次，已自动暂停`,
+        text:
+          `连着失败 ${String(consecutiveFailures)} 次（放慢后又失败 ` +
+          `${String(Math.max(0, consecutiveFailures - DEGRADE_AFTER_FAILURES))} 次），已自动停用`,
         needsAttention: true,
       };
   }

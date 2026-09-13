@@ -59,8 +59,9 @@ describe('sandboxLifecycle 映射（10 §7.4 / P20 §3.3）', () => {
     expect(STARTUP_PHASES.map((p) => p.label)).toEqual([
       '初始化',
       '拉取镜像',
-      '准备工作区',
-      '启动实例',
+      // ⚠️ 上屏词（P21-1 §9）：内部的「工作区」「实例」在界面上叫「代码副本」「运行环境」。
+      '准备代码副本',
+      '启动运行环境',
     ]);
     // 格数恒为 4（结构性回归：不因状态多了就多一格）。
     expect(STARTUP_PHASES).toHaveLength(4);

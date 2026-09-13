@@ -53,10 +53,35 @@ describe('A · device-code：idle→pending→success/expired', () => {
       pollError: false,
     };
     s = authFlowReducer(s, { type: 'POLL_EXPIRED' });
-    expect(s).toEqual({ branch: 'device-code', phase: 'expired', challenge: deviceChallenge });
+    expect(s).toEqual({
+      branch: 'device-code',
+      phase: 'expired',
+      challenge: deviceChallenge,
+      reason: 'expired',
+    });
     // 重新获取 → 重走 begin
     s = authFlowReducer(s, { type: 'BEGIN_START' });
     expect(s.phase).toBe('starting');
+  });
+
+  it('POLL_GAVE_UP（前端等够了）→ expired 但 reason=gave-up，与真过期分开', () => {
+    // ⛔ 这一条钉的是「码可能完全没过期」。两者共用一个 phase 是有意的（都停下、都给 [换一串重来]），
+    //    但 `reason` 必须不同 —— 视图据此换一句话，不能对用户说「设备码已过期」。
+    const start: AuthFlowState = {
+      branch: 'device-code',
+      phase: 'polling',
+      challenge: deviceChallenge,
+      pollError: false,
+    };
+    const gaveUp = authFlowReducer(start, { type: 'POLL_GAVE_UP' });
+    expect(gaveUp).toEqual({
+      branch: 'device-code',
+      phase: 'expired',
+      challenge: deviceChallenge,
+      reason: 'gave-up',
+    });
+    const reallyExpired = authFlowReducer(start, { type: 'POLL_EXPIRED' });
+    expect(reallyExpired).not.toEqual(gaveUp);
   });
 
   it('POLL_NETWORK_ERROR 只标记 pollError，不改 phase（不消耗倒计时）', () => {
@@ -89,6 +114,7 @@ describe('A · device-code：idle→pending→success/expired', () => {
       branch: 'device-code',
       phase: 'expired',
       challenge: deviceChallenge,
+      reason: 'expired',
     };
     expect(authFlowReducer(expired, { type: 'POLL_FAILED', message: 'x' })).toEqual(expired);
   });

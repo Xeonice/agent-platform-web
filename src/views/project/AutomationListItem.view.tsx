@@ -27,9 +27,9 @@ export function AutomationListItemView({
   onShowFailure,
 }: AutomationListItemProps) {
   const enabled = row.lifecycle !== 'off' && row.lifecycle !== 'autoDisabled';
-  // 🔴 自动禁用后那个按钮说的是「重新启用」，并且要明示清零（P21-7 §9.1 #25）——
-  // 与普通的 [启用] 是同一个端点，但用户面对的是两件不同的事。
-  const toggleLabel = row.lifecycle === 'autoDisabled' ? '重新启用' : enabled ? '禁用' : '启用';
+  // 🔴 自动停用后那个按钮说的是「重新开启」，并且要明示清零（P21-7 §9.1 #25）——
+  // 与普通的 [开启] 是同一个端点，但用户面对的是两件不同的事。
+  const toggleLabel = row.lifecycle === 'autoDisabled' ? '重新开启' : enabled ? '关掉' : '开启';
 
   return (
     <li
@@ -54,9 +54,13 @@ export function AutomationListItemView({
             {row.summaryText}
             {row.nextTriggerText !== undefined && ` · 下次: ${row.nextTriggerText}`}
           </p>
-          {/* 时区一行永远在，不随状态消失。 */}
+          {/*
+            时区一行永远在，不随状态消失。
+            ⚠️ 偏移（`UTC+8`）是**实时算出来的**，⛔ 不是写死的常量：夏令时地区换季会变。
+          */}
           <p className="mt-0.5 text-[11px] text-muted-foreground" data-testid="automation-timezone">
             时区 {row.timezone}
+            {row.timezoneOffsetText !== undefined && `（现在是 ${row.timezoneOffsetText}）`}
             {row.timezoneNote !== undefined && ` · ${row.timezoneNote}`}
           </p>
           <p
@@ -96,7 +100,7 @@ export function AutomationListItemView({
 
       {row.lifecycle === 'autoDisabled' && (
         <p className="mt-1.5 text-[11px] text-muted-foreground">
-          [重新启用] 会把连续失败计数清零，规则按原调度继续。
+          [重新开启] 会把失败次数清零，规则按原来的时间表继续。
         </p>
       )}
     </li>

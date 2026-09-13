@@ -99,7 +99,7 @@ export function WebhookSectionView({
             </Button>
             {testPhase === 'ok' && (
               <span className="text-xs text-emerald-500" data-testid="webhook-test-ok">
-                ✅ 已送达一条 event:&quot;test&quot; 样例载荷
+                ✅ 测试消息已经送到了
               </span>
             )}
             {testPhase === 'error' && (

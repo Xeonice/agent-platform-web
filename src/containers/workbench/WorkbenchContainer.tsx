@@ -248,7 +248,7 @@ export function WorkbenchContainer() {
    * [+ 新任务] 的可用性（§9.1 #33）。
    *
    * **无选中项目不可进入**：绕过会建出无项目归属的 Task。克隆中 / 克隆失败的项目同理——
-   * 工作区还不存在，建出来的沙箱没有 /workspace 可挂。
+   * 代码副本还不存在，建出来的任务没有 /workspace 可挂。
    */
   const newTaskDisabledReason =
     // ⚠️ **离线排在最前**（P21-8 §7 置灰清单）：另外两条是"换个项目就能发起"，
@@ -290,7 +290,8 @@ export function WorkbenchContainer() {
     if (selectedProject !== null) {
       return (
         <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          项目正在克隆，就绪后即可创建沙箱。
+          {/* ⚠️ P21-1 §9：界面上不出现「沙箱」措辞。 */}
+          项目正在克隆，克隆完就能发起任务。
         </div>
       );
     }
@@ -465,7 +466,7 @@ export function WorkbenchContainer() {
           {currentModal === 'retainedVolumes' && menuProject !== null && (
             <ModalShellView
               shellRef={retainedModalRef}
-              title="已保留卷"
+              title="保留下来的成果"
               subtitle={`在 ${menuProject.name} 中`}
               onClose={closeModal}
               testId="modal-retained-volumes"

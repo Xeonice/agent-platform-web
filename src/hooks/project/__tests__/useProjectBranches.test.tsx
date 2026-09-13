@@ -212,9 +212,43 @@ describe('useSyncProject', () => {
       expect(result.current.errorMessage).toBeDefined();
     });
     // 与克隆失败路径**同一句人话**（复用 cloneFailureGuidance，不另写一套词汇）
-    expect(result.current.errorMessage).toContain('没有访问该仓库的权限');
+    expect(result.current.errorMessage).toContain('凭证');
     expect(result.current.errorMessage).not.toContain('fatal:');
+    expect(result.current.errorMessage).not.toContain('Repository not found');
     // 权限类失败要给出路，否则用户只知道"不行"不知道"去哪配"
+    expect(result.current.needsCredentials).toBe(true);
+  });
+
+  /**
+   * ★ **404 走的是 `CLONE_FAILED_NOT_FOUND`，而不是"没权限"。**
+   *
+   * sync 复用 clone 的错误码表（`mapDomainError` 的注释里写着这个假设），所以后端把
+   * `Repository not found` 拆成新码之后，这条路上也必须跟着说另一句话 ——
+   * ⛔ 不许再断言"没有访问该仓库的权限"（对打错地址的人那是假的）。
+   */
+  it('⭐ 仓库打不开（NOT_FOUND）⇒ 两种可能都说，⛔ 不断言"没权限"', async () => {
+    server.use(
+      http.post(`${API_BASE}/api/projects/:id/sync`, () =>
+        HttpResponse.json(
+          {
+            code: 'CLONE_FAILED_NOT_FOUND',
+            message: "remote: Repository not found. fatal: repository 'https://…' not found",
+            retryable: false,
+          },
+          { status: 404 },
+        ),
+      ),
+    );
+    const { result } = renderHook(() => useSyncProject(), { wrapper: makeWrapper() });
+    act(() => {
+      result.current.sync('p-1');
+    });
+    await waitFor(() => {
+      expect(result.current.errorMessage).toBeDefined();
+    });
+    expect(result.current.errorMessage).not.toContain('没有访问该仓库的权限');
+    expect(result.current.errorMessage).toContain('地址写错');
+    expect(result.current.errorMessage).not.toContain('fatal:');
     expect(result.current.needsCredentials).toBe(true);
   });
 });

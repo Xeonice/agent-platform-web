@@ -124,7 +124,7 @@ describe('resourcePoolModel', () => {
   });
 
   it('整体文案说出**下一步动作**（三档三句，互不相同）', () => {
-    expect(resourcePoolModel(resources(), now).overallText).toBe('资源耗尽，无法创建新 Task');
+    expect(resourcePoolModel(resources(), now).overallText).toBe('资源耗尽，现在建不了新任务');
     const ok = resourcePoolModel(
       resources({
         disk: {
@@ -141,7 +141,7 @@ describe('resourcePoolModel', () => {
     );
     expect(ok.overallText).toBe('资源充足');
     // 否定断言：三句必须互不覆盖，否则"资源耗尽"那句会在健康时也渲染出来。
-    expect(ok.overallText).not.toContain('无法创建新 Task');
+    expect(ok.overallText).not.toContain('建不了新任务');
   });
 
   it('CPU 那一格用核数不用字节（`0.8 / 8 核`）', () => {

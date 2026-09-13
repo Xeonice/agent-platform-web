@@ -89,10 +89,40 @@ export function RegisterImageModalView({
           </p>
         )}
 
+        {/*
+          ⚠️ **硬约束前置，不能等验证失败才说**（2026-09 修）。此前这里只写「须兼容 OCI 标准；
+          验证会检查可达性及依赖项」—— 真正会拒绝用户的那一条（`IMAGE_BASE_REQUIRED`：镜像
+          必须从平台预制镜像改起）**一个字都没有**，于是每个新用户都必然先失败一次。
+          ⚠️ 「按镜像内容比对」这半句同样不能省：不说的话，被拒之后最自然的动作是去改标签。
+        */}
+        <p
+          data-testid="register-lineage-constraint"
+          className="rounded-md border border-border bg-muted/30 p-2 text-xs text-muted-foreground"
+        >
+          ⚠️{' '}
+          <strong className="font-medium text-foreground">
+            自定义镜像必须从平台的预制镜像改起
+          </strong>
+          （Dockerfile 第一行 FROM
+          平台预制镜像，或它的派生）。平台按镜像内容比对来源，改标签、改名都不算数。
+          {onViewRequirements !== undefined && (
+            <>
+              {' '}
+              <button
+                type="button"
+                className="underline underline-offset-2"
+                onClick={onViewRequirements}
+              >
+                查看镜像要求
+              </button>
+            </>
+          )}
+        </p>
+
         <p className="text-xs text-muted-foreground">
-          ℹ️ 镜像须兼容 OCI 标准；验证会检查可达性及依赖项。填 tag 会在此刻
-          <strong className="font-medium">钉定</strong>
-          为一个 digest；上游之后重推同一 tag 不会自动生效，需在卡片上 [检查更新]。
+          ℹ️ 镜像须兼容 OCI 标准；验证会检查连得上、以及上面那几条。填 tag 会在此刻
+          <strong className="font-medium">锁定</strong>
+          成一个具体版本；镜像下载源之后重推同一个 tag 不会自动生效，需在卡片上 [检查更新]。
         </p>
 
         {duplicate !== undefined && (

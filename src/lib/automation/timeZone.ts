@@ -85,6 +85,36 @@ export function zoneOffsetMs(utcMs: number, timeZone: string): number {
 }
 
 /**
+ * 该时区**此刻**的偏移，写成 `UTC+8` / `UTC-3:30` / `UTC+0`。
+ *
+ * ★ **必须实时算，⛔ 不许写死常量表。** IANA 名（`Asia/Shanghai`）是一个准确但对很多人
+ *   不直观的标识；补一个偏移能让「早上 8 点是谁的早上 8 点」当场读懂。但夏令时地区
+ *   换季时偏移会变（`Europe/Berlin` 是 UTC+1/UTC+2），把它硬编成一张表，
+ *   每年会有两段时间在界面上显示一个**确凿错误**的偏移 —— 而这一页的时区处理
+ *   （不折叠、恒带时区、非法时区宁可不显示也不回落本机）正是全仓的正面教材，
+ *   ⛔ 不能在这里破一个口子。
+ *
+ * @returns 非法时区 ⇒ `undefined`（`zoneOffsetMs` 会抛）。**宁可不显示**，
+ *          ⛔ 不回落本机偏移 —— 那会给出一个看起来正常的错数。
+ */
+export function zoneOffsetLabel(utcMs: number, timeZone: string): string | undefined {
+  let offset: number;
+  try {
+    offset = zoneOffsetMs(utcMs, timeZone);
+  } catch {
+    return undefined;
+  }
+  const totalMinutes = Math.round(offset / 60_000);
+  const sign = totalMinutes < 0 ? '-' : '+';
+  const abs = Math.abs(totalMinutes);
+  const hours = Math.floor(abs / 60);
+  const minutes = abs % 60;
+  return minutes === 0
+    ? `UTC${sign}${String(hours)}`
+    : `UTC${sign}${String(hours)}:${String(minutes).padStart(2, '0')}`;
+}
+
+/**
  * 指定时区下的墙钟 → UTC 瞬时。
  *
  * ★ **用「切换前后各 24 小时的偏移」造候选，不用「两趟迭代」。**

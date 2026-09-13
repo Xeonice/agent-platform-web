@@ -14,10 +14,13 @@ export interface ProjectMetaSectionProps {
   createdAt: string;
 }
 
-/** cloneStatus → 人话。三值全覆盖（Record 而非 if 链：后端加第四值时 tsc 就红，§4）。 */
+/**
+ * cloneStatus → 人话。三值全覆盖（Record 而非 if 链：后端加第四值时 tsc 就红，§4）。
+ * 「就绪」换成「可用」：前者是内部状态机的词，用户读的是"这个项目现在能不能开工"。
+ */
 const STATUS_LABEL: Record<ProjectCloneStatus, string> = {
-  ready: '就绪',
-  cloning: '克隆中',
+  ready: '可用',
+  cloning: '正在克隆',
   failed: '克隆失败',
 };
 
@@ -48,6 +51,25 @@ export function ProjectMetaSectionView({
       <Row label="状态" value={STATUS_LABEL[cloneStatus]} />
       <Row label="任务数" value={String(taskCount)} />
       <Row label="创建时间" value={formatTime(createdAt)} />
+
+      {/*
+        ★ **failed 态下这个面板此前是一条死路。**
+
+        它只写一句「状态：克隆失败」，而同一个面板里能点的只有 [删除项目…] ——
+        [重试克隆] / [改为空项目] 在**另一个**菜单（组头「⋯」）里。于是用户看到的是
+        "这个项目挂了，我只能删掉它"，而两条不用删的出路就在一次点击之外。
+
+        ⛔ 不许把那两个动作搬进来（全仓只许有一处持有 `retry-clone`，见
+           `ProjectGroupMenu.view` 文件头）。要补的是**指路**，不是第二个入口。
+      */}
+      {cloneStatus === 'failed' && (
+        <p
+          className="pt-1 text-[11px] leading-relaxed text-muted-foreground"
+          data-testid="project-meta-failed-hint"
+        >
+          克隆没成功。[重试克隆] 和 [改为空项目] 在项目名右边的「⋯」菜单里，不用删掉重建。
+        </p>
+      )}
     </dl>
   );
 }

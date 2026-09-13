@@ -394,7 +394,7 @@ describe('WorkbenchContainer · 已保留卷入口', () => {
 // ④ 项目只读条 + [重新同步]（F21-6 §9.2/§9.3）
 // ————————————————————————————————————————————————————————————————
 describe('WorkbenchContainer · 项目只读条', () => {
-  it('选中项目 ⇒ 主区顶部四格（远端/分支/基线/最后同步），不新开页面', async () => {
+  it('选中项目 ⇒ 主区顶部四格（仓库/分支/代码体积/最后拉取），不新开页面', async () => {
     mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
     renderWorkbench();
 
@@ -403,7 +403,12 @@ describe('WorkbenchContainer · 项目只读条', () => {
     expect(within(bar).getByText('https://github.com/acme/acme-web.git')).toBeInTheDocument();
     expect(within(bar).getByText('develop')).toBeInTheDocument();
     expect(within(bar).getByText('45 MB')).toBeInTheDocument();
-    expect(within(bar).getByText('最后同步')).toBeInTheDocument();
+    // ⚠️ 屏上用词：内部叫「远端/基线/同步」，界面上是「仓库/代码体积/拉取最新代码」。
+    //    「同步」尤其要避开——它双向暧昧，而这条路只拉不推。
+    expect(within(bar).getByText('仓库')).toBeInTheDocument();
+    expect(within(bar).getByText('代码体积')).toBeInTheDocument();
+    expect(within(bar).getByText('最后拉取')).toBeInTheDocument();
+    expect(bar.textContent).not.toContain('基线');
     // 只读：这条上不该出现改远端 / 切默认分支 / 重新 clone 之类的入口（§9.2）。
     expect(within(bar).queryByRole('textbox')).not.toBeInTheDocument();
     expect(
@@ -411,7 +416,7 @@ describe('WorkbenchContainer · 项目只读条', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('[重新同步] → POST /api/projects/:id/sync（唯一的动作）', async () => {
+  it('[拉取最新代码] → POST /api/projects/:id/sync（唯一的动作）', async () => {
     mockProjects([projectDto({ id: 'p1', name: 'ProjectA' })]);
     let hit = 0;
     server.use(
@@ -423,7 +428,11 @@ describe('WorkbenchContainer · 项目只读条', () => {
     renderWorkbench();
 
     fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
-    fireEvent.click(await screen.findByRole('button', { name: '重新同步' }));
+    const button = await screen.findByTestId('project-sync');
+    // ★ 这一句是文案层就能补的那半个缺口（§9.3 原注释把它整条记成了"有意识留下的缺口"）：
+    //   拉取只更新项目里的这份代码，已经建好的任务不会跟着变 —— 要在**按下之前**看得到。
+    expect(button).toHaveAttribute('title', expect.stringContaining('已经建好的任务'));
+    fireEvent.click(button);
     await waitFor(() => {
       expect(hit).toBe(1);
     });
@@ -433,16 +442,16 @@ describe('WorkbenchContainer · 项目只读条', () => {
    * **仅 ready 态**给 [重新同步]（§9.3）。
    * 变异：把 `canSync` 改成恒真 ⇒ 本例变红。
    */
-  it('克隆中/失败的项目 ⇒ 不给 [重新同步]', async () => {
+  it('克隆中/失败的项目 ⇒ 不给 [拉取最新代码]', async () => {
     mockProjects([projectDto({ id: 'p1', name: 'ProjectA', cloneStatus: 'cloning' })]);
     renderWorkbench();
 
     fireEvent.click(await screen.findByRole('button', { name: /ProjectA/ }));
     await screen.findByTestId('project-info-bar');
-    expect(screen.queryByRole('button', { name: '重新同步' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('project-sync')).not.toBeInTheDocument();
   });
 
-  it('空项目 ⇒ 整条降级为「空项目（无远端）」，时间格显示创建时间', async () => {
+  it('空项目 ⇒ 整条降级为「空项目（没有关联仓库）」，时间格显示创建时间', async () => {
     mockProjects([
       projectDto({
         id: 'p1',
@@ -458,9 +467,9 @@ describe('WorkbenchContainer · 项目只读条', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /临时草稿/ }));
     const bar = await screen.findByTestId('project-info-bar');
-    expect(within(bar).getByText(/空项目（无远端）/)).toBeInTheDocument();
+    expect(within(bar).getByText(/空项目（没有关联仓库）/)).toBeInTheDocument();
     expect(within(bar).getByText('创建于')).toBeInTheDocument();
-    expect(within(bar).queryByRole('button', { name: '重新同步' })).not.toBeInTheDocument();
+    expect(within(bar).queryByTestId('project-sync')).not.toBeInTheDocument();
   });
 
   /**
@@ -514,7 +523,7 @@ describe('WorkbenchContainer · 左侧任务树接真实列表', () => {
     ]);
     renderWorkbench();
 
-    // 任务行真的渲染出来了——而不是"在 ProjectA 中发起第一个任务 →"的空态。
+    // 任务行真的渲染出来了——而不是"发起第一个任务 →"的空态。
     expect(await screen.findByRole('button', { name: /分析这个仓库/ })).toBeInTheDocument();
   });
 
@@ -559,6 +568,27 @@ describe('WorkbenchContainer · 左侧任务树接真实列表', () => {
 
     await screen.findByRole('button', { name: /ProjectA/ });
     expect(screen.queryByRole('button', { name: /分析这个仓库/ })).not.toBeInTheDocument();
+  });
+
+  /**
+   * ⭐ **空组那句「发起第一个任务 →」必须是可点的**（2026-09-11 修）。
+   *
+   * 它此前是个 `<p>`，却带着一个 `→` —— 箭头是"这里能点"的承诺，而它点不动。
+   * 用户点上去没有任何反应，比不给这句话更糟。
+   *
+   * MUTATION：把 `WorkbenchShell.view` 里那个 `<button>` 改回 `<p>` ⇒ 本条第一句
+   * `getByRole('button', …)` 当场找不到元素。
+   */
+  it('⭐ 空组的「发起第一个任务 →」是按钮，点它就打开新建任务弹层（不是一段点不动的字）', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 0 })]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    const cta = await screen.findByRole('button', { name: /发起第一个任务/ });
+    fireEvent.click(cta);
+
+    // 点它 = 选中这个项目 + 开弹层（弹窗里没有项目下拉，归属继承选中项）。
+    expect(await screen.findByTestId('modal-new-task')).toBeInTheDocument();
   });
 });
 
@@ -755,11 +785,24 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     const panel = await openProjectMenu('ProjectA');
     fireEvent.click(within(panel).getByTestId('project-delete-entry'));
 
-    expect(await screen.findByTestId('delete-cascade-copy')).toHaveTextContent(
-      '将删除该项目下 5 个 Task 及其数据卷（保留的成果卷除外），不可逆。',
-    );
+    /**
+     * ★ **三行，一条都不许省**（旧文案是一句话，把最重要的「留了什么」塞进了括号，
+     *   而且**一个字都没说远端 Git 仓库不受影响** —— 那是开发者按下去之前最想知道的
+     *   第一件事）。这三条断言分别钉住：删什么 / 留什么 / 能不能反悔。
+     */
+    const cascade = await screen.findByTestId('delete-cascade-copy');
+    expect(cascade).toHaveTextContent('会删掉');
+    expect(cascade).toHaveTextContent('5 个任务');
+    expect(cascade).toHaveTextContent('会留下');
+    expect(cascade).toHaveTextContent('远端 Git 仓库不受影响');
+    expect(cascade).toHaveTextContent('删掉之后');
+    expect(cascade).toHaveTextContent('拿不回来');
+    // ⛔ 界面上别处没有的词（「成果卷」「数据卷」）不许在这里出现。
+    expect(cascade.textContent).not.toContain('成果卷');
+    expect(cascade.textContent).not.toContain('数据卷');
+
     expect(screen.getByTestId('delete-running-warning')).toHaveTextContent(
-      '含 2 个运行中任务将被强制停止',
+      '其中 2 个任务正在跑，会被强制停下',
     );
   });
 
@@ -830,9 +873,8 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     fireEvent.click(within(panel).getByTestId('project-delete-entry'));
     fireEvent.click(await screen.findByTestId('delete-confirm'));
 
-    expect(await screen.findByTestId('delete-error')).toHaveTextContent(
-      '该项目仍有运行中的任务，请先停止后再删除。',
-    );
+    // ⚠️ 按码查人话表：`CONFLICT` 不在表里 ⇒ 走兜底；⛔ 后端 message 不上屏。
+    expect(await screen.findByTestId('delete-error')).toHaveTextContent('删除失败，请稍后重试。');
     expect(screen.getByTestId('modal-project-menu')).toBeInTheDocument();
     // 本地状态没被"乐观"改动：树里那一项还在。
     expect(screen.getAllByTestId('project-group-header')).toHaveLength(1);
@@ -951,8 +993,53 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     fireEvent.click(within(menu).getByTestId('group-menu-delete'));
 
     const note = await screen.findByTestId('delete-cloning-note');
-    expect(note).toHaveTextContent('先取消克隆');
+    expect(note).toHaveTextContent('先停掉这次克隆');
     expect(note).toHaveTextContent('取消克隆（保留项目）');
+  });
+
+  /**
+   * ★ **[改为空项目] 是不可逆动作，此前界面一个字都没说它留下什么。**
+   *
+   * 产品 §6 定得很清楚：项目 ID 留、已关联任务留，只是工作区变空。不说，用户按之前
+   * 只知道"要改成空的"，不知道会不会连任务一起弄丢 —— 要么不敢按（这条出路等于没有），
+   * 要么按了之后去找一个并不存在的损失。
+   *
+   * ⚠️ 「改完还能不能变回 git 项目」这一句**刻意没写**（产品文档没裁过，而代码上
+   *   retry-clone 只允许 failed 态、改完是 ready ⇒ 事实上回不去）。这条断言同时钉住
+   *   那句话**不许被顺手补上** —— 写死"不可逆"是替产品下裁决，写"以后可以"是撒谎。
+   */
+  it('failed 项目的组菜单说清 [改为空项目] 留下什么，且不擅自裁决"能不能改回来"', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'FailedProject', cloneStatus: 'failed' })]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    const menu = await openGroupMenu('FailedProject');
+    const text = menu.textContent;
+    expect(text).toContain('项目和它下面已有的任务都留着');
+    expect(text).toContain('工作区从空的开始');
+    // ⛔ 未裁决的事不许写死。
+    expect(text).not.toContain('不可逆');
+    expect(text).not.toContain('改回');
+  });
+
+  /**
+   * ★ **failed 态的项目菜单此前是一条死路**：只写「状态：克隆失败」，同面板只有
+   *   [删除项目…]，而 [重试克隆] / [改为空项目] 在**另一个**菜单里。用户看到的是
+   *   "这个项目挂了，我只能删掉它"。⛔ 补的是指路，不是第二个入口（全仓只许有一处
+   *   持有 retry-clone）。
+   */
+  it('failed 项目的项目菜单不是死路：指出两条出路在哪个菜单里', async () => {
+    mockProjects([projectDto({ id: 'p1', name: 'FailedProject', cloneStatus: 'failed' })]);
+    mockSandboxes([]);
+    renderWorkbench();
+
+    const panel = await openProjectMenu('FailedProject');
+    const hint = within(panel).getByTestId('project-meta-failed-hint');
+    expect(hint).toHaveTextContent('重试克隆');
+    expect(hint).toHaveTextContent('改为空项目');
+    expect(hint).toHaveTextContent('「⋯」菜单');
+    // ⛔ 指路不等于搬入口：面板里仍然只有删除那一个动作。
+    expect(within(panel).queryByTestId('group-menu-retry-clone')).toBeNull();
   });
 
   /** 顶部指示器：只读 + 定位，⛔ 没有下拉（§9.1 #2 否定性验收）。 */

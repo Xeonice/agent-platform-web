@@ -50,7 +50,7 @@ function mapModeRow(
     return {
       mode,
       method,
-      label: mode === 'account' ? '帐号授权' : 'API Key',
+      label: mode === 'account' ? '帐号登录' : 'API Key',
       configured: false,
       active,
       expiryState: 'noExpiry',
@@ -61,7 +61,7 @@ function mapModeRow(
   return {
     mode,
     method,
-    label: mode === 'account' ? '帐号授权' : 'API Key',
+    label: mode === 'account' ? '帐号登录' : 'API Key',
     configured: true,
     active,
     maskedIdentifier: summary.maskedIdentifier,
@@ -113,18 +113,59 @@ export function switchModeDecision(
 }
 
 /**
- * [吊销] 确认文案（**P0-4，与后端 05 §4 同源**）：吊销延迟语义必须明示——env 形态注入进程后外部无法 unset，
- * 联动是强制重启/销毁这些 Task 而非「删文件」，不能给用户「吊销即刻失效、无残留」的错觉。
+ * [删除] 确认文案（**P0-4，与后端 05 §4 同源**）：删除的延迟语义必须明示——env 形态注入进程后外部无法
+ * unset，联动是强制重启/销毁这些任务而非「删文件」，不能给用户「删掉就即刻失效、无残留」的错觉。
+ *
+ * ⚠️ 措辞按 P21-3 术语表落到用户语境：「吊销」→「删除」、「运行实例」→「正在跑的任务」。
  */
 export const RUNTIME_REVOKE_WARNING =
-  '吊销会重启正在使用该凭证的运行实例；已泄漏到沙箱外的 token 无法追回。';
+  '删除会重启正在用这份凭证跑的任务；已经被带出沙箱的 token，平台这边删不掉。';
 
-/** 切模式确认文案（切到已配置模式，VS-1）。 */
+/**
+ * P0-4 的**下一步**（配 `RUNTIME_REVOKE_WARNING` 一起出现）。
+ *
+ * ⚠️ 上面那句原本是孤零零一条吓人的断言：说了「追不回来」，却没给用户任何**能做的事**。
+ * 真正能作废一串已经流出去的 token 的地方只有签发它的厂商后台 —— 那句话必须带着这一条一起出现，
+ * 否则它只是制造焦虑。可以排成次要行，但不能没有。
+ */
+export const RUNTIME_REVOKE_FOLLOW_UP =
+  '担心已经外流的话，去签发这串凭证的厂商后台把它作废，那边才是唯一能真正吊销它的地方。';
+
+/** 切「当前使用」的确认文案（切到已配置模式，VS-1）。 */
 export function switchModeConfirmText(mode: RuntimeAuthMode): string {
   return mode === 'api-key'
-    ? '切换后新任务将使用 API Key（按量计费），已运行任务不受影响。'
-    : '切换后新任务将使用帐号授权（订阅额度），已运行任务不受影响。';
+    ? '之后新开的任务会用 API Key（按量计费），已经在跑的任务不受影响。'
+    : '之后新开的任务会用帐号登录（走订阅额度），已经在跑的任务不受影响。';
 }
+
+/** 模式展示名（用户语境：不说「模式」，就说这两样东西本身）。 */
+export function authModeLabel(mode: RuntimeAuthMode): string {
+  return mode === 'api-key' ? 'API Key' : '帐号登录';
+}
+
+/** 切换弹层标题（术语表：「切换生效模式」→「切换到 X」）。 */
+export function switchModeTitle(mode: RuntimeAuthMode): string {
+  return `切换到${authModeLabel(mode)}`;
+}
+
+/**
+ * 删除完之后、另一种登录方式已经配好时的追问（产品 §9）。
+ *
+ * ⚠️ 少了这一步的后果是**静默留下一个没有可用凭证的 Agent**：用户删掉了当前在用的那份，
+ * 另一份明明就在那儿，界面却一个字都不说，下次发任务才撞上「未配置」。
+ */
+export function switchAfterRevokeText(mode: RuntimeAuthMode): string {
+  return `这个 Agent 现在没有可用的凭证了。它的${authModeLabel(mode)}还留着 —— 要现在切过去用吗？`;
+}
+
+/**
+ * Runtime 分区的存放承诺（产品 21-3 §3）。
+ *
+ * ⚠️ 这句话此前**只在 Git 分区底下有**，Agent 帐号区对「我的模型帐号存在哪」一个字都没说 ——
+ * 而用户真正紧张的恰恰是模型帐号。两个分区共用页底那一条，这里再补一句就近的。
+ */
+export const RUNTIME_CREDENTIAL_STORAGE_NOTE =
+  '凭证加密存在这台机器上，平台不会上传，也读不回明文。';
 
 /** [吊销] 二次确认配置（F21-3 §5/§6，可单测）：吊销生效中模式额外警示「该模式将不可用」。 */
 export interface RevokeConfirmConfig {
@@ -133,8 +174,15 @@ export interface RevokeConfirmConfig {
   method: RuntimeAuthMethod;
   /** 吊销的是否为当前生效模式（true → 额外提示「该模式将不可用」，F21-3 §5）。 */
   warnActiveMode: boolean;
-  /** 另一模式是否已配置（生效模式吊销后可询问是否切过去，F21-3 §5）。 */
+  /** 另一模式是否已配置（当前使用的那份被删掉后可询问是否切过去，F21-3 §5 / 产品 §9）。 */
   otherModeConfigured: boolean;
+  /**
+   * 另一模式**是哪一个**（未配置或不存在该行 → null）。
+   *
+   * ⚠️ 只有 `otherModeConfigured` 这个布尔位时，「问不问」答得出来、「切到哪」答不出来 ——
+   * 于是产品 §9 那一步根本没法接线（这正是它此前算出来却没人消费的原因之一）。
+   */
+  otherMode: RuntimeAuthMode | null;
 }
 
 export function revokeConfirmConfig(
@@ -144,11 +192,13 @@ export function revokeConfirmConfig(
   const row = card.rows.find((r) => r.mode === mode);
   if (row === undefined) return null;
   const other = card.rows.find((r) => r.mode !== mode);
+  const otherConfigured = other?.configured ?? false;
   return {
     runtimeId: card.runtimeId,
     mode,
     method: row.method,
     warnActiveMode: row.active,
-    otherModeConfigured: other?.configured ?? false,
+    otherModeConfigured: otherConfigured,
+    otherMode: otherConfigured && other !== undefined ? other.mode : null,
   };
 }

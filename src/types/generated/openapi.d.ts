@@ -1111,7 +1111,7 @@ export interface components {
             /** @enum {string} */
             cloneStatus: "cloning" | "ready" | "failed";
             /** @enum {string|null} */
-            cloneErrorCode: "CLONE_FAILED_PERMISSION" | "CLONE_FAILED_NETWORK" | "TIMEOUT" | "INTERRUPTED" | "DISK_INSUFFICIENT" | null;
+            cloneErrorCode: "CLONE_FAILED_PERMISSION" | "CLONE_FAILED_NOT_FOUND" | "CLONE_FAILED_NETWORK" | "TIMEOUT" | "INTERRUPTED" | "DISK_INSUFFICIENT" | null;
             taskCount: number;
             /** Format: date-time */
             createdAt: string;
@@ -1158,6 +1158,7 @@ export interface components {
             id: string;
             projectId: string;
             runtime: string;
+            availableRuntimes: string[];
             provider: string;
             name: string;
             /** @enum {string} */

@@ -42,7 +42,7 @@ export const Enabled: Story = {
     await expect(canvas.getByTestId('automation-summary')).toHaveTextContent('下次: 8-10 08:00');
     // ⭐ 时区必须在这一行上：只给「8-10 08:00」，换台机器打开的人会以为触发时刻漂了。
     await expect(canvas.getByTestId('automation-timezone')).toHaveTextContent('Asia/Shanghai');
-    await expect(canvas.getByTestId('automation-toggle')).toHaveTextContent('禁用');
+    await expect(canvas.getByTestId('automation-toggle')).toHaveTextContent('关掉');
     await expect(canvas.queryByTestId('automation-show-failure')).toBeNull();
   },
 };
@@ -72,28 +72,28 @@ export const ManuallyDisabled: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('automation-toggle')).toHaveTextContent('启用');
+    await expect(canvas.getByTestId('automation-toggle')).toHaveTextContent('开启');
     await expect(canvas.getByTestId('automation-summary')).not.toHaveTextContent('下次');
     // ⭐ 手动禁用**不给** [查看原因]：没有原因可查，摆一个只会让人以为出了事。
     await expect(canvas.queryByTestId('automation-show-failure')).toBeNull();
   },
 };
 
-/** 🟡 降频：连续失败 ≥3，改为每日重试一次。 */
+/** 🟡 放慢：连着失败 ≥3，改为每天只试一次。 */
 export const Degraded: Story = {
   args: {
     row: {
       ...BASE,
       lifecycle: 'degraded',
       icon: '🟡',
-      statusText: '已降频：每日重试一次（连续失败 3 次）',
+      statusText: '连着失败 3 次，已经放慢：现在每天只试一次',
       needsAttention: true,
       consecutiveFailures: 3,
     },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('automation-status-text')).toHaveTextContent('每日重试一次');
+    await expect(canvas.getByTestId('automation-status-text')).toHaveTextContent('每天只试一次');
     await expect(canvas.getByTestId('automation-show-failure')).toBeInTheDocument();
   },
 };
@@ -105,7 +105,7 @@ export const AutoDisabled: Story = {
       ...BASE,
       lifecycle: 'autoDisabled',
       icon: '🔴',
-      statusText: '连续失败 10 次，已自动暂停',
+      statusText: '连着失败 10 次（放慢后又失败 7 次），已自动停用',
       nextTriggerText: undefined,
       needsAttention: true,
       consecutiveFailures: 10,
@@ -114,9 +114,9 @@ export const AutoDisabled: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     // ⭐ 与「手动禁用」必须长得不一样：那个按钮说的是两件不同的事。
-    await expect(canvas.getByTestId('automation-toggle')).toHaveTextContent('重新启用');
+    await expect(canvas.getByTestId('automation-toggle')).toHaveTextContent('重新开启');
     await expect(canvas.getByTestId('automation-show-failure')).toBeInTheDocument();
     // 文案要明示清零，否则用户不知道这一下是不是"又三次就再关一遍"。
-    await expect(canvas.getByText(/失败计数清零/)).toBeInTheDocument();
+    await expect(canvas.getByText(/失败次数清零/)).toBeInTheDocument();
   },
 };

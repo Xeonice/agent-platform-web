@@ -13,7 +13,9 @@ export function AutomationEmptyStateView({ onCreate }: AutomationEmptyStateProps
       data-testid="automation-empty"
     >
       <p>为重复性工作创建一条自动化规则。</p>
-      <p className="mt-1">规则到点会自动起一个无头任务：不开终端，跑完把结果留在运行历史里。</p>
+      <p className="mt-1">
+        规则到点会自动起一个任务：不开终端、不用你盯着，跑完把结果留在运行历史里。
+      </p>
       <div className="mt-3">
         <Button size="sm" onClick={onCreate} data-testid="automation-create">
           + 新建规则

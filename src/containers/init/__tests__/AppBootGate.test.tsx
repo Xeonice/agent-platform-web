@@ -75,7 +75,7 @@ function frames(preset: Record<string, unknown> = {}): string[] {
       id: 'outbound-network',
       label: '外网连通（模型 API / 镜像仓库）',
       status: 'ok',
-      summary: '均可达',
+      headline: '外网都能连上',
       detail: { results: ONLINE },
       durationMs: 293,
     }),
@@ -85,7 +85,7 @@ function frames(preset: Record<string, unknown> = {}): string[] {
       label: '预制镜像就绪',
       status: 'ok',
       step: 'staged',
-      summary: '预制镜像就绪：已注册、已在本机铺开',
+      headline: '预制镜像就绪，可以立即发起任务',
       durationMs: 22,
       ...preset,
     }),
@@ -282,8 +282,9 @@ describe('Step3 预制镜像（§7A）', () => {
         status: 'fail',
         step: 'lineage',
         errorCode: 'PRESET_IMAGE_NOT_PLATFORM_BUILT',
-        summary: "'ghcr.io/agent-infra/sandbox:latest' 是上游镜像，不是平台自建的那张",
-        hint: 'bash scripts/build-sandbox-image.sh',
+        headline: '这张镜像来源不对，用不了',
+        detailText: "'ghcr.io/agent-infra/sandbox:latest' 是上游镜像，不是平台自己构建的那张。",
+        command: 'bash scripts/build-sandbox-image.sh',
       },
     });
     renderGate();
@@ -297,8 +298,10 @@ describe('Step3 预制镜像（§7A）', () => {
     // ⛔ 五步不许合成一个红灯：其余四步不是 fail。
     expect(screen.getByTestId('preset-step-config')).toHaveAttribute('data-state', 'pass');
     expect(screen.getByTestId('preset-step-registration')).toHaveAttribute('data-state', 'pending');
+    // ⛔ 「血统」是内部词，上屏说「来源」；但「手动加进来也会被拒」这半句不许省 ——
+    //    不说清楚，用户会以为只是少做了一步，照着去做再撞一次墙。
     expect(screen.getByTestId('preset-step-action-lineage')).toHaveTextContent(
-      '注册也会被血统检查拒',
+      '手动加进来同样会被拒',
     );
     expect(screen.getByTestId('preset-image-blocked')).toHaveTextContent('无法发起任何任务');
     // ⚠️ 不阻塞：仍然放行，只是按钮上的字变了。
@@ -310,7 +313,7 @@ describe('Step3 预制镜像（§7A）', () => {
       preset: {
         status: 'info',
         step: 'staged',
-        summary: '预制镜像已就绪，但尚未在本机铺开 —— 首个任务需要数分钟准备镜像',
+        headline: '镜像还没下载到本机',
       },
     });
     renderGate();

@@ -24,6 +24,7 @@ export interface DiagnosticsCardProps {
   schemaMismatch: string | null;
   onDiagnose: () => void;
   onExportLogs: () => void;
+  /** 命令 [复制]（clipboard + toast 在 container）。 */
   onCopyHint: (hint: string) => void;
 }
 
@@ -72,7 +73,11 @@ export function DiagnosticsCardView({
         <p className="text-sm text-muted-foreground">
           {model.phase === 'running'
             ? '正在连接诊断流…（检查清单由服务端下发）'
-            : '尚未运行。点 [重新诊断] 跑一轮：八项并行、单项 5s 超时不阻塞整轮。'}
+            : // ⛔ **不写死秒数。** 上一版写「单项 5s 超时」，而后端的
+              //    `DIAGNOSE_TIMEOUT_MS` 早已是 10s —— 一个抄在界面上的常量必然漂移，
+              //    而它对用户的下一个动作没有任何区别（等就是了）。真实预算由服务端
+              //    在首帧 `start.timeoutMs` 里下发，⚠️ 前端不自行计时（F21-5 §7.1 ②）。
+              '尚未运行。点 [重新诊断] 跑一轮：各项并行，某一项超时也不阻塞其余项。'}
         </p>
       ) : (
         <ul className="flex flex-col gap-2">

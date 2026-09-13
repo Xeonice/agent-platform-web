@@ -19,28 +19,63 @@
 //     自建那张 / 重启平台 / 只是等一会），所以 `step` 与 `errorCode` 都原样带到 model 上，
 //     并各自配一句"这一步在检查什么"。⛔ 不许在这里把它们归一成一句「镜像不可用」。
 //
-// ⚠️ `errorCode` **按开放集合读**：认得的码补一句上下文，认不出的**照常渲染 `summary`**
+//  ⑤ **三层分开：`headline` / `detailText` / `nextStep`+`command`。** 旧的 `summary` 既当
+//     标题又装证据（长成三行散文），而它渲染在图标同一行；旧的 `hint` 既装散文又装命令，
+//     于是「重跑一次看稳不稳定」被塞进等宽框顶着一个 [复制] 按钮。⛔ 不许在这里拼回去。
+//
+// ⚠️ `errorCode` **按开放集合读**：认得的码补一句上下文，认不出的**照常渲染 `headline`**
 // （⛔ 不能因为码不认识就不渲染那一项）。
-import { PRESET_IMAGE_CODES } from '@/types/sse-protocol';
+import { PRESET_IMAGE_CODES, PRESET_IMAGE_STEPS } from '@/types/sse-protocol';
 import type {
   DiagnoseCheckFrame,
   DiagnoseCheckId,
   DiagnoseDoneFrame,
   DiagnoseStartFrame,
+  DiagnoseStatus,
   PresetImageStep,
 } from '@/types/sse-protocol';
 import type { DiagnoseRunState, DiagnosticItemModel, DiagnosticsCardModel } from '@/types/system';
 
-/** 预制镜像检查链五步各自在**检查什么**（P21-5 §9A 那张表的第二列）。 */
-const PRESET_IMAGE_STEP_TEXT: Readonly<Record<PresetImageStep, string>> = {
+/**
+ * 预制镜像检查五步各自在**检查什么**（P21-5 §9A 那张表的第二列）。
+ *
+ * ⚠️ 用词全部按上屏口径：registry ⇒ 镜像仓库，血统 ⇒ 来源，staged ⇒ 下载到本机，
+ * `validationStatus: valid` ⇒ 平台检查过。⛔ 界面上一个代码字段名都不许出现。
+ */
+const PRESET_IMAGE_STEP_NAME: Readonly<Record<PresetImageStep, string>> = {
   // ⛔ 2026-09-07：不再是「配了没有」—— 出厂留空、平台按机器自动选，没配才是正常。
-  config: '检查链第 1 步 · 配置（这一档该用哪张镜像）',
-  registry: '检查链第 2 步 · registry（配的那张能不能解析到）',
-  lineage: '检查链第 3 步 · 血统（是不是平台自建的那张，不是上游镜像）',
-  registration: '检查链第 4 步 · 注册（进没进平台、是不是 valid）',
-  // ⚠️ 第 5 步**不是失败**：它只回答"本机铺开没有"。文案里一个"失败/错误"字样都不许有。
-  staged: '检查链第 5 步 · 本机铺开（未铺开只影响首个任务的耗时）',
+  config: '该用哪张镜像',
+  registry: '镜像仓库里有没有',
+  lineage: '来源对不对（是不是平台自己构建的那张）',
+  registration: '平台有没有检查过、能不能选用',
+  // ⚠️ 第 5 步**不是失败**：它只回答「下载到本机没有」。文案里一个「失败/错误」字样都不许有。
+  staged: '有没有下载到本机（没下载只影响首个任务的耗时）',
 };
+
+/**
+ * 「卡在第 N 步（共 5 步）」—— **序号必须自带上下文**（2026-09-11，用户裁决）。
+ *
+ * ⛔ 上一版恒为「检查链第 3 步 · 血统」。一个孤零零的序号回答不了用户真正在问的
+ * 两件事：**前面那几步过了没有**、**一共几步**。而后端一帧只报「链停在哪一步」，
+ * 那两件事恰恰是前端算得出、用户自己算不出的部分 —— 与端口那一项「被谁占了」同一条。
+ *
+ * ⚠️ **「卡住」与「走到」要分开。** 第 5 步 ok/info 时链是走完的，说「卡在第 5 步」
+ * 是在一台完全健康的机器上报警。判据是这一步的 status，不是它的序号。
+ *
+ * ⛔ 这条**不是**「把五步合并成一条」的许可（那条纪律不动）：每一步仍然各报各的
+ * `step` 与各自的下一步动作，这里只是把序号说成一句人话。
+ */
+export function presetImageStepText(step: PresetImageStep, status: DiagnoseStatus): string {
+  const index = PRESET_IMAGE_STEPS.indexOf(step);
+  const total = PRESET_IMAGE_STEPS.length;
+  const blocked = status !== 'ok' && status !== 'info';
+  const passed = index > 0 ? `前 ${String(index)} 步已通过，` : '';
+  const here = blocked ? '卡在' : '已到';
+  return (
+    `${passed}${here}第 ${String(index + 1)} 步（共 ${String(total)} 步）` +
+    ` · ${PRESET_IMAGE_STEP_NAME[step]}`
+  );
+}
 
 /** `4231 → '4.2s'`、`820 → '820ms'`。 */
 export function formatDurationMs(ms: number): string {
@@ -115,26 +150,43 @@ function itemFor(
     // 标签以**结论帧**为准（两帧的 label 同源，但结论帧是这一项自己最后说的那一次）。
     label: frame.label,
     status: frame.status,
-    summary: frame.summary,
-    ...(frame.hint === undefined ? {} : { hint: frame.hint }),
+    headline: frame.headline,
+    // ⚠️ 三层各归各位：headline 默认可见，detailText / nextStep / command 收进展开层。
+    //    ⛔ 不许在这里把它们拼回一句 —— 那正是被拆开的那个字段。
+    ...(frame.detailText === undefined ? {} : { detailText: frame.detailText }),
+    ...(frame.nextStep === undefined ? {} : { nextStep: frame.nextStep }),
+    ...(frame.command === undefined ? {} : { command: frame.command }),
     ...(frame.step === undefined
       ? {}
-      : { step: frame.step, stepText: PRESET_IMAGE_STEP_TEXT[frame.step] }),
+      : { step: frame.step, stepText: presetImageStepText(frame.step, frame.status) }),
     ...(frame.errorCode === undefined ? {} : { errorCode: frame.errorCode }),
     durationText: formatDurationMs(frame.durationMs),
   };
 }
 
-/** `'7 项正常 · 1 项提示 · 0 项警告 · 0 项失败（含超时）· 整轮 5.0s'`。 */
+/**
+ * 汇总那一行。
+ *
+ * ⛔ **为零的那几档不写出来。** 全绿时上一版渲染的是「8 项正常 · 0 项提示 · 0 项警告 ·
+ * 0 项失败（含超时）」—— 三个零占掉大半句话，而它们对用户的下一个动作没有任何区别。
+ * 判据是那条通用的：这个数字看完之后会做的下一件事有区别吗？没有就别占位置。
+ *
+ * ⚠️ **「含超时」四个字在有失败时不许省**：`failCount` 里混着 `timeout`（后端刻意的 ——
+ * 对整轮结论而言「答不上来」与「答坏了」都不是「好的」）。不写出来，用户会拿这个数字
+ * 跟逐项图标对不上。⇒ 它跟着 `failCount` 一起出现、一起消失。
+ */
 function summaryTextOf(done: DiagnoseDoneFrame): string {
-  return (
-    `${String(done.okCount)} 项正常 · ${String(done.infoCount)} 项提示 · ` +
-    // ⚠️ 「含超时」四个字不许省：`failCount` 里混着 `timeout`（后端刻意的——对整轮结论
-    //    而言"答不上来"与"答坏了"都不是"好的"）。不写出来，用户会拿它跟逐项图标对不上。
-    `${String(done.warnCount)} 项警告 · ${String(done.failCount)} 项失败（含超时）· ` +
-    // ⚠️ 八项**并行**，所以整轮 ≈ 最慢那项，不是各项之和。
-    `整轮 ${formatDurationMs(done.totalMs)}`
-  );
+  // ⚠️ 八项**并行**，所以整轮 ≈ 最慢那项，不是各项之和。
+  const elapsed = `整轮 ${formatDurationMs(done.totalMs)}`;
+  const bad = [
+    done.infoCount > 0 ? `${String(done.infoCount)} 项提示` : null,
+    done.warnCount > 0 ? `${String(done.warnCount)} 项警告` : null,
+    done.failCount > 0 ? `${String(done.failCount)} 项失败（含超时）` : null,
+  ].filter((x): x is string => x !== null);
+  if (bad.length === 0) {
+    return `${String(done.okCount)} 项全部正常 · ${elapsed}`;
+  }
+  return `${String(done.okCount)} 项正常 · ${bad.join(' · ')} · ${elapsed}`;
 }
 
 export function diagnosticsCardModel(state: DiagnoseRunState | undefined): DiagnosticsCardModel {

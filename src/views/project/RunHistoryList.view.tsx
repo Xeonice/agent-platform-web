@@ -16,6 +16,17 @@ export interface RunHistoryListProps {
   /** 展开全部 + 继续翻页。 */
   onLoadMore: () => void;
   onOpenTask?: (sandboxId: string) => void;
+  /**
+   * ★ 从列表行的 [查看原因] 进来的：**自动展开最近一次算失败的运行**。
+   *
+   * ⚠️ 这个 prop 是为了兑现一个承诺。按钮上写着「查看原因」，此前它只做了一件事 ——
+   * 切到详情视图，然后原因仍然折在某一行的 [详情] 里。用户点的是「原因」，拿到的是
+   * 「一个可能有原因的页面」。要么按钮别这么写，要么就真的把那条打开；这里选后者。
+   *
+   * ⚠️ 只是**初始值**：用户一旦自己点过任何一行的 [详情]，控制权就交回给用户，
+   * ⛔ 不许每次重渲染又把它抢回来。
+   */
+  focusLatestFailure?: boolean;
 }
 
 export function RunHistoryListView({
@@ -27,9 +38,23 @@ export function RunHistoryListView({
   loadingMore,
   onLoadMore,
   onOpenTask,
+  focusLatestFailure = false,
 }: RunHistoryListProps) {
-  const [showAll, setShowAll] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  // ⚠️ 两个 state 都是**「用户动过没有」**而不是「当前值」：`null` = 没动过，走自动推导。
+  //    直接用 useState(初值) 不行 —— 运行历史是异步来的，第一次渲染时 rows 还是空的，
+  //    初值那时候算出来永远是 null，等数据到了也不会再算一次（那正是"写好了没接线"）。
+  const [showAllOverride, setShowAllOverride] = useState<boolean | null>(null);
+  const [expandedOverride, setExpandedOverride] = useState<{ id: string | null } | null>(null);
+
+  // 最近一次**算失败**的运行（rows 已按时间倒序）。判据用 `countsTowardFailure` 而不是
+  // 配色/图标：跳过与错过不是失败，把它们当"原因"展开是答非所问。
+  const autoFailureId = focusLatestFailure
+    ? (rows.find((row) => row.outcome.countsTowardFailure)?.id ?? null)
+    : null;
+  // 那一条若不在最近 10 条里，顺带展开全部——否则自动展开的是一行看不见的东西。
+  const showAll =
+    showAllOverride ?? (autoFailureId !== null && !previewRows.some((r) => r.id === autoFailureId));
+  const expandedId = expandedOverride?.id ?? (expandedOverride === null ? autoFailureId : null);
   const visible = showAll ? rows : previewRows;
 
   return (
@@ -72,7 +97,9 @@ export function RunHistoryListView({
               row={row}
               expanded={row.id === expandedId}
               onToggleDetail={(id) => {
-                setExpandedId((prev) => (prev === id ? null : id));
+                setExpandedOverride((prev) => ({
+                  id: (prev === null ? autoFailureId : prev.id) === id ? null : id,
+                }));
               }}
               {...(onOpenTask === undefined ? {} : { onOpenTask })}
             />
@@ -86,7 +113,7 @@ export function RunHistoryListView({
             variant="ghost"
             size="sm"
             onClick={() => {
-              setShowAll(true);
+              setShowAllOverride(true);
             }}
             data-testid="run-history-show-all"
           >
@@ -100,7 +127,7 @@ export function RunHistoryListView({
             size="sm"
             disabled={loadingMore}
             onClick={() => {
-              setShowAll(true);
+              setShowAllOverride(true);
               onLoadMore();
             }}
             data-testid="run-history-show-all"

@@ -3,23 +3,23 @@ import { provisionPresetImage } from '@/services/api/system.service';
 import type { ProvisionStageFrame } from '@/types/sse-protocol';
 
 /**
- * [准备镜像] —— 让平台把预制镜像搬到位（P21-8 §2 ⇒ 新判据）。
+ * [准备镜像] —— 让平台把预制镜像放到位（P21-8 §2 ⇒ 新判据）。
  *
- * ⚠️ **它只管这一次搬运的过程，不管「搬完了没有」这个结论。** 结论的唯一出处是诊断第 ⑧ 项
- * ——搬完之后要重跑一次检查，而不是由本 hook 自行宣布就绪。两个真相源会打架：本 hook 说
- * 成功了、检查链仍是红的，用户不知道该信谁。⇒ `onFinished` 交给调用方去触发重新检测。
+ * ⚠️ **它只管这一次搬运的过程，不管「搬完了没有」这个结论。** 结论的唯一出处是镜像检查
+ * 那一项 —— 搬完之后要重跑一次检查，而不是由本 hook 自行宣布就绪。两个真相源会打架：
+ * 本 hook 说成功了、检查仍是红的，用户不知道该信谁。⇒ `onFinished` 交给调用方去触发重新检测。
  */
 
 const STAGE_LABEL: Readonly<Record<ProvisionStageFrame['stage'], string>> = {
-  plan: '判断字节够不够得着',
-  fetch: '取资产',
-  verify: '校验 sha256',
+  plan: '看这台机器够不够得着镜像',
+  fetch: '下载',
+  verify: '校验完整性',
   load: '装载镜像',
   // ⚠️ **不写死终点**（2026-09-10）：这一步在 `local-docker`/`release-asset` 那几条路上
-  //    是 push 到 registry，而在 `provider-stage` 那条上是 provider 自己拉进本机镜像库
-  //    ——⛔ 一个「推送到 registry」会把后者说成一件它没做的事。终点由后端那句 message 说
-  //    （它带着 `plan.to`），这里只给一个不预设去向的阶段名。
-  register: '铺到位',
+  //    是推到镜像仓库，而在另一条上是沙箱环境自己拉进本机镜像库 ——⛔ 一个「推送到镜像
+  //    仓库」会把后者说成一件它没做的事。终点由后端那句 message 说（它带着真实去向），
+  //    这里只给一个不预设去向的阶段名。
+  register: '放到位',
 };
 
 export interface UsePresetImageProvisionResult {
@@ -74,11 +74,11 @@ export function usePresetImageProvision(
           if (controller.signal.aborted) return;
           setProvisioning(false);
           if (f.ok) {
-            setStatusText('已搬到位，正在重新检测…');
+            setStatusText('已放到位，正在重新检测…');
             onFinished();
           } else {
             // ⛔ 失败时**保留最后一条阶段文案**：它说的是失败在哪一步，而那正是下一步的依据。
-            setError(f.error ?? '搬运失败，但后端没有说明原因');
+            setError(f.error ?? '准备失败，但平台没有说明原因');
           }
         },
       },
@@ -86,7 +86,7 @@ export function usePresetImageProvision(
     ).catch((e: unknown) => {
       if (controller.signal.aborted) return;
       setProvisioning(false);
-      setError(e instanceof Error ? e.message : '搬运失败');
+      setError(e instanceof Error ? e.message : '准备镜像失败');
     });
   }, [onFinished]);
 

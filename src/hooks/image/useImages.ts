@@ -186,10 +186,13 @@ export interface ImagesManager {
   dismissCompare: () => void;
   adopting: boolean;
 
-  /** 一键复制钉定 digest（"你跑的到底是哪个镜像"的唯一答案，得能贴进工单）。 */
+  /** 一键复制锁定的那一版（"你跑的到底是哪个镜像"的唯一答案，得能贴进工单）。 */
   copyDigest: (digest: string) => void;
-  /** ❌ 档唯一的出路（P22 §1：禁止只报错不给动作）。 */
+  /** ❌ 档唯一的出路（P22 §1：禁止只报错不给动作）。**打开常驻面板**，不是 toast。 */
   viewRequirements: () => void;
+  /** 镜像要求面板开着没有（用户改 Dockerfile 时要对照着看，⛔ 不许自动消失）。 */
+  requirementsOpen: boolean;
+  closeRequirements: () => void;
 
   // —— 运行参数 ——
   envEditor: EnvEditorState | null;
@@ -208,23 +211,58 @@ function issuesToText(issues: readonly ValidationIssueDto[]): string[] {
   return issues.map((i) => i.message);
 }
 
-/** 后端信封 → 一句人话。顶层码走 P22 §1 的那张表（`describeSandboxError`），不裸抛码。 */
+/**
+ * 镜像页自己的 `INVALID_STATE` 文案。
+ *
+ * ⛔ **这一条刻意不复用 `describeSandboxError`**（那张表给的是「状态已变化，刷新后按新状态
+ * 操作」+ 一颗 [刷新重试]）。镜像页上这个码有**三种**触发，而**三种的下一步都不是刷新**：
+ *   · 「还有 N 个 Task 在使用这个版本…请改为禁用」（删除被拒）；
+ *   · 「以 digest 注册的行没有 tag 可以重新解析」（[检查更新] 用错了地方）；
+ *   · 「平台还没有可用的预制镜像作为来源基准…通常是开机播种失败」（注册被拒，而且这一条
+ *     **根本不是用户能修的**）。
+ * 刷一万次都不会变，而后端每一条 message 里都写着真正的下一步 —— 所以这里把它原样交出去，
+ * 只在它为空时才给一句不撒谎的兜底。
+ */
+const IMAGE_INVALID_STATE_TITLE = '⚠️ 这一步现在做不了';
+const IMAGE_INVALID_STATE_FALLBACK =
+  '平台拒绝了这次操作，但没有给出原因。刷新页面不一定有用 —— 到系统状态页看看，或联系管理员。';
+
+/**
+ * 后端信封 → 一句人话。顶层码走 P22 §1 的那张表（`describeSandboxError`），不裸抛码。
+ *
+ * ⚠️ **`detail` 必须传下去**（2026-09 修）：命中 `COPY_TABLE` 的码走的是表里那段**静态**
+ * 文案，后端 message 会被整段丢掉。而镜像这条链上后端 message 恰恰是**唯一**说得出
+ * 「N 个 Task 在用它」「平台的预制镜像还没播上种」的地方 —— 丢掉它，用户得到的是一句通用话。
+ */
 function imageErrorToast(error: unknown, fallback: string): void {
   if (error instanceof ApiErrorException) {
-    const copy = describeSandboxError({
-      code: error.envelope.code,
-      message: error.envelope.message,
+    const { code, message } = error.envelope;
+    if (code === 'INVALID_STATE') {
+      toast.error(IMAGE_INVALID_STATE_TITLE, {
+        description: message === '' ? IMAGE_INVALID_STATE_FALLBACK : message,
+      });
+      return;
+    }
+    const copy = describeSandboxError({ code, message, detail: message });
+    toast.error(copy.title, {
+      description:
+        copy.detail === undefined || copy.detail === copy.advice
+          ? copy.advice
+          : `${copy.advice}\n${copy.detail}`,
     });
-    toast.error(copy.title, { description: copy.advice });
     return;
   }
   toast.error(fallback);
 }
 
 const REVALIDATE_TOAST: Record<ImageValidationStatus, string> = {
-  valid: '重新验证通过：该 digest 仍满足平台约定。',
+  // ⚠️ **不许说成「仍满足平台约定」**：`revalidateImage` 只跑了 `spec.validate`
+  //    （启动命令 / 工作目录 / 预装声明），**没有**跑来源比对（`lineageVerdict`）——
+  //    那件事只在注册时判过一次。说"全部约定都还满足"是把没验的说成验过了。
+  valid:
+    '这一版仍通过平台校验（启动命令、工作目录、预装声明）。本次没有重新检查它是从哪张预制镜像改来的 —— 那是注册时判定的。',
   warning: '重新验证通过，但有警告——展开卡片看后果说明。',
-  invalid: '重新验证不通过：平台校验规则已更新，该镜像现已不满足约定。',
+  invalid: '重新验证不通过：平台校验规则已更新，这一版现已不满足要求。',
 };
 
 export function useImageManager(): ImagesManager {
@@ -408,7 +446,7 @@ export function useImageManager(): ImagesManager {
         if (!result.created) {
           // 重复注册**不当错误吓唬用户**（P21-4 §6）：就地提示 + [定位到该镜像]。
           setDuplicate({
-            message: `该镜像已注册（${result.manifest.ref}，钉定 ${shortenDigest(result.manifest.digest)}）。`,
+            message: `该镜像已注册（${result.manifest.ref}，锁定在 ${shortenDigest(result.manifest.digest)}）。`,
             imageId: result.manifest.imageId,
           });
           return;
@@ -433,7 +471,7 @@ export function useImageManager(): ImagesManager {
           return;
         }
         closeRegister();
-        toast.success(`已注册并钉定 ${shortenDigest(result.manifest.digest)}`);
+        toast.success(`已注册，锁定在 ${shortenDigest(result.manifest.digest)}`);
       },
       onError: (error) => {
         imageErrorToast(error, '注册失败，请稍后重试。');
@@ -457,7 +495,7 @@ export function useImageManager(): ImagesManager {
             // 只能说"上游换人了"——这正是 [重新验证] 与 [检查更新] 分成两颗按钮的意义。
             setUpstreamByManifest((prev) => ({ ...prev, [manifestId]: outcome.upstreamDigest }));
             toast.info(
-              `上游该 tag 已指向新镜像（${shortenDigest(outcome.upstreamDigest)}）；当前版本的结论未变。点 [检查更新] 看对比。`,
+              `镜像下载源上这个 tag 已经指向另一版（${shortenDigest(outcome.upstreamDigest)}）；你正在用的这一版结论未变。点 [检查更新] 看对比。`,
             );
             return;
           }
@@ -477,8 +515,12 @@ export function useImageManager(): ImagesManager {
       checkUpdateMutation.mutate(manifestId, {
         onSuccess: (result) => {
           if (result.upstream === null) {
+            // ⛔ **不许说「当前锁定的那一版仍然可以正常拉取」**：`checkImageUpdate` 只发现
+            //    了 tag 404，它**从没去查过那个 digest 还在不在**（平台恰恰有
+            //    `IMAGE_DIGEST_GONE` 专门管"锁定的那一版被上游回收了"）。把"没查过"
+            //    说成"没问题"，正是这一页反复要消灭的那种话。
             toast.info(
-              '上游已经找不到这个 tag 了。当前钉定的版本仍然可以正常拉取，只是没有可更新的目标。',
+              '镜像下载源上已经找不到这个 tag 了，所以没有可更新的目标。平台没有顺带去查你锁定的那一版还在不在源里 —— 那要等下一次真的拉取时才知道。',
             );
             return;
           }
@@ -639,7 +681,7 @@ export function useImageManager(): ImagesManager {
         // 非安全上下文里 `navigator.clipboard` 干脆不存在，读 `.writeText` 当场抛 TypeError；
         // 连同权限被拒的那条路一起接住——静默失败会让用户以为复制到了，粘出来却是上一次的东西。
         await navigator.clipboard.writeText(digest);
-        toast.success('digest 已复制。');
+        toast.success('版本号已复制。');
       } catch {
         toast.error('复制失败（需要 HTTPS 或 localhost 才允许自动复制），请手动选中复制。');
       }
@@ -647,18 +689,33 @@ export function useImageManager(): ImagesManager {
   }, []);
 
   /**
-   * [查看镜像要求]。⚠️ 这三条是**后端校验真正在判的东西**（04 §7 / `oci-image-spec.provider.ts`：
-   * `IMAGE_TMUX_MISSING` / `IMAGE_ENTRYPOINT_INVALID` / `RUNTIME_NOT_PREINSTALLED`），
-   * 不是一段泛泛的"请使用合规镜像"。写错一条，用户照着改了还是过不了。
+   * [查看镜像要求] —— **打开常驻面板，不是弹 toast**。
+   *
+   * ⛔ **原来是 4 秒就消失的 toast，那是形态错了**：这是用户改 Dockerfile 时要**对照着看**
+   *    的清单，看一眼记不住四条。面板由 `requirementsOpen` 控制，用户自己关。
+   *
+   * ⛔ **原来那三条里第 ① 条教了一件平台已经不做的事**：「必须声明 label
+   *    `platform.tmux=true`」—— 后端 2026-08 **删掉了这个检查**
+   *    （`oci-image-spec.provider.ts`：标签会被派生镜像继承，一张 `RUN rm /usr/bin/tmux`
+   *    的镜像照样在声明 `platform.tmux=true`，所以那个判据本身就是假的）。
+   *    照着打这个标签的人，注册照样被拒 —— 而他以为自己合规了。
+   * ⛔ **而真正会拒他的那一条一个字都没提**：`IMAGE_BASE_REQUIRED`（必须从平台预制镜像
+   *    改起，`image-application.service.ts#lineageVerdict`）。看完"要求"、照做、仍然被拒。
+   * ⛔ **原第 ③ 条的「实测约 12.5 分钟」是 aio 档的数字**，当成全平台通用说违反
+   *    「耗时必须按档说」；这一页拿不到档位，⇒ 只说"会明显变慢"，不点数字。
+   *
+   * 现在的四条与后端逐条对得上：
+   *   ① `IMAGE_BASE_REQUIRED`（血统 / 来源，按镜像层比对）
+   *   ② `IMAGE_ENTRYPOINT_INVALID`（Entrypoint|Cmd + WorkingDir）
+   *   ③ tmux —— **注册期不判**，运行期实测（`IMAGE_CONTRACT_VIOLATION`）
+   *   ④ `RUNTIME_NOT_PREINSTALLED`（warning，不阻断）
    */
+  const [requirementsOpen, setRequirementsOpen] = useState(false);
   const viewRequirements = useCallback(() => {
-    toast.info('平台对镜像的三条要求', {
-      description:
-        '① 必须声明 label `platform.tmux=true`（断线恢复靠它，缺了不做静默降级）；' +
-        '② 必须有 `Entrypoint` 或 `Cmd`，且有 `WorkingDir`；' +
-        '③ 建议在 `platform.supportedRuntimes` 里声明的 runtime 都已预装 CLI——没预装只是 ⚠️ 警告，' +
-        '创建时现装可用，但按分钟计（实测约 12.5 分钟）。',
-    });
+    setRequirementsOpen(true);
+  }, []);
+  const closeRequirements = useCallback(() => {
+    setRequirementsOpen(false);
   }, []);
 
   // ——— 运行参数（env）———
@@ -874,6 +931,8 @@ export function useImageManager(): ImagesManager {
     adopting: activateMutation.isPending || registerMutation.isPending,
     copyDigest,
     viewRequirements,
+    requirementsOpen,
+    closeRequirements,
 
     envEditor,
     openEnvEditor,

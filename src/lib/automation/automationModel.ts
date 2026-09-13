@@ -8,7 +8,7 @@ import {
 } from '@/lib/automation/formatRunOutcome';
 import { describeSchedule } from '@/lib/automation/scheduleToCron';
 import { nextTriggerAt } from '@/lib/automation/nextTriggerAt';
-import { formatInZone } from '@/lib/automation/timeZone';
+import { formatInZone, zoneOffsetLabel } from '@/lib/automation/timeZone';
 import type { AutomationDto, AutomationRow, AutomationRunDto, RunRow } from '@/types/automation';
 
 /**
@@ -35,6 +35,7 @@ export function automationRow(
   });
   const presentation = describeLifecycle(lifecycle, dto.consecutiveFailures);
   const nextText = nextTriggerText(dto, nowMs, lifecycle);
+  const offsetText = zoneOffsetLabel(nowMs, dto.timezone);
 
   return {
     id: dto.id,
@@ -45,6 +46,8 @@ export function automationRow(
     summaryText: `${dto.runtime} · ${describeSchedule(dto.scheduleKind, dto.scheduleConfig)}`,
     ...(nextText === undefined ? {} : { nextTriggerText: nextText }),
     timezone: dto.timezone,
+    // IANA 名准确但不直观；补一个**实时算出的**偏移，让"早上 8 点是谁的早上 8 点"当场读懂。
+    ...(offsetText === undefined ? {} : { timezoneOffsetText: offsetText }),
     ...(dto.timezone === environmentTimeZone
       ? {}
       : {
@@ -112,6 +115,12 @@ export function runRows(runs: AutomationRunDto[], timeZone: string): RunRow[] {
       startedAtText,
       ...(duration === undefined ? {} : { durationText: duration }),
       ...(run.outputSummary === undefined ? {} : { outputSummary: run.outputSummary }),
+      // ⚠️ 这一行此前**漏了**：schema 解析了 `errorMessage`、类型里也有，就是没人取，
+      //    于是每一条失败记录的原因永远停在一句通用话上（"失败要说清失败在哪一步"）。
+      //    空串按缺席处理 —— 一个带标签的空块比没有更让人以为"后端坏了"。
+      ...(run.errorMessage === undefined || run.errorMessage === ''
+        ? {}
+        : { errorMessage: run.errorMessage }),
       ...(run.sandboxId === undefined ? {} : { sandboxId: run.sandboxId }),
       ...(webhookNote === undefined ? {} : { webhookNote }),
     };

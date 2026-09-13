@@ -79,7 +79,7 @@ function diagnoseRun(
               id: 'outbound-network',
               label: '外网连通',
               status: 'ok',
-              summary: '已重新检测',
+              headline: '已重新检测',
               durationMs: 293,
               detail: { results: rows },
             },

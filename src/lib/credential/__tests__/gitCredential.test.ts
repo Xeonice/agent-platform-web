@@ -73,9 +73,15 @@ describe('gitTestErrorMessage（errorCode → 人话，绝不含 ref 名）', ()
   it('CLONE_FAILED_NETWORK → 网络错误', () => {
     expect(gitTestErrorMessage('CLONE_FAILED_NETWORK')).toContain('网络');
   });
-  it('TIMEOUT（后端）/ TIMEOUT_LOCAL（前端 15s 兜底）→ 超时文案', () => {
+  it('TIMEOUT（后端）/ TIMEOUT_LOCAL（前端 15s 兜底）→ 超时文案，且**不臆造原因**', () => {
     expect(gitTestErrorMessage('TIMEOUT')).toContain('15 秒');
     expect(gitTestErrorMessage('TIMEOUT_LOCAL')).toContain('15 秒');
+    // ⛔ 超时 ≠ 知道为什么超时。原文写「仓库较大或网络较慢」是猜的：同样可能是 host 不可达、
+    //    凭证卡在交互式提问上、对端根本没监听。把猜测说成事实会把用户引到错的方向。
+    for (const code of ['TIMEOUT', 'TIMEOUT_LOCAL']) {
+      expect(gitTestErrorMessage(code)).not.toContain('仓库较大');
+      expect(gitTestErrorMessage(code)).not.toContain('网络较慢');
+    }
   });
   it('未知码 / undefined 走通用', () => {
     expect(gitTestErrorMessage('SOMETHING_NEW')).toBe('连接失败，请检查凭证与仓库地址后重试。');

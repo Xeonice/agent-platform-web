@@ -26,8 +26,8 @@ const LEVEL_ORDER: readonly ResourceLevel[] = ['ok', 'warn', 'critical'];
 const OVERALL_TEXT: Readonly<Record<ResourceLevel, string>> = {
   ok: '资源充足',
   // 三档各自一句，且**这一句要说出下一步动作**——"资源警告"四个字用户读完不知道要干嘛。
-  warn: '资源紧张，建议停止部分 Task',
-  critical: '资源耗尽，无法创建新 Task',
+  warn: '资源紧张，建议停掉一些任务',
+  critical: '资源耗尽，现在建不了新任务',
 };
 
 /**
@@ -102,7 +102,9 @@ function retainedModel(dto: SystemResourcesDto, now: Date): RetainedVolumeModel 
     count: r.count,
     level: r.level,
     sizeText: formatBytes(r.totalBytes),
-    shareText: `占 DATA_ROOT 的 ${String(r.percentOfDisk)}%`,
+    // ⚠️ 「DATA_ROOT」是运维方在 `.env` 里写的名字，界面上说「数据目录」；
+    //    括号里保留一次原名做桥接 —— 去掉它，看着界面找 `.env` 里那一行的人就断线了。
+    shareText: `占数据目录（DATA_ROOT）的 ${String(r.percentOfDisk)}%`,
     ...(countdown === undefined ? {} : { countdownText: countdown }),
     truncated: r.truncated,
   };

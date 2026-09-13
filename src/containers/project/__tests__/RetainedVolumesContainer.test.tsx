@@ -130,12 +130,15 @@ describe('RetainedVolumesContainer', () => {
     render(wrap(<RetainedVolumesContainer projectId="proj-A" projectName="acme-web" />));
 
     const empty = await screen.findByTestId('retained-volumes-empty');
-    expect(empty).toHaveTextContent('这个项目还没有已保留卷。');
-    expect(empty).toHaveTextContent('保留工作区卷');
+    // ⚠️ 全屏统一叫「保留下来的成果」（此前同一屏上有"数据卷/成果卷/已保留卷/工作区卷/保留卷"
+    //    五种叫法，而删除确认恰恰要靠这个词说清"留了什么"）。
+    expect(empty).toHaveTextContent('这个项目还没有保留下来的成果。');
+    expect(empty).toHaveTextContent('工作目录');
+    expect(empty.textContent).not.toContain('卷');
     expect(screen.queryByTestId('retained-volumes-totals')).toBeNull();
   });
 
-  it('⭐ 列表失败 ≠ 空态：给红字，不说"还没有已保留卷"', async () => {
+  it('⭐ 列表失败 ≠ 空态：给红字，不说"还没有保留下来的成果"', async () => {
     server.use(
       http.get(`${BASE}/api/retained-volumes`, () =>
         HttpResponse.json(
@@ -146,7 +149,8 @@ describe('RetainedVolumesContainer', () => {
     );
     render(wrap(<RetainedVolumesContainer projectId="proj-A" projectName="acme-web" />));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('读取保留卷失败');
+    // 按码查人话表；⛔ 后端 message 不上屏。
+    expect(await screen.findByRole('alert')).toHaveTextContent('服务出错了，稍后再试。');
     expect(screen.queryByTestId('retained-volumes-empty')).toBeNull();
   });
 
@@ -167,11 +171,17 @@ describe('RetainedVolumesContainer', () => {
     expect(hrefs[1]).toContain('rv-late');
   });
 
-  it('sandbox 已归档（弱引用断掉）→ 那条仍可下载与删除，不是坏行', async () => {
+  /**
+   * ⚠️ **弱引用断掉 ≠「已归档」。** 缺一个 sandboxId 只说明关联不上（任务被删了、
+   * 或这条记录本来就没记上 id），而这个平台根本没有归档功能（F21-6 §10 D 裁决不做）——
+   * 旧文案在指认一个不存在的状态。这条用例钉的是"说不知道"，不是"说没有"。
+   */
+  it('来源任务关联不上 → 说「关联不到」，那条仍可下载与删除，不是坏行', async () => {
     serveList([oneVolume({ sandboxId: undefined })]);
     render(wrap(<RetainedVolumesContainer projectId="proj-A" projectName="acme-web" />));
 
-    expect(await screen.findByText('来源任务已归档')).toBeInTheDocument();
+    expect(await screen.findByText(/关联不到来源任务/)).toBeInTheDocument();
+    expect(screen.queryByText(/已归档/)).toBeNull();
     expect(screen.getByTestId('retained-volume-download')).toHaveAttribute('href');
     expect(screen.getByRole('button', { name: '删除' })).toBeEnabled();
   });

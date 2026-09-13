@@ -31,8 +31,10 @@ export function ResourceConfirmView({
   return (
     <section data-testid="resource-confirm" className="flex flex-col gap-3">
       {isError ? (
+        // ⭐ 这一句是全篇最好的一句，⛔ 只换掉「水位」这个内部词、把关键半句加粗，别改它的意思。
         <p role="alert" data-testid="resource-error" className="text-sm text-red-500">
-          读不到本机资源水位 —— 这不代表资源充足，只代表这一项没查出来。
+          读不到本机资源占用 ——{' '}
+          <strong className="font-semibold">这不代表资源充足，只代表这一项没查出来。</strong>{' '}
           仍可继续初始化，装好后可在系统状态页再看。
         </p>
       ) : model === undefined ? (
@@ -81,8 +83,9 @@ export function ResourceConfirmView({
         <Button type="button" disabled={isFinishing} onClick={onFinish}>
           {isFinishing ? '正在完成…' : '确认，开始使用'}
         </Button>
+        {/* ⛔ 原文是「点它才会写入初始化完成标记」—— 那是在描述数据库里发生了什么。 */}
         <span className="text-xs text-muted-foreground">
-          点它才会写入初始化完成标记 —— 这是一次性操作，此后配置修改全部走「设置 → 系统状态」。
+          点它才算装完 —— 这一步只做一次，之后要改任何配置都在「设置 → 系统状态」里。
         </span>
       </div>
     </section>

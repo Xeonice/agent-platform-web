@@ -1,4 +1,4 @@
-// 已保留卷：列表 Query + 删除 mutation + 下载地址（F21-6 §3.3 / 审计 P2-5 三端点统一前缀）。
+// 「保留下来的成果」：列表 Query + 删除 mutation + 下载地址（F21-6 §3.3 / 审计 P2-5 三端点统一前缀）。
 //
 // ⚠️ 本 hook 同时承担 **DTO → 视图模型** 的转接：container 碰不到 `lib/`（eslint boundaries），
 // 而单位换算、倒计时取整、排序全在 `lib/project/retainedVolumeModel`。与 `useSystemStatusModels`
@@ -12,6 +12,7 @@ import {
 } from '@/services/api/retainedVolume.service';
 import { ApiErrorException } from '@/services/api/apiError';
 import { retainedVolumeRows, retainedVolumeTotals } from '@/lib/project/retainedVolumeModel';
+import { RETAINED_VOLUME_ERROR_COPY, projectErrorMessage } from '@/lib/project/projectErrorCopy';
 import type { RetainedVolumeRow, RetainedVolumeTotals } from '@/types/retainedVolume';
 
 export const retainedVolumeKeys = {
@@ -20,17 +21,25 @@ export const retainedVolumeKeys = {
   list: (projectId: string) => ['retained-volumes', 'list', projectId] as const,
 };
 
-/** 后端信封 → 人话。裸抛 `HTTP 500` 给用户看没有意义（10A E-5 同源）。 */
+/**
+ * 后端信封 → 人话。裸抛 `HTTP 500` 给用户看没有意义（10A E-5 同源）。
+ *
+ * ★ **两处都改了判据：**
+ *   ① 「已经不存在」此前读的是 `httpStatus === 404` —— 而这条路上的 404 有**两种**：
+ *      记录真的没了（`NOT_FOUND`），和记录还在、只是目录被清了（`VOLUME_ARCHIVE_MISSING`，
+ *      后端本轮补的码）。后者说成"已经不存在"是错的：那一条还在列表里、还占着名额，
+ *      用户该做的是把它删掉，而不是等它自己消失。⇒ 读码，不读状态码。
+ *   ② 兜底不再回落 `envelope.message`（那个中文兜底恒不执行，见 `lib/_shared/errorCopy`）。
+ */
 export function describeRetainedVolumeError(error: unknown): string | undefined {
   if (error === null || error === undefined) return undefined;
-  if (error instanceof ApiErrorException) {
-    if (error.httpStatus === 404) {
-      // 已被 VolumeReaper 清掉、或另一个标签页刚删过。**不是错误，是竞态**。
-      return '这个保留卷已经不存在了（可能刚被自动清理）。';
-    }
-    return error.envelope.message !== '' ? error.envelope.message : '操作失败，请稍后重试。';
-  }
-  return '网络错误，请稍后重试。';
+  if (!(error instanceof ApiErrorException)) return '网络不通，请稍后再试。';
+  return projectErrorMessage(
+    error.envelope.code,
+    error.envelope.traceId,
+    '操作失败，请稍后重试。',
+    RETAINED_VOLUME_ERROR_COPY,
+  );
 }
 
 export interface UseRetainedVolumesResult {

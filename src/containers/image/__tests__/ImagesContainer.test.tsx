@@ -237,7 +237,11 @@ describe('ImagesContainer · 注册弹窗', () => {
       expect(screen.getByTestId('validation-result')).toHaveAttribute('data-status', 'invalid');
     });
     expect(screen.queryByRole('button', { name: '保存' })).toBeNull();
-    expect(screen.getByRole('button', { name: '查看镜像要求' })).toBeInTheDocument();
+    // ⚠️ 两处都有 [查看镜像要求]：结论区那颗（❌ 的出路）+ 弹窗顶部硬约束那一句里的链接
+    //    （注册**前**就说清"必须从平台预制镜像改起"）。两颗都要在。
+    expect(screen.getAllByRole('button', { name: '查看镜像要求' }).length).toBeGreaterThanOrEqual(
+      2,
+    );
 
     fireEvent.change(input, { target: { value: 'docker.io/a/b:v1x' } });
     fireEvent.click(screen.getByRole('button', { name: '验证' }));
@@ -414,6 +418,112 @@ describe('ImagesContainer · 删除', () => {
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '删除镜像版本' })).toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * ⭐ 任务一 / 任务二：注册前就把**硬约束**说清，并把 [查看镜像要求] 从 4 秒的 toast
+ * 改成改 Dockerfile 时可以一直开着的**常驻面板**。
+ */
+describe('ImagesContainer · 镜像要求（注册前就说 + 常驻面板）', () => {
+  /**
+   * ⛔ **此前注册前一个字都没提硬约束** ⇒ 每个新用户都必然先失败一次：
+   * 注册弹窗只写「须兼容 OCI 标准；验证会检查可达性及依赖项」，而真正会拒绝他的
+   * `IMAGE_BASE_REQUIRED`（必须从平台预制镜像改起）一个字都没有。
+   * MUTATION：删掉 `register-lineage-constraint` 那一段 ⇒ 本条红。
+   */
+  it('⭐ 注册弹窗在验证之前就说明「必须从平台预制镜像改起」', async () => {
+    seedList([manifest({ id: 'm1', imageId: 'i1' })]);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '+ 注册新镜像' }));
+    const hint = screen.getByTestId('register-lineage-constraint');
+    expect(hint).toHaveTextContent('必须从平台的预制镜像改起');
+    // 「按镜像内容比对」这半句不能省：不说的话，被拒之后最自然的动作是去改标签。
+    expect(hint).toHaveTextContent('改标签、改名都不算数');
+  });
+
+  /** 空态是很多人第一次接触"注册"这件事的地方，同样要前置。 */
+  it('⭐ 一张都没注册时，空态也说明这条硬约束', async () => {
+    seedList([]);
+    renderPage();
+    expect(await screen.findByTestId('images-empty-constraint')).toHaveTextContent(
+      '必须从平台的预制镜像改起',
+    );
+  });
+
+  /**
+   * ⛔ **旧的三条要求教了一件平台已经不做的事**：「必须声明 label `platform.tmux=true`」——
+   * 后端 2026-08 删了那个检查（标签会被派生镜像继承，因而会说谎）。照着打标签的人注册
+   * 照样被拒，而他以为自己合规了。
+   * MUTATION：把面板里第 ③ 条改回"必须声明 platform.tmux=true" ⇒ 本条红。
+   */
+  it('⭐ [查看镜像要求] 打开常驻面板：四条齐、⛔ 不再教 platform.tmux=true', async () => {
+    seedList([]);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '查看镜像要求' }));
+    const panel = await screen.findByTestId('image-requirements-panel');
+    // 真正会拒绝用户的那一条（来源/血统）必须在，而旧版三条里它一个字都没有。
+    expect(within(panel).getByTestId('image-requirement-lineage')).toHaveAttribute(
+      'data-blocking',
+      'true',
+    );
+    expect(within(panel).getByTestId('image-requirement-entrypoint')).toBeInTheDocument();
+    expect(within(panel).getByTestId('image-requirement-tmux')).toHaveAttribute(
+      'data-blocking',
+      'false',
+    );
+    expect(within(panel).getByTestId('image-requirement-preinstall')).toBeInTheDocument();
+    expect(panel).not.toHaveTextContent('platform.tmux=true');
+    // ⛔ 「12.5 分钟」是 aio 那一档的数字（耗时必须按档说），这里拿不到档 ⇒ 不点数字。
+    expect(panel).not.toHaveTextContent('12.5');
+  });
+
+  /** 常驻：注册弹窗开着时它同屏可读，且不会自己消失。 */
+  it('⭐ 面板与注册弹窗同屏共存，只有 [关闭] 才让它消失', async () => {
+    seedList([manifest({ id: 'm1', imageId: 'i1' })]);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '+ 注册新镜像' }));
+    fireEvent.click(within(screen.getByTestId('register-lineage-constraint')).getByRole('button'));
+    const panel = await screen.findByTestId('image-requirements-panel');
+    expect(screen.getByRole('dialog', { name: '注册新镜像' })).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('button', { name: '关闭' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('image-requirements-panel')).toBeNull();
+    });
+  });
+});
+
+/**
+ * ⭐ 任务四：`derivedFromDigest` 一直在 DTO 里，此前一处都没渲染 —— 用户在这一页拿到 ✅，
+ * 到建任务时才撞 `IMAGE_PROVIDER_MISMATCH`。
+ */
+describe('ImagesContainer · 来源如实展示', () => {
+  it('⭐ 记下了来源 ⇒ 卡上说它从哪一张预制镜像改来的', async () => {
+    seedList([manifest({ id: 'm1', imageId: 'i1', isBuiltin: false })]);
+    renderPage();
+    const row = await screen.findByTestId('image-lineage');
+    expect(row).toHaveAttribute('data-lineage', 'derived');
+    expect(row).toHaveTextContent('来源：');
+  });
+
+  /** ⚠️ 「不知道」不能说成「没有」，⛔ 也不许前端替它算一个兼容性结论。 */
+  it('⭐ 没记下来源 ⇒ 说「来源未确定」，并说清这不等于它没有来源', async () => {
+    seedList([manifest({ id: 'm1', imageId: 'i1', isBuiltin: false, derivedFromDigest: null })]);
+    renderPage();
+    const row = await screen.findByTestId('image-lineage');
+    expect(row).toHaveAttribute('data-lineage', 'unknown');
+    expect(row).toHaveTextContent('来源未确定');
+    expect(row).toHaveTextContent('这不等于它没有来源');
+    expect(row).not.toHaveTextContent('不兼容');
+  });
+
+  /** 预置镜像上的 `null` 是**事实**（它就是起点），⛔ 不许与"没记下来"合成一句。 */
+  it('⭐ 预置镜像：`derivedFromDigest === null` 是事实，不是"未确定"', async () => {
+    seedList([manifest({ id: 'm1', imageId: 'i1', isBuiltin: true, derivedFromDigest: null })]);
+    renderPage();
+    const row = await screen.findByTestId('image-lineage');
+    expect(row).toHaveAttribute('data-lineage', 'anchor');
+    expect(row).not.toHaveTextContent('来源未确定');
   });
 });
 

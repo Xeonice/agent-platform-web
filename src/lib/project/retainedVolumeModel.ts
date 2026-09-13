@@ -1,4 +1,5 @@
-// 保留卷列表的视图模型（F21-6 §3.3「已保留卷」/ P20 §6 决策 2 / 10 §6「保留卷的打包口径」）。
+// 「保留下来的成果」列表的视图模型（F21-6 §3.3 / P20 §6 决策 2 / 10 §6「保留卷的打包口径」）。
+// ⚠️ 屏上一律叫「保留下来的成果」，`volume` / 「卷」是内部词，⛔ 不上屏。
 //
 // 纯函数：DTO[] + 一个注入的"现在" → 可直接渲染的行。**所有文案在这里定，view 只摆位置**
 // ——倒计时要一个可注入的时钟（否则测不了边界），而 view 层连 `new Date()` 都不该有。
@@ -35,6 +36,28 @@ const SOURCE_LABEL: Readonly<Record<RetainedVolumeSource, string>> = {
 };
 
 /**
+ * 来源任务这一行。
+ *
+ * ★ **`sandboxId` 缺席只说明「关联不上」，⛔ 不等于「已归档」。**
+ *   旧文案是「来源任务已归档」—— 那是把"不知道"说成了一个具体状态。缺一个 id 的原因
+ *   可能是任务被删了、可能是后端这条记录本来就没记上、也可能是那次登记发生在
+ *   `sandbox_id` 这一列存在之前。归档只是其中一种，而且这个平台**根本没有归档功能**
+ *   （F21-6 §10 D 已裁决不做）—— 界面在指认一个不存在的状态。
+ *
+ * ⚠️ 同时**不再把整串裸 UUID 当句子上屏**：`来源任务 7f3a-4b1c-…-9e02` 占满一行，
+ *   而用户既搜不了也点不了。这里只留前 8 位供人肉对号，完整 id 仍在 `sandboxId` 字段里
+ *   （[打开任务] 这类入口要用），由 view 挂到 `title` 上给需要的人。
+ */
+const SHORT_ID_CHARS = 8;
+
+function originText(sandboxId: string | undefined): string {
+  if (sandboxId === undefined) return '关联不到来源任务（可能已被删除）';
+  const short =
+    sandboxId.length > SHORT_ID_CHARS ? `${sandboxId.slice(0, SHORT_ID_CHARS)}…` : sandboxId;
+  return `来自任务 ${short}`;
+}
+
+/**
  * 单条 DTO → 行。`now` 由 hook 注入（15：时钟不进 lib，否则倒计时的边界值没法测）。
  */
 export function retainedVolumeRow(dto: RetainedVolumeDto, now: Date): RetainedVolumeRow {
@@ -51,7 +74,7 @@ export function retainedVolumeRow(dto: RetainedVolumeDto, now: Date): RetainedVo
   return {
     id: dto.id,
     ...(dto.sandboxId === undefined ? {} : { sandboxId: dto.sandboxId }),
-    originText: dto.sandboxId === undefined ? '来源任务已归档' : `来源任务 ${dto.sandboxId}`,
+    originText: originText(dto.sandboxId),
     sourceText: SOURCE_LABEL[dto.source],
     retainedAtText: formatStamp(dto.retainedAt),
     diskText: formatVolumeBytes(dto.diskBytes),

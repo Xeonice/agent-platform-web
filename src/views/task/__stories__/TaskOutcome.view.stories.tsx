@@ -62,7 +62,7 @@ export const ExitCodeMissing: Story = {
       tone: 'failed',
       title: '⛔ 任务被终止',
       advice:
-        '本次没有拿到退出码——进程被信号终止（超时强杀 / OOM / 手动终止）时不会留下退出码，已按**非零退出**处理。',
+        '本次没有拿到退出码——进程被信号终止（超时强杀 / OOM / 手动终止）时不会留下退出码，已按非零退出处理。',
       exitCodeLabel: '未知（进程被信号终止，没有退出码）',
       exitCodeMissing: true,
     },
@@ -77,7 +77,7 @@ export const TimedOut: Story = {
       tone: 'failed',
       title: '⏱️ 任务超时，已被强制终止',
       advice:
-        '任务运行超过设定的超时上限，已被平台强制终止。可以调大超时档位后重跑。 本次没有拿到退出码——进程被信号终止（超时强杀 / OOM / 手动终止）时不会留下退出码，已按**非零退出**处理。',
+        '任务运行超过设定的硬超时上限，已被平台强制终止。可以调大超时档位后重跑。 本次没有拿到退出码——进程被信号终止（超时强杀 / OOM / 手动终止）时不会留下退出码，已按非零退出处理。',
       exitCodeLabel: '未知（进程被信号终止，没有退出码）',
       exitCodeMissing: true,
       diagnosticCode: 'TASK_TIMEOUT',

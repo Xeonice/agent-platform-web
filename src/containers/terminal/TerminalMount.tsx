@@ -7,7 +7,11 @@ import { useSandboxTerminalSocket } from '@/hooks/terminal/useSandboxTerminalSoc
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
 import { TerminalPaneView } from '@/views/terminal/TerminalPane.view';
 import { ConnectionStatusView } from '@/views/terminal/ConnectionStatus.view';
-import type { TerminalClientFrame, TerminalServerFrame } from '@/types/ws-protocol';
+import type {
+  TerminalClientFrame,
+  TerminalServerFrame,
+  TerminalShellSummary,
+} from '@/types/ws-protocol';
 import type { TerminalSocketConfig } from '@/types/terminal';
 import { TERMINAL_EXIT_ATTACH_FAILED } from '@/types/terminal';
 
@@ -15,9 +19,41 @@ export interface TerminalMountProps {
   sessionId: string;
   sandboxId: string;
   socketConfig: TerminalSocketConfig;
+  /**
+   * 这个标签在不在前台（08 §5.2）。**隐藏由外层用 display 做，实例一律不销毁** ——
+   * 这里只需要知道"我刚回到前台"，好补一次 fit。
+   *
+   * ⚠️ 为什么补这一次 fit 不能省：容器 `display:none` 时宽度是 0，`doFit` 会直接跳过
+   * （08 §4.1 纪律 1「隐藏容器不 fit」）。切回来时若不补，xterm 还按隐藏前的行列数
+   * 渲染，而 tmux 用绝对定位画状态栏 —— 屏幕上就是一串错位的重复状态栏。
+   */
+  active?: boolean;
+  /** `session` 首帧带回后端分配的 shellId 时回调（用户终端标签才有）。 */
+  onShellId?: (shellId: string) => void;
+  /**
+   * 后端推来的「这个 Task 下还有哪几个用户终端」（06 §5.5/§5.6）。
+   * 每条带 `shellId` + 可选的 `runtimeId`（里面跑的是哪个 CLI；缺席 = 纯终端）。
+   * `null` = 问不出来。⚠️ 只有 Agent 那条连接会收到这一帧。
+   */
+  onShells?: (shells: TerminalShellSummary[] | null) => void;
+  /**
+   * 把这个标签的 `send` 交给装配层（传 `null` = 我卸载了）。
+   *
+   * ⚠️ 它存在只为一件事：**关掉一个已经被 LRU 淘汰的标签**。那个标签没有连接，
+   * 而销毁它的 tmux 会话需要一条通往同一沙箱的 `/terminal` 连接 —— 装配层于是从
+   * 还挂着的标签里借一条代发 `close_shell`（帧里带 shellId，见 10 §7.4）。
+   */
+  registerSend?: (send: ((frame: TerminalClientFrame) => boolean) | null) => void;
 }
 
-export default function TerminalMount({ sessionId, socketConfig }: TerminalMountProps) {
+export default function TerminalMount({
+  sessionId,
+  socketConfig,
+  active = true,
+  onShellId,
+  onShells,
+  registerSend,
+}: TerminalMountProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const term = useTerminalInstance();
   const sendRef = useRef<(frame: TerminalClientFrame) => boolean>(() => false);
@@ -45,18 +81,41 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
     (frame: TerminalServerFrame): void => {
       // data → 写屏；exit → 展示退出码（08 §8 第三类）；session/pong 由 ptySocket 内部处理。
       if (frame.type === 'data') term.write(sessionId, frame.data);
-      else if (frame.type === 'exit') {
-        term.write(sessionId, `\r\n[进程已退出，code ${String(frame.code)}]\r\n`);
+      else if (frame.type === 'session') {
+        // 用户终端标签：记住后端给这个标签分的 tmux 会话 id。⚠️ 它**不回灌进 query**
+        // （那会触发一次连接重建，见下面 fittedSize 处的自喂循环注释）——PtySocket 自己
+        // 在重连时会带上它，而装配层记下来是为了这个标签被淘汰后**重建**时能接回去。
+        if (frame.shellId !== undefined) onShellIdRef.current?.(frame.shellId);
+      } else if (frame.type === 'shells') {
+        // ⚠️ `null` 原样往上传，**不许在这里折成 `[]`**：那就是把「问不出来」说成
+        //    「没有」，而两者在界面上是两句不同的话（06 §5.5 三态）。
+        onShellsRef.current?.(frame.shells);
+      } else if (frame.type === 'exit') {
         // ⚠️ 两个码语义不同,不能合并成一句话：
-        //  · `-2`（TERMINAL_EXIT_ATTACH_FAILED）= 平台**没能附着上**，实例多半已不在
+        //  · `-2`（TERMINAL_EXIT_ATTACH_FAILED）= 平台**没能附着上**，运行环境多半已不在
         //    ⇒ 重连不会有结果，出路是重新发起任务；
         //  · `-1` = 进程真的退出了但退出码未知（被信号杀死，例如 OOM）⇒ 任务跑过、
-        //    可能有日志，说"实例不在了"是假话。
+        //    可能有日志，说"运行环境不在了"是假话。
         // 第一版把两者都当 `-1` 处理，于是一个被 OOM kill 的 agent 会被告知
         // "实例可能已不存在"——后端已改用独立哨兵码，前端跟上。
+        const attachFailed = frame.code === TERMINAL_EXIT_ATTACH_FAILED;
+        /**
+         * ⛔ **`-2` 时不往终端里写「[进程已退出，code -2]」。**
+         *
+         * `-2` 是**平台自造的哨兵码**，不是任何进程的退出码 —— 这一支上根本没有进程退出
+         * 这回事（平台压根没附着上）。把它印成"进程已退出，code -2"是在终端里写一句假话，
+         * 而且是用户最可能截图去搜的那一句。上面那个区分本来只落到了状态条，屏幕上
+         * 这一行仍然把两支混成一样。
+         *
+         * ⇒ `-2` 只走状态条（`sessionEndedMessage`，说清"没能连上、重连没用"）。
+         *   `-1` 与真实退出码照旧写屏：那两支确实有一个进程退出过。
+         */
+        if (!attachFailed) {
+          term.write(sessionId, `\r\n[进程已退出，code ${String(frame.code)}]\r\n`);
+        }
         setEndedMessage(
-          frame.code === TERMINAL_EXIT_ATTACH_FAILED
-            ? '终端会话已结束——没能连上这个任务的实例（多半已不存在）。重连不会有结果，请重新发起任务。'
+          attachFailed
+            ? '终端会话已结束——没能连上这个任务的运行环境（多半已经回收了）。重连不会有结果，请重新发起一个任务。'
             : frame.code === -1
               ? '终端会话已结束（进程被信号终止，退出码未知）。'
               : `终端会话已结束（退出码 ${String(frame.code)}）。`,
@@ -65,6 +124,13 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
     },
     [term, sessionId],
   );
+
+  // latest-ref：回调来自父层的 useCallback，身份可能每帧变。进 deps 会让 handleFrame
+  // 重建 → 连接 effect 抖动（本文件已经为同一个原因栽过一次，见 fittedSize 注释）。
+  const onShellIdRef = useRef(onShellId);
+  onShellIdRef.current = onShellId;
+  const onShellsRef = useRef(onShells);
+  onShellsRef.current = onShells;
 
   const { reportUnauthorized } = useReportUnauthorized();
 
@@ -88,6 +154,17 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
     sessionEnded: endedMessage !== null,
   });
   sendRef.current = (frame): boolean => send(frame);
+
+  // 把 send 交给装配层，供它在别的标签被淘汰时代发 `close_shell`。
+  // ⚠️ 交出去的是一个**稳定的转发器**（读 sendRef），不是 `send` 本身 —— 后者每次
+  //    重连都是新引用，直接交出去会让这个 effect 反复注册/注销。
+  useEffect(() => {
+    if (registerSend === undefined) return;
+    registerSend((frame) => sendRef.current(frame));
+    return (): void => {
+      registerSend(null);
+    };
+  }, [registerSend]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -138,6 +215,17 @@ export default function TerminalMount({ sessionId, socketConfig }: TerminalMount
   useEffect(() => {
     if (connState === 'open') term.resync(sessionId);
   }, [connState, term, sessionId]);
+
+  /**
+   * 回到前台就补一次 fit（08 §5.2「切回补一次 fit」）。
+   *
+   * 隐藏期间容器宽度是 0，`doFit` 按纪律直接跳过；不补的话 xterm 会停在隐藏前的
+   * 行列数，而 PTY 那边可能已经被别的路径改过 —— 两边尺寸不一致时，tmux 用绝对定位
+   * 画的状态栏会在屏幕上叠出一串错位的重复行。
+   */
+  useEffect(() => {
+    if (active) term.fit(sessionId);
+  }, [active, term, sessionId]);
 
   return (
     <div className="flex h-full flex-col">

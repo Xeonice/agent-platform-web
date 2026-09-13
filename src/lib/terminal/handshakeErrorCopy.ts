@@ -40,6 +40,13 @@ const HANDSHAKE_ERROR_COPY: Readonly<Record<string, HandshakeErrorCopy>> = {
     // **确定性失败**：hash 固化在这份前端产物里，重连多少次都是同一个结果。
     retryable: false,
   },
+  TERMINAL_TARGET_INVALID: {
+    message: '这个终端标签没说清要连哪一个会话，后端拒绝了；请关掉它重新开一个。',
+    // **确定性失败**：query 是这条连接建立时就定死的，重连发的还是同一串参数。
+    // ⚠️ 它是客户端自己发错了参数，所以出路不是"等一等"，也不是"解锁"——
+    // 是把这个标签丢掉重开（真出现了就是前端 bug，文案也得让人做得下去）。
+    retryable: false,
+  },
 };
 
 export function describeHandshakeErrorCode(

@@ -1,6 +1,6 @@
 // 沙箱生命周期映射（纯函数，可单测）。把后端 12 值 status 归约为：
 //  - 生命周期决策：startup(启动中) / running(可开终端) / failed / ended / unknown
-//  - 启动四阶段（P20 §3.3，**展示序**）：初始化 / 拉取镜像 / 准备工作区 / 启动实例
+//  - 启动四阶段（P20 §3.3，**展示序**）：初始化 / 拉取镜像 / 准备代码副本 / 启动运行环境
 // UI 决策不散落在容器条件里，集中在此，view 只吃派生结果。
 import { normalizeOrigin } from '@/lib/terminal/terminalSocket';
 import type { components } from '@/types/generated/openapi';
@@ -21,9 +21,9 @@ export type LifecycleDecision = 'startup' | 'running' | 'failed' | 'ended' | 'un
  * 启动进度卡的四个**展示格**（P20 §3.3）。
  *
  * ⚠️ **展示顺序 ≠ 状态机顺序，这是刻意的**（03 §4.0 / F21-2 §6）：
- * 技术上工作区必须先备好（`scheduling → preparing-workspace → creating → starting`，
- * 这样 `provider.create()` 时卷已存在）；但用户心智里"拉镜像"在"准备工作区"之前
- * （先有环境再有代码），因此进度卡按「初始化 → 拉取镜像 → 准备工作区 → 启动实例」渲染。
+ * 技术上代码副本必须先备好（`scheduling → preparing-workspace → creating → starting`，
+ * 这样 `provider.create()` 时卷已存在）；但用户心智里"拉镜像"在"准备代码副本"之前
+ * （先有环境再有代码），因此进度卡按「初始化 → 拉取镜像 → 准备代码副本 → 启动运行环境」渲染。
  *
  * **实现时不要"顺手把展示顺序改成和状态机一致"**——三件事在此刻意解耦：
  *   ① 格的顺序 = 本数组；
@@ -33,21 +33,23 @@ export type LifecycleDecision = 'startup' | 'running' | 'failed' | 'ended' | 'un
 export const STARTUP_PHASES = [
   { key: 'init', label: '初始化' },
   { key: 'image', label: '拉取镜像' },
-  { key: 'workspace', label: '准备工作区' },
-  { key: 'instance', label: '启动实例' },
+  // ⚠️ 上屏口径（P21-1 §9）：这里是**给用户看的名字**，不是状态机的名字。
+  //    「工作区」→「代码副本」、「实例」→「运行环境」——两个内部词都不上屏。
+  { key: 'workspace', label: '准备代码副本' },
+  { key: 'instance', label: '启动运行环境' },
 ] as const;
 
 export type StartupPhaseKey = (typeof STARTUP_PHASES)[number]['key'];
 
 /**
- * 「启动实例」格：装 runtime CLI、注入凭证、起 agent 会话都发生在这一格内（03 §4.3 / P20 §3.3 步骤 2），
+ * 「启动运行环境」格：装 Agent CLI、注入凭证、起 agent 会话都发生在这一格内（03 §4.3 / P20 §3.3 步骤 2），
  * `runtime.install_progress` 的子文案就挂它下面。
  */
 export const INSTANCE_PHASE_KEY: StartupPhaseKey = 'instance';
 
 /**
  * status → 展示格 key（多对一）。**这里就是"展示顺序 ≠ 技术顺序"落到代码的那一处**：
- * `preparing-workspace` 落「准备工作区」（展示第 3 格）、`creating` 落「拉取镜像」（展示第 2 格），
+ * `preparing-workspace` 落「准备代码副本」（展示第 3 格）、`creating` 落「拉取镜像」（展示第 2 格），
  * 即技术上后发生的 `creating` 反而点亮更靠前的格——这是预期，不是 bug。
  */
 const STATUS_TO_PHASE_KEY: Record<string, StartupPhaseKey> = {

@@ -49,15 +49,20 @@ export function SubscriptionSetupView({
       data-ready={model.ready ? 'true' : 'false'}
       className="flex flex-col gap-3"
     >
+      {/*
+        ⛔ **不许写「不必两个都配」**（2026-09 修）：那句话把 Agent 的数量写死成 2，
+        而 Agent 是**开放注册表**（04 §3，`connectivityVerdict.ts` 上方那段论证过同一条）
+        —— 装了第三方 Agent 的机器上，这一句当场变成假话。
+      */}
       <p className="text-sm text-muted-foreground">
-        agent 用你自己的模型帐号跑。 <span className="text-foreground">配好任意一个即可开始</span>{' '}
-        —— 不必两个都配。
+        Agent 用你自己的模型帐号跑。 <span className="text-foreground">配好任意一个就能开始</span>{' '}
+        —— 不用全部配。
       </p>
 
       {model.runtimes.length === 0 ? (
         // ⛔ registry 一个 runtime 都没有：如实说，不渲染一个空列表让人以为在加载。
         <p role="alert" data-testid="subscription-no-runtime" className="text-sm text-amber-400">
-          ⚠️ 平台没有注册任何 runtime —— 这不该发生，去系统状态页看 provider 注册情况。
+          ⚠️ 平台一个 Agent 都没有注册 —— 这不该发生，去系统状态页看看。
         </p>
       ) : (
         <ul className="flex flex-col gap-2">

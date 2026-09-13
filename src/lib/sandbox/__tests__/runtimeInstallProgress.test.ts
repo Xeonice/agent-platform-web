@@ -18,7 +18,10 @@ describe('runtime.install_progress → 进度卡子文案（15 §2.3 / P22 §1�
     expect(
       installSubCopy({ runtime: 'codex', status: 'installed', versionDetected: '1.2.3' }),
     ).toContain('1.2.3');
-    expect(installSubCopy({ runtime: 'codex', status: 'installed' })).toBe('codex CLI 已就绪');
+    // 上屏不出现内部词「CLI」以外的技术黑话；runtime 名由后端下发，照原样显示不违反「不点名」。
+    expect(installSubCopy({ runtime: 'codex', status: 'installed' })).toBe(
+      'codex 的命令行工具已就绪',
+    );
   });
 
   it('failed 刻意不出子文案：权威是紧随其后的 sandbox.status_changed → failed（10 §3.1）', () => {

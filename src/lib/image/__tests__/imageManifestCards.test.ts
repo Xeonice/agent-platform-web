@@ -45,6 +45,18 @@ function dto(overrides: Partial<ImageManifestDto> = {}): ImageManifestDto {
   };
 }
 
+/**
+ * ⭐ `derivedFromDigest` 必须**原样搬**到卡片入参。三档的分辨归 `imageLineage()` 一处 ——
+ * 在这一层先判空、先翻译，就会把"预置镜像是锚点"与"平台没记下来"压成同一档。
+ * MUTATION：把 `derivedFromDigest: dto.derivedFromDigest` 删掉 ⇒ 本条红。
+ */
+describe('manifestToCardInput · 来源原样透传', () => {
+  it('⭐ 有值 / null 都原样搬（不在这一层判空、不在这一层翻译）', () => {
+    expect(manifestToCardInput(dto()).derivedFromDigest).toBe(DIGEST_BASE);
+    expect(manifestToCardInput(dto({ derivedFromDigest: null })).derivedFromDigest).toBeNull();
+  });
+});
+
 describe('parseManifestRef', () => {
   it('tag 形态：拆出 name 与 tag', () => {
     expect(parseManifestRef('docker.io/myrepo/ml-agent:v1.0')).toEqual({
@@ -106,7 +118,9 @@ describe('manifestToCardInput', () => {
     expect(model.refDisplay).toBe(`ghcr.io/a/b@${DIGEST_A}`);
     expect(model.refKind).toBe('digest');
     expect(model.canCheckUpdate).toBe(false);
-    expect(model.checkUpdateDisabledReason).toContain('不存在上游漂移');
+    // ⚠️ 「漂移」是内部词：直接说"不会有新版本"（术语统一口径）。
+    expect(model.checkUpdateDisabledReason).toContain('不会有新版本');
+    expect(model.checkUpdateDisabledReason).not.toContain('漂移');
   });
 
   /**

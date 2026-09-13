@@ -5,7 +5,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { server } from '@/mocks/node';
-import { automationKeys, useAutomations } from '@/hooks/automation/useAutomations';
+import {
+  automationKeys,
+  describeAutomationError,
+  useAutomations,
+} from '@/hooks/automation/useAutomations';
+import { ApiErrorException } from '@/services/api/apiError';
 import { AUTOMATION_RULE_LIMIT, type AutomationDto } from '@/types/automation';
 
 const BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
@@ -271,7 +276,13 @@ describe('⭐ 保存后 invalidate list', () => {
         listCalls += 1;
         return HttpResponse.json([rule({ id: 'a1' })]);
       }),
-      http.delete(`${BASE}/api/automations/:id`, () => new HttpResponse(null, { status: 404 })),
+      http.delete(`${BASE}/api/automations/:id`, () =>
+        // 后端的 `ErrorEnvelopeFilter` 一定会给出信封（裸 404 空体是构造不出来的形状）。
+        HttpResponse.json(
+          { code: 'NOT_FOUND', message: 'automation a1 not found', retryable: false },
+          { status: 404 },
+        ),
+      ),
     );
     const { result } = renderHook(() => useAutomations('p'), { wrapper: makeWrapper() });
     await waitFor(() => {
@@ -283,7 +294,7 @@ describe('⭐ 保存后 invalidate list', () => {
     await waitFor(() => {
       expect(listCalls).toBe(2);
     });
-    expect(result.current.actionErrorMessage).toContain('已经不存在');
+    expect(result.current.actionErrorMessage).toContain('已经不在了');
   });
 });
 
@@ -367,7 +378,7 @@ describe('webhook 测试连接', () => {
     server.use(
       http.post(`${BASE}/api/automations/webhook-test`, () =>
         HttpResponse.json(
-          { code: 'WEBHOOK_UNREACHABLE', message: '目标地址不可达', retryable: true },
+          { code: 'UPSTREAM_UNAVAILABLE', message: 'connect ECONNREFUSED', retryable: true },
           { status: 502 },
         ),
       ),
@@ -375,9 +386,67 @@ describe('webhook 测试连接', () => {
     await act(async () => {
       await result.current.sendWebhookTest('https://x/y').catch(() => undefined);
     });
-    expect(result.current.webhookTestState).toMatchObject({
-      phase: 'error',
-      message: '目标地址不可达',
-    });
+    expect(result.current.webhookTestState.phase).toBe('error');
+    const message =
+      result.current.webhookTestState.phase === 'error'
+        ? result.current.webhookTestState.message
+        : '';
+    expect(message).toContain('没有正常回应');
+    // ⛔ 后端原文（`connect ECONNREFUSED`）不上屏。
+    expect(message).not.toContain('ECONNREFUSED');
+  });
+
+  /**
+   * ★ **本轮最核心的一条：后端那三句英文一个字都不许上屏。**
+   *
+   * 它们是写给排查的人看的 —— 带内部不变量编号（I-AUT-9 / I-AUT-5）、带一段解释设计
+   * 取舍的英文散文、带只有读过 11 §3.1 的人才懂的条件。`useAutomations` 此前对
+   * 非 404/409 一律 `return error.envelope.message`，于是它们原封不动进了红字。
+   *
+   * ⚠️ 但也**不许把"为什么"整段删掉改成一句"格式不对"**：`UTC+8` 拼写完全正确，
+   *   被拒的理由是它表达不了夏令时。那半句必须留着，否则用户会反复检查自己的拼写。
+   */
+  it('⭐ 后端英文原文一律不上屏，按码给人话（时区 / 超时 / SSRF 各一条）', () => {
+    const cases = [
+      {
+        code: 'INVALID_TIMEZONE',
+        message:
+          "timezone 'UTC+8' is not an IANA time zone name (I-AUT-9). Fixed-offset spellings…",
+        expect: ['夏令时', 'Asia/Shanghai'],
+      },
+      {
+        code: 'INVALID_TIMEOUT',
+        message: 'timeout must be one of 30/60/120/240 minutes (I-AUT-5), got 90',
+        expect: ['最长运行时间'],
+      },
+      {
+        code: 'HOST_NOT_ALLOWED',
+        message:
+          "webhook host 'x' resolves to 10.0.0.5, refused by the SSRF policy (deny-private)…",
+        expect: ['内网'],
+      },
+    ];
+    for (const c of cases) {
+      const msg = describeAutomationError(
+        new ApiErrorException({ code: c.code, message: c.message, retryable: false }, 400),
+      );
+      expect(msg).toBeDefined();
+      for (const fragment of c.expect) expect(msg).toContain(fragment);
+      // 内部编号、字段名、英文散文，一个都不许出现。
+      expect(msg).not.toContain('I-AUT');
+      expect(msg).not.toContain('SSRF');
+      expect(msg).not.toMatch(/[A-Za-z]{6,}\s+[A-Za-z]{4,}/);
+    }
+  });
+
+  it('⭐ 未知码 → 通用话 + traceId，⛔ 不回落 message', () => {
+    const msg = describeAutomationError(
+      new ApiErrorException(
+        { code: 'BRAND_NEW', message: 'something in english', retryable: false, traceId: 't-7' },
+        500,
+      ),
+    );
+    expect(msg).not.toContain('english');
+    expect(msg).toContain('t-7');
   });
 });

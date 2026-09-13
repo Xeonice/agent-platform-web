@@ -6,11 +6,11 @@ import type { PresetImageChainModel, PresetImageStepModel } from '@/types/init';
 // ⚠️ story 是 `view` 元素，不能 import `lib/`（boundaries）。这里手搭 model，
 // 派生逻辑自己的用例在 `lib/system/__tests__/presetImageChain.test.ts`。
 const LABELS: [PresetImageStepModel['step'], string][] = [
-  ['config', '配置：`SANDBOX_DEFAULT_IMAGE` 配了没有'],
-  ['registry', 'registry：配的那张镜像能不能解析到'],
-  ['lineage', '血统：它是不是平台自建的那一张（不是上游镜像）'],
-  ['registration', '注册：进没进平台、`validationStatus` 是不是 valid'],
-  ['staged', '本机铺开：rootfs 铺好没有（只影响首个任务的耗时）'],
+  ['config', '该用哪张镜像（没指定 = 平台按你的机器自动选）'],
+  ['registry', '镜像仓库里有没有这张镜像'],
+  ['lineage', '来源对不对：是不是平台自己构建的那一张'],
+  ['registration', '平台检查过没有、能不能选用'],
+  ['staged', '有没有下载到本机（只影响首个任务的耗时）'],
 ];
 
 function chain(
@@ -32,8 +32,10 @@ function chain(
     ...(ready
       ? {}
       : {
+          // ⛔ 一个 markdown 星号都不许有：全链路是纯文本渲染，写了就原样上屏。
+          //    要强调就改句序 —— 把「无法发起任何任务」放到句首。
           blockedText:
-            '预制镜像尚未就绪 —— 可以 [稍后配置] 继续完成初始化，平台能进、项目能建，但**在此之前无法发起任何任务**（新建任务会被直接拒绝）。修好后回系统状态页重跑诊断即可。',
+            '在此之前无法发起任何任务：预制镜像还没就绪。可以 [稍后配置] 继续完成初始化，平台能进、项目能建，但新建任务会被直接拒绝。修好后回系统状态页重跑诊断即可。',
         }),
   };
 }
@@ -79,9 +81,11 @@ export const Checking: Story = {
 export const StagedIsInfoNotWarning: Story = {
   args: {
     model: chain('staged', 'info', {
-      summary:
-        '预制镜像已就绪，但尚未在本机铺开 —— 首个任务需要数分钟准备镜像（13GB 镜像实测冷启动约 190 秒）',
-      action: '不需要任何操作：第一个任务会自动把镜像铺开，需要数分钟，之后每次 3–4 秒。',
+      summary: '镜像还没下载到本机',
+      // ⚠️ 证据（含**按档**的体积/耗时）在第二层，⛔ 不与结论挤在一行。
+      detail:
+        '镜像本身没问题，只是这台机器上还没有它的副本（镜像压缩后约 0.3GB，通常十几秒到一分钟）。',
+      action: '不需要任何操作：第一个任务会自动把镜像下载好（耗时见上一行）。',
     }),
   },
   play: async ({ canvasElement }) => {
@@ -93,6 +97,11 @@ export const StagedIsInfoNotWarning: Story = {
     await expect(row).not.toHaveTextContent('未通过');
     await expect(row).not.toHaveTextContent('警告');
     await expect(canvas.queryByTestId('preset-image-blocked')).toBeNull();
+    // ⭐ 序号自带上下文：「共 5 步」在屏幕上，⛔ 不是孤零零一个「第 5 步」。
+    await expect(row).toHaveTextContent('第 5 步（共 5 步）');
+    // ⛔ 耗时那句只在第二层出现一次，⛔ 不许两处各写一个数字互相打架。
+    await expect(canvas.getByTestId('preset-step-detail-staged')).toHaveTextContent('0.3GB');
+    await expect(canvas.getByTestId('preset-step-action-staged')).not.toHaveTextContent('GB');
   },
 };
 
@@ -100,12 +109,13 @@ export const StagedIsInfoNotWarning: Story = {
 export const LineageFailed: Story = {
   args: {
     model: chain('lineage', 'fail', {
-      summary: "'ghcr.io/agent-infra/sandbox:latest' 是上游镜像，不是平台自建的那张",
+      summary: '这张镜像来源不对，用不了',
+      detail: "'ghcr.io/agent-infra/sandbox:latest' 是上游镜像，不是平台自己构建的那张。",
       errorCode: 'PRESET_IMAGE_NOT_PLATFORM_BUILT',
       action:
-        '换成平台自建的那一张：上游镜像只是平台镜像的 `FROM`，**拿它去注册也会被血统检查拒** —— 不是少做一步注册。',
+        '换成平台自己构建的那一张：上游镜像只是平台镜像的起点，拿它手动加进来同样会被拒 —— 不是少做一步。',
       fixCommand:
-        'bash scripts/build-sandbox-image.sh && docker push <registry>/platform/sandbox:<tag>',
+        'bash scripts/build-sandbox-image.sh && docker push <镜像仓库>/platform/sandbox:<标签>',
     }),
   },
   play: async ({ canvasElement, args }) => {
@@ -117,15 +127,18 @@ export const LineageFailed: Story = {
       'data-state',
       'pending',
     );
+    // ⛔ 「血统」是内部词，上屏说「来源」；但「手动加进来也会被拒」那半句不许省 ——
+    //    不说清楚，用户会以为只是少做了一步，照着去做再撞一次墙。
     await expect(canvas.getByTestId('preset-step-action-lineage')).toHaveTextContent(
-      '注册也会被血统检查拒',
+      '手动加进来同样会被拒',
     );
+    await expect(canvas.getByTestId('preset-step-action-lineage')).not.toHaveTextContent('血统');
     // ⭐ 唯一一处「放行了但功能不可用」必须写出来。
     await expect(canvas.getByTestId('preset-image-blocked')).toHaveTextContent('无法发起任何任务');
 
     await userEvent.click(canvas.getByRole('button', { name: '复制' }));
     await expect(args.onCopyFix).toHaveBeenCalledWith(
-      'bash scripts/build-sandbox-image.sh && docker push <registry>/platform/sandbox:<tag>',
+      'bash scripts/build-sandbox-image.sh && docker push <镜像仓库>/platform/sandbox:<标签>',
     );
   },
 };
@@ -134,17 +147,19 @@ export const LineageFailed: Story = {
 export const NotConfigured: Story = {
   args: {
     model: chain('config', 'fail', {
-      summary: '`SANDBOX_DEFAULT_IMAGE` 没有配置，回落到内置默认 `alpine:3.20`',
+      summary: '不知道该用哪张镜像，建不了任务',
+      detail: '这台机器的沙箱环境是 acme-vm，平台既没有为它发布预制镜像，也没有人指定过一张。',
       errorCode: 'PRESET_IMAGE_NOT_CONFIGURED',
-      action: '改配置：把 `SANDBOX_DEFAULT_IMAGE` 指向你自己构建并推上 registry 的那张平台镜像。',
-      fixCommand: 'SANDBOX_DEFAULT_IMAGE=<registry>/platform/sandbox:<tag>',
+      action:
+        '给这台机器的沙箱环境单独指定一张镜像。别动 SANDBOX_DEFAULT_IMAGE —— 它是两种环境共用的总开关。',
+      fixCommand: 'SANDBOX_BOXLITE_IMAGE=<镜像仓库>/platform/sandbox:<标签>',
     }),
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('preset-step-action-config')).toHaveTextContent('改配置');
-    // 与血统那一步的动作**不是同一句**（合成一句就是把诊断退化成一个红灯）。
-    await expect(canvas.getByTestId('preset-step-action-config')).not.toHaveTextContent('血统');
+    await expect(canvas.getByTestId('preset-step-action-config')).toHaveTextContent('指定一张镜像');
+    // 与来源那一步的动作**不是同一句**（合成一句就是把诊断退化成一个红灯）。
+    await expect(canvas.getByTestId('preset-step-action-config')).not.toHaveTextContent('来源');
   },
 };
 

@@ -4,16 +4,18 @@
 //
 // 终端语义（S5 裁决 T-2）：agent 会话由**后端在 provision 的「启动实例」阶段**起好并开始执行，
 // 终端网关一律 attach 已存在的会话 —— 打开终端不再是"开工开关"，而是接管一个可能已有输出的会话。
-import type { ReactNode } from 'react';
+import { useCallback, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import { useSandboxLifecycle } from '@/hooks/sandbox/useSandboxLifecycle';
-import { TerminalContainer } from '@/containers/terminal/TerminalContainer';
+import { TerminalTabsContainer } from '@/containers/terminal/TerminalTabsContainer';
 import { SandboxStartupProgressView } from '@/views/sandbox/SandboxStartupProgress.view';
 import { SandboxOutcomeView } from '@/views/sandbox/SandboxOutcome.view';
 import type { TerminalSocketConfig } from '@/types/terminal';
 
 export interface SandboxLifecycleContainerProps {
-  sessionId: string;
   sandboxId: string;
+  /** 这个沙箱里能跑哪几个 agent CLI（06 §5.6），透传给终端标签栏。 */
+  availableRuntimes?: readonly string[];
   socketConfig: TerminalSocketConfig;
   /** 失败/结束态的重试入口（回到新建面板）。 */
   onRetry: () => void;
@@ -28,8 +30,8 @@ export interface SandboxLifecycleContainerProps {
 }
 
 export function SandboxLifecycleContainer({
-  sessionId,
   sandboxId,
+  availableRuntimes,
   socketConfig,
   onRetry,
   taskName,
@@ -47,14 +49,39 @@ export function SandboxLifecycleContainer({
     outcome,
   } = useSandboxLifecycle(sandboxId);
 
+  /**
+   * [复制诊断信息]：错误码 / detail / traceId 一起进剪贴板交给管理员，**正文不出现码**
+   *（P22 §1 禁止裸抛错误码；`SandboxOutcome.view` 头注释也一直是这么写的）。
+   *
+   * ⚠️ 剪贴板在 container 而不是 view（07 §3 规则 2）：`navigator.clipboard` 在
+   * 非 HTTPS 的局域网部署下**干脆不存在**，读 `.writeText` 当场抛 TypeError。
+   * ⛔ 失败不许静默：静默时用户会去粘贴一段**上一次**复制的内容。
+   */
+  const handleCopyDiagnostics = useCallback((text: string) => {
+    void navigator.clipboard.writeText(text).then(
+      () => {
+        toast.success('诊断信息已复制');
+      },
+      () => {
+        toast.error('复制失败，请手动选中下面的失败细节复制');
+      },
+    );
+  }, []);
+
   if (decision === 'running') {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <div className="min-h-0 flex-1">
-          <TerminalContainer
-            sessionId={sessionId}
+          {/*
+            多标签（P21-1 §6 / 08 §5）：Agent 那个会话是第 1 个标签，用户可以再开
+            独立终端。⚠️ `sessionId` 不再从这里传下去 —— 标签身份由
+            `useTerminalSessions` 按 sandboxId 派生（Agent 那个仍是 `<id>:0`），
+            让"有哪几个标签"只有一个知情者。
+          */}
+          <TerminalTabsContainer
             sandboxId={sandboxId}
             socketConfig={socketConfig}
+            {...(availableRuntimes === undefined ? {} : { availableRuntimes })}
           />
         </div>
         {headlessSlot}
@@ -77,7 +104,16 @@ export function SandboxLifecycleContainer({
         taskName={taskName}
         // failureMessage：只原样透出给排障，人话仍由 outcome.title/advice 按码给（不 parse 它）。
         detail={outcome.detail}
-        diagnosticCode={decision === 'failed' ? outcome.code : (status ?? undefined)}
+        /**
+         * ⚠️ **`ended` 分支不传 diagnosticCode。**
+         *
+         * 它此前传的是**原始 status**（`stopped` / `destroyed` / …），于是一次正常的停止
+         * 会在卡片上渲染出「诊断码：stopped」—— 那不是任何一个错误码，用户拿着它去报障
+         * 只会浪费两边的时间。`failed` 那一支传的才是真码（`outcome.code`）。
+         * 原始 status 仍然在进度卡上以 `data-status` 挂着，排障/e2e 取得到。
+         */
+        {...(decision === 'failed' ? { diagnosticCode: outcome.code } : {})}
+        onCopyDiagnostics={handleCopyDiagnostics}
       />
     );
   }
@@ -88,7 +124,12 @@ export function SandboxLifecycleContainer({
       phases={phases}
       activeIndex={activePhaseIndex}
       percent={percent}
-      statusLabel={status ?? undefined}
+      /**
+       * ⚠️ **原始 status 不上屏**（P22 §6：原始 status / 错误码 / 字段名只进日志与 data 属性）。
+       * 它此前走 `statusLabel` ⇒ 进度卡副标题上真的出现了「（preparing-workspace）」。
+       * 改挂 `data-status`：e2e 与排障照样取得到，用户看不到。
+       */
+      dataStatus={status ?? undefined}
       subtitle={subtitle}
       taskName={taskName}
       phaseNote={phaseNote}

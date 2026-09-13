@@ -33,7 +33,8 @@ describe('useSandboxLifecycle', () => {
       useAppStore.getState().setSandboxStatus('s1', 'preparing-workspace');
     });
     rerender();
-    expect(result.current.phases[result.current.activePhaseIndex]?.label).toBe('准备工作区');
+    // 上屏词（P21-1 §9）：内部的「工作区」在界面上叫「代码副本」。
+    expect(result.current.phases[result.current.activePhaseIndex]?.label).toBe('准备代码副本');
     expect(result.current.percent).toBe(40);
 
     act(() => {
@@ -60,7 +61,7 @@ describe('useSandboxLifecycle', () => {
     expect(result.current.outcome?.actions.length).toBeGreaterThan(0);
   });
 
-  it('装 CLI 进度 → 「启动实例」格下的子文案（不改 status、不 patch Query）', () => {
+  it('装 CLI 进度 → 「启动运行环境」格下的子文案（不改 status、不 patch Query）', () => {
     const { result, rerender } = renderHook(() => useSandboxLifecycle('s1'));
     act(() => {
       useAppStore.getState().setSandboxStatus('s1', 'starting');
@@ -104,7 +105,7 @@ describe('useSandboxLifecycle', () => {
     rerender();
     expect(result.current.decision).toBe('failed');
     expect(result.current.outcome?.code).toBe('INSTALL_FAILED');
-    expect(result.current.outcome?.title).toContain('运行时 CLI 安装失败');
+    expect(result.current.outcome?.title).toContain('Agent 的命令行工具');
     expect(result.current.outcome?.actions.map((a) => a.key)).toContain('retry');
     // 装 CLI 子文案在转 failed 时被清掉，不与失败卡并存（两处同时喊失败）。
     expect(result.current.phaseNote).toBeUndefined();
@@ -175,7 +176,7 @@ describe('起实例进度与前端自算的「已等待」（10 §7.4）', () =>
     });
   };
 
-  it('instance_progress 的子文案挂「启动实例」格，且不改 status', () => {
+  it('instance_progress 的子文案挂「启动运行环境」格，且不改 status', () => {
     const { result, rerender } = renderHook(() => useSandboxLifecycle('s1'));
     act(() => {
       enterStarting();

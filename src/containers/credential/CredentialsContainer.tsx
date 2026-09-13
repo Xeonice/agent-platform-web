@@ -5,11 +5,10 @@ import { useCredentials } from '@/hooks/credential/useCredentials';
 import { AuthGateContainer } from '@/containers/credential/AuthGateContainer';
 import { GitCredentialsContainer } from '@/containers/credential/GitCredentialsContainer';
 import { RuntimeCredentialsSectionView } from '@/views/settings/RuntimeCredentialsSection.view';
+import { CredentialsSecurityFooterView } from '@/views/settings/CredentialsSecurityFooter.view';
 import { ConfirmDialogView } from '@/views/settings/ConfirmDialog.view';
 import { RevokeConfirmDialogView } from '@/views/settings/RevokeConfirmDialog.view';
-import type { RuntimeAuthMethod, RuntimeAuthMode } from '@/types/runtimeCredential';
-
-const MODE_LABEL: Record<RuntimeAuthMode, string> = { account: '帐号授权', 'api-key': 'API Key' };
+import type { RuntimeAuthMethod } from '@/types/runtimeCredential';
 
 export function CredentialsContainer() {
   const m = useCredentials();
@@ -25,6 +24,7 @@ export function CredentialsContainer() {
         <AuthGateContainer
           runtimeId={runtimeId}
           runtimeName={card.displayName}
+          vendor={card.vendor}
           methods={methods}
           apiKeyPrefix={card.apiKeyPrefix}
           initialMethod={m.expandedPanel.method}
@@ -45,6 +45,9 @@ export function CredentialsContainer() {
     <div className="flex flex-col gap-10">
       <RuntimeCredentialsSectionView
         loading={m.loading}
+        loadError={m.loadError}
+        onRetryLoad={m.retryLoad}
+        storageNote={m.storageNote}
         cards={m.cards}
         search={m.search}
         onSearch={m.setSearch}
@@ -65,11 +68,14 @@ export function CredentialsContainer() {
 
       <GitCredentialsContainer />
 
+      {/* 产品 §3 的安全承诺：跨两个分区，落在页底（此前只埋在 Git 分区里，且少了一半）。 */}
+      <CredentialsSecurityFooterView />
+
       {m.pendingSwitch !== null && (
         <ConfirmDialogView
-          title="切换生效模式"
+          title={m.pendingSwitch.title}
           message={m.pendingSwitch.message}
-          confirmLabel="切换"
+          confirmLabel={m.pendingSwitch.confirmLabel}
           busy={m.switching}
           onConfirm={m.confirmSwitch}
           onCancel={m.cancelSwitch}
@@ -79,10 +85,12 @@ export function CredentialsContainer() {
       {m.pendingRevoke !== null && (
         <RevokeConfirmDialogView
           runtimeName={m.pendingRevoke.runtimeName}
-          modeLabel={MODE_LABEL[m.pendingRevoke.mode]}
+          modeLabel={m.pendingRevoke.modeLabel}
           affectedItems={m.pendingRevoke.affected.items}
           restCount={m.pendingRevoke.affected.restCount}
+          affectedKnown={m.pendingRevoke.affectedKnown}
           warningText={m.pendingRevoke.warningText}
+          followUpText={m.pendingRevoke.followUpText}
           warnActiveMode={m.pendingRevoke.warnActiveMode}
           revoking={m.revoking}
           onConfirm={m.confirmRevoke}

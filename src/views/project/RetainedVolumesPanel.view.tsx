@@ -1,4 +1,8 @@
-// 已保留卷面板（F21-6 §3.3 项目菜单「🎁 已保留卷」/ P20 §6 决策 2）。纯展示、props 驱动。
+// 「保留下来的成果」面板（F21-6 §3.3 项目菜单「🎁 保留下来的成果」/ P20 §6 决策 2）。纯展示、props 驱动。
+//
+// ⚠️ 屏上一律叫**「保留下来的成果」**，代码里的 volume / retained volume 是内部词。
+// 此前同一条路上出现过「已保留卷 / 保留卷 / 成果卷 / 工作区卷」四种叫法，而删除确认恰恰
+// 要靠这个词说清「删项目会留下什么」—— 对不上，那句话就等于没说。
 //
 // ★ 三条设计上不许被"顺手简化"掉的东西：
 //
@@ -57,12 +61,12 @@ export function RetainedVolumesPanelView({
   return (
     <div className="flex flex-col gap-3 px-5 py-4 text-sm" data-testid="retained-volumes-panel">
       <p className="text-xs text-muted-foreground">
-        {projectName} 的已保留卷：Task 销毁时勾选「保留工作区卷」留下的工作区，到期由后台自动清理。
+        {projectName} 保留下来的成果：销毁任务时选择留下的那份工作目录。到期后由后台自动清理。
       </p>
 
       {loading && (
         <p className="text-xs text-muted-foreground" data-testid="retained-volumes-loading">
-          正在读取已保留卷…
+          正在读取…
         </p>
       )}
 
@@ -77,9 +81,9 @@ export function RetainedVolumesPanelView({
           className="rounded border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground"
           data-testid="retained-volumes-empty"
         >
-          <p>这个项目还没有已保留卷。</p>
+          <p>这个项目还没有保留下来的成果。</p>
           <p className="mt-1">
-            销毁任务时勾选「保留工作区卷」，那份工作区就会留在这里，可下载或手动删除。
+            销毁任务时选择把工作目录留下来，那份目录就会出现在这里，可以下载，也可以手动删掉。
           </p>
         </div>
       )}
@@ -100,7 +104,11 @@ export function RetainedVolumesPanelView({
                 >
                   <div className="flex items-center gap-2">
                     <span aria-hidden="true">🎁</span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                    {/* 完整 id 只进 `title`：行上给的是可读的短形（见 retainedVolumeModel）。 */}
+                    <span
+                      className="min-w-0 flex-1 truncate text-xs"
+                      {...(row.sandboxId === undefined ? {} : { title: row.sandboxId })}
+                    >
                       {row.originText}
                     </span>
                     {row.countdownText !== undefined && (
@@ -146,7 +154,7 @@ export function RetainedVolumesPanelView({
                     {confirmingId === row.id ? (
                       <>
                         <span className="text-xs text-red-400">
-                          永久删除？删掉后这份工作区不可恢复。
+                          永久删除？删掉之后这份工作目录拿不回来。
                         </span>
                         <Button
                           type="button"

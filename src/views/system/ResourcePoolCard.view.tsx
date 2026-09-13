@@ -82,7 +82,7 @@ export function ResourcePoolCardView({
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="resource-pool-heading" className="text-base font-semibold">
-          📊 资源池水位
+          📊 本机资源
         </h2>
         <Button
           type="button"
@@ -99,7 +99,7 @@ export function ResourcePoolCardView({
         // ⛔ 失败**不许**退化成"0%"或空水位条：一条空水位条读起来是"很空闲"，
         //    而真相是这个数字根本没取到。
         <p role="alert" className="text-sm text-red-500">
-          ❌ 资源水位读取失败，当前数字不可用 —— 请点 [刷新] 重试
+          ❌ 本机资源读取失败，当前数字不可用 —— 请点 [刷新] 重试
         </p>
       ) : model === null ? (
         <p className="text-sm text-muted-foreground">读取中…</p>
@@ -115,8 +115,8 @@ export function ResourcePoolCardView({
             <span aria-hidden="true">{LEVEL_ICON[model.overallLevel]}</span>
             <span className="font-medium">{model.overallText}</span>
             <span className="text-muted-foreground">
-              · 当前活跃 Task: {model.activeTasks} · 调度预留 {model.reservedPercent}%
-              （进度条分母仍是总容量）
+              · 当前活跃任务：{model.activeTasks} · 留出 {model.reservedPercent}%
+              不拿去跑任务（上面的进度条分母仍然是总容量）
             </span>
           </p>
 

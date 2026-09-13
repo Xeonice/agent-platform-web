@@ -9,6 +9,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
+import { toast } from 'sonner';
 import { server } from '@/mocks/node';
 import { useImageManager, imageKeys } from '@/hooks/image/useImages';
 import { useAppStore } from '@/stores';
@@ -37,6 +38,18 @@ async function mountManager() {
     expect(result.current.cards.length).toBeGreaterThan(0);
   });
   return { client, result };
+}
+
+/** toast 的第一个参数是 `ReactNode`；用例只关心它是不是那句话，所以只认字符串。 */
+function toastText(node: unknown): string {
+  return typeof node === 'string' ? node : '';
+}
+
+/** toast 第二参里的 `description`（同上，只认字符串形态）。 */
+function toastDescription(options: unknown): string {
+  if (typeof options !== 'object' || options === null || !('description' in options)) return '';
+  const { description } = options;
+  return typeof description === 'string' ? description : '';
 }
 
 /** 一个可以卡住的 handler：调用方决定什么时候放行。 */
@@ -369,6 +382,175 @@ describe('useImageManager · 两颗按钮 / 两个端点，不互相顶替', () 
       expect(result.current.cards.every((c) => !c.checkingUpdate)).toBe(true);
     });
     expect(result.current.compare).toBeNull();
+  });
+
+  /**
+   * ⛔ **「当前钉定的版本仍然可以正常拉取」是一句没被验证过的话**（2026-09 修）。
+   * `checkImageUpdate` 只发现了 tag 404 —— 它**从没去查过那个 digest 还在不在**
+   * （平台恰恰有 `IMAGE_DIGEST_GONE` 专门管"锁定的那一版被上游回收了"）。
+   * 把"没查过"说成"没问题"，是「不知道说成没有」的镜像版本。
+   *
+   * MUTATION：把那句 toast 换回「当前锁定的版本仍然可以正常拉取」⇒ 本条红。
+   */
+  it('⭐ tag 没了：⛔ 不许说「锁定的那一版仍然可以正常拉取」（那件事根本没查过）', async () => {
+    const info = vi.spyOn(toast, 'info');
+    const { result } = await mountManager();
+    server.use(
+      http.post(`${API_BASE}/api/images/:id/check-update`, () =>
+        HttpResponse.json({
+          current: { digest: 'sha256:old', resolvedAt: '2026-08-01T00:00:00.000Z' },
+          upstream: null,
+          changed: false,
+        }),
+      ),
+    );
+    act(() => {
+      result.current.checkUpdate('img-manifest-2');
+    });
+    await waitFor(() => {
+      expect(info).toHaveBeenCalled();
+    });
+    const said = info.mock.calls.map((c) => toastText(c[0])).join('\n');
+    expect(said).toContain('没有可更新的目标');
+    // 「没查过」要说出来，⛔ 不许承诺它还拉得到。
+    expect(said).toContain('没有顺带去查');
+    expect(said).not.toContain('仍然可以正常拉取');
+    info.mockRestore();
+  });
+
+  /**
+   * ⛔ **`revalidateImage` 只跑 `spec.validate`，不跑来源比对**（后端
+   * `image-application.service.ts#revalidateImage`：整段只有 `spec.validate`，
+   * `lineageVerdict` 一次都没调）。所以「仍满足平台约定」把没验的说成验过了。
+   *
+   * MUTATION：把这句 toast 换回「该 digest 仍满足平台约定」⇒ 本条红。
+   */
+  it('⭐ 重新验证通过：说清它**没有**重新查来源（注册期才判那件事）', async () => {
+    const ok = vi.spyOn(toast, 'success');
+    const { result } = await mountManager();
+    server.use(
+      http.post(`${API_BASE}/api/images/:id/validate`, () =>
+        HttpResponse.json({
+          status: 'valid',
+          errors: [],
+          warnings: [],
+          currentDigest: 'sha256:same',
+          upstreamDigest: 'sha256:same',
+          digestChanged: false,
+        }),
+      ),
+    );
+    act(() => {
+      result.current.revalidate('img-manifest-2');
+    });
+    await waitFor(() => {
+      expect(ok).toHaveBeenCalled();
+    });
+    const said = ok.mock.calls.map((c) => toastText(c[0])).join('\n');
+    expect(said).toContain('本次没有重新检查它是从哪张预制镜像改来的');
+    expect(said).not.toContain('仍满足平台约定');
+    ok.mockRestore();
+  });
+});
+
+/**
+ * ⭐ 后端 message 是这条链上**唯一**说得出「N 个任务在用它」「平台的预制镜像还没播上种」
+ * 的地方。命中 `COPY_TABLE` 的码走的是表里那段静态文案 ⇒ message 会被整段丢掉。
+ */
+describe('useImageManager · 错误管道不丢后端 message', () => {
+  it('⭐ INVALID_STATE：后端那句话原样上屏，⛔ 不退化成「刷新后按新状态操作」', async () => {
+    const err = vi.spyOn(toast, 'error');
+    const { result } = await mountManager();
+    const BACKEND =
+      '还有 3 个任务在用这个版本，删掉会让它们指向一张不存在的镜像；请改为在这张镜像上点 [禁用]。';
+    server.use(
+      http.delete(`${API_BASE}/api/images/:id`, () =>
+        HttpResponse.json(
+          { code: 'INVALID_STATE', message: BACKEND, retryable: false },
+          { status: 409 },
+        ),
+      ),
+    );
+    act(() => {
+      result.current.requestDelete('img-manifest-2');
+    });
+    await waitFor(() => {
+      expect(result.current.pendingDelete).not.toBeNull();
+    });
+    act(() => {
+      result.current.confirmDelete();
+    });
+    await waitFor(() => {
+      expect(err).toHaveBeenCalled();
+    });
+    const description = err.mock.calls.map((c) => toastDescription(c[1])).join('\n');
+    /**
+     * ⚠️ 断言是**逐字相等**，不是 `toContain` —— 那才钉得住"不复用 `describeSandboxError`
+     * 的 `INVALID_STATE` 条目"这件事：复用的话，表里那段静态 advice 会被拼在前面。
+     * ⛔ 也刻意不去断言那段静态 advice 的原文（那张表归别人维护，抄进来就是第二份口径）。
+     */
+    expect(description).toBe(BACKEND);
+    // ⛔ 这三种情形（被任务引用 / 用错了地方 / 平台没播上种）刷新一个都解决不了。
+    expect(description).not.toContain('刷新');
+    // 标题也不许沿用那张表的 —— 它说的是"这个**任务**的状态变了"，而这里根本没有任务。
+    const titles = err.mock.calls.map((c) => toastText(c[0])).join('\n');
+    expect(titles).not.toContain('任务');
+    err.mockRestore();
+  });
+
+  it('⭐ 命中 COPY_TABLE 的码（MANIFEST_INVALID）也要把后端 message 带出来', async () => {
+    const err = vi.spyOn(toast, 'error');
+    const { result } = await mountManager();
+    const BACKEND = "镜像 'x' 不是基于平台预制镜像构建的。请把 Dockerfile 改成 FROM …";
+    server.use(
+      http.post(`${API_BASE}/api/images`, () =>
+        HttpResponse.json(
+          { code: 'MANIFEST_INVALID', message: BACKEND, retryable: false },
+          { status: 422 },
+        ),
+      ),
+    );
+    act(() => {
+      result.current.openRegister();
+    });
+    act(() => {
+      result.current.onUriChange('ghcr.io/x/y:v1');
+    });
+    act(() => {
+      result.current.save();
+    });
+    await waitFor(() => {
+      expect(err).toHaveBeenCalled();
+    });
+    const description = err.mock.calls.map((c) => toastDescription(c[1])).join('\n');
+    // 表里那段静态文案还在（它说的是"这次什么都没创建"），后端 message 也在（它说的是"为什么"）。
+    // ⚠️ 只断言"两段都在"，⛔ 不抄 `sandboxErrorCopy` 的原句 —— 那张表归别人维护，
+    //    抄进来就变成第二份口径，人家改一个字这条就假红。
+    expect(description).toContain('验证结果');
+    expect(description).toContain(BACKEND);
+    err.mockRestore();
+  });
+});
+
+/**
+ * ⭐ [查看镜像要求] 是**常驻面板**，不是 4 秒就消失的 toast —— 它是用户改 Dockerfile 时
+ * 要对照着看的清单。
+ */
+describe('useImageManager · 镜像要求面板', () => {
+  it('⭐ 点 [查看镜像要求] ⇒ 面板打开并一直开着，⛔ 不弹 toast', async () => {
+    const info = vi.spyOn(toast, 'info');
+    const { result } = await mountManager();
+    expect(result.current.requirementsOpen).toBe(false);
+    act(() => {
+      result.current.viewRequirements();
+    });
+    expect(result.current.requirementsOpen).toBe(true);
+    expect(info).not.toHaveBeenCalled();
+    act(() => {
+      result.current.closeRequirements();
+    });
+    expect(result.current.requirementsOpen).toBe(false);
+    info.mockRestore();
   });
 });
 

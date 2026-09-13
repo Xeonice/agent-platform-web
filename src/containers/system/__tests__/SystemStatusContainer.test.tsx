@@ -87,7 +87,7 @@ const CHECK_OK = frame({
   id: 'container-runtime',
   label: '容器运行时可达',
   status: 'ok',
-  summary: 'docker socket 可达',
+  headline: '容器服务可达',
   durationMs: 142,
 });
 const CHECK_PORT = frame({
@@ -95,8 +95,9 @@ const CHECK_PORT = frame({
   id: 'port-conflict',
   label: '端口占用',
   status: 'fail',
-  summary: '端口 3000（平台 HTTP/WS 服务）被 com.docke (pid 41235) 占用',
-  hint: 'lsof -nP -iTCP:3000 -sTCP:LISTEN',
+  headline: '端口 3000 被占用，平台起不来',
+  detailText: '端口 3000（平台 HTTP/WS 服务）被 com.docke (pid 41235) 占用。',
+  command: 'lsof -nP -iTCP:3000 -sTCP:LISTEN',
   durationMs: 312,
 });
 const DONE = frame({
@@ -185,7 +186,7 @@ describe('30s 轮询（15 §2.2：运维看板 15s stale + 30s refetchInterval�
 });
 
 describe('VS-2 · 资源阈值联动（取最差维度）', () => {
-  it('⭐ CPU 10% / RAM 20% / 磁盘 96% ⇒「无法创建新 Task」，且**不出现**「资源充足」', async () => {
+  it('⭐ CPU 10% / RAM 20% / 磁盘 96% ⇒「建不了新任务」，且**不出现**「资源充足」', async () => {
     serve({
       res: resources({
         disk: {
@@ -201,7 +202,7 @@ describe('VS-2 · 资源阈值联动（取最差维度）', () => {
     });
     renderCards();
 
-    await screen.findByText('资源耗尽，无法创建新 Task');
+    await screen.findByText('资源耗尽，现在建不了新任务');
     // ⚠️ 否定断言：平均（10+20+96)/3 = 42% 会被算成健康 —— 而那恰恰是最该拦住新建 Task 的时刻。
     expect(screen.queryByText('资源充足')).not.toBeInTheDocument();
     // 磁盘触发 ⇒ 它自己的出路（停 Task 不释放保留卷）。
@@ -218,7 +219,7 @@ describe('VS-2 · 资源阈值联动（取最差维度）', () => {
     renderCards();
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('资源水位读取失败');
+      expect(screen.getByRole('alert')).toHaveTextContent('本机资源读取失败');
     });
     expect(screen.queryByTestId('resource-gauge-cpu')).not.toBeInTheDocument();
     expect(screen.queryByText('资源充足')).not.toBeInTheDocument();
@@ -240,10 +241,14 @@ describe('VS-1 · 诊断（SSE 流式 / 非阻塞 / 跨路由保留 / 断流）'
       );
     });
     const row = screen.getByTestId('diagnostic-item-port-conflict');
-    // 端口号 · 进程名与 pid · 平台原本要用它做什么 —— 三样都在，缺一样用户就得自己去查。
-    expect(row).toHaveTextContent('3000');
+    // 第一眼看到的是结论 + 它挡不挡我干活（≤ 20 字，图标同一行）。
+    expect(row).toHaveTextContent('端口 3000 被占用，平台起不来');
+    // ⚠️ 证据在展开层里，但**一个字都不许丢**：端口号 · 进程名与 pid · 平台原本要用它
+    //    做什么 —— 缺一样用户就得自己去查（§9B）。
+    fireEvent.click(screen.getByTestId('diagnostic-toggle-port-conflict'));
     expect(row).toHaveTextContent('com.docke');
     expect(row).toHaveTextContent('pid 41235');
+    expect(row).toHaveTextContent('平台 HTTP/WS 服务');
     expect(screen.getByTestId('diagnose-summary')).toHaveTextContent('含超时');
   });
 
@@ -283,7 +288,9 @@ describe('VS-1 · 诊断（SSE 流式 / 非阻塞 / 跨路由保留 / 断流）'
     // ⚠️ 放组件局部 state 时页面表现毫无差别，只有这一条会红 —— 而用户切走的目的，
     //    恰恰是照着结果去改配置。
     await waitFor(() => {
-      expect(screen.getByTestId('diagnostic-item-port-conflict')).toHaveTextContent('com.docke');
+      expect(screen.getByTestId('diagnostic-item-port-conflict')).toHaveTextContent(
+        '端口 3000 被占用',
+      );
     });
     // 只跑过一轮：重新挂载不许再打一次诊断（那会把结论换掉）。
     expect(counts.diagnose).toBe(1);
@@ -301,7 +308,7 @@ describe('VS-1 · 诊断（SSE 流式 / 非阻塞 / 跨路由保留 / 断流）'
     });
     // ⚠️ 否定式的那一半：把中断写成"清空结果"之后，「诊断中断」那句照样渲染。
     expect(screen.getByTestId('diagnostic-item-container-runtime')).toHaveTextContent(
-      'docker socket 可达',
+      '容器服务可达',
     );
     expect(screen.getByRole('button', { name: '重新诊断' })).toBeEnabled();
   });

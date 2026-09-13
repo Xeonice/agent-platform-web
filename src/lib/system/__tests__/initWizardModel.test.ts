@@ -140,10 +140,35 @@ describe('Step4 资源确认', () => {
   const noteOf = (m: ReturnType<typeof resourceConfirmModel>): string =>
     m?.rows.find((r) => r.id === 'disk')?.noteText ?? '';
 
-  it('预留 15% 只影响调度上限（分母仍是总容量，P21-8 §7）', () => {
+  it('预留比例只影响可调度上限（分母仍是总容量），且比例取后端下发的值', () => {
     expect(schedulableBytes(16 * GB, 15)).toBeCloseTo(13.6 * GB, 0);
     const model = resourceConfirmModel(resources());
-    expect(model?.reservedText).toContain('预留总容量的 15%');
+    expect(model?.reservedText).toContain('总容量的 15%');
+    expect(model?.reservedText).toContain('进度条分母仍然是总容量');
+  });
+
+  /**
+   * ⛔ **界面上任何一处出现的预留百分比都必须来自后端**（2026-09 修）。
+   * 向导第 5 步的标题句此前硬编码「预留 15%」，而同一屏的 `reservedText` 取的是
+   * `dto.disk.reservedPercent` —— 后端一改这个值，标题那句当场变假。
+   * MUTATION：把 `reservedText` 里的 `${dto.disk.reservedPercent}` 换回字面量 15 ⇒ 本条红。
+   */
+  it('⭐ 预留百分比跟着后端走，不是写死的 15', () => {
+    const model = resourceConfirmModel(
+      resources({
+        disk: {
+          path: '/data',
+          totalBytes: 200 * GB,
+          usedBytes: 20 * GB,
+          availableBytes: 180 * GB,
+          usedPercent: 10,
+          level: 'ok',
+          reservedPercent: 25,
+        },
+      }),
+    );
+    expect(model?.reservedText).toContain('总容量的 25%');
+    expect(model?.reservedText).not.toContain('15%');
   });
 
   it('⭐ 磁盘可调度上限必须跟一句「与当前可用取小」', () => {
@@ -220,11 +245,26 @@ describe('Step4 资源确认', () => {
     expect(model?.lowText).toContain('仍可继续');
   });
 
-  it('磁盘那行带真实构成说明（预制镜像 / rootfs 缓存 / 每 Task 副本）', () => {
+  it('磁盘那行带真实构成说明（预制镜像 / 沙箱环境的镜像缓存 / 每个任务一份副本）', () => {
     const note = noteOf(resourceConfirmModel(resources(), 'boxlite'));
     expect(note).toContain('预制镜像');
-    expect(note).toContain('rootfs');
+    expect(note).toContain('镜像缓存');
     expect(note).toContain('工作区副本');
+    // ⛔ `rootfs` / 「铺开」是内部词，不上屏（术语统一口径）。
+    expect(note).not.toContain('rootfs');
+    expect(note).not.toContain('铺开');
+  });
+
+  /**
+   * ⭐ **「仍可继续」必须前置**（2026-09 修）。它排在句尾时，用户读到前半句
+   * 「资源配置较低，建议增加后再投入使用」就已经以为自己被卡住了 —— 而这一档从来不是门。
+   * MUTATION：把 `lowText` 的「仍可继续 ——」挪回句尾 ⇒ 本条红。
+   */
+  it('⭐「仍可继续」出现在句首，不是排在句尾', () => {
+    const model = resourceConfirmModel(
+      resources({ cpu: { cores: 1, loadAvg1m: 0.2, usedPercent: 20, level: 'ok' } }),
+    );
+    expect(model?.lowText?.startsWith('仍可继续')).toBe(true);
   });
 
   /**

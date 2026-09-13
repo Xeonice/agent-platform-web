@@ -139,7 +139,7 @@ export function ImageCardView({
         {model.digestState === 'pinned' && digestFull !== undefined ? (
           <>
             <span className="font-mono text-muted-foreground" data-testid="pinned-digest">
-              钉定 digest: {digestExpanded ? digestFull : model.digestShort}
+              运行的版本：{digestExpanded ? digestFull : model.digestShort}
             </span>
             <button
               type="button"
@@ -153,7 +153,7 @@ export function ImageCardView({
             {onCopyDigest !== undefined && (
               <button
                 type="button"
-                aria-label="复制 digest"
+                aria-label="复制版本号"
                 className="text-muted-foreground underline-offset-2 hover:underline"
                 onClick={() => {
                   onCopyDigest(digestFull);
@@ -166,7 +166,7 @@ export function ImageCardView({
         ) : (
           // 不留白、不显示假哈希：留白读作"没有 digest"，假哈希读作"已钉死"，两句都是假话。
           <span className="text-amber-400" data-testid="digest-unresolved">
-            ⚠️ 未解析
+            ⚠️ 版本未确定
           </span>
         )}
 
@@ -179,8 +179,33 @@ export function ImageCardView({
 
         {model.refKind === 'digest' && (
           <span className="text-muted-foreground" data-testid="digest-ref-note">
-            以 digest 注册（无 tag）
+            按版本直接注册（没有 tag）
           </span>
+        )}
+      </div>
+
+      {/*
+        ——— 来源行（后端 `derivedFromDigest`，注册期算好落库）———
+
+        ⚠️ **这个答案一直在 DTO 里，此前一处都没渲染。** 于是用户在这一页拿到 ✅，
+        到建任务时才撞 `IMAGE_PROVIDER_MISMATCH` —— 而「注册期就判掉」这套设计存在的
+        全部意义就是不让这一幕发生。
+        ⛔ **这一行只陈述事实，不下"能不能用"的结论**：那取决于锚点属于哪一档，是平台自己
+        的配置，卡片推不出来（判定与文案都在 `lib/image/imageCardModel.ts#imageLineage`）。
+      */}
+      <div
+        className="flex flex-col gap-0.5 text-xs"
+        data-testid="image-lineage"
+        data-lineage={model.lineage.kind}
+      >
+        <span
+          className={model.lineage.kind === 'unknown' ? 'text-amber-400' : 'text-muted-foreground'}
+        >
+          {model.lineage.kind === 'unknown' ? '⚠️ ' : ''}
+          {model.lineage.text}
+        </span>
+        {model.lineage.note !== undefined && (
+          <span className="text-muted-foreground">{model.lineage.note}</span>
         )}
       </div>
 
@@ -191,7 +216,7 @@ export function ImageCardView({
           data-tone="info"
           className="flex items-center gap-2 rounded-md border border-sky-500/40 px-2 py-1 text-xs text-sky-400"
         >
-          <span>🔄 上游该 tag 已指向新镜像（{upstreamUpdate.newDigestShort}）</span>
+          <span>🔄 下载源上这个 tag 已经指向另一版（{upstreamUpdate.newDigestShort}）</span>
           {onViewUpstreamChange !== undefined && (
             <button
               type="button"

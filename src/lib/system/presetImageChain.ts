@@ -28,15 +28,14 @@ import type {
 
 /** 这一步在检查什么（P21-5 §9A 那张表的第一列）。 */
 const STEP_LABEL: Readonly<Record<PresetImageStep, string>> = {
-  // ⛔ 2026-09-07：这一步问的**不再是**「配了没有」。出厂 `SANDBOX_DEFAULT_IMAGE`
-  //    留空，平台按宿主档位自动选（darwin ⇒ boxlite，linux ⇒ aio）—— **没配才是
-  //    正确的出厂状态**。它现在问的是「这一档有没有一张可用的坐标」。
-  config: '配置：这一档该用哪张镜像（没配 = 平台按你的机器自动选）',
-  registry: 'registry：配的那张镜像能不能解析到',
-  lineage: '血统：它是不是平台自建的那一张（不是上游镜像）',
-  registration: '注册：进没进平台、`validationStatus` 是不是 valid',
-  // ⚠️ 措辞里一个"失败/错误"字样都不许有：这一步问的是"铺开没有"，不是"坏没坏"。
-  staged: '本机铺开：rootfs 铺好没有（只影响首个任务的耗时）',
+  // ⛔ 2026-09-07：这一步问的**不再是**「配了没有」。出厂留空、平台按你的机器自动选
+  //    —— **没配才是正确的出厂状态**。它现在问的是「这台机器有没有一张能用的镜像」。
+  config: '该用哪张镜像（没指定 = 平台按你的机器自动选）',
+  registry: '镜像仓库里有没有这张镜像',
+  lineage: '来源对不对：是不是平台自己构建的那一张',
+  registration: '平台检查过没有、能不能选用',
+  // ⚠️ 措辞里一个「失败/错误」字样都不许有：这一步问的是「下载到本机没有」，不是「坏没坏」。
+  staged: '有没有下载到本机（只影响首个任务的耗时）',
 };
 
 /**
@@ -51,14 +50,13 @@ const STEP_ACTION: Readonly<Record<PresetImageStep, string>> = {
   // ⚠️ 走到这一步只剩一种情形：默认档是第三方 provider，平台没有为它发布镜像。
   //    ⇒ 按档配，不要动那个会波及两档的总开关。
   config:
-    '按档指定镜像：平台没有为当前默认档发布预制镜像（多半是自己注册的第三方 provider）。用 `SANDBOX_<档位>_IMAGE`（如 `SANDBOX_AIO_IMAGE` / `SANDBOX_BOXLITE_IMAGE`）指向那一档能用的镜像。⛔ 别改 `SANDBOX_DEFAULT_IMAGE` —— 它是两档共用的总开关，一填就让「按你的机器自动选」失效，另一档会拿到不能互换的那张。',
+    '给这台机器的沙箱环境单独指定一张镜像：平台没有为它发布预制镜像（多半是自己注册的第三方环境）。用 SANDBOX_AIO_IMAGE / SANDBOX_BOXLITE_IMAGE 这种按环境分开的配置指过去。别动 SANDBOX_DEFAULT_IMAGE —— 它是两种环境共用的总开关，一填就让「按你的机器自动选」失效，另一种会拿到不能互换的那张。',
   registry:
-    '把镜像推上去（或把地址改成推过的那个）：registry 里解析不到这张镜像，注册和拉取都无从谈起。',
-  // ⚠️ 「注册也会被拒」这句不许省：不说清楚，用户会以为只是少做了一步注册，照着去注册再撞一次墙。
+    '把镜像推上去，或把地址改成推过的那个：镜像仓库里找不到这张镜像，平台既检查不了它也拉不下来。',
+  // ⚠️ 「手动加进来也会被拒」这句不许省：不说清楚，用户会以为只是少做了一步，照着去做再撞一次墙。
   lineage:
-    '换成平台自建的那一张：上游镜像（如 `agent-infra/sandbox`）只是平台镜像的 `FROM`，**拿它去注册也会被血统检查拒** —— 不是少做一步注册。用平台的构建脚本重新构建并推送。',
-  registration:
-    '重启平台：平台开机会自动播种（把配置里那张镜像注册进来并做验证）。重启后这一步会自己变绿。',
+    '换成平台自己构建的那一张：上游镜像只是平台镜像的起点，拿它手动加进来同样会被拒 —— 不是少做一步。用平台的构建脚本重新构建并推送。',
+  registration: '重启平台：平台开机会自动把镜像装好并检查一遍。重启后这一步会自己变绿。',
   // ⚠️ 这一句是**预期管理**不是问题报告（§7A ②）。
   // ⛔ **不要在这里重复一个体积/耗时数字。** 它曾写死「13GB 镜像实测冷启动约 190 秒」，
   //    而那是 aio 档的数字；macOS 默认档 boxlite 的镜像压缩后 **0.3GB**，差了一个数量级
@@ -66,15 +64,15 @@ const STEP_ACTION: Readonly<Record<PresetImageStep, string>> = {
   //    同屏两个数字互相打架。⇒ 耗时由后端 `summary` 说（它知道是哪一档），这里只说
   //    「不用做任何事」。
   // ⚠️ **这句只属于「平台搬不了」那种机器**（2026-09-10 收窄）：平台能自己铺时它是假话。
-  staged: '不需要任何操作：第一个任务会自动把镜像铺开（耗时见上一行），之后每次 3–4 秒。',
+  staged: '不需要任何操作：第一个任务会自动把镜像下载好（耗时见上一行），之后每次几秒就起来。',
 };
 
 /** 后端没给 `hint` 时的兜底命令形态（③：⛔ 不覆盖后端那一句）。 */
 const FALLBACK_FIX: Readonly<Partial<Record<PresetImageStep, string>>> = {
-  // ⚠️ 按档配 —— 与上面 `STEP_ACTION.config` 同一条：别给那个会波及两档的总开关。
-  config: 'SANDBOX_AIO_IMAGE=<registry>/<repo>:<tag>   # 或 SANDBOX_BOXLITE_IMAGE，按档配',
-  registry: 'docker push <registry>/platform/sandbox:<tag>',
-  lineage: 'bash scripts/build-sandbox-image.sh && docker push <registry>/platform/sandbox:<tag>',
+  // ⚠️ 按环境分开配 —— 与上面 `STEP_ACTION.config` 同一条：别给那个会波及两种环境的总开关。
+  config: 'SANDBOX_AIO_IMAGE=<镜像仓库>/<仓库名>:<标签>   # 或 SANDBOX_BOXLITE_IMAGE',
+  registry: 'docker push <镜像仓库>/platform/sandbox:<标签>',
+  lineage: 'bash scripts/build-sandbox-image.sh && docker push <镜像仓库>/platform/sandbox:<标签>',
 };
 
 /** ⚠️ `info` 单独一档 —— 见文件头 ②。谁把它并进 `fail`，第 5 步就变成一个要去修的东西。 */
@@ -98,7 +96,7 @@ const IDLE: PresetImageChainModel = { phase: 'idle', steps: IDLE_STEPS, ready: f
  * 的时机发现——建好项目、选完运行时、填完指令、点下 [发起] 的那一刻。
  */
 const BLOCKED_TEXT =
-  '预制镜像尚未就绪 —— 可以 [稍后配置] 继续完成初始化，平台能进、项目能建，但**在此之前无法发起任何任务**（新建任务会被直接拒绝）。修好后回系统状态页重跑诊断即可。';
+  '在此之前无法发起任何任务：预制镜像还没就绪。可以 [稍后配置] 继续完成初始化，平台能进、项目能建，但新建任务会被直接拒绝。修好后回系统状态页重跑诊断即可。';
 
 export interface PresetImageChainInput {
   phase: PresetImageChainModel['phase'];
@@ -139,7 +137,10 @@ export function presetImageChainModel(input: PresetImageChainInput): PresetImage
     return {
       ...base,
       state: reportedState,
-      summary: frame.summary,
+      // ⚠️ 一句结论 + 它的证据，**两个字段**（后端 2026-09-11 拆的）。⛔ 不许在这里
+      //    拼回一句 —— 拼回去就是那段「读到第三行才知道好不好」的散文。
+      summary: frame.headline,
+      ...(frame.detailText === undefined ? {} : { detail: frame.detailText }),
       // ⚠️ **通过的那一步不给 action**（实测发现的）：真机上第 5 步是 `ok`（镜像已经铺开了），
       //    而 `STEP_ACTION.staged` 那句「第一个任务会自动把镜像铺开，需要数分钟」照样渲染出来
       //    —— 一条与它上面那句「已在本机铺开，可以立即发起任务」直接打架的预期管理。
@@ -213,9 +214,17 @@ function provisionOfferOf(frame: DiagnoseCheckFrame): PresetImageProvisionOffer 
   };
 }
 
+/**
+ * 这一步的**可粘贴命令**。
+ *
+ * ⚠️ ③ 后端 `command` 优先：它带着这台机器上的真实取值（真的镜像坐标、真的仓库地址）。
+ *
+ * ⛔ **只认 `command`，不再认 `nextStep`。** 后端拆字段之前，这里读的是 `hint`，而
+ * 那个字段既装命令也装散文 —— 于是「重跑一次看稳不稳定」被塞进等宽框顶着 [复制]。
+ * 现在散文有它自己的去处（`action` 那一行），这里一个字都不要接。
+ */
 function fixCommandFor(step: PresetImageStep, frame: DiagnoseCheckFrame): string | undefined {
-  // ③ 后端 `hint` 优先：它带着这台机器上的真实取值。
-  if (frame.hint !== undefined && frame.hint !== '') return frame.hint;
+  if (frame.command !== undefined && frame.command !== '') return frame.command;
   if (frame.status === 'ok' || frame.status === 'info') return undefined;
   return FALLBACK_FIX[step];
 }

@@ -39,7 +39,8 @@ const STEP_ORDER: readonly InitStepKey[] = [
 ];
 
 const STEP_LABEL: Readonly<Record<InitStepKey, string>> = {
-  connectivity: '出网检测',
+  // ⚠️ 「出网 / 可达性」→「联网 / 连得上」（全站统一口径，用户已裁决）。
+  connectivity: '联网检查',
   proxy: '代理配置',
   // ⚠️ 镜像排在资源之前是刻意的（P21-8 §2）：它依赖出网/代理（要拉镜像），而它的体积
   //    又是资源池那一步的主要输入 —— 顺序反过来，磁盘评估就少算了最大的一块。
@@ -49,8 +50,10 @@ const STEP_LABEL: Readonly<Record<InitStepKey, string>> = {
   //    离开这个页面去别处操作**的一步。放在平台能自己搞定的事全部落定之后 —— 否则用户
   //    人在授权页、这边镜像还在拉，回来发现**设备码已经过期**（codex 的码 15 分钟）。
   //    ⛔ 让有时限的凭证跨过一个分钟级的等待，是拿用户的时间去赌。
-  subscription: '订阅配置',
-  resource: '资源确认',
+  //    ⚠️ 「订阅配置」→「模型帐号」：前者会被读成"要给这个平台付订阅费"，而它实际问的是
+  //    "你自己的 AI 帐号配了没有"。
+  subscription: '模型帐号',
+  resource: '本机资源',
 };
 
 /**
@@ -176,14 +179,14 @@ export function schedulableBytes(totalBytes: number, reservedPercent: number): n
  * ⛔ 不许随便挑一档当默认 —— 挑错的那一半就是今天这个 bug。
  */
 export function diskCompositionFor(tier: string | undefined): string {
-  const tail = '所以这里看的是**可用容量**，不是总量。';
+  const tail = '所以这里看的是可用容量，不是总量。';
   if (tier === 'boxlite') {
-    return `磁盘会被三样东西持续吃掉：预制镜像铺开后约 1.3GB（压缩 0.3GB）· boxlite 的 rootfs 缓存实测约 31GB · 每个 Task 一份工作区副本。${tail}`;
+    return `磁盘会被三样东西持续吃掉：预制镜像下载到本机后约 1.3GB（下载 0.3GB）· 沙箱环境自己的镜像缓存实测约 31GB · 每个任务一份工作区副本。${tail}`;
   }
   if (tier === undefined) {
-    return `磁盘会被三样东西持续吃掉：预制镜像 · 运行时的 rootfs 缓存 · 每个 Task 一份工作区副本。${tail}`;
+    return `磁盘会被三样东西持续吃掉：预制镜像 · 沙箱环境自己的镜像缓存 · 每个任务一份工作区副本。${tail}`;
   }
-  return `磁盘会被三样东西持续吃掉：预制镜像约 13GB · 运行时的 rootfs 缓存 · 每个 Task 一份工作区副本。${tail}`;
+  return `磁盘会被三样东西持续吃掉：预制镜像约 13GB · 沙箱环境自己的镜像缓存 · 每个任务一份工作区副本。${tail}`;
 }
 
 export function resourceConfirmModel(
@@ -235,9 +238,12 @@ export function resourceConfirmModel(
     rows,
     low,
     // ⚠️ 「仍可继续」四个字不许省（①）：不写出来，用户会以为自己被卡住了。
+    // ⚠️ **「仍可继续」四个字前置**（2026-09 修）：它排在句尾时，用户读到前半句
+    //    「资源配置较低，建议增加后再投入使用」就已经以为自己被卡住了 —— 而这一档
+    //    从来就不是门（纪律①）。先说"不挡你"，再说"但是"。
     ...(low
       ? {
-          lowText: `当前资源配置较低（${lowParts.join('、')}），建议增加后再投入使用 —— 仍可继续，只是任务并发与镜像铺开会更慢。`,
+          lowText: `仍可继续 —— 当前这台机器的资源偏低（${lowParts.join('、')}），建议加上去之后再正式投入使用；现在就用也行，只是同时能跑的任务更少、镜像下载到本机更慢。`,
         }
       : {}),
     // ⚠️ **磁盘那一半必须跟一句「与当前可用取小」**（真机实测发现的）：预留是按**总容量**
@@ -245,8 +251,8 @@ export function resourceConfirmModel(
     //    「磁盘可调度上限 787.4 GB」—— 它就写在「可用 28.9 GB ⚠️」的下一行，
     //    两个数字直接打架，而大的那个更醒目。公式不改（它是产品定的），把边界说出来。
     reservedText:
-      `调度时预留总容量的 ${String(dto.disk.reservedPercent)}%（进度条分母仍是总容量，P21-8 §7）：` +
-      `内存可调度上限 ${formatBytes(schedulableBytes(dto.ram.totalBytes, dto.disk.reservedPercent))}、` +
+      `平台会留出总容量的 ${String(dto.disk.reservedPercent)}% 不拿去跑任务（上面的进度条分母仍然是总容量）：` +
+      `内存最多能分出 ${formatBytes(schedulableBytes(dto.ram.totalBytes, dto.disk.reservedPercent))}、` +
       `磁盘 ${formatBytes(schedulableBytes(dto.disk.totalBytes, dto.disk.reservedPercent))} —— ` +
       `磁盘还要与当前可用的 ${formatBytes(dto.disk.availableBytes)} 取小。`,
     diskCompositionText: diskComposition,

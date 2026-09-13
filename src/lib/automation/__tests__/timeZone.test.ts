@@ -5,6 +5,7 @@ import {
   formatInZone,
   wallClockOf,
   wallClockToUtc,
+  zoneOffsetLabel,
   zoneOffsetMs,
   zonedWeekday,
 } from '@/lib/automation/timeZone';
@@ -151,5 +152,33 @@ describe('⭐ 结构性：本模块不读运行环境时区', () => {
     expect(
       wallClockToUtc({ year: 2026, month: 8, day: 31, hour: 8, minute: 0, second: 0 }, SH),
     ).toBe(utc);
+  });
+});
+
+describe('zoneOffsetLabel —— 实时偏移（⛔ 不许写死常量）', () => {
+  /**
+   * ★ **夏令时地区换季时偏移会变**，所以这个标签必须每次算。
+   *   同一个 `Europe/Berlin`，冬天是 UTC+1、夏天是 UTC+2 —— 一张硬编码的表
+   *   每年会有两段时间在界面上显示一个确凿错误的数。这条用例就是那张表的门禁。
+   */
+  it('同一时区在冬夏两个时刻给出不同的偏移', () => {
+    const winter = Date.parse('2026-01-15T12:00:00Z');
+    const summer = Date.parse('2026-07-15T12:00:00Z');
+    expect(zoneOffsetLabel(winter, 'Europe/Berlin')).toBe('UTC+1');
+    expect(zoneOffsetLabel(summer, 'Europe/Berlin')).toBe('UTC+2');
+  });
+
+  it('整点 / 半点 / 零偏移 / 负偏移各有正确写法', () => {
+    const t = Date.parse('2026-01-15T12:00:00Z');
+    expect(zoneOffsetLabel(t, 'Asia/Shanghai')).toBe('UTC+8');
+    expect(zoneOffsetLabel(t, 'UTC')).toBe('UTC+0');
+    expect(zoneOffsetLabel(t, 'Asia/Kolkata')).toBe('UTC+5:30');
+    expect(zoneOffsetLabel(t, 'America/New_York')).toBe('UTC-5');
+  });
+
+  /** ⛔ 非法时区宁可不显示，也不回落本机偏移（那会给出一个看起来正常的错数）。 */
+  it('非法时区 → undefined，⛔ 不回落本机', () => {
+    expect(zoneOffsetLabel(Date.now(), 'Asia/NotACity')).toBeUndefined();
+    expect(zoneOffsetLabel(Date.now(), 'UTC+8')).toBeUndefined();
   });
 });

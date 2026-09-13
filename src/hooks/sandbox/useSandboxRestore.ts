@@ -40,6 +40,11 @@ export interface SandboxRestore {
   name?: string;
   /** 沙箱的 runtime（S6：无头任务 POST 路径里的 `:rt` 取它，前端不另造选择器）。 */
   runtime?: string;
+  /**
+   * 这个沙箱里能跑哪几个 agent CLI（06 §5.6）——终端 [+ 新终端] 下拉的数据源。
+   * ⛔ 来自沙箱 DTO 的**记录**，⛔ 不是 `/api/runtimes` 全集、也不是"现在配了哪些凭证"。
+   */
+  availableRuntimes?: string[];
   /** 沙箱实际跑在哪个 provider 档位上（S6：据此精确判定 headlessTask 能力位）。 */
   provider?: string;
   /**
@@ -140,6 +145,7 @@ export function useSandboxRestore(
   return {
     ...(data?.name === undefined ? {} : { name: data.name }),
     ...(data?.runtime === undefined ? {} : { runtime: data.runtime }),
+    ...(data?.availableRuntimes === undefined ? {} : { availableRuntimes: data.availableRuntimes }),
     ...(data?.provider === undefined ? {} : { provider: data.provider }),
     ...(data?.headless === undefined ? {} : { headless: data.headless }),
     notFound,

@@ -66,12 +66,16 @@ export function ScheduleSelectorView({
             {KIND_LABEL[k]}
           </label>
         ))}
-        {/* 自定义 cron 是 v1.2（P21-7 §3.2）。**摆一个禁用项而不是隐藏**，
-            是为了让"这条路存在但还没通"可见——与「恢复保留卷」那条相反的处理：
-            那条连禁用态都不摆，因为它的语义还没裁；这条语义已经定了，只是没排期。 */}
+        {/* 自定义 cron 还没排期（P21-7 §3.2）。**摆一个禁用项而不是隐藏**，
+            是为了让"这条路存在但还没通"可见——与「恢复保留下来的成果」那条相反的处理：
+            那条连禁用态都不摆，因为它的语义还没裁；这条语义已经定了，只是没排期。
+
+            ⚠️ 括号里原来写的是内部版本号 `v1.2` —— 用户没有任何办法知道那是哪一天。
+            ⛔ 也**不许换成一个具体日期**：那是一句时间承诺，而这里承诺不起。
+            「还没开放」是这里能诚实说出口的全部。 */}
         <label className="flex cursor-not-allowed items-center gap-1.5 text-xs text-muted-foreground">
           <input type="radio" name="schedule-kind" disabled data-testid="schedule-kind-cron" />
-          自定义 cron（v1.2）
+          自定义 cron（还没开放）
         </label>
       </div>
 
@@ -150,8 +154,8 @@ export function ScheduleSelectorView({
         />
         <span className="text-[11px] text-muted-foreground">
           {editing
-            ? '时区在规则创建时快照。不动它，保存时就不会重传——否则换台机器编辑一次，触发时刻就跟着这台机器挪走了。'
-            : '默认取你当前的时区，创建后快照保存；之后你换机器或改系统时区都不会影响这条规则。'}
+            ? '时区是建这条规则时定下的。不动它，保存时就不会重传——否则换台机器编辑一次，触发时刻就跟着这台机器挪走了。'
+            : '默认取你当前的时区，建好之后就定下来了；之后你换机器或改系统时区都不会影响这条规则。'}
         </span>
       </label>
 
