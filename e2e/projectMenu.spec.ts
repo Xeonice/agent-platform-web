@@ -237,11 +237,12 @@ test.describe('F21-6 项目菜单整块（含删除入口）', () => {
     await page.getByTestId('project-delete-entry').click();
     await page.getByTestId('delete-confirm').click();
 
-    // ⚠️ 钉的是「**服务端给的那个具体原因**要上屏」，不是「有一句错误提示」。
-    //    `INVALID_STATE` 在这条路上有两个成因（任务在跑 / 保留成果没清），客户端分不出，
-    //    所以 `describeProjectActionError` 对这个码优先用服务端那句话 —— 换成通用兜底
-    //    「删除失败，请稍后重试。」就等于把用户指向错误的地方。
-    await expect(page.getByTestId('delete-error')).toContainText('该项目仍有运行中的任务');
+    // ⚠️ 钉的是「**按码给出的那句客户端文案**要上屏」，⛔ 不是服务端 message。
+    //    这个仓库刻意的规则：服务端 message 永远不上屏（它可能是英文技术腔 ——
+    //    `useProjects.test.tsx` 里那条用例 stub 的正是 `'project has running tasks'`），
+    //    ⇒ 码 → 本地文案表。换成通用兜底「删除失败，请稍后重试。」才是真出问题。
+    await expect(page.getByTestId('delete-error')).toContainText('这个项目现在删不掉');
+    await expect(page.getByTestId('delete-error')).toContainText('先停掉');
     await expect(page.getByTestId('modal-project-menu')).toBeVisible();
     // 树里那一项一动没动（没有乐观删除）。
     await expect(page.getByTestId('project-group-header')).toHaveCount(1);
