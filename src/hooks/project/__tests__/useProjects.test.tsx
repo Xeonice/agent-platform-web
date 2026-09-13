@@ -243,6 +243,36 @@ describe('describeProjectActionError', () => {
     expect(msg).not.toContain('running tasks');
   });
 
+  /**
+   * ⭐ 保留成果挡住删除 ⇒ **专属码**，⛔ 不许落回 `INVALID_STATE` 那句。
+   *
+   * ⚠️ 这两个码在删项目这条路上是**两个成因**：上面那条是「还有任务在跑」，这条是
+   * 「还有没清理的保留成果」。共用一个码的话，前端只能写死一句 —— 于是带着保留成果
+   * 来删的用户会读到「还有任务在跑」这句**假话**，并被指向错误的地方（去停任务，
+   * 而实际要去清成果）。
+   *
+   * MUTATION：把 `PROJECT_HAS_LIVE_RETAINED_VOLUMES` 从文案表里删掉 ⇒ 它静默落回
+   * 兜底「删除失败，请稍后重试。」，本条红；⛔ 而只钉「有一句提示」的断言不会红。
+   */
+  it('PROJECT_HAS_LIVE_RETAINED_VOLUMES（409）→ 指向「保留下来的成果」，⛔ 不说成任务在跑', () => {
+    const err = new ApiErrorException(
+      {
+        code: 'PROJECT_HAS_LIVE_RETAINED_VOLUMES',
+        message: 'project still has 2 live retained volumes',
+        retryable: false,
+      },
+      409,
+    );
+    const msg = describeProjectActionError(err);
+    expect(msg).toContain('保留');
+    // ⛔ **不许冒充另一个成因** —— 这正是拆这个码的全部理由。
+    expect(msg).not.toContain('任务在跑');
+    // ⛔ 也不许落回兜底。
+    expect(msg).not.toContain('删除失败，请稍后重试');
+    // ⛔ 后端原文不上屏（与上一条同一条纪律）。
+    expect(msg).not.toContain('retained volumes');
+  });
+
   it('未知码 → 兜底文案（⛔ 不回落 message）；非 Api 错误 → 网络文案', () => {
     const unknown = new ApiErrorException(
       { code: 'WHATEVER', message: 'some backend prose', retryable: false },

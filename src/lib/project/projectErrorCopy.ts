@@ -22,6 +22,14 @@ export const PROJECT_ERROR_COPY: Readonly<Record<string, string>> = {
   PROJECT_NOT_FOUND: '这个项目已经不在了（可能在别处被删掉了）。刷新一下列表再试。',
   INVALID_PROJECT_SOURCE: '克隆已有仓库要填仓库地址；空项目则不要填地址。',
   INVALID_REPO_URL: '这个仓库地址看起来不对，检查一下再试。',
+  // ⚠️ **从 `INVALID_STATE` 里拆出来的专属码**（api 侧 10 §6.8）：删项目这条路上
+  //    `INVALID_STATE` 原本只有「还有任务在跑 / 克隆没停」一个成因，本表对它写死了一句。
+  //    保留成果这道前置检查加进来之后成了第二个成因 —— 共用一个码的话，带着保留成果
+  //    来删的用户会看到「还有任务在跑」这句**假话**，还被指向错误的地方。
+  // ⛔ 也不能改成回落服务端 message：那条路本仓库刻意堵死（服务端 message 随时可能是
+  //    技术腔，见 `useProjects.test.tsx` 里 stub 英文的那条）。⇒ 一个成因一个码。
+  PROJECT_HAS_LIVE_RETAINED_VOLUMES:
+    '这个项目下还有没清理的保留成果，删不掉。先到「保留下来的成果」里逐份清理，或等它们到期自动回收，然后再删项目。',
   NOT_FOUND: '要操作的东西已经不在了（可能在别处被删掉了）。刷新一下再试。',
 };
 

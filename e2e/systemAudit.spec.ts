@@ -121,7 +121,7 @@ test.describe('F21-5 审计流', () => {
     );
 
     await page.goto('/settings/credentials');
-    await page.getByRole('button', { name: '⚙️ 系统状态' }).click();
+    await page.getByRole('button', { name: '系统状态' }).click();
     await expect(page).toHaveURL(/\/settings\/system$/);
 
     const row = page.getByTestId('audit-row-1200');
@@ -373,7 +373,9 @@ test.describe('F21-5 审计流', () => {
     await page.route('**/api/system/audit**', (route) => route.fulfill({ status: 500, body: '' }));
 
     await page.goto('/settings/system');
-    await expect(page.getByText('❌ 审计流加载失败')).toBeVisible();
+    // ⚠️ 设计改造把 `❌` 换成了 `StatusPill status="fail"`（图标走 lucide，`check:no-emoji`
+    //    会拦住 emoji 回潮）。⇒ 钉**文案**，⛔ 不钉 emoji 前缀。
+    await expect(page.getByText('审计流加载失败')).toBeVisible();
     // 真浏览器里再钉一次这条否定断言：失败**不许**伪装成空——三句空态文案一句都不许有。
     await expect(page.getByText('暂无记录')).toHaveCount(0);
     await expect(page.getByText('当前筛选无匹配记录')).toHaveCount(0);

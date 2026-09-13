@@ -96,7 +96,8 @@ test.describe('S3 Git 凭证', () => {
     await page.getByPlaceholder('ghp_…').fill(FULL_TOKEN);
     // 测试连接 → ✅
     await page.getByRole('button', { name: '测试连接' }).click();
-    await expect(page.getByText('✅ 连接成功')).toBeVisible();
+    // ⚠️ `✅` 已换成 lucide 图标（`check:no-emoji`）。⇒ 钉文案，不钉 emoji 前缀。
+    await expect(page.getByText('连接成功')).toBeVisible();
     // 保存 → 列表刷新，卡片显示尾号
     await page.getByRole('button', { name: '保存' }).click();
 

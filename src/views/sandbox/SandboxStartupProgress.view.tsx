@@ -89,7 +89,11 @@ export function SandboxStartupProgressView({
             const state = i < activeIndex ? 'done' : i === activeIndex ? 'active' : 'pending';
             const note = phaseNote?.phaseKey === phase.key ? phaseNote.text : null;
             return (
-              <li key={phase.key} className="flex flex-col gap-1 text-sm">
+              // ⚠️ `data-phase-state` 是**给测试用的语义出口**：三态的视觉差别现在只剩
+              //    图标 class（`done` 是 `lucide-check`，`active`/`pending` 都是
+              //    `lucide-circle`，只靠 `fill-current`/`animate-pulse` 区分）——
+              //    按 class 断言太脆，改个动效就红。⛔ 也不能退回用 `●` 这种字符当标记。
+              <li key={phase.key} data-phase-state={state} className="flex flex-col gap-1 text-sm">
                 <span className="flex items-center gap-2">
                   {state === 'done' ? (
                     <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-primary" />

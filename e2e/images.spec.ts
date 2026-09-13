@@ -222,7 +222,7 @@ test.describe('F21-4 镜像管理 · 跨页可达性', () => {
     await stubBase(page, [LIST]);
 
     await page.goto('/settings/credentials');
-    const entry = page.getByRole('button', { name: '🖼️ 镜像管理' });
+    const entry = page.getByRole('button', { name: '镜像管理' });
     // 守的正是那条退化：菜单项曾经挂着 `disabled: true`，页面建好了也进不去，
     // 而 container 测试直接渲染 `<ImagesContainer />`、根本不经过菜单，看不见这件事。
     await expect(entry).toBeEnabled();
@@ -252,7 +252,7 @@ test.describe('F21-4 镜像管理 · 深链（真实地址栏，§7.4 补充场�
     // 正向证据：⚠️ 那张卡在，且过滤按钮处于按下态 —— 证明过滤器**真的被应用了**，
     // 下面两条"另外两张不在"才不是由"列表根本没渲染"廉价满足的。
     await expect(card(page, 'm-warn')).toBeVisible();
-    const warnTab = page.getByRole('button', { name: '⚠️ 警告' });
+    const warnTab = page.getByRole('button', { name: '警告' });
     await expect(warnTab).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('image-card')).toHaveCount(1);
     await expect(card(page, 'm-builtin')).toHaveCount(0);
@@ -280,9 +280,9 @@ test.describe('F21-4 镜像管理 · 搜索词的生命周期（P21-4 §6：会�
     await expect(page.getByTestId('image-card')).toHaveCount(3);
     await searchNarrowsToOne(page);
 
-    await page.getByRole('button', { name: '🔐 凭证管理' }).click();
+    await page.getByRole('button', { name: '凭证管理' }).click();
     await expect(page).toHaveURL(/\/settings\/credentials$/);
-    await page.getByRole('button', { name: '🖼️ 镜像管理' }).click();
+    await page.getByRole('button', { name: '镜像管理' }).click();
     await expect(page).toHaveURL(/\/settings\/images$/);
 
     await expect(page.getByLabel('搜索镜像')).toHaveValue('');

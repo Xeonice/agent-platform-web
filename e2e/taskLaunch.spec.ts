@@ -204,7 +204,11 @@ test.describe('S5 发起任务：initialPrompt + 默认任务名 + 四阶段进�
     // ⚠️ 标签是**上屏词**（P21-1 §9）：内部的「工作区」「实例」在界面上叫「代码副本」「运行环境」。
     await expect(phases.nth(2)).toContainText('准备代码副本');
     await expect(phases.nth(3)).toContainText('启动运行环境');
-    await expect(phases.nth(1)).toContainText('●'); // active 标记
+    // ⚠️ active 标记从字符 `●` 换成了 lucide 图标（emoji/字符不再当图标用，
+    //    `check:no-emoji` 会拦）。⛔ 不按图标 class 断言（`active` 与 `pending`
+    //    都是 `lucide-circle`，只差 `fill-current`/`animate-pulse`，改个动效就红）。
+    //    ⇒ view 暴露了 `data-phase-state` 这个**语义出口**，钉它。
+    await expect(phases.nth(1)).toHaveAttribute('data-phase-state', 'active');
 
     // ② 安全红线：指令不落任何前端持久化
     const dump = await page.evaluate(() => JSON.stringify(globalThis.localStorage));
