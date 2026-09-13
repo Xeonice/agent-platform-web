@@ -64,6 +64,22 @@ export const MultiProject: Story = {
 };
 
 /**
+ * ⭐ 顶部"等待你输入"汇总条：⚡ 换成 lucide `Zap`（class `lucide-zap`），装饰性
+ * （`aria-hidden`）——去掉图标之后「N 个任务等待你输入」这句话本身仍然完整，
+ * 不依赖图标传递唯一信息。
+ */
+export const WaitingInputBannerHasIcon: Story = {
+  args: { groups, waitingInputCount: 3, healthLabel: null, terminalSlot },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText('3 个任务等待你输入')).toBeInTheDocument();
+    const icon = canvasElement.querySelector('.lucide-zap');
+    await expect(icon).not.toBeNull();
+    await expect(icon).toHaveAttribute('aria-hidden', 'true');
+  },
+};
+
+/**
  * ⭐ 任务树状态点接入 `StatusPill` 的极简变体（design-notes.md §4 Phase 3 第 2 条）：
  * 等待输入 → warn dot，运行中 → ok dot。⛔ 不再是文字前缀 🔵。
  *
@@ -210,8 +226,9 @@ export const SearchInputForwardsValue: Story = {
 };
 
 /**
- * ⭐ P21-1 §6 六档筛选 chip（全部/准备中/运行中/等待输入/已暂停/异常）逐一可点，
- * 点哪个就上抛哪个（`aria-pressed` 标出当前激活项）。
+ * ⭐ P21-1 §6 七档筛选 chip（全部/准备中/运行中/等待输入/已暂停/异常/已停止，
+ * 2026-09-13 用户裁决新增「已停止」）逐一可点，点哪个就上抛哪个
+ * （`aria-pressed` 标出当前激活项）。
  * 变异：把某个 chip 的 `data-testid`/点击值写错（比如「已暂停」点了传 'running'）
  * ⇒ 对应断言的 `toHaveBeenCalledWith` 会读到错误的枚举值。
  */
@@ -235,8 +252,51 @@ export const FilterChipsEachEmitOwnValue: Story = {
     await expect(args.onStatusFilterChange).toHaveBeenCalledWith('paused');
     await userEvent.click(canvas.getByTestId('task-filter-error'));
     await expect(args.onStatusFilterChange).toHaveBeenCalledWith('error');
+    await userEvent.click(canvas.getByTestId('task-filter-stopped'));
+    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('stopped');
     await userEvent.click(canvas.getByTestId('task-filter-all'));
     await expect(args.onStatusFilterChange).toHaveBeenCalledWith('all');
+  },
+};
+
+/**
+ * ⭐ 七档放不下 400px 侧栏一行（「异常」会被挤到第二行）：用户裁决走**横向滚动**，
+ * ⛔ 不换行、⛔ 不缩短文案。钉住的是结构事实（`flex-nowrap` + `overflow-x-auto`），
+ * 不是视觉——`flex-wrap` 悄悄加回来不会改变每个 chip 各自的可见文字，只有类名断言
+ * 才拦得住。
+ * 变异：把容器 className 里的 `flex-nowrap` 改回 `flex-wrap`（或删掉
+ * `overflow-x-auto`）⇒ 本条红。
+ */
+export const FilterChipsScrollHorizontallyNoWrap: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+  },
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const chipsRow = canvas.getByTestId('task-filter-chips');
+    await expect(chipsRow.className).toContain('flex-nowrap');
+    await expect(chipsRow.className).toContain('overflow-x-auto');
+    // "flex-nowrap" 本身不含 "flex-wrap" 子串（no 隔开了 wrap），这里显式钉一遍
+    // 防止有人手滑把 nowrap 删成 wrap。
+    await expect(chipsRow.className.split(/\s+/)).not.toContain('flex-wrap');
+    // 七个 chip 都在场，且没有一个换了行（每个按钮自己也不许折行/收缩到看不清文字）。
+    for (const status of [
+      'all',
+      'preparing',
+      'running',
+      'waitingInput',
+      'paused',
+      'error',
+      'stopped',
+    ]) {
+      const chip = canvas.getByTestId(`task-filter-${status}`);
+      await expect(chip.className).toContain('whitespace-nowrap');
+      await expect(chip.className).toContain('shrink-0');
+    }
   },
 };
 
@@ -437,7 +497,12 @@ export const SettingsMenuOpensWithThreeItems: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const trigger = canvas.getByTestId('nav-settings-menu-trigger');
-    await expect(trigger).toHaveAccessibleName('⚙️ 设置');
+    // 齿轮换成了 lucide `Settings`（class `lucide-settings`），前面不再是字面 emoji
+    // 字符——图标是 `aria-hidden`，无障碍名仍然只由可见文字「设置」决定。
+    await expect(trigger).toHaveAccessibleName('设置');
+    const triggerIcon = trigger.querySelector('svg');
+    await expect(triggerIcon).toHaveClass('lucide-settings');
+    await expect(triggerIcon).toHaveAttribute('aria-hidden', 'true');
 
     // 键盘展开：聚焦 + Enter，不摸鼠标。
     trigger.focus();

@@ -97,6 +97,27 @@ describe('filterProjectGroups · 状态 chips', () => {
     expect(result.groups.flatMap((g) => g.tasks.map((t) => t.id))).toEqual(['t4']);
   });
 
+  /**
+   * 第七档（2026-09-13 用户裁决新增）。变异：把 'stopped' 分支改成恒 false（或
+   * 误接到 'paused'）⇒ 本例挑不出 t6，或把 t3 也混进来。
+   */
+  it('已停止 chip：只保留 status === stopped 的任务', () => {
+    const withStopped = [
+      ...groups,
+      {
+        projectId: 'p3',
+        projectName: 'ProjectC',
+        cloneStatus: 'ready' as const,
+        collapsed: false,
+        taskCount: 1,
+        tasks: [task({ id: 't6', name: '已回收的任务', projectId: 'p3', status: 'stopped' })],
+      },
+    ];
+    const result = filterProjectGroups(withStopped, { query: '', status: 'stopped' });
+    expect(result.matchedTaskCount).toBe(1);
+    expect(result.groups.flatMap((g) => g.tasks.map((t) => t.id))).toEqual(['t6']);
+  });
+
   it('状态筛选过滤到 0 条的项目组整组不出现（不留空壳组头）', () => {
     const result = filterProjectGroups(groups, { query: '', status: 'paused' });
     // ProjectB 没有 paused 任务 ⇒ 整组消失，不是渲染成一个 0 条的空组。
@@ -110,14 +131,14 @@ describe('filterProjectGroups · 状态 chips', () => {
 });
 
 /**
- * ⭐⭐ 硬要求钉子（用户裁决）：喂进**覆盖全部六个 `SandboxStatus`**（含没有对应 chip 的
- * `'stopped'`）的数据集，一次性断言五个具体 chip 之间互不重叠、互不遗漏，
- * ⛔ 不是"逐档各测各的"（上面几条按档单测的用例仍然保留，但这一条才是防重复/防漏的
- * 唯一权威判据）。
+ * ⭐⭐ 硬要求钉子（用户裁决，2026-09-13 改写）：喂进**覆盖全部六个 `SandboxStatus`**
+ * 的数据集，一次性断言**六个**具体 chip 之间互不重叠、互不遗漏，⛔ 不是"逐档各测各的"
+ * （上面几条按档单测的用例仍然保留，但这一条才是防重复/防漏的唯一权威判据）。
  *
- * `'stopped'`（已停止）在 P21-1 §6 的六档里**没有对应 chip**——这不是本次实现漏掉了
- * 一档，产品文档给的六档本来就只有"全部/准备中/运行中/等待输入/已暂停/异常"，`stopped`
- * 只落在"全部"里。见 `filterTaskTree.ts` 顶部说明与本任务报告里的书面说明。
+ * ⚠️ **不变量已改**：上一轮这里是"五个具体 chip 命中数之和 = 全部档命中数 − 1"
+ * （`stopped` 被文档排除在六档之外，只落"全部"）。用户推翻了那个判断——现在
+ * `stopped` 有自己的 chip，6 个具体 chip 与 6 个状态一一对应，`all` 之外不再有
+ * 无家可归的状态，不变量因此变成"六个具体 chip 命中数之和 = 全部档命中数"（不再减 1）。
  */
 describe('filterProjectGroups · 六档命中数之和 = 全部档命中数（覆盖全部状态的数据集）', () => {
   const allStatuses: ProjectGroup[] = [
@@ -133,34 +154,34 @@ describe('filterProjectGroups · 六档命中数之和 = 全部档命中数（�
         task({ id: 's-waiting', name: '等待输入的任务', status: 'running', waitingInput: true }),
         task({ id: 's-paused', name: '已暂停的任务', status: 'paused', waitingInput: false }),
         task({ id: 's-error', name: '异常的任务', status: 'error', waitingInput: false }),
-        // ⚠️ 六档里没有它的位置——只应出现在"全部"里，五个具体 chip 一个都不该命中它。
         task({ id: 's-stopped', name: '已停止的任务', status: 'stopped', waitingInput: false }),
       ],
     },
   ];
 
-  const FIVE_SPECIFIC_CHIPS: readonly Exclude<TaskStatusFilter, 'all'>[] = [
+  const SIX_SPECIFIC_CHIPS: readonly Exclude<TaskStatusFilter, 'all'>[] = [
     'preparing',
     'running',
     'waitingInput',
     'paused',
     'error',
+    'stopped',
   ];
 
   /**
    * MUTATION 覆盖：
    *  · 把 'running' 分支的 `&& !task.waitingInput` 去掉 ⇒ 's-waiting' 同时落进
    *    running 与 waitingInput 两个 chip ⇒ 第一条"不重复"断言红；
-   *  · 把 'waitingInput' 分支改成恒 true ⇒ 其余四个 chip 之外的任务全部混进来 ⇒
+   *  · 把 'waitingInput' 分支改成恒 true ⇒ 其余 chip 之外的任务全部混进来 ⇒
    *    两条断言都红；
-   *  · 给 'stopped' 误接一个具体 chip（比如让 'paused' 也匹配 'stopped'）⇒
-   *    "not.toContain('s-stopped')" 与"sum = all - 1"两条都红。
+   *  · 删掉 'stopped' 分支（退回 default ⇒ 恒 false）或把它误接到 'paused' ⇒
+   *    "并集精确等于全部六个 id" 与 "sum = all" 两条都红。
    */
-  it('五个具体 chip 的命中 id 互不重叠、并集正好是除 stopped 外的全部任务', () => {
+  it('六个具体 chip 的命中 id 互不重叠、并集精确等于全部六条任务', () => {
     const all = filterProjectGroups(allStatuses, { query: '', status: 'all' });
     expect(all.matchedTaskCount).toBe(6);
 
-    const perChipIds = FIVE_SPECIFIC_CHIPS.map((status) =>
+    const perChipIds = SIX_SPECIFIC_CHIPS.map((status) =>
       filterProjectGroups(allStatuses, { query: '', status }).groups.flatMap((g) =>
         g.tasks.map((t) => t.id),
       ),
@@ -169,17 +190,15 @@ describe('filterProjectGroups · 六档命中数之和 = 全部档命中数（�
 
     // 不重复计入：拼起来的 id 去重前后长度一致 ⇒ 没有任何一条任务同时落进两个 chip。
     expect(new Set(unionIds).size).toBe(unionIds.length);
-    // 不遗漏、不误伤：并集精确等于除 stopped 外的那 5 条，一个不多一个不少。
+    // 不遗漏、不误伤：并集精确等于全部六条，一个不多一个不少——`stopped` 现在也在其中。
     expect(new Set(unionIds)).toEqual(
-      new Set(['s-preparing', 's-running', 's-waiting', 's-paused', 's-error']),
+      new Set(['s-preparing', 's-running', 's-waiting', 's-paused', 's-error', 's-stopped']),
     );
-    // stopped 是六档里唯一无处安放的状态：五个具体 chip 一个都不该命中它。
-    expect(unionIds).not.toContain('s-stopped');
 
-    // ⭐ 硬要求原句：「六档命中数之和 = 全部档的数量」——五个具体 chip 的命中数相加，
-    // 应等于"全部"命中数减去那一条被文档明确排除在六档之外的 stopped 任务。
-    const sumOfFiveSpecificChips = perChipIds.reduce((sum, ids) => sum + ids.length, 0);
-    expect(sumOfFiveSpecificChips).toBe(all.matchedTaskCount - 1);
+    // ⭐ 硬要求原句（本轮改写）：「六个具体 chip 命中数之和 = 全部档的数量」——
+    // 不再有排除在外的状态，不再是 `all - 1`。
+    const sumOfSixSpecificChips = perChipIds.reduce((sum, ids) => sum + ids.length, 0);
+    expect(sumOfSixSpecificChips).toBe(all.matchedTaskCount);
   });
 });
 

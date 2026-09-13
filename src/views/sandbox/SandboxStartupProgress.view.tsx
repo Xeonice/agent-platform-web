@@ -4,6 +4,7 @@
 //
 // ⚠️ 格的**顺序由 props.phases 决定**（容器从 lib/sandboxLifecycle 取，展示序刻意 ≠ 状态机序）；
 // 本视图不排序、不重排、不硬编码任何阶段名。
+import { Check, Circle } from 'lucide-react';
 
 export interface SandboxStartupProgressProps {
   /** 四阶段标签（顺序即展示顺序，由 container 注入）。 */
@@ -90,18 +91,19 @@ export function SandboxStartupProgressView({
             return (
               <li key={phase.key} className="flex flex-col gap-1 text-sm">
                 <span className="flex items-center gap-2">
-                  <span
-                    aria-hidden
-                    className={
-                      state === 'done'
-                        ? 'text-primary'
-                        : state === 'active'
-                          ? 'animate-pulse text-primary'
-                          : 'text-muted-foreground'
-                    }
-                  >
-                    {state === 'done' ? '✓' : state === 'active' ? '●' : '○'}
-                  </span>
+                  {state === 'done' ? (
+                    <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  ) : state === 'active' ? (
+                    <Circle
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0 animate-pulse fill-current text-primary"
+                    />
+                  ) : (
+                    <Circle
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                    />
+                  )}
                   <span
                     className={state === 'pending' ? 'text-muted-foreground' : 'text-foreground'}
                   >

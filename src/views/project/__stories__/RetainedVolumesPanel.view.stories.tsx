@@ -89,6 +89,10 @@ export const TwoVolumes: Story = {
     await expect(canvas.getByTestId('retained-volumes-totals')).toHaveTextContent(
       '共 2 个 · 占用 1.3 GB · 全部下载 17 MB',
     );
+
+    // MUTATION：把每行的 `<Gift>` 换回 🎁 字符或换成另一个图标 ⇒ 这条先红。
+    const rows = canvas.getAllByTestId('retained-volume-row');
+    await expect(rows[0]?.querySelector('svg.lucide-gift')).not.toBeNull();
   },
 };
 

@@ -42,7 +42,7 @@ export function useAutomationPresentation(dto: AutomationDto | undefined): Autom
         label: '成果保留期',
         // ⭐ 明说落到哪里：与项目菜单里那个面板是同一条路（13 §2.2.2），不是两套存储。
         // ⚠️ 按钮名与 `ProjectMenuPanel.view` 逐字一致，⛔ 改一处必须一起改。
-        value: `${String(dto.artifactRetentionDays)} 天（存放在项目的「🎁 保留下来的成果」里）`,
+        value: `${String(dto.artifactRetentionDays)} 天（存放在项目的「保留下来的成果」里）`,
       },
       { label: '撞上了怎么办', value: '跳过（上一次还在跑，这一次就不再起一个）' },
       {

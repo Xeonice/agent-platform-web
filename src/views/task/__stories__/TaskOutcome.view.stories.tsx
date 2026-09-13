@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { expect } from 'storybook/test';
 import { TaskOutcomeView } from '@/views/task/TaskOutcome.view';
 import type { TaskArtifactView } from '@/types/taskStream';
 
@@ -30,11 +31,19 @@ export const Succeeded: Story = {
   args: {
     copy: {
       tone: 'success',
-      title: '✅ 任务完成（退出码 0）',
+      severity: 'ok',
+      title: '任务完成（退出码 0）',
       advice: '产物可在下方列表下载；也可以基于这一轮会话接着提新指令。',
       exitCodeLabel: '0',
       exitCodeMissing: false,
     },
+  },
+  /** severity='ok' → lucide `Check`（class `lucide-check`），与失败态用不同图标。 */
+  play: async ({ canvasElement }) => {
+    const icon = canvasElement.querySelector('[data-outcome-severity="ok"]');
+    await expect(icon).not.toBeNull();
+    await expect(icon).toHaveClass('lucide-check');
+    await expect(icon).toHaveAttribute('aria-hidden', 'true');
   },
 };
 
@@ -43,12 +52,20 @@ export const NonZeroExit: Story = {
   args: {
     copy: {
       tone: 'failed',
-      title: '❌ 任务失败',
+      severity: 'fail',
+      title: '任务失败',
       advice: 'CLI 以退出码 1 结束。',
       exitCodeLabel: '1',
       exitCodeMissing: false,
     },
     artifacts: [],
+  },
+  /** ⭐ 图标真的换成了 severity='fail' 对应的 lucide `X`（class `lucide-x`）——
+   * 不再靠标题里的字面 emoji 字符（那个字符已经被拆成 severity 字段）。 */
+  play: async ({ canvasElement }) => {
+    const icon = canvasElement.querySelector('[data-outcome-severity="fail"]');
+    await expect(icon).not.toBeNull();
+    await expect(icon).toHaveClass('lucide-x');
   },
 };
 
@@ -60,7 +77,8 @@ export const ExitCodeMissing: Story = {
   args: {
     copy: {
       tone: 'failed',
-      title: '⛔ 任务被终止',
+      severity: 'fail',
+      title: '任务被终止',
       advice:
         '本次没有拿到退出码——进程被信号终止（超时强杀 / OOM / 手动终止）时不会留下退出码，已按非零退出处理。',
       exitCodeLabel: '未知（进程被信号终止，没有退出码）',
@@ -75,7 +93,8 @@ export const TimedOut: Story = {
   args: {
     copy: {
       tone: 'failed',
-      title: '⏱️ 任务超时，已被强制终止',
+      severity: 'timeout',
+      title: '任务超时，已被强制终止',
       advice:
         '任务运行超过设定的硬超时上限，已被平台强制终止。可以调大超时档位后重跑。 本次没有拿到退出码——进程被信号终止（超时强杀 / OOM / 手动终止）时不会留下退出码，已按非零退出处理。',
       exitCodeLabel: '未知（进程被信号终止，没有退出码）',
@@ -84,6 +103,12 @@ export const TimedOut: Story = {
     },
     artifacts: [],
   },
+  /** severity='timeout' → lucide `Clock`（class `lucide-clock`）——超时 ≠ 失败，图标也不同。 */
+  play: async ({ canvasElement }) => {
+    const icon = canvasElement.querySelector('[data-outcome-severity="timeout"]');
+    await expect(icon).not.toBeNull();
+    await expect(icon).toHaveClass('lucide-clock');
+  },
 };
 
 /** 无产物：明说"没有产出文件"，不留空白区。 */
@@ -91,7 +116,8 @@ export const NoArtifacts: Story = {
   args: {
     copy: {
       tone: 'success',
-      title: '✅ 任务完成（退出码 0）',
+      severity: 'ok',
+      title: '任务完成（退出码 0）',
       advice: '产物可在下方列表下载；也可以基于这一轮会话接着提新指令。',
       exitCodeLabel: '0',
       exitCodeMissing: false,
@@ -105,7 +131,8 @@ export const Downloading: Story = {
   args: {
     copy: {
       tone: 'success',
-      title: '✅ 任务完成（退出码 0）',
+      severity: 'ok',
+      title: '任务完成（退出码 0）',
       advice: '产物可在下方列表下载。',
       exitCodeLabel: '0',
       exitCodeMissing: false,
@@ -119,7 +146,8 @@ export const DownloadingWithProgress: Story = {
   args: {
     copy: {
       tone: 'success',
-      title: '✅ 任务完成（退出码 0）',
+      severity: 'ok',
+      title: '任务完成（退出码 0）',
       advice: '产物可在下方列表下载。',
       exitCodeLabel: '0',
       exitCodeMissing: false,
@@ -134,7 +162,8 @@ export const NoSessionRef: Story = {
   args: {
     copy: {
       tone: 'failed',
-      title: '❌ 任务失败',
+      severity: 'fail',
+      title: '任务失败',
       advice: 'CLI 以退出码 1 结束。',
       exitCodeLabel: '1',
       exitCodeMissing: false,

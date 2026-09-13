@@ -1,4 +1,4 @@
-// F21-6 §7.2：组头两个 variant —— `normal` 与 `cloneFailed`（`● 📁 名字 ⚠️ 克隆失败 ⋯`，
+// F21-6 §7.2：组头两个 variant —— `normal` 与 `cloneFailed`（`● [Folder] 名字 [AlertTriangle] 克隆失败 ⋯`，
 // 前导 `●` 是 StatusDot）。
 //
 // ⚠️ §7.2 原本还要求一条否定性 play：「failed 态点组头 → 只触发 onToggleFold，
@@ -30,16 +30,17 @@ export default meta;
 type Story = StoryObj<typeof ProjectGroupHeaderView>;
 
 /**
- * 常规组头 `📁 ProjectName · N ⋯`。
+ * 常规组头 `[Folder] ProjectName · N ⋯`。
  * ⭐ **这一期的立论就在这个 `⋯` 上**：在它之前，删除项目在界面上根本够不着（§10.1）。
  */
 export const Normal: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('project-group-header')).toHaveAttribute(
-      'data-variant',
-      'normal',
-    );
+    const header = canvas.getByTestId('project-group-header');
+    await expect(header).toHaveAttribute('data-variant', 'normal');
+    // MUTATION：把 `<Folder>` 换回 📁 字符或换成另一个图标 ⇒ 这条先红——只断言
+    // 项目名文本（下面 userEvent 那句）不会因为图标变了而变红，锁不住"真的是 Folder"。
+    await expect(header.querySelector('svg.lucide-folder')).not.toBeNull();
     await userEvent.click(canvas.getByTestId('project-group-menu-trigger'));
     await expect(args.onOpenMenu).toHaveBeenCalledWith('p1');
   },
@@ -50,22 +51,23 @@ export const Selected: Story = { args: { selected: true } };
 export const Cloning: Story = { args: { cloneStatus: 'cloning' } };
 
 /**
- * `● 📁 ProjectName ⚠️ 克隆失败 ⋯`（产品 P21-6 §9）。
- * ⭐ 前导徽标是 `StatusDot`（design-notes.md §4 Phase 3 第 2 条），⛔ 不再是手写 🔴 emoji——
+ * `● [Folder] ProjectName [AlertTriangle] 克隆失败 ⋯`（产品 P21-6 §9）。
+ * ⭐ 前导徽标是 `StatusDot`（design-notes.md §4 Phase 3 第 2 条），⛔ 不再是手写 emoji——
  * 用 `data-status="fail"` 断言，而不是找一个 emoji 字符（emoji 换成别的视觉表现时这条不该跟着红）。
+ * ⚠️ `AlertTriangle` 是 lucide 历史别名，渲染出的 class 是 `lucide-triangle-alert`
+ * （不是 `lucide-alert-triangle`）——写错这个名字断言会一直找不到元素。
  */
 export const CloneFailed: Story = {
   args: { cloneStatus: 'failed', taskCount: 0 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('project-group-header')).toHaveAttribute(
-      'data-variant',
-      'cloneFailed',
-    );
-    await expect(canvas.getByText('⚠️ 克隆失败')).toBeInTheDocument();
-    const dot = canvas
-      .getByTestId('project-group-header')
-      .querySelector('[data-slot="status-dot"]');
+    const header = canvas.getByTestId('project-group-header');
+    await expect(header).toHaveAttribute('data-variant', 'cloneFailed');
+    // emoji 已从文案里拆出：文字断言只锁「克隆失败」，图标另断言 svg class。
+    const badge = canvas.getByText('克隆失败');
+    await expect(badge).toBeInTheDocument();
+    await expect(badge.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
+    const dot = header.querySelector('[data-slot="status-dot"]');
     await expect(dot).not.toBeNull();
     await expect(dot).toHaveAttribute('data-status', 'fail');
   },

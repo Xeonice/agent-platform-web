@@ -4,6 +4,7 @@
 //     **绝不把 `undefined` 渲染到界面上**。
 import type { TaskErrorCode, TaskStatus } from '@/types/task';
 import type { TaskExit, TaskOutcomeCopy } from '@/types/taskStream';
+import type { OutcomeSeverity } from '@/types/outcomeSeverity';
 
 // 形状住在 types/（view 层不能 import lib）；本文件只产出内容。
 export type { TaskOutcomeCopy } from '@/types/taskStream';
@@ -144,10 +145,29 @@ export function describeTaskChannelErrorCode(code: string | undefined): string |
 
 const STATUS_TITLE: Record<TaskStatus, string> = {
   running: '任务进行中',
-  succeeded: '✅ 任务完成',
-  failed: '❌ 任务失败',
-  killed: '⛔ 任务被终止',
-  timed_out: '⏱️ 任务超时，已被强制终止',
+  succeeded: '任务完成',
+  failed: '任务失败',
+  killed: '任务被终止',
+  timed_out: '任务超时，已被强制终止',
+};
+
+/**
+ * `STATUS_TITLE` 那句话属于哪一类结果——同一次拆分（见 `types/taskStream.ts`
+ * `TaskOutcomeCopy.severity` 的头注释）：这张表此前把图标编码成标题里的一个字面 emoji
+ * 字符（✅/❌/⛔/⏱️），现在拆成结构化字段，lib 只产出语义，图标由 view 查
+ * `components/ui/outcome-icon.tsx` 决定。
+ *
+ * ⚠️ `killed`（⛔ 被终止）与 `failed`（❌ 失败）原先是两个不同的 emoji，但 `OutcomeSeverity`
+ * 只有 5 个值、没有专门给"被终止"开一个第六态——它与"失败"共用同一套"这一轮没能正常
+ * 收场"的视觉语义（8 态 `StatusPill` 也一样只有一个 `fail`），这里合并映射到 `'fail'`，
+ * 与既有 `tone`（两者都落 `'failed'` 调性、红字）完全一致，不是新引入的降级。
+ */
+const STATUS_SEVERITY: Record<TaskStatus, OutcomeSeverity> = {
+  running: 'info',
+  succeeded: 'ok',
+  failed: 'fail',
+  killed: 'fail',
+  timed_out: 'timeout',
 };
 
 /**
@@ -189,7 +209,8 @@ export function describeTaskOutcome(input: {
     tone: success ? 'success' : 'failed',
     exitCodeLabel,
     exitCodeMissing: missing,
-    title: success ? '✅ 任务完成（退出码 0）' : STATUS_TITLE[status],
+    title: success ? '任务完成（退出码 0）' : STATUS_TITLE[status],
+    severity: STATUS_SEVERITY[status],
     advice: parts.join(' '),
     ...(input.errorCode === undefined || input.errorCode === ''
       ? {}

@@ -5,6 +5,7 @@
 //
 // ⚠️ 这里**没有** [保存]：能不能保存是注册弹窗的事（`RegisterImageModal.view`），
 // 结论区只负责说清楚结论。把两件事塞进一个组件，就会出现"结论已作废但保存还在"的缝。
+import { AlertTriangle, Check, X, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ImageValidationResultData } from '@/types/image';
 
@@ -14,12 +15,19 @@ export interface ValidationResultProps extends ImageValidationResultData {
 }
 
 const HEADLINE: Record<ImageValidationResultData['status'], string> = {
-  valid: '✅ 验证通过：镜像可用',
-  warning: '⚠️ 验证通过但有警告',
-  invalid: '❌ 验证失败：镜像不符合平台约定',
+  valid: '验证通过：镜像可用',
+  warning: '验证通过但有警告',
+  invalid: '验证失败：镜像不符合平台约定',
 };
 
-/** ⚠️ 是黄、❌ 是红、✅ 是绿——三级各自一个色，别混。 */
+/** 图标选择对齐 `StatusPill` 的 ok/warn/fail 三态同款（valid→Check、warning→AlertTriangle、invalid→X）。 */
+const HEADLINE_ICON: Record<ImageValidationResultData['status'], LucideIcon> = {
+  valid: Check,
+  warning: AlertTriangle,
+  invalid: X,
+};
+
+/** 警告是黄、失败是红、通过是绿——三级各自一个色，别混。 */
 const TONE_CLASS: Record<ImageValidationResultData['status'], string> = {
   valid: 'border-emerald-500/40 text-emerald-400',
   warning: 'border-amber-500/40 text-amber-400',
@@ -33,6 +41,7 @@ export function ValidationResultView({
   pinnedDigestShort,
   onViewRequirements,
 }: ValidationResultProps) {
+  const HeadlineIcon = HEADLINE_ICON[status];
   return (
     <div
       data-testid="validation-result"
@@ -40,7 +49,14 @@ export function ValidationResultView({
       role={status === 'invalid' ? 'alert' : 'status'}
       className={`flex flex-col gap-2 rounded-md border p-3 text-sm ${TONE_CLASS[status]}`}
     >
-      <p className="font-medium">{HEADLINE[status]}</p>
+      <p className="flex items-center gap-1.5 font-medium">
+        <HeadlineIcon
+          aria-hidden="true"
+          data-testid="validation-headline-icon"
+          className="h-4 w-4 shrink-0"
+        />
+        {HEADLINE[status]}
+      </p>
 
       {/* 「这个绿勾属于这个 digest，不属于这个 tag」（P21-4 §5 ★）——所以结论旁边就把 digest 摆出来。 */}
       {pinnedDigestShort !== undefined && status !== 'invalid' && (

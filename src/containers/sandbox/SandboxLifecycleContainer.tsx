@@ -100,6 +100,7 @@ export function SandboxLifecycleContainer({
     return (
       <SandboxOutcomeView
         tone={decision === 'failed' ? 'failed' : 'ended'}
+        severity={outcome.severity}
         title={outcome.title}
         advice={outcome.advice}
         actions={outcome.actions}

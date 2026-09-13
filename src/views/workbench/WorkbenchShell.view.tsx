@@ -1,6 +1,6 @@
 // 工作台骨架 view（P21-1 / S2）：顶栏 + 左侧项目树（含 clone 徽标）+ 右侧内容区。纯展示，props 驱动。
 import type { ReactNode } from 'react';
-import { KeyRound, Package, Search, Settings } from 'lucide-react';
+import { KeyRound, Package, Search, Settings, Zap } from 'lucide-react';
 import type { ProjectGroup, TaskStatusFilter } from '@/types/domain';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,8 +15,11 @@ import { ProjectGroupHeaderView } from '@/views/project/ProjectGroupHeader.view'
 import { CurrentProjectIndicatorView } from '@/views/project/CurrentProjectIndicator.view';
 
 /**
- * 筛选 chips 的显示文案（P21-1 §6 六档口径：全部/准备中/运行中/等待输入/已暂停/异常）。
- * design-notes.md 原型只画了四档，按产品文档裁决补齐「准备中」「异常」两档（F21-1 §9.1 #15）。
+ * 筛选 chips 的显示文案（P21-1 §6 六档口径 + 用户 2026-09-13 裁决新增的第七档）：
+ * 全部/准备中/运行中/等待输入/已暂停/异常/已停止。design-notes.md 原型只画了四档，
+ * 按产品文档裁决补齐「准备中」「异常」两档（F21-1 §9.1 #15），「已停止」是后补的第七档——
+ * 停掉一个任务之后要能找回来，不能只落进「全部」（`types/domain.ts` 的
+ * `TaskStatusFilter` 头注释有完整背景）。
  */
 const STATUS_FILTER_LABEL: Record<TaskStatusFilter, string> = {
   all: '全部',
@@ -25,6 +28,7 @@ const STATUS_FILTER_LABEL: Record<TaskStatusFilter, string> = {
   waitingInput: '等待输入',
   paused: '已暂停',
   error: '异常',
+  stopped: '已停止',
 };
 const STATUS_FILTER_ORDER: readonly TaskStatusFilter[] = [
   'all',
@@ -33,6 +37,7 @@ const STATUS_FILTER_ORDER: readonly TaskStatusFilter[] = [
   'waitingInput',
   'paused',
   'error',
+  'stopped',
 ];
 
 export interface WorkbenchShellProps {
@@ -158,7 +163,7 @@ export function WorkbenchShellView({
           ⌘K
         </span>
         {/*
-         * 顶栏设置菜单（P20 §8.2「工作台 → 凭证/镜像/系统：顶栏 ⚙️ 设置菜单」）。
+         * 顶栏设置菜单（P20 §8.2「工作台 → 凭证/镜像/系统：顶栏 [设置] 菜单」）。
          *
          * ⚠️ 在此之前 `/settings/credentials` **没有任何常规入口**——全仓只有两处
          * `router.push` 能到它,且都是 **Git 克隆失败**的错误路径。于是"我想去配一下
@@ -169,15 +174,17 @@ export function WorkbenchShellView({
          * 直链改收成一个 shadcn `DropdownMenu`，三子项（凭证/镜像/系统）与
          * `app/settings/layout.tsx` 的左侧菜单同一套图标语义（KeyRound/Package/Settings）。
          * Radix primitive 自带键盘操作（Enter/Space 展开、方向键在项间移动、Esc 关闭），
-         * 触发器保留可见文字「⚙️ 设置」作为无障碍名，不额外拿 `aria-label` 盖掉它。
+         * 触发器保留可见文字「设置」作为无障碍名，不额外拿 `aria-label` 盖掉它——
+         * 前面的齿轮图标纯装饰（`aria-hidden`），去掉它这句名字仍然完整。
          */}
         <div className="ml-auto flex items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger
               data-testid="nav-settings-menu-trigger"
-              className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              ⚙️ 设置
+              <Settings aria-hidden="true" className="h-3.5 w-3.5" />
+              设置
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem asChild>
@@ -205,8 +212,9 @@ export function WorkbenchShellView({
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-72 flex-col border-r border-border">
           {waitingInputCount > 0 && (
-            <div className="border-b border-border px-3 py-2 text-xs text-yellow-300">
-              ⚡ {waitingInputCount} 个任务等待你输入
+            <div className="flex items-center gap-1.5 border-b border-border px-3 py-2 text-xs text-yellow-300">
+              <Zap aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+              {waitingInputCount} 个任务等待你输入
             </div>
           )}
           {/*
@@ -232,7 +240,25 @@ export function WorkbenchShellView({
                 }}
               />
             </div>
-            <div className="flex flex-wrap gap-1" role="group" aria-label="按状态筛选任务">
+            {/*
+              ⚠️ 七档之后 400px 侧栏一行放不下（「异常」实测会被挤到第二行）——用户裁决：
+              横向滚动，⛔ 不缩短文案（「准备中」→「准备」会损失准确度）、⛔ 也不接受换行
+              （侧栏顶部会显得散）。`flex-nowrap` + `overflow-x-auto` 钉住这一条；
+              `[&::-webkit-scrollbar]:h-1` 一类的瘦滚动条样式见下面 className，
+              避免暗色下出现一道显眼的亮线。
+            */}
+            <div
+              className={
+                'flex flex-nowrap gap-1 overflow-x-auto pb-0.5 ' +
+                // 没装 tailwind-scrollbar 插件，手写一条瘦滚动条——暗色下不许出现一道
+                // 亮白细线，滑块用 --border 语义色，轨道透明只在悬停时露出。
+                '[&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent ' +
+                '[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border'
+              }
+              role="group"
+              aria-label="按状态筛选任务"
+              data-testid="task-filter-chips"
+            >
               {STATUS_FILTER_ORDER.map((status) => {
                 const active = statusFilter === status;
                 return (
@@ -242,7 +268,7 @@ export function WorkbenchShellView({
                     aria-pressed={active}
                     data-testid={`task-filter-${status}`}
                     className={
-                      'rounded-full px-2 py-0.5 text-[11px] ' +
+                      'shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] ' +
                       (active
                         ? 'bg-muted text-foreground'
                         : 'text-muted-foreground hover:bg-muted hover:text-foreground')

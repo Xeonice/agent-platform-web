@@ -24,6 +24,7 @@ import { useCallback, useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
 import { useProviders } from '@/hooks/sandbox/useProviders';
 import { useRuntimes } from '@/hooks/credential/useRuntimes';
 import { useCreateSandbox, useCreateSandboxErrorView } from '@/hooks/sandbox/useCreateSandbox';
@@ -463,7 +464,7 @@ export function SandboxTerminalContainer({
                 disabled={createSandbox.isPending}
                 className="absolute right-4 top-3 rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
               >
-                ✕
+                <X aria-hidden="true" className="h-4 w-4" />
               </button>
             </DialogPrimitive.Close>
           </DialogPrimitive.Content>

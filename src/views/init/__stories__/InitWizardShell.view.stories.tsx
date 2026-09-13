@@ -164,3 +164,70 @@ export const UsesBlockingDialog: Story = {
     await expect(body.getByTestId('blocking-dialog-overlay')).toBeInTheDocument();
   },
 };
+
+/**
+ * 步骤指示条的三态标记：达成 / 走过没达成 / 还没走到。
+ *
+ * ⚠️ **锁到具体是哪一个 lucide 组件，⛔ 不能只锁 `data-done`/`data-skipped`**：
+ * 那两个属性在「有图标」「没图标」两种写法下都一样，锁不住"标记真的画出来了没有"。
+ * 这个项目里这类假绿已经实测到六次。
+ *
+ * ⚠️ class 按**实际渲染**写：lucide 的 `AlertTriangle` 渲染出来是 `lucide-triangle-alert`
+ * （历史别名），⛔ 别照组件名猜成 `lucide-alert-triangle`。
+ *
+ * ⛔ 这里曾经是 `{s.done ? '✅ ' : s.skipped ? '⚠️ ' : ''}` —— emoji 的字形与尺寸随系统字体
+ * 变，跟旁边的文字对不齐，也吃不到设计 token 的颜色。`scripts/check-no-emoji.ts` 现在会拦。
+ */
+export const StepMarkersUseLucideNotEmoji: Story = {
+  args: {
+    ...Step3.args,
+    steps: [
+      {
+        key: 'connectivity',
+        ordinal: 1,
+        label: '达成的',
+        done: true,
+        skipped: false,
+        current: false,
+        active: true,
+      },
+      {
+        key: 'proxy',
+        ordinal: 2,
+        label: '跳过的',
+        done: false,
+        skipped: true,
+        current: false,
+        active: true,
+      },
+      {
+        key: 'preset-image',
+        ordinal: 3,
+        label: '没走到的',
+        done: false,
+        skipped: false,
+        current: true,
+        active: true,
+      },
+    ],
+  },
+  play: async () => {
+    // ⚠️ `BlockingDialog` 走 portal，内容**不在 `canvasElement` 子树内**（同文件 §87 那条
+    //    注释早就写明了，我第一版照抄成 `canvasElement` 直接找不到元素）。
+    const body = within(document.body);
+    const done = body.getByTestId('init-step-connectivity');
+    const skipped = body.getByTestId('init-step-proxy');
+    const pending = body.getByTestId('init-step-preset-image');
+
+    await expect(done.querySelector('svg.lucide-check')).not.toBeNull();
+    await expect(skipped.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
+    // ⛔ 还没走到的那一格**不该有任何标记** —— 它与「跳过」共用无标记时，
+    //    用户没法从指示条上看出自己跳过了什么（这正是三态要分开的理由）。
+    await expect(pending.querySelector('svg')).toBeNull();
+
+    // ⛔ 一处都不许倒退回 emoji。
+    for (const el of [done, skipped, pending]) {
+      await expect(el.textContent).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
+    }
+  },
+};

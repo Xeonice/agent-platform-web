@@ -13,21 +13,18 @@ import type { RunOutcome, RunRow } from '@/types/automation';
 const OUTCOMES = {
   success: {
     category: 'success',
-    icon: '✅',
     label: '成功',
     detail: '任务跑完了，成功。之前累计的失败次数已经清零。',
     countsTowardFailure: false,
   },
   failed: {
     category: 'failure',
-    icon: '❌',
     label: '失败',
     detail: '任务真的跑起来了，但没跑成。这次算一次失败：累计 3 次会自动放慢（每天只试一次）。',
     countsTowardFailure: true,
   },
   timeout: {
     category: 'failure',
-    icon: '❌',
     label: '超时',
     detail:
       '跑到了规则里设的最长运行时间，被强制结束，按失败处理。这次算一次失败；可以在规则里把最长运行时间调大一档。',
@@ -35,7 +32,6 @@ const OUTCOMES = {
   },
   skippedAuth: {
     category: 'skipped',
-    icon: '⏭️',
     label: '跳过',
     detail:
       '这个 Agent 的凭证已过期或被吊销，本次没有触发。重新授权后会按原来的时间表继续。这次没有执行，不算失败。',
@@ -43,7 +39,6 @@ const OUTCOMES = {
   },
   skippedPrev: {
     category: 'skipped',
-    icon: '⏭️',
     label: '跳过',
     detail:
       '上一次触发的任务当时还在跑，按「跳过」的策略这次没有再起一个。这次没有执行，不算失败。',
@@ -51,7 +46,6 @@ const OUTCOMES = {
   },
   missed: {
     category: 'missed',
-    icon: '🕳️',
     label: '错过',
     detail:
       '平台的定时调度当时没在运行，错过了这个时刻。这不是规则的问题；按设计也不会补跑（补跑会让凌晨的任务在中午执行）。这次不算失败。',
@@ -59,7 +53,6 @@ const OUTCOMES = {
   },
   queued: {
     category: 'waiting',
-    icon: '⚠️',
     label: '排队重试中 3/5',
     detail:
       '触发的时候没有空闲资源，正在按 24 分钟一次的间隔排队重试（最多 5 次）。还没有结果，这次不算失败。',
@@ -67,21 +60,18 @@ const OUTCOMES = {
   },
   running: {
     category: 'running',
-    icon: '⏳',
     label: '运行中',
     detail: '任务正在跑。',
     countsTowardFailure: false,
   },
   pending: {
     category: 'waiting',
-    icon: '⏳',
     label: '待执行',
     detail: '已经触发，正在创建任务。',
     countsTowardFailure: false,
   },
   exhausted: {
     category: 'failure',
-    icon: '❌',
     label: '没排到资源',
     detail:
       '一直没排到资源，等了 5 次还是没跑起来，这一次就不再等了。任务没有真正开始，所以没有输出可看。这次算一次失败：累计 3 次会自动放慢（每天只试一次）。',
@@ -122,16 +112,31 @@ export const Success: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('不算失败');
     await expect(canvas.getByTestId('run-open-task')).toBeInTheDocument();
+    // MUTATION：把 `CATEGORY_ICON` 换回 emoji 字符或改到另一个图标 ⇒ 下面两条先红——
+    // 只锁 `run-label` 文案在两种写法下都绿，锁不住"真的换成了哪个图标组件"。
+    const icon = canvas.getByTestId('run-outcome-icon');
+    await expect(icon).toHaveAttribute('data-outcome-category', 'success');
+    await expect(icon.classList.contains('lucide-check')).toBe(true);
+    // 「算一次失败」的 ⚠️ 已换成 AlertTriangle，success 不算失败 ⇒ 不该渲染这个图标。
+    await expect(canvas.getByTestId('run-failure-accounting').querySelector('svg')).toBeNull();
   },
 };
 
-/** ❌ 失败：**唯一**会把规则推向降频/禁用的两类之一。 */
+/** 失败：**唯一**会把规则推向降频/禁用的两类之一。 */
 export const Failed: Story = {
   args: { row: make('failed', { outputSummary: 'Error: ENOENT reports/' }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('算一次失败');
     await expect(canvas.getByTestId('run-output-summary')).toBeInTheDocument();
+    const icon = canvas.getByTestId('run-outcome-icon');
+    await expect(icon).toHaveAttribute('data-outcome-category', 'failure');
+    await expect(icon.classList.contains('lucide-x')).toBe(true);
+    // 「算一次失败」这次是 true ⇒ 前面要带一个 AlertTriangle（渲染出的 class 是
+    // `lucide-triangle-alert`，不是 `lucide-alert-triangle`）。
+    await expect(
+      canvas.getByTestId('run-failure-accounting').querySelector('svg.lucide-triangle-alert'),
+    ).not.toBeNull();
   },
 };
 
@@ -194,13 +199,16 @@ export const Timeout: Story = {
   },
 };
 
-/** ⏭️ 跳过（凭证过期）：要引导用户去重新授权。 */
+/** 跳过（凭证过期）：要引导用户去重新授权。 */
 export const SkippedAuthExpired: Story = {
   args: { row: make('skippedAuth', { durationText: undefined }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('run-detail')).toHaveTextContent('凭证');
     await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('不算失败');
+    const icon = canvas.getByTestId('run-outcome-icon');
+    await expect(icon).toHaveAttribute('data-outcome-category', 'skipped');
+    await expect(icon.classList.contains('lucide-minus')).toBe(true);
   },
 };
 
@@ -215,7 +223,7 @@ export const SkippedPreviousRunning: Story = {
 };
 
 /**
- * ⭐ 🕳️ 错过：**这一页最容易被误读的一格**。
+ * ⭐ 错过：**这一页最容易被误读的一格**。
  * 它的意思是"调度器当时没在运行"，既不是规则的错，也不会补跑。
  */
 export const Missed: Story = {
@@ -228,6 +236,11 @@ export const Missed: Story = {
     await expect(item).toHaveAttribute('data-counts-toward-failure', 'false');
     await expect(canvas.getByTestId('run-detail')).toHaveTextContent('不是规则的问题');
     await expect(canvas.getByTestId('run-detail')).toHaveTextContent('不会补跑');
+    // `missed` 用的是 `Circle`（与 `StatusPill` 的 `unknown` 态同款——八态里没有专门
+    // 表达"错过"的一态，选它是因为视觉权重最轻，见 RunHistoryItem.view.tsx 的注释）。
+    const icon = canvas.getByTestId('run-outcome-icon');
+    await expect(icon).toHaveAttribute('data-outcome-category', 'missed');
+    await expect(icon.classList.contains('lucide-circle')).toBe(true);
   },
 };
 
@@ -245,11 +258,23 @@ export const QueuedForCapacity: Story = {
       'data-counts-toward-failure',
       'false',
     );
+    // `waiting`/`running` 统一用会转的 `Loader2`（与 `StatusPill` 的 `pending` 态同款
+    // 图标）——都是"还没有结果"，⛔ 不应该看起来像告警（此前是 ⚠️）。
+    const icon = canvas.getByTestId('run-outcome-icon');
+    await expect(icon).toHaveAttribute('data-outcome-category', 'waiting');
+    await expect(icon.classList.contains('lucide-loader-circle')).toBe(true);
+    await expect(icon.classList.contains('animate-spin')).toBe(true);
   },
 };
 
 export const Running: Story = {
   args: { row: make('running', { durationText: undefined }) },
+  play: async ({ canvasElement }) => {
+    const icon = within(canvasElement).getByTestId('run-outcome-icon');
+    await expect(icon).toHaveAttribute('data-outcome-category', 'running');
+    await expect(icon.classList.contains('lucide-loader-circle')).toBe(true);
+    await expect(icon.classList.contains('animate-spin')).toBe(true);
+  },
 };
 
 export const Pending: Story = {

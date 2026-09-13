@@ -85,6 +85,10 @@ export const ValidBuiltin: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.queryByRole('button', { name: '删除' })).toBeNull();
     await expect(canvas.getByRole('button', { name: '禁用' })).toBeInTheDocument();
+    const icon = canvas.getByTestId('enable-state-icon');
+    await expect(icon).toHaveAttribute('data-active', 'true');
+    await expect(icon.classList.contains('lucide-circle')).toBe(true);
+    await expect(icon.classList.contains('text-success')).toBe(true);
   },
 };
 
@@ -166,6 +170,8 @@ export const LineageUnknown: Story = {
     await expect(row).toHaveTextContent('这不等于它没有来源');
     // ⛔ 前端不算兼容性：不许出现"能用/不能用/不兼容"这类结论。
     await expect(row).not.toHaveTextContent('不兼容');
+    // emoji 前缀已换成 AlertTriangle：`unknown` 态才渲染这个图标（见 LineageDerived 的反例）。
+    await expect(row.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
   },
 };
 
@@ -176,6 +182,8 @@ export const LineageDerived: Story = {
     const row = canvas.getByTestId('image-lineage');
     await expect(row).toHaveAttribute('data-lineage', 'derived');
     await expect(row).toHaveTextContent('sha256:9f2ab…c31');
+    // 反例：已知来源不该带告警图标（那个图标只在"不知道"时出现）。
+    await expect(row.querySelector('svg.lucide-triangle-alert')).toBeNull();
   },
 };
 
@@ -186,6 +194,9 @@ export const Disabled: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('button', { name: '启用' })).toBeInTheDocument();
     await expect(canvas.getByTestId('enable-state')).toHaveTextContent('已禁用');
+    // MUTATION：把 `⚪`/`🟢` 拼回文案 ⇒ 下面这条锁不住的是"哪个状态"，
+    // `data-active` 才是——这条在 emoji 写法与图标写法下都不该绿，除非真的按 isActive 切色。
+    await expect(canvas.getByTestId('enable-state-icon')).toHaveAttribute('data-active', 'false');
   },
 };
 
@@ -203,6 +214,7 @@ export const UpstreamUpdate: Story = {
     await expect(badge.className).toMatch(/sky|blue/);
     await expect(badge.className).not.toMatch(/amber|yellow/);
     await expect(canvas.getByRole('button', { name: '查看变更' })).toBeInTheDocument();
+    await expect(badge.querySelector('svg.lucide-refresh-cw')).not.toBeNull();
   },
 };
 
@@ -250,5 +262,8 @@ export const DigestUnresolved: Story = {
     await expect(canvas.getByTestId('digest-unresolved')).toHaveTextContent('版本未确定');
     await expect(canvasElement.textContent).not.toContain(SENTINEL);
     await expect(canvas.getByRole('button', { name: '检查更新' })).toBeDisabled();
+    await expect(
+      canvas.getByTestId('digest-unresolved').querySelector('svg.lucide-triangle-alert'),
+    ).not.toBeNull();
   },
 };

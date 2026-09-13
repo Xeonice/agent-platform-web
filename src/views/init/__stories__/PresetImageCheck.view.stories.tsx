@@ -162,7 +162,10 @@ export const LineageFailed: Story = {
     );
     await expect(canvas.getByTestId('preset-step-action-lineage')).not.toHaveTextContent('血统');
     // ⭐ 唯一一处「放行了但功能不可用」必须写出来。
-    await expect(canvas.getByTestId('preset-image-blocked')).toHaveTextContent('无法发起任何任务');
+    const blocked = canvas.getByTestId('preset-image-blocked');
+    await expect(blocked).toHaveTextContent('无法发起任何任务');
+    // MUTATION：把 `<AlertTriangle>` 换回 ⚠️ 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(blocked.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
 
     await userEvent.click(canvas.getByRole('button', { name: '复制' }));
     await expect(args.onCopyFix).toHaveBeenCalledWith(
@@ -199,6 +202,12 @@ export const Aborted: Story = {
       ready: false,
       abortedText: '镜像检查中断：这一轮没有拿到结论，可点 [重新检测] 重跑。',
     },
+  },
+  play: async ({ canvasElement }) => {
+    const notice = within(canvasElement).getByTestId('preset-image-aborted');
+    await expect(notice).toHaveTextContent('镜像检查中断');
+    // MUTATION：把 `<AlertTriangle>` 换回 ⚠️ 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(notice.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
   },
 };
 
@@ -321,8 +330,9 @@ export const ProvisionFailed: Story = {
   },
   play: async ({ canvasElement }) => {
     // ⛔ 失败**在哪一步**必须看得出来 —— 五个阶段的下一步各不相同。
-    await expect(within(canvasElement).getByTestId('preset-provision-error')).toHaveTextContent(
-      '校验',
-    );
+    const err = within(canvasElement).getByTestId('preset-provision-error');
+    await expect(err).toHaveTextContent('校验');
+    // MUTATION：把 `<X>` 换回 ❌ 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(err.querySelector('svg.lucide-x')).not.toBeNull();
   },
 };

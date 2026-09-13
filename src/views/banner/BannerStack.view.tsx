@@ -13,12 +13,14 @@
 // `{children}` 之上，一个高度为 0 但仍然存在的盒子会在 flex 列里留下 gap/border 的痕迹 ——
 // 表现是"每一页顶上多了一条一像素的线"，而没人会想到去横幅这里找。
 //
-// ⚠️ 图标不是唯一线索（a11y）：每条同时带一个文字等级前缀，且整块是 `role="alert"`。
+// ⚠️ 图标不是唯一线索（a11y）：每条同时带一个文字等级前缀（`sr-only`），且整块是
+// `role="alert"`——图标本身恒 `aria-hidden`。
+import { AlertTriangle, OctagonAlert, type LucideIcon } from 'lucide-react';
 import type { BannerSeverity, BannerStackModel, GlobalBannerModel } from '@/types/banner';
 
-const SEVERITY_ICON: Readonly<Record<BannerSeverity, string>> = {
-  blocking: '🔴',
-  warning: '⚠️',
+const SEVERITY_ICON: Readonly<Record<BannerSeverity, LucideIcon>> = {
+  blocking: OctagonAlert,
+  warning: AlertTriangle,
 };
 const SEVERITY_TEXT: Readonly<Record<BannerSeverity, string>> = {
   blocking: '阻断',
@@ -67,6 +69,7 @@ export function BannerStackView({ model, onAction, onDismiss }: BannerStackProps
     <div data-testid="banner-stack" className="flex shrink-0 flex-col">
       {model.banners.map((banner) => {
         const style = SEVERITY_STYLES[banner.severity];
+        const Icon = SEVERITY_ICON[banner.severity];
         return (
           <div
             key={banner.id}
@@ -75,7 +78,7 @@ export function BannerStackView({ model, onAction, onDismiss }: BannerStackProps
             data-severity={banner.severity}
             className={`flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-2 text-sm ${style.wrapper}`}
           >
-            <span aria-hidden="true">{SEVERITY_ICON[banner.severity]}</span>
+            <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
             <span className="sr-only">{SEVERITY_TEXT[banner.severity]}</span>
             <span className="font-semibold">{banner.title}</span>
             <span className={`min-w-0 flex-1 text-xs ${style.description}`}>

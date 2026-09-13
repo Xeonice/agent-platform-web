@@ -10,6 +10,7 @@
 // ⚠️ **结论作废是"清掉"不是"隐藏"**：容器判定 `uri.trim() !== validatedUri` 后把 `result` 整个清空
 // 并置 `conclusionInvalidated`，本组件因此**根本拿不到**上一次的绿勾与 digest。
 // 留着它等"万一改回来"，就是留着一个随时可能与当前输入不符的绿勾——正是这条交互要消灭的东西。
+import { AlertTriangle, Info, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ValidationResultView } from '@/views/image/ValidationResult.view';
 import type { ImageValidationResultData } from '@/types/image';
@@ -63,7 +64,10 @@ export function RegisterImageModalView({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
     >
       <div className="flex w-full max-w-xl flex-col gap-3 rounded-lg border border-border bg-background p-5">
-        <h3 className="text-base font-semibold">📦 注册新镜像</h3>
+        <h3 className="flex items-center gap-1.5 text-base font-semibold">
+          <Package aria-hidden="true" className="h-4 w-4" />
+          注册新镜像
+        </h3>
 
         <label className="flex flex-col gap-1 text-sm">
           <span>镜像 URI</span>
@@ -99,7 +103,11 @@ export function RegisterImageModalView({
           data-testid="register-lineage-constraint"
           className="rounded-md border border-border bg-muted/30 p-2 text-xs text-muted-foreground"
         >
-          ⚠️{' '}
+          <AlertTriangle
+            aria-hidden="true"
+            data-testid="register-lineage-constraint-icon"
+            className="mr-1 inline h-3 w-3 shrink-0 align-text-bottom"
+          />
           <strong className="font-medium text-foreground">
             自定义镜像必须从平台的预制镜像改起
           </strong>
@@ -120,7 +128,8 @@ export function RegisterImageModalView({
         </p>
 
         <p className="text-xs text-muted-foreground">
-          ℹ️ 镜像须兼容 OCI 标准；验证会检查连得上、以及上面那几条。填 tag 会在此刻
+          <Info aria-hidden="true" className="mr-1 inline h-3 w-3 shrink-0 align-text-bottom" />
+          镜像须兼容 OCI 标准；验证会检查连得上、以及上面那几条。填 tag 会在此刻
           <strong className="font-medium">锁定</strong>
           成一个具体版本；镜像下载源之后重推同一个 tag 不会自动生效，需在卡片上 [检查更新]。
         </p>

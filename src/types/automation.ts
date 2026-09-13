@@ -173,8 +173,14 @@ export interface AutomationRow {
   id: string;
   name: string;
   lifecycle: AutomationLifecycle;
-  /** ✅ / ⏸️ / 🟡 / 🔴 */
-  icon: string;
+  /**
+   * 语义状态提示，取值复用 `StatusPill` 八态字面量集合中的三个（`ok`/`warn`/`fail`）
+   * ——**只是状态字面量，不是图标/颜色本身**，渲染（选哪个 lucide 图标、什么颜色）
+   * 留给 view（07 §4.1 分层：lib 不许返回图标组件）。
+   * ⚠️ `off`（手动关掉）在八态里没有精确对应——它既不是警告也不是失败，是中性态，
+   * ⇒ 缺席，view 侧用中性图标兜底，不强行塞进某个已有 variant（交付报告已列出这处判断）。
+   */
+  status?: 'ok' | 'warn' | 'fail';
   statusText: string;
   /** `Codex · 每天 08:00` —— runtime + 人话调度。 */
   summaryText: string;
@@ -196,7 +202,7 @@ export interface AutomationRow {
   timezoneOffsetText?: string;
   /** 时区与本机不一致时的提醒；一致时缺席（一致还提醒是噪音）。 */
   timezoneNote?: string;
-  /** 🔴 / 🟡 时展示 [查看原因]。 */
+  /** `status` 为 `fail`（自动停用）/ `warn`（放慢）时展示 [查看原因]。 */
   needsAttention: boolean;
   consecutiveFailures: number;
 }
@@ -206,8 +212,13 @@ export type RunOutcomeCategory =
   'success' | 'failure' | 'skipped' | 'missed' | 'waiting' | 'running';
 
 export interface RunOutcome {
+  /**
+   * `category` 本身已经是渲染所需的完整语义状态——view 按它选图标/颜色
+   * （`views/project/RunHistoryItem.view` 的 `CATEGORY_ICON`/`CATEGORY_CLASS`）。
+   * ⛔ 这里不再另外存一个 `icon` 字符串字段：此前它装的是 emoji 字面量，
+   * 与 `category` 完全一一对应，是纯冗余（07 §4.1：lib 不许返回图标，见交付报告）。
+   */
   category: RunOutcomeCategory;
-  icon: string;
   /** 短标签：`成功` / `失败` / `跳过` / `错过` / `排队重试中` / `运行中`。 */
   label: string;
   /** 一句人话，说清"为什么"。`missed` 这条最重要——它最容易被读成失败。 */

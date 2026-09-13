@@ -184,6 +184,11 @@ export const RetainedTruncated: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByText(/统计已截断/)).toBeInTheDocument();
+    // ⭐ ⚠️ 换成了 lucide `AlertTriangle`——渲染出的 class 是 `lucide-triangle-alert`
+    // （不是看名字猜的 `lucide-alert-triangle`），保留卷徽标同理换成 `Gift`/`Clock`。
+    await expect(canvasElement.querySelector('.lucide-triangle-alert')).not.toBeNull();
+    await expect(canvasElement.querySelector('.lucide-gift')).not.toBeNull();
+    await expect(canvasElement.querySelector('.lucide-clock')).not.toBeNull();
   },
 };
 
@@ -197,6 +202,9 @@ export const LoadFailed: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('alert')).toHaveTextContent('本机资源读取失败');
+    // ⭐ 错误态图标真的换成了 lucide `XCircle`（class `lucide-circle-x`），不再是
+    // 标题文案里的字面 ❌ 字符。
+    await expect(canvas.getByRole('alert').querySelector('.lucide-circle-x')).not.toBeNull();
     await expect(canvas.queryByText('资源充足')).not.toBeInTheDocument();
     await expect(canvas.queryByTestId('resource-gauge-cpu')).not.toBeInTheDocument();
   },

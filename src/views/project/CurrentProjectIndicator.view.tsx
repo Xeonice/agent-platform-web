@@ -8,6 +8,8 @@
 // 会让 `getByRole('button', { name: /项目名/ })` 同时命中它与左侧树的组头按钮，
 // 全仓（含 e2e）按项目名点项目的地方一起变成二义匹配。分开之后
 // 读屏用户照样念得到项目名（它是可见文本），而按钮有自己明确的名字。
+import { Folder } from 'lucide-react';
+
 export interface CurrentProjectIndicatorProps {
   /** 当前项目名；未选中为 null。 */
   projectName: string | null;
@@ -30,7 +32,7 @@ export function CurrentProjectIndicatorView({
       data-testid="current-project-indicator"
       className="flex items-center gap-1 text-xs text-muted-foreground"
     >
-      <span aria-hidden="true">📁</span>
+      <Folder aria-hidden="true" className="h-3 w-3 shrink-0" />
       <span className="max-w-40 truncate">{projectName}</span>
       <button
         type="button"

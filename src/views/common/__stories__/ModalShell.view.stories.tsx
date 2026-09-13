@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { expect, within } from 'storybook/test';
 import { ModalShellView } from '@/views/common/ModalShell.view';
 
 const noop = (): void => undefined;
@@ -19,7 +20,19 @@ export default meta;
 type Story = StoryObj<typeof ModalShellView>;
 
 /** 「新建任务」形态：标题 + 上下文副标题（任务归属继承左侧树选中项目，§9.0）。 */
-export const NewTask: Story = { args: { subtitle: '在「ProjectA」中发起' } };
+export const NewTask: Story = {
+  args: { subtitle: '在「ProjectA」中发起' },
+  /**
+   * ⭐ 关闭按钮的字面字符 `✕` 换成了 lucide `X`（class `lucide-x`）——按钮的无障碍名
+   * 仍然只由 `aria-label="关闭"` 决定，图标是纯装饰（`aria-hidden`）。
+   */
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const closeButton = canvas.getByRole('button', { name: '关闭' });
+    await expect(closeButton.querySelector('.lucide-x')).not.toBeNull();
+    await expect(closeButton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  },
+};
 
 /**
  * 「新建项目」形态。**与上一条逐像素同形**——本轮要修的病根就是"两个新建动作长得不一样"

@@ -19,6 +19,7 @@
 //   · digest / 钉定 → 「锁定的那一版」；坐标 / repository / tag → 「镜像地址 / 名字与版本」
 //   · 落库 → 「创建」；后端 → 「平台」
 import type { components } from '@/types/generated/openapi';
+import type { OutcomeSeverity } from '@/types/outcomeSeverity';
 
 type ErrorEnvelope = components['schemas']['ErrorEnvelope'];
 
@@ -38,6 +39,14 @@ export interface SandboxErrorCopy {
   advice: string;
   actions: readonly SandboxErrorAction[];
   /**
+   * `title` 这句话属于哪一类结果——**只是分类，不是图标**。view 拿它去查
+   * `components/ui/outcome-icon.tsx` 或 `StatusPill` 决定渲染成什么样（见该文件头注释的
+   * 架构说明）。⚠️ 本表历史上把这件事编码成 `title` 里的一个字面 emoji 字符
+   * （`'❌ …'` / `'🔴 …'` / `'⏱️ …'`），这里把它拆成结构化字段：lib 只产出语义，
+   * ⛔ 不返回图标组件、不再在文案里夹字符画。
+   */
+  severity: OutcomeSeverity;
+  /**
    * 后端给的**自由文本**失败细节（`SandboxResponseDto.failureMessage`），排障用小字。
    * ⚠️ 只原样透出，**不参与任何判定**——码与文本已由后端拆成两列，禁止从这里 parse 码。
    */
@@ -53,16 +62,18 @@ const RETRY: SandboxErrorAction = { key: 'retry', label: '重试' };
 const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
   // —— S5 新增两条 ——
   INSTALL_FAILED: {
-    title: '❌ Agent 的命令行工具没能装上（这张镜像里没有预装它）',
+    title: 'Agent 的命令行工具没能装上（这张镜像里没有预装它）',
     advice:
       '安装是在「启动运行环境」这一步做的，失败时任务已经停下了。可以重试一次；反复失败就换一张预装了这个工具的镜像 —— 没预装的镜像现装可能要十几分钟。',
+    severity: 'fail',
     actions: [RETRY, { key: 'reconfigure', label: '换一张预装该工具的镜像' }],
   },
   IMAGE_CONTRACT_VIOLATION: {
-    title: '❌ 这张镜像缺少 tmux，任务已停止',
+    title: '这张镜像缺少 tmux，任务已停止',
     advice:
       '注册这张镜像时校验是过的，真正启动时实测发现里面没有 tmux（镜像换了版本，或者上游改了内容）。tmux 不能少：没有它，平台一重启就会丢掉正在跑的 agent 会话，所以这里不做静默降级。换一张带 tmux 的镜像再发起。',
     // ⚠️ P22 §1 明写**不给 [重试]**：重试不会改变镜像内容，只是再失败一次。
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '换一张含 tmux 的镜像' }],
   },
 
@@ -85,9 +96,10 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
   // 而这里停在六条 —— 两侧名单各自都"完整"，合起来漏了一条，测试照样全绿。
   // 下面那条 `每一条都必须在这张表里` 的用例（按 10 §6.8 逐条对）就是为此加的。
   UNKNOWN_PROVIDER: {
-    title: '❌ 平台没有登记这台机器的沙箱环境',
+    title: '平台没有登记这台机器的沙箱环境',
     advice:
       '这次要用的沙箱环境不在平台的注册表里 —— 它被下线了，或者页面上的信息已经过期。⚠️ 界面上没有这个开关，你改不了它：先刷新页面看看还在不在；仍然不在，就要请管理员到平台侧确认。原样重来只会再被拒一次。',
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '刷新后重新发起' }],
   },
   /**
@@ -96,9 +108,10 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 各自的出路句子不同——合并会让其中一句在另一条路上说假话。
    */
   UNKNOWN_RUNTIME: {
-    title: '❌ 平台没有登记这个 Agent',
+    title: '平台没有登记这个 Agent',
     advice:
       '这个 Agent 不在平台的注册表里。常见于第三方模块带进来的 Agent：平台重启之后那个模块没有再加载。装回那个模块，或者改选注册表里还在的 Agent —— 选同一个重来只会再被拒一次。',
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '改选 Agent' }],
   },
   /**
@@ -107,9 +120,10 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 语义上的「去看项目」，不是「改配置」。
    */
   PROJECT_NOT_FOUND: {
-    title: '❌ 找不到这个项目（多半已经被删了）',
+    title: '找不到这个项目（多半已经被删了）',
     advice:
       '平台里查不到这个项目 —— 通常是它已经被删除，而页面上的项目列表还停在删除之前。刷新之后从现有项目里重新选一个。用同一个项目重来只会再被拒一次。',
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '刷新并改选项目' }],
   },
   /**
@@ -126,9 +140,10 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 另一件事完成，不是这个按钮该承担的语义。
    */
   PROJECT_NOT_READY: {
-    title: '❌ 这个项目现在还不能接任务',
+    title: '这个项目现在还不能接任务',
     advice:
       '项目的代码还没准备好：要么还在克隆，要么克隆失败了。到项目页看它现在是哪一种 —— 还在克隆就等它完成；失败了就先重试克隆，或者把它改成空项目。在那之前，这个项目上发起任何任务都会被同样拒掉。',
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '去项目页查看状态' }],
   },
   /**
@@ -139,9 +154,10 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 远端删了分支而本地还没同步，或者用户手填了一个不存在的名字。两者都不是重试能解决的。
    */
   BRANCH_NOT_FOUND: {
-    title: '❌ 项目里没有这个分支',
+    title: '项目里没有这个分支',
     advice:
       '项目当前的代码里找不到这个分支 —— 可能远端已经删掉了它，而项目这边还停在同步之前。改选一个列表里有的分支；如果确信远端还有，先到项目上做一次[重新同步]再回来选。重来同一个分支名只会再被拒一次。',
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '改选分支' }],
   },
   /**
@@ -152,9 +168,10 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 一条指向不存在的操作的提示，比不提示更贵：它让人在界面上找一个找不到的东西。
    */
   UNSUPPORTED_CAPABILITY: {
-    title: '❌ 这台机器的沙箱环境做不了这次任务要的事',
+    title: '这台机器的沙箱环境做不了这次任务要的事',
     advice:
       '这次任务要用到快照或者无头运行，而这台机器上的沙箱环境不提供这一项。两条路：换一台能做这件事的机器，或者去掉这项要求、改发普通任务。两样都不改的话，重来只会再被同一道门拒一次。',
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '回去调整任务要求' }],
   },
   /**
@@ -174,16 +191,18 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 版本变活），具体是哪一种由后端 message 说明，走 `detail` 小字。
    */
   IMAGE_NOT_REGISTERED: {
-    title: '❌ 平台还没有一张能用的镜像',
+    title: '平台还没有一张能用的镜像',
     advice:
       '镜像地址本身没有问题。平台只跑注册过、并且已经锁定到具体某一版的镜像，而这个地址上现在没有一张是活的（还没注册，或者所有版本都被停用了）。到镜像管理注册一张，或者把某个停用的版本启用回来。',
     // 不给 [重试]：库里没有的东西，重试一万次也不会出现。
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '去镜像管理' }],
   },
   INVALID_IMAGE_REFERENCE: {
-    title: '❌ 镜像地址里混进了空白或控制字符',
+    title: '镜像地址里混进了空白或控制字符',
     advice:
       '这个地址里有空格、换行或者看不见的控制字符，平台不会把它拼进容器命令。检查一下是不是误粘了换行，改好再填。原样重来只会再被拒一次。',
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '检查镜像地址' }],
   },
   /**
@@ -196,9 +215,10 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 出路只有一条：去镜像管理换一张为这台机器做的镜像。
    */
   IMAGE_PROVIDER_MISMATCH: {
-    title: '❌ 这张镜像不是给这台机器的沙箱环境做的',
+    title: '这张镜像不是给这台机器的沙箱环境做的',
     advice:
       '两种沙箱环境的底座不是同一张镜像，互相换不了。重试用的还是同一张镜像、同一台机器，结果不会变 —— 到镜像管理换一张为这台机器做的镜像，再发起。',
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '去镜像管理换一张' }],
   },
 
@@ -213,18 +233,20 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
   // 表里没有对应的句子，用户看到的还是同一段兜底话——这正是 `BRANCH_NOT_FOUND` 那次
   // 「两侧各自完整、合起来漏一条」的同一种形状。
   DISK_INSUFFICIENT: {
-    title: '❌ 磁盘空间不够，代码副本没能准备出来',
+    title: '磁盘空间不够，代码副本没能准备出来',
     advice:
       '平台要把项目当前的代码复制一份给这个任务用，而目标磁盘的剩余空间不够。先去清理磁盘再回来重试 —— 空间没变之前，重试多少次都是同一个结果。',
     // ⚠️ 不给裸 [重试]：后端 `retryable: false`（10 §6.8），因为原样重来必然同样失败。
     // 但"清理之后再重试"是真出路，所以按钮留着、**把前置条件写进 label**——
     // 让按钮自己说清它什么时候才有意义，而不是配一个会骗人的「重试」。
+    severity: 'fail',
     actions: [{ key: 'retry', label: '清理磁盘后重试' }],
   },
   WORKSPACE_PREPARE_FAILED: {
-    title: '❌ 代码副本没能准备出来（平台这边的问题）',
+    title: '代码副本没能准备出来（平台这边的问题）',
     advice:
       '平台在把项目当前的代码复制成这个任务的代码副本时出错了：权限、目录状态或者文件系统的问题。这一步发生在运行环境创建之前，所以没有留下任何容器。可以重试一次；反复失败就把这张卡上的诊断信息一起交给管理员。',
+    severity: 'fail',
     actions: [RETRY, { key: 'reconfigure', label: '返回重新配置' }],
   },
 
@@ -243,8 +265,9 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 而不是在这里加一句模棱两可的话去同时兼顾两种情况。
    */
   IMAGE_PULL_FAILED: {
-    title: '❌ 没能把镜像拉下来（网络不通，或者镜像名写错了）',
+    title: '没能把镜像拉下来（网络不通，或者镜像名写错了）',
     advice: '先确认平台这台机器能连上镜像仓库，再检查镜像地址有没有写错，然后重试。',
+    severity: 'fail',
     actions: [RETRY, { key: 'reconfigure', label: '检查镜像地址' }],
   },
   /**
@@ -257,10 +280,11 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * ⚠️ 与 `IMAGE_PULL_FAILED` 是**两个码而不是两段文案**，理由见上一条。
    */
   IMAGE_DIGEST_GONE: {
-    title: '❌ 这张镜像锁定的那一版，仓库里已经没有了',
+    title: '这张镜像锁定的那一版，仓库里已经没有了',
     advice:
       '镜像地址没有写错。平台按注册时锁定的那一版去拉，而上游已经把那一版删掉或者回收了。改地址和重试都帮不上忙 —— 到镜像管理对这张镜像点[检查更新]，确认新版本之后再发起。',
     // 刻意不给 [重试]：拉的还是同一个已不存在的版本，重试只是把同一句话再说一遍。
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '去镜像管理检查更新' }],
   },
   // —— 镜像上下文（2026-08 落地）：本轮进 10 §6.8 主表的 11 个码里，**只有下面三个是顶层 `code`** ——
@@ -291,10 +315,11 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * **不在这句话里**：这里写死"缺少 tmux"就会在缺的是 entrypoint 时说错话。
    */
   MANIFEST_INVALID: {
-    title: '❌ 这张镜像不满足平台要求，没有注册进来',
+    title: '这张镜像不满足平台要求，没有注册进来',
     advice:
       '平台在注册之前跑了一次校验，判定不通过，所以没有创建任何记录（不会留下一条半成品）。具体差在哪几条就列在上面的验证结果里；照着改镜像、或者换一张合格的，再点[验证]。',
     // 不给 [重试]：原样重来必然被同一道校验再拒一次（后端 `retryable:false`）。
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '查看镜像要求' }],
   },
   /**
@@ -307,9 +332,10 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 合成一条就只能写出"检查地址或稍后重试"这种两边都不落地的话。
    */
   REF_NOT_FOUND: {
-    title: '❌ 镜像仓库里没有这个名字或这个版本',
+    title: '镜像仓库里没有这个名字或这个版本',
     advice:
       '仓库能连上，但里面找不到它 —— 名字拼错了、版本被删了，或者这是个私有仓库而平台没有拉取凭证。重试帮不上忙：先确认名字与版本的拼写、以及这张镜像对平台可见，再重新验证。',
+    severity: 'fail',
     actions: [{ key: 'reconfigure', label: '检查镜像地址' }],
   },
   /**
@@ -320,14 +346,16 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 得到同一个结果，那个按钮只是把同一句话再说一遍——`DISK_INSUFFICIENT` 刚修过同一个错。
    */
   REGISTRY_UNREACHABLE: {
-    title: '🔴 连不上镜像仓库',
+    title: '连不上镜像仓库',
     advice:
       '平台没能确认这个地址对应的是哪一版镜像：仓库现在够不着（网络、DNS、代理，或者仓库自己在抖）。这一步发生在创建之前，所以这次没有留下任何东西。稍后重试一次；一直失败就检查平台这台机器到这个仓库通不通。',
+    severity: 'fail',
     actions: [RETRY, { key: 'reconfigure', label: '检查镜像地址' }],
   },
   RESOURCE_EXHAUSTED: {
-    title: '❌ 同时在跑的任务太多，资源不够了',
+    title: '同时在跑的任务太多，资源不够了',
     advice: '停掉几个不用的任务把资源让出来，或者过一会儿再试。',
+    severity: 'fail',
     actions: [
       { key: 'retry', label: '稍后重试' },
       { key: 'reconfigure', label: '返回任务列表' },
@@ -341,9 +369,10 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 标题只陈述平台确实知道的那件事（连不上），把"去查什么"放进 advice 并点名到具体的东西。
    */
   PROVIDER_UNAVAILABLE: {
-    title: '🔴 容器服务没有响应',
+    title: '容器服务没有响应',
     advice:
       '平台连不上这台机器上的容器服务。先确认 Docker Desktop 或 OrbStack 这类容器服务已经在运行，起来之后再重试。',
+    severity: 'fail',
     actions: [RETRY],
   },
   /**
@@ -351,14 +380,16 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 文案不许把前者说成后者。
    */
   TIMEOUT: {
-    title: '⏱️ 这一步等太久，平台先停下了',
+    title: '这一步等太久，平台先停下了',
     advice:
       '超时只说明这次在限定时间内没做完，不等于对面连不上。可以重试；一直超时就看看容器服务是不是负载过高。',
+    severity: 'timeout',
     actions: [RETRY],
   },
   INVALID_STATE: {
-    title: '⚠️ 现在的状态不允许做这件事',
+    title: '现在的状态不允许做这件事',
     advice: '这个任务的状态在你操作之前已经变了。刷新一下，按新的状态再操作。',
+    severity: 'warn',
     actions: [{ key: 'retry', label: '刷新重试' }],
   },
 };
@@ -457,11 +488,12 @@ export function zeroSideEffectRejectionMessage(
 function fallbackCopy(code: string, message?: string): SandboxErrorCopy {
   return {
     code,
-    title: '❌ 操作没有完成',
+    title: '操作没有完成',
     advice:
       message !== undefined && message !== ''
         ? message
         : '未能获取具体原因，可以重试一次；若持续失败请查看系统状态。',
+    severity: 'fail',
     actions: [RETRY, { key: 'reconfigure', label: '返回重新配置' }],
   };
 }
@@ -479,6 +511,8 @@ export const SANDBOX_ENDED_COPY: SandboxErrorCopy = {
   title: '任务已停止',
   advice:
     '这个任务的运行环境已经回收了。可以再发起一个 —— 那是全新的一轮，从头开始，不会接着上次的进度。',
+  // 'info'：这是正常收场，不是失败——⛔ 不与上面各条 'fail' 共用同一个图标/颜色语义。
+  severity: 'info',
   actions: [{ key: 'reconfigure', label: '发起新任务' }],
 };
 

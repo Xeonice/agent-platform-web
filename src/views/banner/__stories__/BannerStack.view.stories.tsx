@@ -50,6 +50,10 @@ export const Offline: Story = {
     const canvas = within(canvasElement);
     const banner = canvas.getByTestId('banner-offline');
     await expect(banner).toHaveAttribute('data-severity', 'blocking');
+    // ⭐ 🔴 换成了 lucide `OctagonAlert`（class `lucide-octagon-alert`），装饰性
+    // （`aria-hidden`）——等级信息仍由 `sr-only` 的文字承担，不靠图标形状区分。
+    await expect(banner.querySelector('.lucide-octagon-alert')).not.toBeNull();
+    await expect(banner.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
     // ⚠️ 必须说清"哪一半还好着"：只说 Agent 不可用会让用户以为整台平台废了。
     await expect(banner).toHaveTextContent('照常可用');
     await userEvent.click(canvas.getByTestId('banner-action-offline'));
@@ -107,6 +111,11 @@ export const Governance: Story = {
     const banner = canvas.getByTestId('banner-automation-needs-attention');
     await expect(banner).toHaveAttribute('data-severity', 'warning');
     await expect(within(banner).getByText('治理')).toBeInTheDocument();
+    // ⭐ ⚠️ 换成了 lucide `AlertTriangle`（渲染 class 是 `lucide-triangle-alert`，
+    // 不是看名字猜的 `lucide-alert-triangle`）——与阻断类的 `lucide-octagon-alert`
+    // 是两个不同的图标，不只是换了颜色。
+    await expect(banner.querySelector('.lucide-triangle-alert')).not.toBeNull();
+    await expect(banner.querySelector('.lucide-octagon-alert')).toBeNull();
     // ⛔ 不与阻断类共用红色三件套（design-notes.md §4 Phase 3 第 3 条：三色分层）。
     await expect(banner.className).not.toContain('red-500');
   },

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { expect, within } from 'storybook/test';
 import { AuthMethodRadioRowView } from '@/views/settings/AuthMethodRadioRow.view';
 import type { AuthModeRow } from '@/types/runtimeCredential';
 
@@ -57,9 +58,23 @@ export const NotConfigured: Story = {
 /** <7 天预警。 */
 export const Expiring: Story = {
   args: { row: { ...activeAccount, expiryLabel: '剩 6 天', expiryState: 'warning' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const marker = canvas.getByTestId('auth-expiry-marker');
+    await expect(marker).toHaveTextContent('剩 6 天');
+    // MUTATION：把 `AlertTriangle` 换回 ⚠️ 字符或换成另一个图标 ⇒ 这条先红——只锁
+    // 文案（上面那条）在两种写法下都绿，锁不住"真的换成了哪个图标"。
+    await expect(marker.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
+  },
 };
 
 /** 已过期。 */
 export const Expired: Story = {
   args: { row: { ...activeAccount, expiryLabel: '已过期', expiryState: 'expired' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const marker = canvas.getByTestId('auth-expiry-marker');
+    await expect(marker).toHaveTextContent('已过期');
+    await expect(marker.querySelector('svg.lucide-x')).not.toBeNull();
+  },
 };

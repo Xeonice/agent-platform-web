@@ -1,17 +1,17 @@
-// 左侧任务树的搜索 + 状态筛选（P21-1 §6 六档口径：全部/准备中/运行中/等待输入/已暂停/异常）。
-// 纯函数，输入已经分好组的 `ProjectGroup[]`（`selectProjectTaskTree` 的输出），只做二次
-// 过滤，不改分组/排序/折叠。
+// 左侧任务树的搜索 + 状态筛选（P21-1 §6 六档口径 + 用户裁决新增的第七档 `stopped`：
+// 全部/准备中/运行中/等待输入/已暂停/异常/已停止）。纯函数，输入已经分好组的
+// `ProjectGroup[]`（`selectProjectTaskTree` 的输出），只做二次过滤，不改分组/排序/折叠。
 //
 // ⚠️ 这两个控件在原型（design-notes.md 四档版本）里是**纯装饰**（静态 HTML，点了没有真
 // 过滤）。硬要求：这一轮必须是真功能——每个 chip 都有落地的过滤谓词，搜索要能说清
 // "搜不到时说什么"（见 `TaskTreeFilterResult.hasActiveFilter` + `matchedTaskCount`，
 // 调用方据此渲染空态文案）。
 //
-// ⚠️ **六档 ≠ `SandboxStatus` 的全部取值**：`SandboxStatus` 有 6 个值，但产品文档 §6
-// 给的六档 chip 集合是「全部/准备中/运行中/等待输入/已暂停/异常」——`'stopped'`（已停止）
-// 不在其中，落到"全部"里但不落进任何一个具体 chip。这不是本次实现漏掉了一档，是产品
-// 文档六档本身就没有给"已停止"留位置；`__tests__/filterTaskTree.test.ts` 里有一条用例
-// 专门断言这一点（stopped 任务出现在"全部"计数里、但五个具体 chip 一个都不命中它）。
+// ⚠️ 2026-09-13 用户裁决：`SandboxStatus` 的 6 个值此前只有 5 个有对应 chip——
+// `'stopped'`（已停止）只落进"全部"，五个具体 chip 一个都不命中它。用户不同意这是
+// "产品文档口径本身的取舍"：停掉一个任务之后想找回来，没有入口，这是规格的空白。
+// 现在补了第七档 `stopped`，6 个具体 chip 与 6 个 `SandboxStatus` 一一对应，
+// `__tests__/filterTaskTree.test.ts` 的"命中数之和"用例已按六档改写。
 import type { ProjectGroup, Sandbox, TaskStatusFilter } from '@/types/domain';
 
 export interface TaskTreeFilter {
@@ -42,6 +42,8 @@ function matchesStatus(task: Sandbox, status: TaskStatusFilter): boolean {
       return task.status === 'paused';
     case 'error':
       return task.status === 'error';
+    case 'stopped':
+      return task.status === 'stopped';
     case 'all':
     default:
       return true;

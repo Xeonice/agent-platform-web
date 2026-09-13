@@ -45,13 +45,19 @@ export const TwoVersions: Story = {
     await expect(rows).toHaveLength(2);
     await expect(canvas.getAllByRole('button', { name: '切换到此版本' })).toHaveLength(1);
     await expect(canvas.getByText('（当前版本）')).toBeInTheDocument();
+    const statusCells = canvas.getAllByTestId('image-version-status');
+    await expect(statusCells[0]).toHaveAttribute('data-validation-status', 'valid');
+    await expect(statusCells[0]?.querySelector('svg.lucide-check')).not.toBeNull();
+    await expect(statusCells[1]).toHaveAttribute('data-validation-status', 'warning');
+    await expect(statusCells[1]?.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
   },
 };
 
 /**
  * digest 未解析的历史行。
- * **play**：显示「⚠️ 未解析」，且 DOM 全文**不含哨兵串** `sha256:unresolved`
- *（模型层已经把它挡在外面，这条是最后一道：哨兵值长得像哈希，漏出去比留白更误导）。
+ * **play**：显示「未解析」（带 AlertTriangle 图标），且 DOM 全文**不含哨兵串**
+ * `sha256:unresolved`（模型层已经把它挡在外面，这条是最后一道：哨兵值长得像哈希，
+ * 漏出去比留白更误导）。
  */
 export const UnresolvedDigest: Story = {
   args: {
@@ -67,9 +73,18 @@ export const UnresolvedDigest: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByText('⚠️ 未解析')).toBeInTheDocument();
+    await expect(canvas.getByText('未解析')).toBeInTheDocument();
+    await expect(
+      canvas.getByText('未解析').closest('span')?.querySelector('svg.lucide-triangle-alert'),
+    ).not.toBeNull();
     // `pending` 在历史列表里如实说"未判定"——卡面必须在三档里选一档，这里不必。
-    await expect(canvas.getByText('· 未判定')).toBeInTheDocument();
+    // MUTATION：把 `STATUS_ICON.pending` 换成会转的 `Loader2`（`StatusPill` 的 pending
+    // 图标）⇒ 下面这条先红——"未判定"是静态事实，不该看起来像正在跑的进程。
+    const statusCell = canvas.getByTestId('image-version-status');
+    await expect(statusCell).toHaveTextContent('未判定');
+    await expect(statusCell).toHaveAttribute('data-validation-status', 'pending');
+    await expect(statusCell.querySelector('svg.lucide-clock')).not.toBeNull();
+    await expect(statusCell.querySelector('svg.lucide-loader-circle')).toBeNull();
     await expect(canvasElement.innerHTML).not.toContain('sha256:unresolved');
   },
 };

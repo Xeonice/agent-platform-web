@@ -22,6 +22,10 @@ export const Valid: Story = {
     await expect(canvas.getByTestId('pinned-digest')).toHaveTextContent('sha256:4b17e…a02');
     // ✅ 态不该出现 [查看镜像要求]——那是 ❌ 的出路。
     await expect(canvas.queryByRole('button', { name: '查看镜像要求' })).toBeNull();
+    // MUTATION：把 `HEADLINE_ICON.valid` 换回 emoji 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(
+      canvas.getByTestId('validation-headline-icon').classList.contains('lucide-check'),
+    ).toBe(true);
   },
 };
 
@@ -31,6 +35,10 @@ export const Warning: Story = {
     status: 'warning',
     pinnedDigestShort: 'sha256:4b17e…a02',
     warnings: ['未预装 claude-code，创建时需现装，实测约 12.5 分钟'],
+  },
+  play: async ({ canvasElement }) => {
+    const icon = within(canvasElement).getByTestId('validation-headline-icon');
+    await expect(icon.classList.contains('lucide-triangle-alert')).toBe(true);
   },
 };
 
@@ -60,6 +68,9 @@ export const Invalid: Story = {
     await expect(canvas.getByTestId('validation-result')).toHaveAttribute('data-status', 'invalid');
     await expect(canvas.queryByTestId('pinned-digest')).toBeNull();
     await expect(canvas.getByRole('button', { name: '查看镜像要求' })).toBeInTheDocument();
+    await expect(
+      canvas.getByTestId('validation-headline-icon').classList.contains('lucide-x'),
+    ).toBe(true);
   },
 };
 

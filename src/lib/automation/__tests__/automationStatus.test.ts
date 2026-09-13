@@ -39,7 +39,7 @@ describe('automationLifecycle', () => {
   });
 
   it('⭐ 手动禁用 vs 自动禁用必须分得开', () => {
-    // 同样是 enabled=false，失败计数把两者分开。判定顺序写反就会把 🔴 显示成 ⏸️，
+    // 同样是 enabled=false，失败计数把两者分开。判定顺序写反就会把 fail 态显示成 off 态，
     // 用户就看不到 [查看原因]/[重新启用]，只会觉得"我没关过它，它自己关了"。
     expect(automationLifecycle({ enabled: false, degraded: false, consecutiveFailures: 0 })).toBe(
       'off',
@@ -51,14 +51,25 @@ describe('automationLifecycle', () => {
 });
 
 describe('describeLifecycle', () => {
-  it('四态各有图标与文案；只有 🟡/🔴 需要处置', () => {
-    expect(describeLifecycle('on', 0)).toMatchObject({ icon: '✅', needsAttention: false });
-    expect(describeLifecycle('off', 0)).toMatchObject({ icon: '⏸️', needsAttention: false });
-    expect(describeLifecycle('degraded', 3)).toMatchObject({ icon: '🟡', needsAttention: true });
-    expect(describeLifecycle('autoDisabled', 10)).toMatchObject({
-      icon: '🔴',
+  it('四态各有语义状态与文案；只有 warn/fail 需要处置', () => {
+    expect(describeLifecycle('on', 0)).toMatchObject({ status: 'ok', needsAttention: false });
+    expect(describeLifecycle('degraded', 3)).toMatchObject({
+      status: 'warn',
       needsAttention: true,
     });
+    expect(describeLifecycle('autoDisabled', 10)).toMatchObject({
+      status: 'fail',
+      needsAttention: true,
+    });
+  });
+
+  it('⭐ off（手动关掉）在八态里没有精确对应 → status 缺席，不硬塞 warn/fail', () => {
+    // MUTATION：若把 off 误判成 warn/fail 之一，这条会先红——它是唯一钉住
+    // "off 就该没有 status" 的用例，防止有人为了"看起来统一"偷偷塞一个 variant。
+    const off = describeLifecycle('off', 0);
+    expect(off.status).toBeUndefined();
+    expect(off.needsAttention).toBe(false);
+    expect(off.text).toContain('已关掉');
   });
 
   it('放慢的文案要说清"它还在跑，只是慢了"（⛔ 不许只写内部词「降频」）', () => {

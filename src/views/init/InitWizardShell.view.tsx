@@ -30,6 +30,7 @@ import { BlockingDialog } from '@/components/ui/blocking-dialog';
 import { Button } from '@/components/ui/button';
 import { DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type { InitStepModel } from '@/types/init';
+import { AlertTriangle, Check } from 'lucide-react';
 
 export interface InitWizardShellProps {
   steps: InitStepModel[];
@@ -104,9 +105,19 @@ export function InitWizardShellView({
                     : 'rounded border border-border px-2 py-1 text-muted-foreground'
                 }
               >
-                {/* ⚠️ 三态要分得开：达成 ✅ / 走过没达成 ⚠️ / 还没走到（无标记）。
-                    两者共用"无标记"时，用户没法从指示条上看出自己跳过了什么。 */}
-                {s.done ? '✅ ' : s.skipped ? '⚠️ ' : ''}
+                {/* ⚠️ 三态要分得开：达成 / 走过没达成 / 还没走到（无标记）。
+                    后两者共用"无标记"时，用户没法从指示条上看出自己跳过了什么。
+                    ⛔ 图标走 lucide，不用 emoji（`scripts/check-no-emoji.ts` 会拦）。
+                    ⚠️ 图标恒 `aria-hidden`：语义已经在下面那行的 `label` 与
+                       「（可跳过）」里，屏幕阅读器不需要再听一遍图标名。 */}
+                {s.done ? (
+                  <Check aria-hidden="true" className="mr-1 inline h-3.5 w-3.5 align-[-2px]" />
+                ) : s.skipped ? (
+                  <AlertTriangle
+                    aria-hidden="true"
+                    className="mr-1 inline h-3.5 w-3.5 align-[-2px]"
+                  />
+                ) : null}
                 {String(s.ordinal)}. {s.label}
                 {s.active ? '' : '（可跳过）'}
               </li>

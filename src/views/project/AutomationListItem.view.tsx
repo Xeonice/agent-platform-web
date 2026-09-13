@@ -4,8 +4,48 @@
 //   「下次: 8-10 08:00」单独存在是有歧义的：用户换台机器、或者同事在另一个时区打开，
 //   会按自己的钟点读这个时刻，然后以为触发时间漂了。规则的 `timezone` 是**创建时快照**的，
 //   界面上把它写出来，"没漂"这件事才是可见的。
+import { AlertTriangle, Check, Pause, X, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { AutomationRow } from '@/types/automation';
+
+/**
+ * `row.status` → 图标/颜色（复用 `StatusPill` 的 ok/warn/fail 三态同款图标+token 色，
+ * 07 §4.1：view 才能碰图标组件，lib 只给语义字面量）。
+ * `undefined`（`off`，手动关掉）不在八态里有精确对应，用中性 `Pause` 兜底——
+ * 见交付报告"待拍板点"。
+ */
+const STATUS_ICON: Record<'ok' | 'warn' | 'fail', LucideIcon> = {
+  ok: Check,
+  warn: AlertTriangle,
+  fail: X,
+};
+const STATUS_ICON_CLASS: Record<'ok' | 'warn' | 'fail', string> = {
+  ok: 'text-success',
+  warn: 'text-warning',
+  fail: 'text-error',
+};
+
+function LifecycleIcon({ status }: { status: AutomationRow['status'] }) {
+  if (status === undefined) {
+    return (
+      <Pause
+        aria-hidden="true"
+        data-testid="automation-lifecycle-icon"
+        data-lifecycle-status="off"
+        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+      />
+    );
+  }
+  const Icon = STATUS_ICON[status];
+  return (
+    <Icon
+      aria-hidden="true"
+      data-testid="automation-lifecycle-icon"
+      data-lifecycle-status={status}
+      className={`h-3.5 w-3.5 shrink-0 ${STATUS_ICON_CLASS[status]}`}
+    />
+  );
+}
 
 export interface AutomationListItemProps {
   row: AutomationRow;
@@ -14,7 +54,7 @@ export interface AutomationListItemProps {
   busy?: boolean;
   onSelect: (id: string) => void;
   onToggle: (id: string, next: boolean) => void;
-  /** 🟡/🔴 时的 [查看原因]（展开最近一次失败的详情）。 */
+  /** `status` 为 warn/fail 时的 [查看原因]（展开最近一次失败的详情）。 */
   onShowFailure: (id: string) => void;
 }
 
@@ -27,7 +67,7 @@ export function AutomationListItemView({
   onShowFailure,
 }: AutomationListItemProps) {
   const enabled = row.lifecycle !== 'off' && row.lifecycle !== 'autoDisabled';
-  // 🔴 自动停用后那个按钮说的是「重新开启」，并且要明示清零（P21-7 §9.1 #25）——
+  // 自动停用（`fail` 态）后那个按钮说的是「重新开启」，并且要明示清零（P21-7 §9.1 #25）——
   // 与普通的 [开启] 是同一个端点，但用户面对的是两件不同的事。
   const toggleLabel = row.lifecycle === 'autoDisabled' ? '重新开启' : enabled ? '关掉' : '开启';
 
@@ -47,7 +87,7 @@ export function AutomationListItemView({
           data-testid="automation-select"
         >
           <p className="flex items-center gap-1.5 text-sm font-medium">
-            <span aria-hidden="true">{row.icon}</span>
+            <LifecycleIcon status={row.status} />
             <span className="truncate">{row.name}</span>
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground" data-testid="automation-summary">

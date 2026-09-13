@@ -7,6 +7,7 @@
 //    · 搜索无果 —— 用户确实搜了，但没命中。
 //    · 一个都没有 —— 后端注册表是空的。
 import type { ReactNode } from 'react';
+import { Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RuntimeCredentialCardView } from '@/views/settings/RuntimeCredentialCard.view';
 import type {
@@ -56,7 +57,10 @@ export function RuntimeCredentialsSectionView({
   return (
     <section className="flex flex-col gap-4">
       <header className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">🤖 Agent 帐号（这台机器上通用）</h2>
+        <h2 className="flex items-center gap-1.5 text-lg font-semibold">
+          <Bot aria-hidden="true" className="h-4 w-4" />
+          Agent 帐号（这台机器上通用）
+        </h2>
         <p className="text-xs text-muted-foreground">
           帐号登录 / API Key
           二选一，这台机器上的所有任务都用它；两样可以同时留着，切换只改现在用哪个。

@@ -4,6 +4,7 @@
 //   投递超时 **10 秒**、失败重试 **2 次**、退避 **5s / 25s**（⛔ 不是常见的 1s→2s→4s）。
 //   F21-7 §9.1 #12 专门点了这一条。文案取自 `lib/automation/validateWebhookUrl` 的常量，
 //   不在这里另写一份 —— 抄第二份就会漂。
+import { Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TRIGGER_ON_OPTIONS, type TriggerOn } from '@/types/automation';
 
@@ -98,13 +99,22 @@ export function WebhookSectionView({
               {testPhase === 'testing' ? '测试中…' : '测试连接'}
             </Button>
             {testPhase === 'ok' && (
-              <span className="text-xs text-emerald-500" data-testid="webhook-test-ok">
-                ✅ 测试消息已经送到了
+              <span
+                className="flex items-center gap-1 text-xs text-emerald-500"
+                data-testid="webhook-test-ok"
+              >
+                <Check aria-hidden="true" className="h-3 w-3 shrink-0" />
+                测试消息已经送到了
               </span>
             )}
             {testPhase === 'error' && (
-              <span role="alert" className="text-xs text-red-400" data-testid="webhook-test-error">
-                ❌ {testErrorMessage ?? '测试失败'}
+              <span
+                role="alert"
+                className="flex items-center gap-1 text-xs text-red-400"
+                data-testid="webhook-test-error"
+              >
+                <X aria-hidden="true" className="h-3 w-3 shrink-0" />
+                {testErrorMessage ?? '测试失败'}
               </span>
             )}
           </div>

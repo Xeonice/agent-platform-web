@@ -9,6 +9,8 @@
 // ⇒ 本轮收进 [复制诊断信息]：码、detail、traceId 一起进剪贴板交给管理员，正文不出现码。
 //   `data-code` 保留，测试与排障照旧从它取。
 import { Button } from '@/components/ui/button';
+import { OutcomeIcon } from '@/components/ui/outcome-icon';
+import type { OutcomeSeverity } from '@/types/outcomeSeverity';
 
 export interface SandboxOutcomeAction {
   key: string;
@@ -18,6 +20,11 @@ export interface SandboxOutcomeAction {
 export interface SandboxOutcomeProps {
   /** 'failed' 出红字告警；'ended' 是正常结束，不用红字。 */
   tone: 'failed' | 'ended';
+  /**
+   * `title` 属于哪一类结果（`lib/sandbox/sandboxErrorCopy.ts` 的 `SandboxErrorCopy.severity`
+   * 原样透传）——本视图只按它查表选一个装饰图标，不做任何判定。
+   */
+  severity: OutcomeSeverity;
   /** 人话：发生了什么。 */
   title: string;
   /** 现在能做什么 / 为什么会这样。 */
@@ -70,6 +77,7 @@ function buildDiagnosticText(input: {
 
 export function SandboxOutcomeView({
   tone,
+  severity,
   title,
   advice,
   actions,
@@ -101,8 +109,13 @@ export function SandboxOutcomeView({
 
       <p
         {...(failed ? { role: 'alert' as const } : { role: 'status' as const })}
-        className={failed ? 'max-w-md text-sm text-red-400' : 'max-w-md text-sm text-foreground'}
+        className={
+          failed
+            ? 'flex max-w-md items-center gap-1.5 text-sm text-red-400'
+            : 'flex max-w-md items-center gap-1.5 text-sm text-foreground'
+        }
       >
+        <OutcomeIcon severity={severity} />
         {title}
       </p>
 

@@ -34,16 +34,19 @@ export interface Sandbox {
 }
 
 /**
- * 左侧任务树筛选 chips（P21-1 §6：产品文档定的六档口径——全部/准备中/运行中/等待输入/
- * 已暂停/异常）。design-notes.md 原型只画了四档（缺准备中、异常），已按产品文档裁决补齐
- * （F21-1 §9.1 #15 记录的偏离在这一轮收口）。
+ * 左侧任务树筛选 chips（P21-1 §6 六档口径 + 用户裁决新增的第七档）：
+ * 全部/准备中/运行中/等待输入/已暂停/异常/已停止。design-notes.md 原型只画了四档
+ * （缺准备中、异常），已按产品文档裁决补齐（F21-1 §9.1 #15 记录的偏离在那一轮收口）。
  *
- * ⚠️ `SandboxStatus` 还有第 6 个值 `'stopped'`，六档里**没有它的位置**——产品文档 §6
- * 给的六档本来就不含"已停止"，这不是本次遗漏，是文档口径本身的取舍（见
- * `filterTaskTree.ts` 顶部说明与 `filterProjectGroups` 用例里的显式验证）。
+ * ⚠️ 2026-09-13 用户裁决补的第七档 `stopped`（已停止）：`SandboxStatus` 的 6 个值
+ * 此前只有 5 个有对应 chip——停掉一个任务之后想找回来却没有筛选入口，这是规格的
+ * 空白，不是"产品文档口径本身的取舍"（上一轮的判断被推翻）。现在 6 个具体 chip
+ * 与 6 个 `SandboxStatus` 一一对应，`all` 之外不再有无家可归的状态。
+ *
+ * ⚠️ `paused`（已暂停，可恢复）与 `stopped`（已停止，终态）是两件事，不合并成一档。
  */
 export type TaskStatusFilter =
-  'all' | 'preparing' | 'running' | 'waitingInput' | 'paused' | 'error';
+  'all' | 'preparing' | 'running' | 'waitingInput' | 'paused' | 'error' | 'stopped';
 
 /** selectProjectTaskTree 的派生输出（15 §5）。 */
 export interface ProjectGroup {

@@ -35,9 +35,17 @@ export function automationLifecycle(input: AutomationStatusInput): AutomationLif
 }
 
 export interface LifecyclePresentation {
-  icon: string;
+  /**
+   * 语义状态提示，复用 `StatusPill` 八态字面量集合中的三个（`ok`/`warn`/`fail`）。
+   * ⛔ **这里只是状态字面量，不是图标组件**——把它换成 `icon: CheckCircle` 那种写法
+   * 就是把表现层塞进了纯逻辑层（07 §4.1，lib 只许 import lib/type）。哪个 lucide
+   * 图标、什么颜色，由 view 自己按这个字面量查表决定。
+   * `off`（手动关掉）缺席：它在八态里没有精确对应，不强行塞进 `warn`/`fail`
+   * （见交付报告"待拍板点"）。
+   */
+  status?: 'ok' | 'warn' | 'fail';
   text: string;
-  /** 需要用户处置（🟡/🔴）→ 列表行给 [查看原因]，并汇进 ⚠️ 治理类横幅。 */
+  /** 需要用户处置（`warn`/`fail`）→ 列表行给 [查看原因]，并汇进治理类横幅。 */
   needsAttention: boolean;
 }
 
@@ -47,13 +55,14 @@ export function describeLifecycle(
 ): LifecyclePresentation {
   switch (lifecycle) {
     case 'on':
-      return { icon: '✅', text: '已开启', needsAttention: false };
+      return { status: 'ok', text: '已开启', needsAttention: false };
     case 'off':
       // ⚠️ 不写"已停止"：停止说的是运行中的东西，这里是"到点不会被触发"。
-      return { icon: '⏸️', text: '已关掉（到点不会触发）', needsAttention: false };
+      // `status` 缺席：手动关掉是中性态，不是 warn/fail。
+      return { text: '已关掉（到点不会触发）', needsAttention: false };
     case 'degraded':
       return {
-        icon: '🟡',
+        status: 'warn',
         text: `连着失败 ${String(consecutiveFailures)} 次，已经放慢：现在每天只试一次`,
         needsAttention: true,
       };
@@ -67,7 +76,7 @@ export function describeLifecycle(
      */
     case 'autoDisabled':
       return {
-        icon: '🔴',
+        status: 'fail',
         text:
           `连着失败 ${String(consecutiveFailures)} 次（放慢后又失败 ` +
           `${String(Math.max(0, consecutiveFailures - DEGRADE_AFTER_FAILURES))} 次），已自动停用`,

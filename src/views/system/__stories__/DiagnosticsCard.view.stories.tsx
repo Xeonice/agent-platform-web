@@ -258,6 +258,11 @@ export const Aborted: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('diagnose-aborted')).toHaveTextContent('1/8');
+    // ⭐ 中断提示的图标真的换成了 lucide `AlertTriangle`（渲染 class 是
+    // `lucide-triangle-alert`，不是看名字猜的 `lucide-alert-triangle`）。
+    await expect(
+      canvas.getByTestId('diagnose-aborted').querySelector('.lucide-triangle-alert'),
+    ).not.toBeNull();
     // ⚠️ 否定式的那一半：把中断做成"整块错误态盖住列表"之后，上面那条照样绿。
     await expect(canvas.getByTestId('diagnostic-item-container-runtime')).toHaveTextContent(
       '容器服务可达',
@@ -300,6 +305,8 @@ export const SchemaMismatch: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('status')).toHaveTextContent('sb-diagnose-v99');
+    // ⭐ ℹ️ 换成了 lucide `Info`（class `lucide-info`）。
+    await expect(canvas.getByRole('status').querySelector('.lucide-info')).not.toBeNull();
     // 认得的项照常显示 —— 中断一次只读诊断等于在最需要它的时候把它关掉。
     await expect(canvas.getByTestId('diagnostic-item-container-runtime')).toHaveTextContent('正常');
   },

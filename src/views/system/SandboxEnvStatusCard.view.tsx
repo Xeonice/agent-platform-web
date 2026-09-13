@@ -10,6 +10,7 @@
 // ⏳ **[查看日志] 本轮没有**：`ProviderLogPanel` 要的"最近 20 行运行日志"在契约里还没有
 // 端点（10 §6.6 只有 providers 概览）。摆一个点了什么都不会发生的按钮，比暂时没有它更糟
 // ——用户会以为日志功能坏了。缺口记在本轮报告里。
+import { XCircle } from 'lucide-react';
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { ProviderHealthLevel, SandboxEnvStatusCardModel } from '@/types/system';
 
@@ -59,8 +60,9 @@ export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCar
       </header>
 
       {isError ? (
-        <p role="alert" className="text-sm text-red-500">
-          ❌ 沙箱环境概览读取失败 —— 这里的空白不代表这台机器上没有沙箱环境
+        <p role="alert" className="flex items-center gap-1.5 text-sm text-red-500">
+          <XCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
+          沙箱环境概览读取失败 —— 这里的空白不代表这台机器上没有沙箱环境
         </p>
       ) : model === null ? (
         <p className="text-sm text-muted-foreground">读取中…</p>

@@ -1,10 +1,11 @@
-// Git 凭证分区（F21-3 §3，P21-3 §10）：📦 标题 + 选型引导 + clone 回程重试横幅 + 已配置/未配置/加载失败
+// Git 凭证分区（F21-3 §3，P21-3 §10）：标题 + 选型引导 + clone 回程重试横幅 + 已配置/未配置/加载失败
 // 卡片 + 打开的表单 slot。纯展示、props 驱动、零副作用；一切决策/网络在容器。
 //
 // ⚠️ **安全承诺不在这里了。** 它此前是本分区的 `<footer>`，于是「凭证加密保存在本机不上传」这句
 //    只对 Git 那半边说过，Agent 帐号区对「我的模型帐号存在哪」一个字都没说 —— 而用户真正紧张的
 //    恰恰是模型帐号。承诺已移到页底 `CredentialsSecurityFooter`，跨两个分区。
 import type { ReactNode } from 'react';
+import { Info, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GitCredentialCardView } from '@/views/settings/GitCredentialCard.view';
 import type {
@@ -61,10 +62,14 @@ export function GitCredentialsSectionView({
   return (
     <section className="flex flex-col gap-4">
       <header className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold">📦 Git 凭证（私有仓库访问）</h2>
+        <h2 className="flex items-center gap-1.5 text-lg font-semibold">
+          <Package aria-hidden="true" className="h-4 w-4" />
+          Git 凭证（私有仓库访问）
+        </h2>
         <p className="text-xs text-muted-foreground">{guidanceText}</p>
-        <p className="text-xs text-muted-foreground">
-          ℹ️ Git 凭证用于克隆私有仓库，与 Agent 的 Runtime 凭证无关。
+        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Info aria-hidden="true" className="h-3 w-3 shrink-0" />
+          Git 凭证用于克隆私有仓库，与 Agent 的 Runtime 凭证无关。
         </p>
       </header>
 

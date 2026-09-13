@@ -11,13 +11,20 @@
 //  ③ **鉴权面板本身不在这里实现。** 展开的是同一个 `AuthGateContainer`（F07 §6.1 第三处
 //     宿主）——两份「怎么算授权成功」迟早对不上，而其中一份还管着运行期的过期判定。
 import type { ReactNode } from 'react';
+import { AlertTriangle, Check, Circle, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { SubscriptionRuntimeModel, SubscriptionStepModel } from '@/types/init';
 
-const STATE_ICON: Readonly<Record<SubscriptionRuntimeModel['state'], string>> = {
-  ready: '✅',
-  expired: '⚠️',
-  none: '○',
+/** 图标对齐 `StatusPill` 三态同款（ready→ok、expired→warn）；`none` 用中性 `Circle`——未配置不是警告。 */
+const STATE_ICON: Readonly<Record<SubscriptionRuntimeModel['state'], LucideIcon>> = {
+  ready: Check,
+  expired: AlertTriangle,
+  none: Circle,
+};
+const STATE_ICON_CLASS: Readonly<Record<SubscriptionRuntimeModel['state'], string>> = {
+  ready: 'text-success',
+  expired: 'text-warning',
+  none: 'text-muted-foreground',
 };
 const STATE_TEXT: Readonly<Record<SubscriptionRuntimeModel['state'], string>> = {
   ready: '已配置',
@@ -61,13 +68,19 @@ export function SubscriptionSetupView({
 
       {model.runtimes.length === 0 ? (
         // ⛔ registry 一个 runtime 都没有：如实说，不渲染一个空列表让人以为在加载。
-        <p role="alert" data-testid="subscription-no-runtime" className="text-sm text-amber-400">
-          ⚠️ 平台一个 Agent 都没有注册 —— 这不该发生，去系统状态页看看。
+        <p
+          role="alert"
+          data-testid="subscription-no-runtime"
+          className="flex items-center gap-1.5 text-sm text-amber-400"
+        >
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
+          平台一个 Agent 都没有注册 —— 这不该发生，去系统状态页看看。
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
           {model.runtimes.map((r) => {
             const expanded = expandedRuntimeId === r.id;
+            const StateIcon = STATE_ICON[r.state];
             return (
               <li
                 key={r.id}
@@ -76,7 +89,11 @@ export function SubscriptionSetupView({
                 className="flex flex-col gap-2 rounded-md border border-border/60 px-3 py-2 text-sm"
               >
                 <span className="flex flex-wrap items-center gap-2">
-                  <span aria-hidden="true">{STATE_ICON[r.state]}</span>
+                  <StateIcon
+                    aria-hidden="true"
+                    data-testid={`subscription-runtime-icon-${r.id}`}
+                    className={`h-3.5 w-3.5 shrink-0 ${STATE_ICON_CLASS[r.state]}`}
+                  />
                   <span className="font-medium">{r.displayName}</span>
                   <span className="text-xs text-muted-foreground">{STATE_TEXT[r.state]}</span>
                   {r.maskedIdentifier === undefined ? null : (
@@ -115,9 +132,10 @@ export function SubscriptionSetupView({
         <p
           role="alert"
           data-testid="subscription-blocked"
-          className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-amber-600"
+          className="flex items-start gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-amber-600"
         >
-          {model.blockedText}
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 translate-y-0.5" />
+          <span>{model.blockedText}</span>
         </p>
       )}
     </section>

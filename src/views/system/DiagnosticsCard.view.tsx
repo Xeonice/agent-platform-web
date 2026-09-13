@@ -20,6 +20,7 @@
 // `hooks/system/useDiagnosticsDisclosure.ts` 接到 `SystemStatusContainer`——本文件
 // **不 import lib**（分层铁律：`view` 只能 `allow: ['view','type','component']`），
 // `openIds`/`onOpenIdsChange` 就是两个普通 prop，这里只管照给定的 `openIds` 渲染。
+import { AlertTriangle, Info } from 'lucide-react';
 import { Accordion } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { DiagnosticItemView } from '@/views/system/DiagnosticItem.view';
@@ -71,15 +72,21 @@ export function DiagnosticsCardView({
       </header>
 
       {schemaMismatch === null ? null : (
-        <p role="status" className="text-xs text-amber-600">
-          ℹ️ 服务端诊断帧版本为 {schemaMismatch}，与本前端认识的版本不同 ——
+        <p role="status" className="flex items-center gap-1.5 text-xs text-amber-600">
+          <Info aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          服务端诊断帧版本为 {schemaMismatch}，与本前端认识的版本不同 ——
           已认识的项照常显示，建议升级前端；⛔ 不因此中断诊断
         </p>
       )}
 
       {model.abortedText === undefined ? null : (
-        <p role="alert" data-testid="diagnose-aborted" className="text-sm text-red-500">
-          ⚠️ {model.abortedText} —— 已到达的结果保留在下方，可点 [重新诊断] 重跑
+        <p
+          role="alert"
+          data-testid="diagnose-aborted"
+          className="flex items-center gap-1.5 text-sm text-red-500"
+        >
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
+          {model.abortedText} —— 已到达的结果保留在下方，可点 [重新诊断] 重跑
         </p>
       )}
 

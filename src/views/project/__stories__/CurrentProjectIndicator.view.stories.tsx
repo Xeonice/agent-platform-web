@@ -20,6 +20,8 @@ export const HasProject: Story = {
     const canvas = within(canvasElement);
     const indicator = canvas.getByTestId('current-project-indicator');
     await expect(indicator).toHaveTextContent('acme-web');
+    // MUTATION：把 `<Folder>` 换回 📁 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(indicator.querySelector('svg.lucide-folder')).not.toBeNull();
     // ⛔ 不是下拉：这是 §9.1 #2 的否定性验收（指示器上一个 haspopup 都不许有）。
     await expect(canvas.queryByRole('button', { expanded: true })).not.toBeInTheDocument();
     const locate = canvas.getByTestId('locate-current-project');

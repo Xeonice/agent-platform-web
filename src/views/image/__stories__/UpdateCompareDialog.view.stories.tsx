@@ -32,6 +32,8 @@ export const UpstreamValid: Story = {
     await expect(canvas.getByTestId('upstream-digest')).toHaveTextContent('sha256:8e05a…77f');
     await expect(canvas.getByRole('button', { name: '更新到新版本' })).toBeEnabled();
     await expect(canvas.getByRole('button', { name: '暂不更新' })).toBeInTheDocument();
+    // MUTATION：把标题的 `<RefreshCw>` 换回 🔄 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(canvas.getByRole('heading').querySelector('svg.lucide-refresh-cw')).not.toBeNull();
   },
 };
 

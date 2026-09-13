@@ -7,6 +7,7 @@
 // ⛔ 它也**不自动填**：点一次填一段。异常风暴下自动循环追平是无界请求，
 // 而且会把用户正在看的位置冲走。
 import { Button } from '@/components/ui/button';
+import { AlertTriangle } from 'lucide-react';
 
 export interface AuditGapNoticeProps {
   filling?: boolean;
@@ -27,7 +28,7 @@ export function AuditGapNoticeView({ filling = false, onFill }: AuditGapNoticePr
       className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-amber-500/60 bg-amber-500/5 px-3 py-2 text-xs"
     >
       <span className="flex items-center gap-2">
-        <span aria-hidden="true">⚠️</span>
+        <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
         <span>这里有一段事件还没加载（条数未知）</span>
       </span>
       <Button type="button" size="sm" variant="outline" disabled={filling} onClick={onFill}>

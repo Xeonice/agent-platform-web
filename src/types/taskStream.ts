@@ -3,6 +3,7 @@
 // 放 types/ 而不是 lib/ 的原因：view 层不许 import lib（07 §4.1 boundaries），
 // 但 view 的 props 正是这些形状——类型必须落在两层都能取到的 types/。
 import type { TaskStatus } from '@/types/task';
+import type { OutcomeSeverity } from '@/types/outcomeSeverity';
 
 /**
  * 渲染分类。产品要求至少把三类分开呈现（agent 正文 / 工具调用可折叠 / 错误高亮）；
@@ -118,6 +119,15 @@ export interface TaskOutcomeCopy {
   title: string;
   /** 现在能做什么 / 为什么会这样（含缺席退出码的解释与错误码人话）。 */
   advice: string;
+  /**
+   * `title` 属于哪一类结果——lib 只产出语义分类，view 拿它去
+   * `components/ui/outcome-icon.tsx` 查表决定渲染成哪个图标。
+   *
+   * ⚠️ 历史上 `title` 自带一个字面 emoji 前缀（`'✅ …'` / `'❌ …'` / `'⛔ …'` / `'⏱️ …'`）
+   * 编码这件事，与 `lib/sandbox/sandboxErrorCopy.ts` 的 `SandboxErrorCopy.severity`
+   * 是同一次拆分、同一条纪律：lib 不返回图标组件。
+   */
+  severity: OutcomeSeverity;
   /** 原始码（诊断小字；不当正文）。 */
   diagnosticCode?: string;
 }

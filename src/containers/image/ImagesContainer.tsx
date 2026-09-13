@@ -10,6 +10,7 @@
 // ⚠️ [启用] **不是** `PATCH { isActive:true }`：`m.toggle(id, true)` 内部走
 // `POST /:id/activate`（后端对前者明确回 400 并指向 activate）。
 import { useRef } from 'react';
+import { AlertTriangle, Check, X, type LucideIcon } from 'lucide-react';
 import { useImageManager } from '@/hooks/image/useImages';
 import { useEscapeKey } from '@/hooks/_shared/useEscapeKey';
 import { useModalFocus } from '@/hooks/_shared/useModalFocus';
@@ -23,11 +24,12 @@ import { ConfirmDialogView } from '@/views/settings/ConfirmDialog.view';
 import { Button } from '@/components/ui/button';
 import type { ImageStatusFilter } from '@/hooks/image/useImages';
 
-const FILTERS: { key: ImageStatusFilter; label: string }[] = [
+/** 图标对齐 `StatusPill` 三态同款（valid→ok、warning→warn、invalid→fail）；`all` 不带图标。 */
+const FILTERS: { key: ImageStatusFilter; label: string; icon?: LucideIcon }[] = [
   { key: 'all', label: '全部' },
-  { key: 'valid', label: '✅ 有效' },
-  { key: 'warning', label: '⚠️ 警告' },
-  { key: 'invalid', label: '❌ 无效' },
+  { key: 'valid', label: '有效', icon: Check },
+  { key: 'warning', label: '警告', icon: AlertTriangle },
+  { key: 'invalid', label: '无效', icon: X },
 ];
 
 export function ImagesContainer() {
@@ -67,6 +69,13 @@ export function ImagesContainer() {
                   m.setStatusFilter(f.key);
                 }}
               >
+                {f.icon !== undefined && (
+                  <f.icon
+                    aria-hidden="true"
+                    data-testid={`image-filter-icon-${f.key}`}
+                    className="h-3.5 w-3.5"
+                  />
+                )}
                 {f.label}
               </Button>
             ))}
@@ -95,9 +104,16 @@ export function ImagesContainer() {
             ⚠️ **空态也要前置硬约束**（2026-09 修）：这里是很多人第一次接触注册这件事的地方，
             而真正会拒绝他的那一条（必须从平台预制镜像改起）此前在注册前一个字都没出现过。
           */}
-          <p data-testid="images-empty-constraint">
-            ⚠️ 自定义镜像必须从平台的预制镜像改起（Dockerfile 第一行 FROM
-            平台预制镜像，或它的派生）。平台按镜像内容比对来源，改标签、改名都不算数。
+          <p data-testid="images-empty-constraint" className="flex items-start gap-1.5">
+            <AlertTriangle
+              aria-hidden="true"
+              data-testid="images-empty-constraint-icon"
+              className="h-4 w-4 shrink-0 translate-y-0.5"
+            />
+            <span>
+              自定义镜像必须从平台的预制镜像改起（Dockerfile 第一行 FROM
+              平台预制镜像，或它的派生）。平台按镜像内容比对来源，改标签、改名都不算数。
+            </span>
           </p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" onClick={m.openRegister}>

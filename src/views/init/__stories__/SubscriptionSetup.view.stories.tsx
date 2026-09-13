@@ -25,7 +25,7 @@ function model(runtimes: SubscriptionRuntimeModel[]): SubscriptionStepModel {
       ? {}
       : {
           blockedText:
-            '⚠️ 跳过后平台能进、项目能建，但在配好至少一个模型帐号之前无法发起任何任务 —— agent 需要它才能调用模型。',
+            '跳过后平台能进、项目能建，但在配好至少一个模型帐号之前无法发起任何任务 —— agent 需要它才能调用模型。',
         }),
   };
 }
@@ -60,6 +60,14 @@ export const NoneConfigured: Story = {
     await expect(section).toHaveTextContent('不用全部配');
     // ⚠️ 「配好任意一个就能开始」不许省：判据本来就是"至少一个"。
     await expect(section).toHaveTextContent('配好任意一个就能开始');
+    // MUTATION：把 `<AlertTriangle>` 换回 ⚠️ 字符或换成另一个图标 ⇒ 这条先红。
+    await expect(
+      canvas.getByTestId('subscription-blocked').querySelector('svg.lucide-triangle-alert'),
+    ).not.toBeNull();
+    // 两个 runtime 都未配置 ⇒ 都渲染中性的 `Circle`（未配置不是警告，不该用告警图标）。
+    await expect(
+      canvas.getByTestId('subscription-runtime-icon-codex').classList.contains('lucide-circle'),
+    ).toBe(true);
   },
 };
 
@@ -75,16 +83,23 @@ export const OneConfigured: Story = {
     // ⛔ 已配好的那行没有下一步 —— 给动作按钮会让人以为还差点什么。
     await expect(canvas.queryByTestId('subscription-configure-codex')).toBeNull();
     await expect(canvas.getByTestId('subscription-configure-claude-code')).toBeVisible();
+    await expect(
+      canvas.getByTestId('subscription-runtime-icon-codex').classList.contains('lucide-check'),
+    ).toBe(true);
   },
 };
 
 export const Expired: Story = {
   args: { model: model([{ ...CODEX, state: 'expired', maskedIdentifier: 'a***@gmail.com' }]) },
   play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
     // ⚠️ 「已过期」与「未配置」的动作名不同：前者重新授权、后者首次配置。
+    await expect(canvas.getByTestId('subscription-configure-codex')).toHaveTextContent('重新授权');
     await expect(
-      within(canvasElement).getByTestId('subscription-configure-codex'),
-    ).toHaveTextContent('重新授权');
+      canvas
+        .getByTestId('subscription-runtime-icon-codex')
+        .classList.contains('lucide-triangle-alert'),
+    ).toBe(true);
   },
 };
 

@@ -5,6 +5,7 @@
 //
 // ⚠️ **新版本判定为 ❌ 时不渲染 [更新到新版本]**（P21-4 §5 ★）——
 // 一次检查不该把一张正在好好用着的镜像变成不能用的。这条落成 story 的 play 否定断言。
+import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ValidationResultView } from '@/views/image/ValidationResult.view';
 import type { ImageValidationResultData } from '@/types/image';
@@ -50,7 +51,10 @@ export function UpdateCompareDialogView({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
     >
       <div className="flex w-full max-w-xl flex-col gap-3 rounded-lg border border-border bg-background p-5">
-        <h3 className="text-base font-semibold">🔄 上游有新版本</h3>
+        <h3 className="flex items-center gap-1.5 text-base font-semibold">
+          <RefreshCw aria-hidden="true" className="h-4 w-4" />
+          上游有新版本
+        </h3>
         <p className="font-mono text-xs text-muted-foreground">{refDisplay}</p>
 
         <div className="flex flex-col gap-2 rounded-md border border-border p-3 text-xs">

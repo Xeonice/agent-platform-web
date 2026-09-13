@@ -158,6 +158,8 @@ export const LoadFailed: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('alert')).toHaveTextContent('沙箱环境概览读取失败');
+    // ⭐ 换成了 lucide `XCircle`（class `lucide-circle-x`），不再是标题里的字面 ❌ 字符。
+    await expect(canvas.getByRole('alert').querySelector('.lucide-circle-x')).not.toBeNull();
     // 空白 ≠ 没有 provider。
     await expect(canvas.queryByTestId('sandbox-env-row-aio')).not.toBeInTheDocument();
   },

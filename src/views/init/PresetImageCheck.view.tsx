@@ -14,6 +14,7 @@
 //  ③ **[稍后配置] 放行了，但「在此之前无法发起任何任务」必须写在按钮旁边。** 这是整个向导里
 //     唯一一处「放行了但功能不可用」——其余步骤放行后功能都是可用的。这句话不说，用户会在
 //     最挫败的时机发现：建好项目、选完运行时、填完指令、点下 [发起] 的那一刻。
+import { AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
@@ -109,8 +110,13 @@ export function PresetImageCheckView({
       </div>
 
       {model.abortedText === undefined ? null : (
-        <p role="alert" data-testid="preset-image-aborted" className="text-sm text-red-500">
-          ⚠️ {model.abortedText}
+        <p
+          role="alert"
+          data-testid="preset-image-aborted"
+          className="flex items-start gap-1.5 text-sm text-red-500"
+        >
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 translate-y-0.5" />
+          <span>{model.abortedText}</span>
         </p>
       )}
 
@@ -245,9 +251,10 @@ export function PresetImageCheckView({
                   <span
                     role="alert"
                     data-testid="preset-provision-error"
-                    className="whitespace-pre-wrap break-words text-xs text-red-500"
+                    className="flex items-start gap-1 whitespace-pre-wrap break-words text-xs text-red-500"
                   >
-                    ❌ {provisionError}
+                    <X aria-hidden="true" className="h-3 w-3 shrink-0 translate-y-0.5" />
+                    <span>{provisionError}</span>
                   </span>
                 )}
               </span>
@@ -279,9 +286,10 @@ export function PresetImageCheckView({
         <p
           role="alert"
           data-testid="preset-image-blocked"
-          className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-amber-600"
+          className="flex items-start gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-amber-600"
         >
-          ⚠️ {model.blockedText}
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0 translate-y-0.5" />
+          <span>{model.blockedText}</span>
         </p>
       )}
     </section>

@@ -1,10 +1,11 @@
-// 项目分组组头（F21-6 §3）：`📁 ProjectName (N) ⋯`，两个 variant。纯展示、props 驱动、零副作用。
+// 项目分组组头（F21-6 §3）：`[Folder] ProjectName (N) ⋯`，两个 variant。纯展示、props 驱动、零副作用。
 //
 // 两个 variant 由 `cloneStatus` 派生，不额外开一个 prop（多一个入参就多一种"两处不一致"的可能）：
-//   · `normal`      —— `📁 ProjectName · N ⋯`（cloning 另带黄色徽标）
-//   · `cloneFailed` —— `● 📁 ProjectName ⚠️ 克隆失败 ⋯`（产品 P21-6 §9；前导的 `●` 是
-//     `StatusDot`（`status="fail"`），design-notes.md §4 Phase 3 第 2 条落地前是手写的
-//     🔴 emoji，现在接入 `StatusPill` 极简变体的同一套语义色）
+//   · `normal`      —— `[Folder] ProjectName · N ⋯`（cloning 另带黄色徽标）
+//   · `cloneFailed` —— `● [Folder] ProjectName [AlertTriangle] 克隆失败 ⋯`（产品 P21-6 §9；
+//     前导的 `●` 是 `StatusDot`（`status="fail"`），design-notes.md §4 Phase 3 第 2 条落地前
+//     是手写的 emoji，现在接入 `StatusPill` 极简变体的同一套语义色；`[Folder]` 与
+//     `[AlertTriangle]` 同理——本轮（emoji 收口）从字面 emoji 换成 lucide 组件）
 //
 // ⚠️ **failed 项目在本实现里仍然可以选中**，与 §5/§6 那条「failed 不可选为当前项目、
 // 点组头仅展开」不一致 —— 这是**刻意的**，理由回填进了文档：`ProjectRecoveryContainer`
@@ -14,7 +15,7 @@
 // 「⋯」的菜单本体是 `ProjectGroupMenu.view`，由 container 决定开合后经 `menuSlot` 插进来
 // （views 不持有开合状态；组头只负责给它一个定位锚点）。
 import type { ReactNode } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Folder } from 'lucide-react';
 import { StatusDot } from '@/components/ui/status-pill';
 import type { ProjectGroup } from '@/types/domain';
 
@@ -97,10 +98,10 @@ export function ProjectGroupHeaderView({
         }}
       >
         {/* 组头徽标接入 StatusPill 的极简变体（design-notes.md §4 Phase 3 第 2 条）：
-            纯色 dot 换掉此前手写的 🔴 emoji——语义（fail）与颜色都来自同一套 token，
+            纯色 dot 换掉此前手写的 emoji——语义（fail）与颜色都来自同一套 token，
             八态本体（`statusPillVariants`）一个字节没动。 */}
         {failed && <StatusDot status="fail" label="克隆失败" />}
-        <span aria-hidden="true">📁</span>
+        <Folder aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
         <span className="min-w-0 flex-1 truncate">{projectName}</span>
         {/* 计数徽标**右对齐**（原型 `renderTaskTree()`：`<span class="text-xs ...">${g.tasks.length}</span>`
             单独一格，不再拼进名字后面的「· N」——名字长时两者会挤在一起不可读。 */}
@@ -111,7 +112,10 @@ export function ProjectGroupHeaderView({
           <span className="rounded bg-yellow-500/15 px-1 text-[10px] text-yellow-300">克隆中</span>
         )}
         {failed && (
-          <span className="rounded bg-red-500/15 px-1 text-[10px] text-red-300">⚠️ 克隆失败</span>
+          <span className="flex items-center gap-0.5 rounded bg-red-500/15 px-1 text-[10px] text-red-300">
+            <AlertTriangle aria-hidden="true" className="h-2.5 w-2.5" />
+            克隆失败
+          </span>
         )}
       </button>
 

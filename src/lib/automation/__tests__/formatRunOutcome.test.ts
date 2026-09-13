@@ -8,10 +8,10 @@ import {
 import { AUTOMATION_RUN_STATUSES } from '@/types/automation';
 
 describe('formatRunOutcome · 8 个 status 全覆盖', () => {
-  it('每个 status 都有图标、标签、人话', () => {
+  it('每个 status 都有归类、标签、人话（图标由 view 按 category 选，lib 不返回图标）', () => {
     for (const status of AUTOMATION_RUN_STATUSES) {
       const o = formatRunOutcome({ status });
-      expect(o.icon).not.toBe('');
+      expect(o.category).not.toBe('');
       expect(o.label).not.toBe('');
       expect(o.detail.length).toBeGreaterThan(5);
     }

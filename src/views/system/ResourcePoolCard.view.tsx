@@ -7,6 +7,7 @@
 // ⚠️ **整体那一行说的是最差维度，不是平均**：`{cpu:10%, ram:20%, disk:98%}` 要显示
 // 「资源耗尽，无法创建新 Task」。判定在 lib，但这一行的存在本身是产品要求——把三条水位条
 // 摆出来让用户自己看，等于把"还能不能再发一个 Task"这个唯一的问题留给他自己算。
+import { AlertTriangle, Clock, Gift, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
@@ -124,8 +125,9 @@ export function ResourcePoolCardView({
       {isError ? (
         // ⛔ 失败**不许**退化成"0%"或空水位条：一条空水位条读起来是"很空闲"，
         //    而真相是这个数字根本没取到。
-        <p role="alert" className="text-sm text-red-500">
-          ❌ 本机资源读取失败，当前数字不可用 —— 请点 [刷新] 重试
+        <p role="alert" className="flex items-center gap-1.5 text-sm text-red-500">
+          <XCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
+          本机资源读取失败，当前数字不可用 —— 请点 [刷新] 重试
         </p>
       ) : model === null ? (
         <p className="text-sm text-muted-foreground">读取中…</p>
@@ -156,18 +158,22 @@ export function ResourcePoolCardView({
             data-testid="retained-volumes"
             className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs"
           >
-            <span aria-hidden="true">🎁</span>
+            <Gift aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
             <span>
               保留卷占用 {model.retained.sizeText}（{model.retained.count} 个 ·{' '}
               {model.retained.shareText}）
             </span>
             {model.retained.countdownText === undefined ? null : (
-              <span className="text-muted-foreground">⏱️ {model.retained.countdownText}</span>
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <Clock aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                {model.retained.countdownText}
+              </span>
             )}
             {model.retained.truncated ? (
               // ⚠️ 截断了却报一个确切数字，用户清完发现没腾出预期的空间，此后不会再信这个数字。
-              <span className="text-amber-600">
-                ⚠️ 目录过多，统计已截断 —— 实际占用不小于这个数
+              <span className="flex items-center gap-1 text-amber-600">
+                <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                目录过多，统计已截断 —— 实际占用不小于这个数
               </span>
             ) : null}
             {model.showCleanupRetained ? (
