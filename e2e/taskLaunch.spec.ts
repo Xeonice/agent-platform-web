@@ -370,7 +370,7 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
     await expect(modal).toBeVisible();
     await expect(modal).toHaveAttribute('role', 'dialog');
     // 弹窗继承树上选中的项目（§9.1 #3：弹窗内没有项目下拉）。
-    await expect(modal.getByText(/在「E2E 发起项目」中发起/)).toBeVisible();
+    await expect(modal.getByText('在「E2E 发起项目」中发起', { exact: true })).toBeVisible();
   });
 
   /**
@@ -589,9 +589,12 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
     await expect(bar.getByText('https://github.com/acme/e2e.git')).toBeVisible();
     await expect(bar.getByText('main')).toBeVisible();
     await expect(bar.getByText('12 MB')).toBeVisible();
-    await expect(bar.getByText('最后同步')).toBeVisible();
+    // ⚠️ 文案巡检把「最后同步」改成「最后拉取」、「重新同步」改成「拉取最新代码」——
+    //    改得对：`ProjectInfoBar.view.tsx` 的注释写明了理由，「同步」会让用户以为
+    //    **会把本地改动推上去**，而这条路只拉不推。⇒ 断言跟着改，⛔ 不是把文案改回去。
+    await expect(bar.getByText(/最后拉取|最后同步/)).toBeVisible();
 
-    await bar.getByRole('button', { name: '重新同步' }).click();
+    await bar.getByRole('button', { name: /拉取最新代码|重新同步/ }).click();
     await expect.poll(() => syncHits).toBe(1);
   });
   /**
@@ -614,7 +617,7 @@ test.describe('★ 新建任务：入口、弹层形态、分支、建完后的�
     const modal = page.getByTestId('modal-new-task');
     await expect(modal).toBeVisible();
     // 项目上下文跟着深链走（左侧树也选中了它）。
-    await expect(modal.getByText(/在「E2E 发起项目」中发起/)).toBeVisible();
+    await expect(modal.getByText('在「E2E 发起项目」中发起', { exact: true })).toBeVisible();
     // 指令**没有**被恢复——它只在容器局部 state（15 §3.5），深链带不动。
     await expect(page.getByLabel('任务指令（可选）')).toHaveValue('');
     // ⛔ 但不许静默：必须明说一句，否则用户以为自己写的东西还在。

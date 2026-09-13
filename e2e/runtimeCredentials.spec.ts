@@ -90,7 +90,14 @@ test.describe('S4 Runtime 鉴权 UI', () => {
 
     await page.goto('/settings/credentials');
     // codex 帐号授权行已生效 → [重新授权]
-    await page.getByRole('button', { name: '重新授权' }).first().click();
+    // ⚠️ 按钮文案在文案巡检里改过（「重新授权」→「重新登录」、「帐号授权」→「登录帐号」、
+    //    「吊销」→「删除」）。⛔ 用 `name:` 逐字定位按钮在这个仓库里很脆 —— 那一轮只跑了
+    //    单测子集，于是这三条到 CI 上才炸。改动本身是对的（口语化、去掉「吊销」这种
+    //    法律腔），错的是这里钉得太死。⇒ 用子串正则，抓得住同义改写。
+    await page
+      .getByRole('button', { name: /重新登录|重新授权/ })
+      .first()
+      .click();
     // 设备码 + 倒计时展示
     await expect(page.getByLabel('设备码')).toHaveText('WDJB-MJHT');
     await expect(page.getByLabel('倒计时')).toBeVisible();
@@ -125,7 +132,14 @@ test.describe('S4 Runtime 鉴权 UI', () => {
 
     await page.goto('/settings/credentials');
     // Claude Code 帐号授权（未配置）
-    await page.getByRole('button', { name: '帐号授权' }).first().click();
+    // ⚠️ 按钮文案在文案巡检里改过（「重新授权」→「重新登录」、「帐号授权」→「登录帐号」、
+    //    「吊销」→「删除」）。⛔ 用 `name:` 逐字定位按钮在这个仓库里很脆 —— 那一轮只跑了
+    //    单测子集，于是这三条到 CI 上才炸。改动本身是对的（口语化、去掉「吊销」这种
+    //    法律腔），错的是这里钉得太死。⇒ 用子串正则，抓得住同义改写。
+    await page
+      .getByRole('button', { name: /登录帐号|帐号授权/ })
+      .first()
+      .click();
     await expect(page.getByText('打开授权链接 ↗')).toBeVisible();
     // ⚠️ placeholder 2026-09-07 改过：同机流程下回调页把码直接送进 CLI 的本地监听，
     //    页面**根本不给码**，所以粘贴框降级成了「页面显示了码才需要填」的退路。
@@ -162,13 +176,27 @@ test.describe('S4 Runtime 鉴权 UI', () => {
     });
 
     await page.goto('/settings/credentials');
-    await page.getByRole('button', { name: '吊销' }).first().click();
-    // P0-4 延迟语义必现
+    // ⚠️ 按钮文案在文案巡检里改过（「重新授权」→「重新登录」、「帐号授权」→「登录帐号」、
+    //    「吊销」→「删除」）。⛔ 用 `name:` 逐字定位按钮在这个仓库里很脆 —— 那一轮只跑了
+    //    单测子集，于是这三条到 CI 上才炸。改动本身是对的（口语化、去掉「吊销」这种
+    //    法律腔），错的是这里钉得太死。⇒ 用子串正则，抓得住同义改写。
+    await page
+      .getByRole('button', { name: /^删除$|吊销/ })
+      .first()
+      .click();
+    // P0-4 延迟语义必现：确认框必须说到**两件事**，⛔ 一件都不能少。
+    //
+    // ⚠️ 钉「必须说到的意思」，⛔ 不钉原词：
+    //   · 「重启」—— 删掉凭证会把正在用它跑的任务重启，用户按之前必须知道；
+    //   · 「平台删不掉已经外流的 token」—— 原文案是「无法追回」四个字，现在改写成
+    //     「已经被带出沙箱的 token，平台这边删不掉……去签发它的厂商后台把它作废」。
+    //     ⭐ 新写法**信息更足**：它不只说"追不回"，还给了唯一真正有效的出路。
+    //     ⇒ 断言跟着改，⛔ 不是把文案改回去。
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('重启');
-    await expect(dialog).toContainText('无法追回');
-    await page.getByRole('button', { name: '确认吊销' }).click();
-    await expect(page.getByText('凭证已吊销')).toBeVisible();
+    await expect(dialog).toContainText(/删不掉|无法追回/);
+    await page.getByRole('button', { name: /确认删除|确认吊销/ }).click();
+    await expect(page.getByText(/已删除|凭证已吊销/)).toBeVisible();
     expect(revoked).toBe(true);
   });
 });

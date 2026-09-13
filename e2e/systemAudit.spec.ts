@@ -343,16 +343,23 @@ test.describe('F21-5 审计流', () => {
     await page.goto('/settings/system');
 
     // 四张卡各自的标题都在（组件树 §3）。
-    await expect(page.getByRole('heading', { name: '📊 资源池水位' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '🏃 Provider 状态' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '🌐 连接状态' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '🔧 诊断' })).toBeVisible();
+    //
+    // ⚠️ **用子串匹配，⛔ 不钉完整标题**：这条用例要证明的是「五块内容同屏且互不合并」，
+    //    标题只是定位手段。逐字钉整句的话，每一次文案巡检都会把它打红 —— 实际已经发生过：
+    //    `资源池水位` → `本机资源`、`Provider 状态` → `这台机器的沙箱环境`，
+    //    两次改名都很对（前者是内部叫法，后者是代码术语），错的是这里钉得太死。
+    await expect(page.getByRole('heading', { name: /本机资源/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /沙箱环境/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /连接状态/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /诊断/ })).toBeVisible();
     // ⚠️ 审计卡是**另一个区块**，不是被并进任何一张卡里（P21-5 §10.1）。
-    await expect(page.getByRole('heading', { name: '🧾 审计流' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /审计流/ })).toBeVisible();
     await expect(page.getByTestId('audit-row-1200')).toBeVisible();
 
     // ⭐ 取最差维度：平均会把这台机器算成健康，而它一个 Task 都建不出来。
-    await expect(page.getByText('资源耗尽，无法创建新 Task')).toBeVisible();
+    // ⚠️ 同理钉意思不钉整句：文案巡检把代码术语 `Task` 换成了「任务」
+    //    （`资源耗尽，无法创建新 Task` → `资源耗尽，现在建不了新任务`）。
+    await expect(page.getByText(/资源耗尽/)).toBeVisible();
     await expect(page.getByText('资源充足')).toHaveCount(0);
 
     // 诊断还没跑过 ⇒ **不画八行占位**（清单由服务端首帧下发，不是本地常量）。
