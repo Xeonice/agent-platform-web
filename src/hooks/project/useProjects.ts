@@ -93,6 +93,21 @@ export function useConvertToEmpty(): UseMutationResult<ProjectDto, Error, string
  */
 export function describeProjectActionError(error: unknown): string {
   if (!(error instanceof ApiErrorException)) return '网络不通，请稍后再试。';
+  // ⚠️ **`INVALID_STATE` 这一条例外：优先用服务端那句话，不用本地文案表。**
+  //
+  // 这条路上它有**两个成因**，而客户端分不出是哪个：
+  //   ① 还有任务在跑 / 克隆还没停；
+  //   ② 还有**没清理的保留成果**（2026-09-13 新增的前置检查，api 侧）。
+  // 本地表只能写死一句，写 ① 就会在 ② 的时候说一句假话，还把人指向错误的地方
+  // （去停任务，而实际要去清成果）。⇒ 服务端知道是哪一个，让它说。
+  //
+  // ⚠️ **这条例外成立的前提**：这条路上 `INVALID_STATE` 的两个生产方写的都是**人话 +
+  //    下一步**（P22 §1 的纪律，两句都是照它写的）。⛔ 将来谁再加一个生产方，
+  //    message 必须同样是面向用户的话 —— 否则技术腔会直接漏到界面上。
+  //    真要加一个说不了人话的生产方，那时应该给它一个**自己的码**，而不是把这里改回查表。
+  const serverSaidWhy =
+    error.envelope.code === 'INVALID_STATE' ? error.envelope.message : undefined;
+  if (serverSaidWhy !== undefined && serverSaidWhy.trim() !== '') return serverSaidWhy;
   return projectErrorMessage(
     error.envelope.code,
     error.envelope.traceId,

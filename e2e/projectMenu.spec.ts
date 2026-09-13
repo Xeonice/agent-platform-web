@@ -153,12 +153,24 @@ test.describe('F21-6 项目菜单整块（含删除入口）', () => {
     await panel.getByTestId('project-delete-entry').click();
 
     // 级联后果 + **真数据**的运行中任务警示（§10.6 第 3 条）。
-    await expect(page.getByTestId('delete-cascade-copy')).toContainText(
-      '将删除该项目下 2 个 Task 及其数据卷（保留的成果卷除外），不可逆。',
-    );
-    await expect(page.getByTestId('delete-running-warning')).toContainText(
-      '含 2 个运行中任务将被强制停止',
-    );
+    //
+    // ⚠️ **钉「必须说到的三件事」，⛔ 不钉整句**：破坏性操作的后果要回答三个用户真的会问
+    //    的问题 —— 删什么 / 留什么 / 能不能反悔。措辞会再变，这三问不会变。
+    // ⚠️ 其中「远端仓库不受影响」是最要紧的一条：那是开发者按下去之前最想确认的事，
+    //    旧文案一个字都没说。
+    // ⛔ 这里曾经逐字钉着旧文案「将删除该项目下 2 个 Task 及其数据卷…」—— 文案巡检把
+    //    代码术语 `Task` 改成「任务」、把括号里那句存疑的「保留的成果卷除外」删掉之后，
+    //    这条就红了。整句断言在文案上是**必然过期**的。
+    const cascade = page.getByTestId('delete-cascade-copy');
+    await expect(cascade).toContainText('2 个任务');
+    await expect(cascade).toContainText('远端 Git 仓库不受影响');
+    await expect(cascade).toContainText('拿不回来');
+    // ⚠️ 同样钉意思不钉整句：**数量**（真数据，不是写死的 2）+ **会被强制停下**。
+    //    旧断言逐字钉「含 2 个运行中任务将被强制停止」，文案改成「其中 2 个任务正在跑，
+    //    会被强制停下。」之后必然红。
+    const runningWarn = page.getByTestId('delete-running-warning');
+    await expect(runningWarn).toContainText('2 个');
+    await expect(runningWarn).toContainText('强制停');
 
     await page.getByTestId('delete-confirm').click();
 
@@ -205,10 +217,14 @@ test.describe('F21-6 项目菜单整块（含删除入口）', () => {
         await route.fallback();
         return;
       }
+      // ⚠️ 码必须是**契约里真有的那个**。这里曾经 stub `'CONFLICT'` —— 它在 10 §6.8
+      //    的错误码表里**一次都没出现过**，后端这条路回的是 `INVALID_STATE`。
+      //    旧实现不看码、把 `message` 原样上屏，所以这个虚构一直没被发现；
+      //    文案巡检改成按码查表之后才露出来。⛔ 别再用不存在的码 stub。
       await route.fulfill({
         status: 409,
         json: {
-          code: 'CONFLICT',
+          code: 'INVALID_STATE',
           message: '该项目仍有运行中的任务，请先停止后再删除。',
           retryable: false,
         } satisfies ErrorEnvelope,
@@ -221,6 +237,10 @@ test.describe('F21-6 项目菜单整块（含删除入口）', () => {
     await page.getByTestId('project-delete-entry').click();
     await page.getByTestId('delete-confirm').click();
 
+    // ⚠️ 钉的是「**服务端给的那个具体原因**要上屏」，不是「有一句错误提示」。
+    //    `INVALID_STATE` 在这条路上有两个成因（任务在跑 / 保留成果没清），客户端分不出，
+    //    所以 `describeProjectActionError` 对这个码优先用服务端那句话 —— 换成通用兜底
+    //    「删除失败，请稍后重试。」就等于把用户指向错误的地方。
     await expect(page.getByTestId('delete-error')).toContainText('该项目仍有运行中的任务');
     await expect(page.getByTestId('modal-project-menu')).toBeVisible();
     // 树里那一项一动没动（没有乐观删除）。
