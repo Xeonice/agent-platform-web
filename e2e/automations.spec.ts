@@ -251,9 +251,17 @@ test.describe('F21-7 自动化规则面板', () => {
       await expect(items.nth(i)).toHaveAttribute('data-counts-toward-failure', 'false');
     }
 
-    // ⭐ missed 展开后必须说清"不是规则失败 / 不补跑"。
+    // ⭐ missed 展开后必须说清两件事：**不是规则的错** + **不会补跑**。
+    //
+    // ⚠️ 这两句是 `missed` 唯一容易被误读的地方 —— 用户看到一条没跑成的记录，默认会以为
+    //    是自己的规则配错了、并且会等平台自动补上。两句话各挡一个误解，⛔ 少一句都不行。
+    //
+    // ⚠️ **断言只钉「必须说到的意思」，⛔ 不钉整句**：文案巡检把「不是规则失败」改成了
+    //    「这不是规则的问题」，而当时只跑了单测子集、没跑 e2e，于是
+    //    `formatRunOutcome.test.ts` 改了、这里没改，CI 上红了一次。措辞还会再变，
+    //    「必须说到」不会变。
     await items.nth(5).getByTestId('run-toggle-detail').click();
-    await expect(items.nth(5).getByTestId('run-detail')).toContainText('不是规则失败');
+    await expect(items.nth(5).getByTestId('run-detail')).toContainText('不是规则的问题');
     await expect(items.nth(5).getByTestId('run-detail')).toContainText('不会补跑');
   });
 
