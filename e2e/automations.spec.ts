@@ -90,9 +90,12 @@ async function stubBase(page: Page): Promise<void> {
 /**
  * 打开自动化侧弹层。
  *
- * ★ 2026-09-01：入口**已从项目只读条搬进 `ProjectMenuPanel`**（F21-6 §10.2 C）——
- * 组头「⋯」→ [项目菜单…] → [⚙️ 自动化规则]。这正是 F21-7 §7.4 原本就写着的那条路
- *（「组头「⋯」→ [⚙️ 自动化规则]」），此前 `ProjectMenuPanel` 不存在才退到只读条上。
+ * ★ 2026-09-01：入口从项目只读条搬进项目菜单（F21-6 §10.2 C）。
+ * ★ **2026-09-14：菜单拍平，这里少了一跳** —— 此前是
+ *   组头「⋯」→ [项目菜单…] → [⚙️ 自动化规则]（三次点击，中间那个二级面板已删除）；
+ *   现在组头「⋯」→ [自动化规则] 直达，回到 F21-7 §7.4 原本就写着的那条路。
+ * ⚠️ 菜单是 shadcn `DropdownMenu`，内容挂 Radix `Portal` ⇒ 菜单项要从 `page` 上找，
+ *   ⛔ 不能 `within(组头)`。
  */
 async function openPanel(page: Page): Promise<void> {
   await page.goto('/');
@@ -101,8 +104,7 @@ async function openPanel(page: Page): Promise<void> {
     .filter({ hasText: 'E2E 自动化项目' })
     .getByTestId('project-group-menu-trigger')
     .click();
-  await page.getByTestId('group-menu-open-panel').click();
-  await page.getByTestId('open-automations').click();
+  await page.getByTestId('group-menu-open-automations').click();
   await expect(page.getByTestId('modal-automations')).toBeVisible();
 }
 
