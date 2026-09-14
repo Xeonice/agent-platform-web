@@ -96,6 +96,14 @@ export function describeAutomationError(error: unknown): string | undefined {
 export function useAutomationAttention(projectId: string | null): AutomationAttention {
   const query = useQuery<AutomationDto[]>({
     queryKey: automationKeys.list(projectId ?? ''),
+    // ⚠️ `enabled:false` 单独用**不够** —— TanStack Query v5 在建 observer 那一刻就校验
+    // queryFn 在不在，不管 enabled 是什么，缺了直接抛「No queryFn was passed」。
+    // 给一个必然抛错的 queryFn：enabled:false 保证它永不执行，而万一哪天有人把
+    // enabled 打开，这里会当场炸出来 —— ⛔ 好过它安静地替横幅多打一次列表接口。
+    // 同一手法见 `useSystemStatus.ts` 的 `DIAGNOSE_CACHE_OPTIONS`。
+    queryFn: (): never => {
+      throw new Error('自动化列表只由 useAutomations 拉取，这里只读缓存、不发请求');
+    },
     enabled: false,
   });
   const data = query.data;

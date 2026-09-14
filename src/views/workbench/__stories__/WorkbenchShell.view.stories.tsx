@@ -242,79 +242,139 @@ export const FilterChipsEachEmitOwnValue: Story = {
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
+    // 主行三档：直接点。
     await userEvent.click(canvas.getByTestId('task-filter-preparing'));
     await expect(args.onStatusFilterChange).toHaveBeenCalledWith('preparing');
     await userEvent.click(canvas.getByTestId('task-filter-running'));
     await expect(args.onStatusFilterChange).toHaveBeenCalledWith('running');
-    await userEvent.click(canvas.getByTestId('task-filter-waitingInput'));
-    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('waitingInput');
-    await userEvent.click(canvas.getByTestId('task-filter-paused'));
-    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('paused');
-    await userEvent.click(canvas.getByTestId('task-filter-error'));
-    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('error');
-    await userEvent.click(canvas.getByTestId('task-filter-stopped'));
-    await expect(args.onStatusFilterChange).toHaveBeenCalledWith('stopped');
     await userEvent.click(canvas.getByTestId('task-filter-all'));
     await expect(args.onStatusFilterChange).toHaveBeenCalledWith('all');
+
+    // 收纳的四档：先开「更多」，再点。⚠️ 菜单挂在 portal 上，不在 canvasElement 里
+    // ⇒ 必须用 `within(document.body)` 找，用 canvas 找会 not found。
+    for (const [status, label] of [
+      ['waitingInput', '等待输入'],
+      ['paused', '已暂停'],
+      ['error', '异常'],
+      ['stopped', '已停止'],
+    ] as const) {
+      await userEvent.click(canvas.getByTestId('task-filter-more'));
+      const menu = within(document.body);
+      const item = await menu.findByTestId(`task-filter-${status}`);
+      // ⭐ 文案与枚举值配对着断言：只断言回调值的话，把「异常」和「已停止」两个
+      // label 对调仍然全绿 —— 菜单里显示错名字、点下去筛对了，用户照样被骗。
+      await expect(item).toHaveTextContent(label);
+      await userEvent.click(item);
+      await expect(args.onStatusFilterChange).toHaveBeenCalledWith(status);
+      // ⚠️ 等菜单**真正卸载**再开下一轮。Radix 的关闭走 `Presence` 动画，不等的话
+      // 下一轮 `findByTestId` 会拿到正在退场、已经 detach 的旧节点，点下去什么都不
+      // 发生 —— 表现为最后一两档"随机"收不到回调（实测 3 次红 2 次）。
+      await waitFor(async () => {
+        await expect(menu.queryByTestId(`task-filter-${status}`)).toBeNull();
+      });
+    }
   },
 };
 
 /**
- * ⭐ 七档放不下 400px 侧栏一行（「异常」会被挤到第二行）：用户裁决走**横向滚动**，
- * ⛔ 不换行、⛔ 不缩短文案。钉住的是结构事实（`flex-nowrap` + `overflow-x-auto`），
- * 不是视觉——`flex-wrap` 悄悄加回来不会改变每个 chip 各自的可见文字，只有类名断言
- * 才拦得住。
- * 变异：把容器 className 里的 `flex-nowrap` 改回 `flex-wrap`（或删掉
- * `overflow-x-auto`）⇒ 本条红。
+ * ⭐ 筛选行**真的放得下**，不靠滚动也不换行（2026-09-14 裁决：前三档 + 「更多」）。
+ *
+ * ⚠️ 钉的是 `scrollWidth <= clientWidth` 这个**几何事实**，⛔ 不是类名。
+ * 上一版这条 story 断言的是 `flex-nowrap` + `overflow-x-auto` 两个类名在不在 ——
+ * 那种写法拦不住真正会犯的错：往主行多挪一档、或把某档文案改长，类名一个字没动、
+ * 断言全绿，而侧栏里那一档已经溢出看不见了（现在没有滚动条，溢出是**直接消失**，
+ * 不像以前还能滑出来）。几何断言才会红。
+ *
+ * 变异：把 `PRIMARY_STATUS_FILTERS` 加上 'waitingInput'（主行四档 ⇒ 270px 对 271px，
+ * 差 1px），或把「准备中」改成更长的文案 ⇒ 本条红。
  */
-export const FilterChipsScrollHorizontallyNoWrap: Story = {
+export const FilterChipsFitWithoutScrolling: Story = {
   args: {
     groups,
     waitingInputCount: 0,
     healthLabel: null,
     terminalSlot,
   },
-  parameters: { viewport: { defaultViewport: 'mobile1' } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const chipsRow = canvas.getByTestId('task-filter-chips');
+    // 放得下 = 没有可滚动的余量。±1px 容差留给亚像素取整。
+    await expect(chipsRow.scrollWidth).toBeLessThanOrEqual(chipsRow.clientWidth + 1);
+    // 而且不是靠换行放下的（换行同样能让 scrollWidth 归零）。
     await expect(chipsRow.className).toContain('flex-nowrap');
-    await expect(chipsRow.className).toContain('overflow-x-auto');
-    // "flex-nowrap" 本身不含 "flex-wrap" 子串（no 隔开了 wrap），这里显式钉一遍
-    // 防止有人手滑把 nowrap 删成 wrap。
     await expect(chipsRow.className.split(/\s+/)).not.toContain('flex-wrap');
-    // 七个 chip 都在场，且没有一个换了行（每个按钮自己也不许折行/收缩到看不清文字）。
-    for (const status of [
-      'all',
-      'preparing',
-      'running',
-      'waitingInput',
-      'paused',
-      'error',
-      'stopped',
-    ]) {
+    // 主行三档 + 「更多」触发器都在场，每个都不许折行或缩到看不清。
+    for (const status of ['all', 'preparing', 'running']) {
       const chip = canvas.getByTestId(`task-filter-${status}`);
       await expect(chip.className).toContain('whitespace-nowrap');
       await expect(chip.className).toContain('shrink-0');
     }
+    await expect(canvas.getByTestId('task-filter-more')).toBeVisible();
+    // ⛔ 收纳的四档**不该**出现在主行上（没点开「更多」时它们不在 DOM 里）。
+    for (const status of ['waitingInput', 'paused', 'error', 'stopped']) {
+      await expect(canvas.queryByTestId(`task-filter-${status}`)).toBeNull();
+    }
   },
 };
 
-/** 激活的 chip 有 `aria-pressed="true"`，其余为 `false`——不是只有背景色区分。 */
+/**
+ * ⭐ 选中项落在收纳档里时，触发器**显示那一档的名字并高亮** —— ⛔ 不是恒显「更多」。
+ * 否则筛成「异常」之后整行看不出任何选中痕迹，用户会以为筛选没生效。
+ * 变异：把触发器文案写死成 '更多'（或去掉 data-active 的条件）⇒ 本条红。
+ */
+export const FilterMoreTriggerShowsActiveOverflowFilter: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+    statusFilter: 'error',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const trigger = canvas.getByTestId('task-filter-more');
+    await expect(trigger).toHaveTextContent('异常');
+    await expect(trigger).toHaveAttribute('data-active', 'true');
+    // 选中项在收纳档里时，主行的「全部」不该还显示成激活。
+    await expect(canvas.getByTestId('task-filter-all')).toHaveAttribute('aria-pressed', 'false');
+  },
+};
+
+/** 选中项在主行时，触发器回到「更多」且不高亮 —— 上一条的反向断言。 */
+export const FilterMoreTriggerIdleWhenPrimaryActive: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+    statusFilter: 'running',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const trigger = canvas.getByTestId('task-filter-more');
+    await expect(trigger).toHaveTextContent('更多');
+    await expect(trigger).toHaveAttribute('data-active', 'false');
+    await expect(canvas.getByTestId('task-filter-running')).toHaveAttribute('aria-pressed', 'true');
+  },
+};
+
+/**
+ * 激活的 chip 有 `aria-pressed="true"`，其余为 `false`——不是只有背景色区分。
+ * ⚠️ 用主行里的档（'running'）：'waitingInput' 自 2026-09-14 起收进了「更多」，
+ * 不点开菜单它不在 DOM 里，那一档的选中表现由
+ * `FilterMoreTriggerShowsActiveOverflowFilter` 负责。
+ */
 export const FilterChipActiveState: Story = {
   args: {
     groups,
     waitingInputCount: 0,
     healthLabel: null,
     terminalSlot,
-    statusFilter: 'waitingInput',
+    statusFilter: 'running',
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('task-filter-waitingInput')).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    await expect(canvas.getByTestId('task-filter-running')).toHaveAttribute('aria-pressed', 'true');
     await expect(canvas.getByTestId('task-filter-all')).toHaveAttribute('aria-pressed', 'false');
   },
 };

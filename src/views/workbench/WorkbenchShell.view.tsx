@@ -1,6 +1,7 @@
 // 工作台骨架 view（P21-1 / S2）：顶栏 + 左侧项目树（含 clone 徽标）+ 右侧内容区。纯展示，props 驱动。
 import type { ReactNode } from 'react';
-import { KeyRound, Package, Search, Settings, Zap } from 'lucide-react';
+import Link from 'next/link';
+import { ChevronDown, KeyRound, Package, Search, Settings, Zap } from 'lucide-react';
 import type { ProjectGroup, TaskStatusFilter } from '@/types/domain';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { StatusDot } from '@/components/ui/status-pill';
@@ -39,6 +42,33 @@ const STATUS_FILTER_ORDER: readonly TaskStatusFilter[] = [
   'error',
   'stopped',
 ];
+
+/**
+ * 单行放得下的那几档 + 收进「更多」的那几档。
+ *
+ * 实测（2026-09-14，Playwright 量的真实 DOM，⛔ 不是估算）：侧栏筛选行的可视宽只有
+ * **271px**，七档单行要 **356px**，溢出 85px。此前的注释写「400px 侧栏」是错的。
+ * 压缩也救不回来：字号 11→10px、`px-2`→`px-1.5`、`gap-1`→`gap-0.5` 全用上才省 60px，
+ * 连 gap 去光也只有 72px，仍差 13px，而那时字已经挤到影响辨认。
+ *
+ * 所以只剩两条路：换行，或把后几档收起来。用户 2026-09-14 裁决选后者
+ * —— ⛔ 不换行（推翻不了 09-13「侧栏顶部会显得散」那条），⛔ 不缩短文案，
+ * ⛔ 也不要横向滚动条（本次要修的正是那道灰杠）。
+ *
+ * 前三档合计 38+49+49=136，加「更多」触发器 ≈58 与三个 gap ≈12 → 约 206px，
+ * 对 271px 留 65px 余量。⚠️ 想往主行再挪一档前先量一遍：加「等待输入」(60+4) 就是
+ * 270px，只剩 1px，换个字体渲染就溢出 —— 而现在没有滚动条，溢出是**直接看不见**，
+ * 不像以前还能滑。`FilterChipsFitWithoutScrolling` 那条 story 钉的就是这件事。
+ */
+const PRIMARY_STATUS_FILTERS: readonly TaskStatusFilter[] = ['all', 'preparing', 'running'];
+/**
+ * ⚠️ 从 `STATUS_FILTER_ORDER` **派生**，⛔ 不手列第二份：两份各写一遍的话，将来加第八档
+ * 只往 ORDER 里加、忘了同步这里，那一档就哪儿都点不到了 —— 而且不报错、不变红，
+ * 因为没有任何断言会去数"七档是不是都有归宿"。派生保证新增档默认落进「更多」。
+ */
+const OVERFLOW_STATUS_FILTERS: readonly TaskStatusFilter[] = STATUS_FILTER_ORDER.filter(
+  (status) => !PRIMARY_STATUS_FILTERS.includes(status),
+);
 
 export interface WorkbenchShellProps {
   groups: ProjectGroup[];
@@ -134,6 +164,7 @@ export function WorkbenchShellView({
   hasNoFilterMatches = false,
   systemStatusHref = '/settings/system',
 }: WorkbenchShellProps) {
+  const overflowFilterActive = OVERFLOW_STATUS_FILTERS.includes(statusFilter);
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       <header className="flex h-12 items-center gap-3 border-b border-border px-4">
@@ -179,31 +210,62 @@ export function WorkbenchShellView({
          */}
         <div className="ml-auto flex items-center gap-1">
           <DropdownMenu>
-            <DropdownMenuTrigger
-              data-testid="nav-settings-menu-trigger"
-              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              <Settings aria-hidden="true" className="h-3.5 w-3.5" />
-              设置
+            {/*
+              ⚠️ 触发器走 shadcn 官方组合 `DropdownMenuTrigger asChild` + `Button`
+              （官方 composition 树就是 Trigger └ Button），⛔ 不往 Trigger 上直接堆
+              className。此前那种写法手抄了一遍 hover 和 focus ring —— 等于把 Button
+              的样式在这里重新实现一次，一旦 Button 的 focus 环改了，全站按钮都跟着变、
+              唯独这个触发器留在原地，而且没有任何东西会报错。
+            */}
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="nav-settings-menu-trigger"
+                className="gap-1 px-2 text-muted-foreground hover:text-foreground"
+              >
+                <Settings aria-hidden="true" />
+                设置
+              </Button>
             </DropdownMenuTrigger>
+            {/*
+              ⚠️ 用 `next/link` 而不是裸 `<a href>`：App Router 里 `<a>` 是**整页刷新**，
+              工作台的 Query 缓存、WS 连接、终端会话全部重来 —— 从设置页点回来就得再等
+              一次冷启动。`<Link>` 走客户端路由，还会预取目标路由。
+              ⚠️ `[&>svg]:size-4` 是 DropdownMenuItem 的**直接子元素**选择器，而这里是
+              `Item asChild > Link > svg`，隔了一层够不着 ⇒ 图标尺寸在 Link 上自己声明。
+              ⛔ 不改成非 asChild：那样菜单项就不是链接，丢掉中键新标签页 / 右键复制链接。
+            */}
             <DropdownMenuContent align="end">
               <DropdownMenuItem asChild>
-                <a href="/settings/credentials" data-testid="nav-settings-credentials">
-                  <KeyRound aria-hidden="true" className="h-3.5 w-3.5" />
+                <Link
+                  href="/settings/credentials"
+                  data-testid="nav-settings-credentials"
+                  className="[&>svg]:size-3.5 [&>svg]:shrink-0"
+                >
+                  <KeyRound aria-hidden="true" />
                   凭证管理
-                </a>
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <a href="/settings/images" data-testid="nav-settings-images">
-                  <Package aria-hidden="true" className="h-3.5 w-3.5" />
+                <Link
+                  href="/settings/images"
+                  data-testid="nav-settings-images"
+                  className="[&>svg]:size-3.5 [&>svg]:shrink-0"
+                >
+                  <Package aria-hidden="true" />
                   镜像管理
-                </a>
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <a href={systemStatusHref} data-testid="nav-settings-system">
-                  <Settings aria-hidden="true" className="h-3.5 w-3.5" />
+                <Link
+                  href={systemStatusHref}
+                  data-testid="nav-settings-system"
+                  className="[&>svg]:size-3.5 [&>svg]:shrink-0"
+                >
+                  <Settings aria-hidden="true" />
                   系统状态
-                </a>
+                </Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -241,25 +303,21 @@ export function WorkbenchShellView({
               />
             </div>
             {/*
-              ⚠️ 七档之后 400px 侧栏一行放不下（「异常」实测会被挤到第二行）——用户裁决：
-              横向滚动，⛔ 不缩短文案（「准备中」→「准备」会损失准确度）、⛔ 也不接受换行
-              （侧栏顶部会显得散）。`flex-nowrap` + `overflow-x-auto` 钉住这一条；
-              `[&::-webkit-scrollbar]:h-1` 一类的瘦滚动条样式见下面 className，
-              避免暗色下出现一道显眼的亮线。
+              ⚠️ 七档单行放不下（实测 356px vs 可视 271px），⛔ 不换行、⛔ 不缩短文案、
+              ⛔ 也不要横向滚动条 —— 取舍与实测数字见 `OVERFLOW_STATUS_FILTERS` 头注释。
+              前三档留在行内，其余四档收进「更多」。
+              ⚠️ 容器保持 `flex-nowrap` 但**不再给 overflow**：现在是"本来就放得下"，
+              万一将来文案变长而悄悄溢出，没有滚动条兜底 ⇒ 那几档会直接看不见。
+              `FilterChipsFitWithoutScrolling` 用 scrollWidth ≤ clientWidth 钉死这件事，
+              ⛔ 不靠肉眼，也⛔ 不靠类名（类名断言拦不住"文案变长"这种溢出）。
             */}
             <div
-              className={
-                'flex flex-nowrap gap-1 overflow-x-auto pb-0.5 ' +
-                // 没装 tailwind-scrollbar 插件，手写一条瘦滚动条——暗色下不许出现一道
-                // 亮白细线，滑块用 --border 语义色，轨道透明只在悬停时露出。
-                '[&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent ' +
-                '[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border'
-              }
+              className="flex flex-nowrap items-center gap-1"
               role="group"
               aria-label="按状态筛选任务"
               data-testid="task-filter-chips"
             >
-              {STATUS_FILTER_ORDER.map((status) => {
+              {PRIMARY_STATUS_FILTERS.map((status) => {
                 const active = statusFilter === status;
                 return (
                   <button
@@ -281,6 +339,60 @@ export function WorkbenchShellView({
                   </button>
                 );
               })}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  {/*
+                    ⚠️ 选中项落在收纳档里时，触发器**显示那一档的名字并高亮**，⛔ 不是恒显
+                    「更多」：否则筛成「异常」之后整行看不出任何选中痕迹，用户会以为筛选丢了
+                    —— 收起来的代价只该是"多点一次"，不该是"看不见自己筛了什么"。
+                  */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={
+                      overflowFilterActive
+                        ? `更多筛选，当前：${STATUS_FILTER_LABEL[statusFilter]}`
+                        : '更多筛选'
+                    }
+                    data-testid="task-filter-more"
+                    data-active={overflowFilterActive ? 'true' : 'false'}
+                    className={
+                      // chip 造型（药丸、11px、紧凑）盖在 Button 之上：⛔ 只覆盖尺寸与圆角，
+                      // hover / focus-visible / disabled 一律留给 Button —— 它跟主行那三个
+                      // chip 挨着，交互反馈必须和全站按钮同一套。
+                      'h-auto shrink-0 gap-0.5 rounded-full px-2 py-0.5 text-[11px] ' +
+                      (overflowFilterActive
+                        ? 'bg-muted text-foreground'
+                        : 'text-muted-foreground hover:text-foreground')
+                    }
+                  >
+                    {overflowFilterActive ? STATUS_FILTER_LABEL[statusFilter] : '更多'}
+                    <ChevronDown className="size-3" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-32">
+                  <DropdownMenuRadioGroup
+                    value={statusFilter}
+                    onValueChange={(v) => {
+                      // ⛔ 不用 `v as TaskStatusFilter`：Radix 给的是 string，断言只是
+                      // 让类型检查闭嘴。在这份闭集里找一遍，找不到就什么都不做。
+                      const next = OVERFLOW_STATUS_FILTERS.find((status) => status === v);
+                      if (next !== undefined) onStatusFilterChange?.(next);
+                    }}
+                  >
+                    {OVERFLOW_STATUS_FILTERS.map((status) => (
+                      <DropdownMenuRadioItem
+                        key={status}
+                        value={status}
+                        data-testid={`task-filter-${status}`}
+                        className="text-[11px]"
+                      >
+                        {STATUS_FILTER_LABEL[status]}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
           <nav className="flex-1 overflow-auto p-2" aria-label="项目分组任务树">
