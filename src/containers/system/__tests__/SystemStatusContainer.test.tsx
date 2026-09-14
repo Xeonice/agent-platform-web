@@ -163,7 +163,7 @@ afterEach(() => {
 });
 
 describe('两栏分组（Phase 1 补做：design/design-notes.md §1「系统状态左列大片空白」+ design/prototype.html #system）', () => {
-  it('左列＝本机资源水位＋诊断，右列＝沙箱环境状态＋连接状态，且各列内部顺序固定', async () => {
+  it('左列＝本机资源水位＋诊断，右列＝沙箱环境状态＋连接状态＋出网代理，且各列内部顺序固定', async () => {
     serve();
     renderCards();
     await screen.findByText('资源充足');
@@ -200,7 +200,11 @@ describe('两栏分组（Phase 1 补做：design/design-notes.md §1「系统状
     const rightHeadings = within(right)
       .getAllByRole('heading', { level: 2 })
       .map((h) => h.textContent.trim());
-    expect(rightHeadings).toEqual(['沙箱环境状态', '连接状态']);
+    // ⚠️ 「出网代理」在 2026-09-14 加进右列：代理配置此前**只在向导里**，而向导在连通性
+    //    全绿时根本不让人进那一步 —— 用户遇到「能连上但太慢」（实测 200 KB/s，镜像拉到
+    //    84% 断掉）时，界面上没有任何路径能配代理。⇒ 设置页必须有常驻入口。
+    // ⚠️ 放右列是因为它是**表单卡、高度稳定**，不该跟最高的诊断卡挤一列。
+    expect(rightHeadings).toEqual(['沙箱环境状态', '连接状态', '出网代理']);
 
     const leftHeadings = within(left)
       .getAllByRole('heading', { level: 2 })

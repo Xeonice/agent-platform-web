@@ -22,7 +22,6 @@ const meta: Meta<typeof ProjectGroupHeaderView> = {
     onSelect: fn(),
     collapsed: false,
     onToggleCollapse: fn(),
-    onOpenMenu: fn(),
   },
 };
 export default meta;
@@ -34,15 +33,21 @@ type Story = StoryObj<typeof ProjectGroupHeaderView>;
  * ⭐ **这一期的立论就在这个 `⋯` 上**：在它之前，删除项目在界面上根本够不着（§10.1）。
  */
 export const Normal: Story = {
-  play: async ({ args, canvasElement }) => {
+  args: { menuSlot: <span data-testid="group-menu-slot-probe">⋯</span> },
+  play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const header = canvas.getByTestId('project-group-header');
     await expect(header).toHaveAttribute('data-variant', 'normal');
     // MUTATION：把 `<Folder>` 换回 📁 字符或换成另一个图标 ⇒ 这条先红——只断言
     // 项目名文本（下面 userEvent 那句）不会因为图标变了而变红，锁不住"真的是 Folder"。
     await expect(header.querySelector('svg.lucide-folder')).not.toBeNull();
-    await userEvent.click(canvas.getByTestId('project-group-menu-trigger'));
-    await expect(args.onOpenMenu).toHaveBeenCalledWith('p1');
+    /*
+     * ⚠️ 组头**不再自己画「⋯」按钮**（2026-09-14）：触发器随菜单一起住在
+     * `ProjectGroupMenu.view`，经 `menuSlot` 摆进这一行的末尾。这里只钉「槽位渲染在行内、
+     * 且在项目名之后」，⛔ 不再断言任何菜单开合回调 —— 那是 Radix 的事，本组件不参与。
+     */
+    const slot = canvas.getByTestId('group-menu-slot-probe');
+    await expect(header).toContainElement(slot);
   },
 };
 

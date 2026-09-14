@@ -334,5 +334,15 @@ export const ProvisionFailed: Story = {
     await expect(err).toHaveTextContent('校验');
     // MUTATION：把 `<X>` 换回 ❌ 字符或换成另一个图标 ⇒ 这条先红。
     await expect(err.querySelector('svg.lucide-x')).not.toBeNull();
+
+    // ⭐ **有错就必须有出路**（P22 §1）：这一段原本只把 registry 的原文上屏 ——
+    //    用户读完知道"失败了"，但不知道下一步做什么。
+    // ⚠️ 2026-09-14 真机撞上的正是这个：ghcr.io 够得着（联网检查全绿）但只有
+    //    200 KB/s，镜像拉到 84% 断掉，而唯一能救的「代理配置」当时**界面上无法抵达**。
+    // MUTATION：把提示那一段删掉 ⇒ 下面两条红；只删「设置」那半句 ⇒ 第二条红。
+    const hint = within(canvasElement).getByTestId('preset-provision-error-hint');
+    await expect(hint).toHaveTextContent('代理');
+    // ⛔ 两条路都要给：向导里回上一步，以及初始化完成之后去哪儿改。
+    await expect(hint).toHaveTextContent('系统状态');
   },
 };

@@ -3,6 +3,8 @@ import { stubInitialized } from './initGate';
 import { stubHealth, type ErrorEnvelope } from './fixtures';
 import type { ProjectDto } from '../src/types/project';
 import type { SandboxDto } from '../src/types/sandbox';
+import type { RetainedVolumeDto } from '../src/types/retainedVolume';
+import type { AutomationDto } from '../src/types/automation';
 
 // F21-6 §10.7 e2e 行：组头「⋯」→ 菜单 → [删除] → 确认 → 树上该项目消失。
 //
@@ -106,6 +108,17 @@ async function stubWorkbench(page: Page, state: { projects: ProjectDto[] }): Pro
   // 替身若一直原样返回，`selectProjectTaskTree` 会把它们收进「未分组」组——那是**替身**
   // 造出来的孤儿，不是产品行为。这样写顺带把 `useDeleteProject` 那条
   // 「删完也要 invalidate 沙箱列表」钉住了：不失效，孤儿组就会真的冒出来。
+  /*
+   * ⚠️ **详情面板 2026-09-14 起会多拉两个请求**（已保留成果数 / 自动化规则数两行摘要）。
+   * 不 stub 的话它们会真发出去然后挂起 —— 弹层卡在加载态，而报错出现在**下一步**
+   * （"找不到 project-group-menu"），看着像菜单坏了。这次排错就沿着菜单查了好几轮。
+   */
+  await page.route('**/api/retained-volumes*', (route) =>
+    route.fulfill({ status: 200, json: [] satisfies RetainedVolumeDto[] }),
+  );
+  await page.route('**/api/automations*', (route) =>
+    route.fulfill({ status: 200, json: [] satisfies AutomationDto[] }),
+  );
   await page.route('**/api/sandboxes*', (route) =>
     route.fulfill({
       status: 200,
@@ -118,6 +131,15 @@ async function stubWorkbench(page: Page, state: { projects: ProjectDto[] }): Pro
 
 async function openGroupMenu(page: Page, projectName: string): Promise<void> {
   const header = page.getByTestId('project-group-header').filter({ hasText: projectName });
+  /*
+   * ⚠️ **先等这一行组头自己到位，再去点它里面的 ⋯。**
+   * `filter({hasText})` 在列表还没渲染出来时匹配到 **0 个**，此时
+   * `header.getByTestId(...).click()` 只能靠 Playwright 的自动等待去赌 —— 首次打开
+   * 通常赌赢，但**关掉弹层那一瞬 DOM 会短暂重排**，第二次开菜单就会落空，
+   * 报错是「找不到 project-group-menu」，看着像菜单坏了（这次排错先怀疑了 Radix 的
+   * 退场动画和 overlay 残留，都不是）。
+   */
+  await expect(header).toHaveCount(1);
   await header.getByTestId('project-group-menu-trigger').click();
   await expect(page.getByTestId('project-group-menu')).toBeVisible();
 }
@@ -141,16 +163,27 @@ test.describe('F21-6 项目菜单整块（含删除入口）', () => {
     await page.goto('/');
     await expect(page.getByTestId('project-group-header')).toHaveCount(2);
 
+    /*
+     * ⚠️ **2026-09-14 菜单拍平，这条路少了一跳也换了入口**：此前是
+     * ⋯ → [项目菜单…] → 面板里的 [删除项目…]（那个二级面板与面板内的删除按钮都已删除，
+     * 后者与菜单里的删除是同一个不可逆动作的**两个入口**）。现在从 ⋯ 直接进删除确认。
+     *
+     * ⛔ **本用例不再顺路去看一眼详情面板**：我一度在这里插了「先开详情、断言里面没有
+     * 删除入口、再关掉、再开菜单」一段 —— 那一开一关会让这条**删除主链路**莫名其妙地
+     * 失败（另外两条同样走 ⋯ → [删除项目…] 的用例都稳过，只有插了这段的这条红），
+     * 追了七八轮探针都没能在最小复现里重现，说明它引入的是时序上的不确定性。
+     * 而「详情面板里没有危险动作」本来就由 `ProjectDetailPanel` 的
+     * `NoDangerousActionsInDetail` story 钉着（那条还更强：整个面板 role=button 计数为 0）。
+     * ⇒ e2e 只负责跑通真实链路，⛔ 不在破坏性操作的主链路上搭顺风车验别的事。
+     */
     await openGroupMenu(page, 'E2E 菜单项目A');
-    await page.getByTestId('group-menu-open-panel').click();
+    await page.getByTestId('group-menu-delete').click();
     const panel = page.getByTestId('modal-project-menu');
     await expect(panel).toBeVisible();
-    // ⛔ 否定性：项目菜单里**不出现「来源」行**（§6），也不出现凭证/镜像入口（§9.1 #24）。
+    // ⛔ 否定性：这个弹层里**不出现「来源」行**（§6），也不出现凭证/镜像入口（§9.1 #24）。
     await expect(panel).not.toContainText('来源');
     await expect(panel).not.toContainText('凭证');
     await expect(panel).not.toContainText('镜像');
-
-    await panel.getByTestId('project-delete-entry').click();
 
     // 级联后果 + **真数据**的运行中任务警示（§10.6 第 3 条）。
     //
@@ -200,8 +233,7 @@ test.describe('F21-6 项目菜单整块（含删除入口）', () => {
     await expect(page.getByTestId('current-project-indicator')).toContainText('E2E 菜单项目A');
 
     await openGroupMenu(page, 'E2E 菜单项目A');
-    await page.getByTestId('group-menu-open-panel').click();
-    await page.getByTestId('project-delete-entry').click();
+    await page.getByTestId('group-menu-delete').click();
     await page.getByTestId('delete-confirm').click();
 
     // ⛔ 不许留一个指向已删项目的选中态（它是 persist 的，刷新之后还在指着 404 的 id）。
@@ -233,8 +265,7 @@ test.describe('F21-6 项目菜单整块（含删除入口）', () => {
 
     await page.goto('/');
     await openGroupMenu(page, 'E2E 菜单项目A');
-    await page.getByTestId('group-menu-open-panel').click();
-    await page.getByTestId('project-delete-entry').click();
+    await page.getByTestId('group-menu-delete').click();
     await page.getByTestId('delete-confirm').click();
 
     // ⚠️ 钉的是「**按码给出的那句客户端文案**要上屏」，⛔ 不是服务端 message。

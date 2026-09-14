@@ -91,18 +91,45 @@ function groupHeaderOf(projectName: string): HTMLElement {
   return header;
 }
 
-/** 组头「⋯」→ 下拉菜单。 */
+/**
+ * 组头「⋯」→ 下拉菜单。
+ * ⚠️ **必须用 `userEvent` 不能用 `fireEvent.click`**：菜单 2026-09-14 换成 shadcn
+ * `DropdownMenu`，Radix 的触发器听的是 `pointerdown` 那一套，`fireEvent.click` 只派发
+ * 一个 click ⇒ 菜单根本不会展开，报错是「找不到 project-group-menu」，看着像菜单没渲染。
+ * 内容挂在 Radix `Portal` 上，所以用全局 `screen` 找、⛔ 不要 `within(组头)`。
+ */
 async function openGroupMenu(projectName: string): Promise<HTMLElement> {
   await screen.findAllByTestId('project-group-header');
-  fireEvent.click(within(groupHeaderOf(projectName)).getByTestId('project-group-menu-trigger'));
+  /*
+   * ⚠️ **用键盘展开，⛔ 不要用 click / pointerDown。** 实测（最小用例逐个试过）：
+   * jsdom 下 Radix 触发器的**指针路径整条不通** —— `fireEvent.click` 与
+   * `fireEvent.pointerDown({button:0})` 都不会调到 `onOpenChange`，只有 `keyDown Enter`
+   * 会。而失败症状是「找不到 project-group-menu」，读起来像组件没渲染或 testid 写错，
+   * 排错很容易一路拐到组件本身去（这次就拐了一轮：先怀疑 testid、又给 vitest.setup
+   * 加了一堆 jsdom polyfill —— 全都没用，最后靠一个最小用例逐个事件试才定位到）。⚠️ 组件在真浏览器里是好的：storybook 那几条 play 用鼠标点得好好的。
+   * 顺带的好处是这条路径同时钉住了菜单的键盘可达性。
+   */
+  fireEvent.keyDown(within(groupHeaderOf(projectName)).getByTestId('project-group-menu-trigger'), {
+    key: 'Enter',
+  });
   return screen.findByTestId('project-group-menu');
 }
 
-/** 组头「⋯」→ [项目菜单…] → 侧弹层。 */
+/** 组头「⋯」→ [项目详情] → 侧弹层（旧的中转项「项目菜单…」已随菜单拍平取消）。 */
 async function openProjectMenu(projectName: string): Promise<HTMLElement> {
   const menu = await openGroupMenu(projectName);
-  fireEvent.click(within(menu).getByTestId('group-menu-open-panel'));
+  fireEvent.click(within(menu).getByTestId('group-menu-open-detail'));
   return screen.findByTestId('modal-project-menu');
+}
+
+/**
+ * 组头「⋯」→ 菜单里的某一项。
+ * ⚠️ 2026-09-14 菜单拍平之后，[保留下来的成果] / [自动化规则] / [删除项目…] 都在**这一层**，
+ * ⛔ 不再经由「项目菜单…」那个二级面板中转（那个中转项与面板里重复的删除入口一起删掉了）。
+ */
+async function clickGroupMenuItem(projectName: string, testId: string): Promise<void> {
+  const menu = await openGroupMenu(projectName);
+  fireEvent.click(within(menu).getByTestId(testId));
 }
 
 beforeEach(() => {
@@ -268,7 +295,16 @@ describe('WorkbenchContainer · 两个「新建」形态对称', () => {
     const projectModal = await screen.findByTestId('modal-new-project');
     expect(projectModal).toHaveAttribute('role', 'dialog');
     expect(projectModal).toHaveAttribute('aria-modal', 'true');
-    fireEvent.keyDown(window, { key: 'Escape' });
+    /*
+     * ⚠️ **Esc 派给 `document`，不是 `window`**（2026-09-14 起四个弹层外壳换成
+     * `AppDialogView` = shadcn `Dialog`）：Radix 的 `DismissableLayer` 监听的是
+     * `ownerDocument`（捕获阶段，与旧版 `useEscapeKey` 挂 `window` 同一个理由 ——
+     * 都是为了抢在 xterm 的 `stopPropagation` 之前拿到事件），而事件冒泡是
+     * document → window，只有 `fireEvent.keyDown(window, …)` 这种把 `window` 自己当
+     * target 的合成写法会**绕开** document ⇒ Radix 收不到，弹层不关。
+     * 与 `SandboxTerminalContainer.test.tsx` 那条同源。
+     */
+    fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
       expect(screen.queryByTestId('modal-new-project')).not.toBeInTheDocument();
     });
@@ -298,7 +334,16 @@ describe('WorkbenchContainer · 两个「新建」形态对称', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /新建项目/ }));
     await screen.findByTestId('modal-new-project');
-    fireEvent.keyDown(window, { key: 'Escape' });
+    /*
+     * ⚠️ **Esc 派给 `document`，不是 `window`**（2026-09-14 起四个弹层外壳换成
+     * `AppDialogView` = shadcn `Dialog`）：Radix 的 `DismissableLayer` 监听的是
+     * `ownerDocument`（捕获阶段，与旧版 `useEscapeKey` 挂 `window` 同一个理由 ——
+     * 都是为了抢在 xterm 的 `stopPropagation` 之前拿到事件），而事件冒泡是
+     * document → window，只有 `fireEvent.keyDown(window, …)` 这种把 `window` 自己当
+     * target 的合成写法会**绕开** document ⇒ Radix 收不到，弹层不关。
+     * 与 `SandboxTerminalContainer.test.tsx` 那条同源。
+     */
+    fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
       expect(screen.queryByTestId('modal-new-project')).not.toBeInTheDocument();
     });
@@ -413,8 +458,7 @@ describe('WorkbenchContainer · 已保留卷入口', () => {
     server.use(http.get(`${API_BASE}/api/retained-volumes`, () => HttpResponse.json([])));
     renderWorkbench();
 
-    const panel = await openProjectMenu('ProjectA');
-    fireEvent.click(within(panel).getByTestId('open-retained-volumes'));
+    await clickGroupMenuItem('ProjectA', 'group-menu-open-retained');
 
     const modal = await screen.findByTestId('modal-retained-volumes');
     expect(modal).toHaveAttribute('role', 'dialog');
@@ -442,8 +486,7 @@ describe('WorkbenchContainer · 已保留卷入口', () => {
     server.use(http.get(`${API_BASE}/api/retained-volumes`, () => HttpResponse.json([])));
     renderWorkbench();
 
-    const panel = await openProjectMenu('ProjectA');
-    fireEvent.click(within(panel).getByTestId('open-retained-volumes'));
+    await clickGroupMenuItem('ProjectA', 'group-menu-open-retained');
     await screen.findByTestId('modal-retained-volumes');
 
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -471,8 +514,7 @@ describe('WorkbenchContainer · 已保留卷入口', () => {
     server.use(http.get(`${API_BASE}/api/retained-volumes`, () => HttpResponse.json([])));
     renderWorkbench();
 
-    const panel = await openProjectMenu('ProjectA');
-    fireEvent.click(within(panel).getByTestId('open-retained-volumes'));
+    await clickGroupMenuItem('ProjectA', 'group-menu-open-retained');
     await screen.findByTestId('modal-retained-volumes');
     expect(screen.queryByTestId('modal-project-menu')).not.toBeInTheDocument();
     expect(screen.queryByTestId('modal-new-project')).not.toBeInTheDocument();
@@ -868,8 +910,8 @@ describe('WorkbenchContainer · 离线模式下的 [+ 新任务]', () => {
 // （§10.1）。下面每一条都对着 §10.7 的一行。
 // ————————————————————————————————————————————————————————————————
 describe('WorkbenchContainer · 项目菜单与删除', () => {
-  /** ① 组头「⋯」→ 菜单打开。变异：把 `ProjectGroupHeader.view` 的 ⋯ 按钮删掉 ⇒ 红。 */
-  it('组头「⋯」打开下拉菜单；[项目菜单…] 打开侧弹层（overlay）', async () => {
+  /** ① 组头「⋯」→ 菜单打开。变异：把 `ProjectGroupMenu.view` 的触发器删掉 ⇒ 红。 */
+  it('组头「⋯」打开下拉菜单；[项目详情] 打开侧弹层（overlay）', async () => {
     mockProjects([projectDto({ id: 'p1', name: 'ProjectA', taskCount: 5 })]);
     mockSandboxes([]);
     renderWorkbench();
@@ -877,7 +919,12 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     const panel = await openProjectMenu('ProjectA');
     expect(panel).toHaveAttribute('role', 'dialog');
     expect(panel).toHaveAttribute('aria-modal', 'true');
-    expect(within(panel).getByTestId('project-meta-section')).toHaveTextContent('ProjectA');
+    expect(within(panel).getByTestId('project-detail-panel')).toBeInTheDocument();
+    // 项目名由弹层标题区承担；⛔ 详情表格里**不再重复**一行「名称」（2026-09-14 拆分）。
+    expect(panel).toHaveTextContent('ProjectA');
+    expect(within(panel).queryByText('名称')).toBeNull();
+    // ⭐ 详情面板里一个按钮都没有：删除等危险动作只在 ⋯ 菜单那一个入口。
+    expect(within(panel).queryByTestId('project-delete-entry')).toBeNull();
   });
 
   /**
@@ -920,8 +967,7 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     ]);
     renderWorkbench();
 
-    const panel = await openProjectMenu('ProjectA');
-    fireEvent.click(within(panel).getByTestId('project-delete-entry'));
+    await clickGroupMenuItem('ProjectA', 'group-menu-delete');
 
     /**
      * ★ **三行，一条都不许省**（旧文案是一句话，把最重要的「留了什么」塞进了括号，
@@ -951,8 +997,7 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     ]);
     renderWorkbench();
 
-    const panel = await openProjectMenu('ProjectA');
-    fireEvent.click(within(panel).getByTestId('project-delete-entry'));
+    await clickGroupMenuItem('ProjectA', 'group-menu-delete');
     expect(await screen.findByTestId('delete-running-warning')).toHaveTextContent(
       '当前没有运行中的任务',
     );
@@ -971,8 +1016,7 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     );
     renderWorkbench();
 
-    const panel = await openProjectMenu('ProjectA');
-    fireEvent.click(within(panel).getByTestId('project-delete-entry'));
+    await clickGroupMenuItem('ProjectA', 'group-menu-delete');
     fireEvent.click(await screen.findByTestId('delete-confirm'));
 
     await waitFor(() => {
@@ -1007,8 +1051,7 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     );
     renderWorkbench();
 
-    const panel = await openProjectMenu('ProjectA');
-    fireEvent.click(within(panel).getByTestId('project-delete-entry'));
+    await clickGroupMenuItem('ProjectA', 'group-menu-delete');
     fireEvent.click(await screen.findByTestId('delete-confirm'));
 
     // ⚠️ 按码查人话表：`CONFLICT` 不在表里 ⇒ 走兜底；⛔ 后端 message 不上屏。
@@ -1044,8 +1087,7 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
       expect(useAppStore.getState().selectedProjectId).toBe('p1');
     });
 
-    const panel = await openProjectMenu('ProjectA');
-    fireEvent.click(within(panel).getByTestId('project-delete-entry'));
+    await clickGroupMenuItem('ProjectA', 'group-menu-delete');
     fireEvent.click(await screen.findByTestId('delete-confirm'));
 
     await waitFor(() => {
@@ -1172,11 +1214,11 @@ describe('WorkbenchContainer · 项目菜单与删除', () => {
     renderWorkbench();
 
     const panel = await openProjectMenu('FailedProject');
-    const hint = within(panel).getByTestId('project-meta-failed-hint');
+    const hint = within(panel).getByTestId('project-detail-failed-hint');
     expect(hint).toHaveTextContent('重试克隆');
     expect(hint).toHaveTextContent('改为空项目');
     expect(hint).toHaveTextContent('「⋯」菜单');
-    // ⛔ 指路不等于搬入口：面板里仍然只有删除那一个动作。
+    // ⛔ 指路不等于搬入口：详情面板里连删除都没有，更不会有恢复动作。
     expect(within(panel).queryByTestId('group-menu-retry-clone')).toBeNull();
   });
 

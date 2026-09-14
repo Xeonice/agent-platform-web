@@ -16,7 +16,7 @@ import { SubscriptionSetupView } from '@/views/init/SubscriptionSetup.view';
 import { AuthGateContainer } from '@/containers/credential/AuthGateContainer';
 import { InitWizardShellView } from '@/views/init/InitWizardShell.view';
 import { ConnectivityCheckView } from '@/views/init/ConnectivityCheck.view';
-import { ProxyConfigFormView } from '@/views/init/ProxyConfigForm.view';
+import { ProxyConfigFormView } from '@/views/system/ProxyConfigForm.view';
 import { OfflineNoticeView } from '@/views/init/OfflineNotice.view';
 import { PresetImageCheckView } from '@/views/init/PresetImageCheck.view';
 import { ResourceConfirmView } from '@/views/init/ResourceConfirm.view';

@@ -106,20 +106,30 @@ export function nextStep(current: InitStepKey, proxyActive: boolean): InitStepKe
 }
 
 /**
- * 上一步是谁（同样跳过不进流程的代理步）。`undefined` = 已在第一步。
+ * 上一步是谁。`undefined` = 已在第一步。
+ *
+ * ⚠️ **它不跳过代理步 —— 这是刻意的不对称，[上一步] 是那一步唯一的入口。**
+ *
+ * ⛔ 曾经这里和 `nextStep` 一样 `continue` 掉不活跃的代理步，于是出网全通过时它
+ * **两个方向都够不着**：指示条上看得见，点不进去。2026-09-14 真机撞上 ——
+ * 连通性检查全绿（ghcr.io 1.4 秒应答）但**带宽只有 200 KB/s**，镜像拉到 84% 断掉，
+ * 而唯一能救的配置项没有任何路径能到达。
+ *
+ * ⚠️ 根子上的毛病是 `proxyActive` 的判据：连通性检查测的是**可达**，用户缺的是**带宽**。
+ * **可达 ≠ 够用**。判据修不彻底（测带宽要下真数据、代价太大），所以这里留一条逃生口：
+ * 自动前进照旧跳过（每台正常机器不必多点一次"跳过"），但**想回去永远回得去**。
  *
  * ⚠️ 与 `nextStep` 共用同一份 `STEP_ORDER`：在 hook 里再写一遍顺序数组，两份迟早会分叉
  * （典型是加第 5 步时只改了一处），而分叉的样子是 [上一步] 把人送到一个不该回去的地方。
+ *
+ * ⚠️ `_proxyActive` **刻意保留但不用**：与 `nextStep` 保持同签名，调用方（`useInitWizard`）
+ * 对两个方向传同一组参数。⛔ 删掉它会让两个函数一个收两参一个收一参，调用点更容易写错。
  */
-export function previousStep(current: InitStepKey, proxyActive: boolean): InitStepKey | undefined {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- 见下：参数刻意保留
+export function previousStep(current: InitStepKey, _proxyActive: boolean): InitStepKey | undefined {
   const i = STEP_ORDER.indexOf(current);
-  for (let n = i - 1; n >= 0; n -= 1) {
-    const key = STEP_ORDER[n];
-    if (key === undefined) return undefined;
-    if (key === 'proxy' && !proxyActive) continue;
-    return key;
-  }
-  return undefined;
+  if (i <= 0) return undefined;
+  return STEP_ORDER[i - 1];
 }
 
 // ————————————————————————————————————————————————————————————————

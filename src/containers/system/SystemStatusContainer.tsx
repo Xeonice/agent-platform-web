@@ -15,9 +15,11 @@ import { useSystemStatus } from '@/hooks/system/useSystemStatus';
 import { useSystemStatusModels } from '@/hooks/system/useSystemStatusModels';
 import { useExportAuditLogs } from '@/hooks/system/useExportAuditLogs';
 import { useDiagnosticsDisclosure } from '@/hooks/system/useDiagnosticsDisclosure';
+import { useProxySettings } from '@/hooks/system/useProxySettings';
 import { ResourcePoolCardView } from '@/views/system/ResourcePoolCard.view';
 import { SandboxEnvStatusCardView } from '@/views/system/SandboxEnvStatusCard.view';
 import { ConnectionStatusCardView } from '@/views/system/ConnectionStatusCard.view';
+import { ProxySettingsCardView } from '@/views/system/ProxySettingsCard.view';
 import { DiagnosticsCardView } from '@/views/system/DiagnosticsCard.view';
 
 export interface SystemStatusContainerProps {
@@ -29,6 +31,7 @@ export function SystemStatusContainer({ onCleanupRetained }: SystemStatusContain
   const status = useSystemStatus();
   const models = useSystemStatusModels(status);
   const disclosure = useDiagnosticsDisclosure(models.diagnostics.items);
+  const proxy = useProxySettings();
   const exportLogs = useExportAuditLogs();
 
   const copyHint = useCallback((hint: string) => {
@@ -78,6 +81,13 @@ export function SystemStatusContainer({ onCleanupRetained }: SystemStatusContain
       <div className="flex flex-col gap-4" data-testid="system-status-column-right">
         <SandboxEnvStatusCardView model={models.sandboxEnvStatus} isError={status.providersError} />
         <ConnectionStatusCardView model={models.connection} />
+        {/* ⚠️ 放右列（矮卡那一侧）：它是一张表单卡，高度稳定，不该跟最高的诊断卡挤一列。 */}
+        <ProxySettingsCardView
+          initial={proxy.initial}
+          isSaving={proxy.isSaving}
+          errorMessage={proxy.errorMessage}
+          onSave={proxy.save}
+        />
       </div>
     </>
   );

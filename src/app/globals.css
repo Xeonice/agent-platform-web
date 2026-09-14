@@ -26,6 +26,23 @@
   --primary-foreground: 0 0% 100%;
   --accent: 212 100% 48%; /* 焦点环 / 链接，唯一的中性强调色 */
 
+  /*
+   * ⚠️ 与上面的 --accent 是**两件事**，别按名字合并。
+   * --accent 是高饱和强调蓝（焦点环 / 链接）；这一对是「当前项」的**低对比底色**
+   * ——菜单项键盘焦点、悬停高亮之类。shadcn 组件里 `bg-accent` / `text-accent-foreground`
+   * 指的是后者，tailwind.config.ts 的 accent 因此映射到这里，⛔ 不映射到 --accent。
+   * 取值是量出来的，⛔ 不是拍的。菜单浮在 --popover(= elevated, 暗色 7%) 之上，
+   * 候选值逐个实测「焦点底 vs 菜单底」的区分度与「底 vs 字」的文字对比度：
+   *   16% → 区分度 1.29 / 文字 12.43    20% → 1.48 / 10.79
+   *   24% → 1.72 / 9.28                 28% → 2.02 / 7.94   ← 采用
+   * 取 28%：区分度比 --background-subtle(11%) 那档翻倍，文字仍有 7.94（AA 要 4.5、
+   * AAA 要 7，两头都过）。⛔ 不为机械凑满 WCAG 1.4.11 的 3:1 再往上推 —— 那要 38% 灰，
+   * 在这套暗色终端风里会重得像选中块，而「整行换底」的面积效应本来就比小控件边界好认。
+   * ⚠️ 亮色那套（78%）按同样思路取，但本仓**全局默认暗色且没有切换入口**，未经实测。
+   */
+  --accent-surface: 0 0% 78%;
+  --accent-surface-foreground: var(--foreground);
+
   /* v2：L 值全部下调，逐色跑过 WCAG AA，语义分配不变 */
   --success: 142 76% 26%;
   --warning: 32 95% 30%;
@@ -81,6 +98,8 @@
   --primary: 0 0% 93%;
   --primary-foreground: 0 0% 4%;
   --accent: 217 91% 63%;
+  --accent-surface: 0 0% 28%;
+  --accent-surface-foreground: var(--foreground);
 
   --success: 142 71% 45%;
   --warning: 38 92% 55%;
@@ -105,6 +124,22 @@
   --destructive-foreground: 0 0% 4%;
   --input: var(--border);
   --ring: var(--accent);
+}
+
+/*
+ * ⚠️ shadcn 标准 globals.css 必有的一行，本仓此前**漏了**（2026-09-14 补）。
+ * Tailwind preflight 给所有元素兜了 `border-color: rgb(229 231 235)`（gray-200），
+ * 而 shadcn 组件大量使用**不带颜色的裸 `border` 类**（dropdown-menu / dialog / card /
+ * input / separator / badge / radio-group …）—— 少了这条覆盖，它们在暗色界面上会描出
+ * 一道浅灰亮边。实测下拉菜单的边框就是 `rgb(229, 231, 235)` 压在 `#121212` 的菜单底上，
+ * 这也是"我们的菜单和 shadcn 官方示例长得不一样"最直观的那处差别。
+ * ⛔ 不要改成给每个组件挨个补 `border-border`：漏一个就又是一道亮边，而且以后
+ * `shadcn add` 进来的新组件照样带着裸 `border`。
+ */
+@layer base {
+  * {
+    @apply border-border;
+  }
 }
 
 html,
