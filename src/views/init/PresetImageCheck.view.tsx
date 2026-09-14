@@ -248,13 +248,30 @@ export function PresetImageCheckView({
                   </span>
                 )}
                 {provisionError === undefined ? null : (
-                  <span
-                    role="alert"
-                    data-testid="preset-provision-error"
-                    className="flex items-start gap-1 whitespace-pre-wrap break-words text-xs text-red-500"
-                  >
-                    <X aria-hidden="true" className="h-3 w-3 shrink-0 translate-y-0.5" />
-                    <span>{provisionError}</span>
+                  <span className="flex flex-col gap-1">
+                    <span
+                      role="alert"
+                      data-testid="preset-provision-error"
+                      className="flex items-start gap-1 whitespace-pre-wrap break-words text-xs text-red-500"
+                    >
+                      <X aria-hidden="true" className="h-3 w-3 shrink-0 translate-y-0.5" />
+                      <span>{provisionError}</span>
+                    </span>
+                    {/* ⛔ **不许只报错不给出路**（P22 §1）。这一整段原本只是把 registry 的
+                        原文上屏 —— 用户读完知道"失败了"，但不知道**下一步做什么**。
+                        ⚠️ 这条路上最常见的成因是**网络够得着但太慢**：2026-09-14 真机实测
+                        ghcr.io 1.4 秒应答（联网检查因此全绿）而带宽只有 200 KB/s，
+                        320 MB 的镜像拉到 84% 断掉。⇒ 把「去配代理」直接放在错误旁边。
+                        ⚠️ 措辞是**建议**不是断言：我们并不知道这次一定是网速问题
+                        （也可能是上游挂了），⛔ 不许把猜测说成结论。 */}
+                    <span
+                      data-testid="preset-provision-error-hint"
+                      className="text-xs text-muted-foreground"
+                    >
+                      多半是网速：镜像下载源够得着、但拉得太慢，中途就断了。
+                      回上一步「代理配置」填一个代理再试；初始化完成后也能在「设置 → 系统状态 →
+                      出网代理」里改。
+                    </span>
                   </span>
                 )}
               </span>

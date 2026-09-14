@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   initSteps,
   nextStep,
+  previousStep,
   resourceConfirmModel,
   schedulableBytes,
   toProxyUpdate,
@@ -43,6 +44,41 @@ describe('五步指示与步进', () => {
     expect(nextStep('preset-image', true)).toBe('subscription');
     expect(nextStep('subscription', true)).toBe('resource');
     expect(nextStep('resource', true)).toBeUndefined();
+  });
+
+  /**
+   * ⭐ **[上一步] 永远回得去代理那一步 —— 它是那一步唯一的入口。**
+   *
+   * ⛔ 这条用例此前**完全不存在**（`previousStep` 一条都没有），于是"两个方向都跳过"
+   * 这个缺陷能一直躺着：指示条上看得见代理步，却没有任何路径点得进去。
+   *
+   * ⚠️ 2026-09-14 真机撞上：连通性检查全绿（ghcr.io 1.4 秒应答）⇒ `proxyActive=false`
+   * ⇒ 向导判定"不需要代理"；而机器的**带宽只有 200 KB/s**，320 MB 的镜像拉到 84% 断掉。
+   * 唯一能救的配置项在界面上无法抵达。**可达 ≠ 够用**，而判据只看得见"可达"。
+   *
+   * ⇒ 刻意的不对称：`nextStep` 照旧跳过（正常机器不必多点一次"跳过"），
+   *   `previousStep` **一步都不跳**。
+   *
+   * MUTATION：给 `previousStep` 加回 `if (key === 'proxy' && !proxyActive) continue;`
+   * ⇒ 下面第一条红。
+   */
+  it('⭐ [上一步] ⛔ 不跳过代理步 —— 出网全通过时它是那一步唯一的入口', () => {
+    // 出网全通过（proxyActive=false）：自动前进跳过它……
+    expect(nextStep('connectivity', false)).toBe('preset-image');
+    // ……但从第 3 步往回走，⛔ 必须落在代理那一步，不是直接回到第 1 步。
+    expect(previousStep('preset-image', false)).toBe('proxy');
+    // 再往回才是第 1 步。
+    expect(previousStep('proxy', false)).toBe('connectivity');
+  });
+
+  it('[上一步] 在检测有失败项时同样逐步回退（与上一条同一条路径）', () => {
+    expect(previousStep('preset-image', true)).toBe('proxy');
+    expect(previousStep('proxy', true)).toBe('connectivity');
+  });
+
+  it('[上一步] 在第一步时回 undefined（没有更靠前的步）', () => {
+    expect(previousStep('connectivity', false)).toBeUndefined();
+    expect(previousStep('connectivity', true)).toBeUndefined();
   });
 
   it('⛔ 订阅**不因为出网跳过代理而被跳过** —— 只有代理那一格是条件性的', () => {

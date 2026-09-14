@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { expect, fn, userEvent, within } from 'storybook/test';
-import { ProxyConfigFormView } from '@/views/init/ProxyConfigForm.view';
+import { ProxyConfigFormView } from '@/views/system/ProxyConfigForm.view';
 
 const meta: Meta<typeof ProxyConfigFormView> = {
-  title: 'Init/ProxyConfigForm',
+  title: 'System/ProxyConfigForm',
   component: ProxyConfigFormView,
   parameters: { layout: 'padded' },
   args: {
