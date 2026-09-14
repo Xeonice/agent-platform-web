@@ -34,7 +34,6 @@ export interface ProjectGroupHeaderProps {
   /** 点折叠箭头：只切折叠，⛔ 不连带选中项目——两个是不同的动作。 */
   onToggleCollapse: (projectId: string) => void;
   /** 点「⋯」：由 container 记下 openMenuProjectId。 */
-  onOpenMenu: (projectId: string) => void;
   /** 菜单本体（打开时由 container 传入；关闭时为 undefined）。 */
   menuSlot?: ReactNode;
 }
@@ -48,7 +47,6 @@ export function ProjectGroupHeaderView({
   onSelect,
   collapsed,
   onToggleCollapse,
-  onOpenMenu,
   menuSlot,
 }: ProjectGroupHeaderProps) {
   const failed = cloneStatus === 'failed';
@@ -119,28 +117,13 @@ export function ProjectGroupHeaderView({
         )}
       </button>
 
-      {/* 「⋯」：项目的管理入口。在它之前，删除项目在界面上根本够不着（§10.1）。 */}
       {/*
-        ⚠️ 无障碍名**刻意不含项目名**（只放进 `title`）。含了的话，
-        `getByRole('button', { name: /项目名/ })` 会同时命中组头按钮与这个「⋯」，
-        全仓（含 e2e）按项目名点项目的地方会一起变成 strict-mode 二义匹配。
-        菜单本体（`ProjectGroupMenu.view` 的 `role="menu"`）带着项目名，上下文不丢。
+        「⋯」：项目的管理入口。在它之前，删除项目在界面上根本够不着（§10.1）。
+        ⚠️ **触发器不在这里画**（2026-09-14 起）：它连同菜单一起住在 `ProjectGroupMenu.view`，
+        由 shadcn `DropdownMenuTrigger asChild` 承担。Radix 要 trigger 与 content 同树才能接上
+        定位、焦点归位和 `aria-expanded`；⛔ 不要再在组头补一个自己的 ⋯ 按钮，那会变成两个
+        触发器抢同一个菜单。本组件只负责把它摆在这一行的末尾。
       */}
-      <button
-        type="button"
-        aria-label="项目菜单"
-        title={`${projectName} 的项目菜单`}
-        aria-haspopup="menu"
-        aria-expanded={menuSlot !== undefined}
-        data-testid="project-group-menu-trigger"
-        className="shrink-0 rounded px-1 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-        onClick={() => {
-          onOpenMenu(projectId);
-        }}
-      >
-        ⋯
-      </button>
-
       {menuSlot}
     </div>
   );

@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { server } from '@/mocks/node';
 import { AutomationsPanelContainer } from '@/containers/project/AutomationsPanelContainer';
-import { ModalShellView } from '@/views/common/ModalShell.view';
+import { AppDialogView } from '@/views/common/AppDialog.view';
 import type { AutomationDto } from '@/types/automation';
 
 const BASE = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? 'http://localhost:3001';
@@ -60,12 +60,12 @@ function wrap(children: ReactNode) {
 function renderInModal(onOpenTask?: (id: string) => void) {
   return render(
     wrap(
-      <ModalShellView title="自动化规则" onClose={() => undefined} testId="modal-automations">
+      <AppDialogView title="自动化规则" onClose={() => undefined} testId="modal-automations">
         <AutomationsPanelContainer
           projectId="proj-demo"
           {...(onOpenTask === undefined ? {} : { onOpenTask })}
         />
-      </ModalShellView>,
+      </AppDialogView>,
     ),
   );
 }
@@ -443,9 +443,9 @@ describe('⭐ [打开 Task]', () => {
     );
     render(
       wrap(
-        <ModalShellView title="自动化规则" onClose={() => undefined} testId="modal-automations">
+        <AppDialogView title="自动化规则" onClose={() => undefined} testId="modal-automations">
           <AutomationsPanelContainer projectId="proj-demo" onOpenTask={onOpenTask} />
-        </ModalShellView>,
+        </AppDialogView>,
       ),
     );
     fireEvent.click(await screen.findByTestId('automation-select'));

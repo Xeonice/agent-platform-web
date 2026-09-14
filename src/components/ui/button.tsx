@@ -5,14 +5,15 @@
 // 图标规则、六个 variant、四个 size。
 //
 // ⚠️ **只有配色不照搬，因为本仓的 token 语义和 shadcn 默认不是一回事**：
-//  · 官方 ghost 是 `hover:bg-accent hover:text-accent-foreground`。本仓
-//    `--accent: 212 100% 48%` 是**亮蓝色**（globals.css 里写着「焦点环 / 链接」），
-//    不是 shadcn 那种低对比悬停底色 —— 照搬会让所有 ghost 按钮一悬停就刷成亮蓝。
-//    ⇒ 保留 `hover:bg-muted`。
+//  · 官方 ghost 是 `hover:bg-accent hover:text-accent-foreground`。本仓 ghost 保留
+//    `hover:bg-muted`：按钮的悬停反馈与全站其余可点区域同一档，而 `accent` 这一档
+//    留给「当前项」（菜单键盘焦点这类）—— 两者在本仓不是同一个视觉层级。
 //  · 官方 focus 环是 `ring-1 ring-ring`。本仓用 `ring-2 ring-primary`：更粗、对比更高，
 //    ⛔ 不为了"和官方一致"把可见度调低。
-//  · `text-accent-foreground` 在本仓**根本不存在** —— tailwind.config.ts 里 accent 是
-//    单值（`accent: 'hsl(var(--accent))'`），没有 `.foreground` 子键，写了会被静默丢弃。
+//
+// ⓘ 2026-09-14 之前这里还记着「`text-accent-foreground` 在本仓根本不存在」—— 那是
+//   tailwind.config.ts 把 accent 配成单值留下的缺陷，现已修复（accent 改为
+//   `{DEFAULT, foreground}` 成对映射到 `--accent-surface`），这条不再成立。
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';

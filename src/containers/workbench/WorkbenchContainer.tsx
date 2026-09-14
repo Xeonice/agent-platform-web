@@ -7,7 +7,7 @@
 // 是主区换页，不是弹层，`currentModal` 这个名字是假的（§N.0）。而「新建任务」连入口都没有，
 // 只是 `SandboxTerminalContainer` 在沙箱为空时的兜底渲染。现在两个动作**形态对称**：
 // 同一套 overlay、各有显式入口。
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useHealth } from '@/hooks/_shared/useHealth';
 import {
@@ -23,14 +23,12 @@ import { useDebouncedValue } from '@/hooks/project/useDebouncedValue';
 import { useSandboxes, sandboxListKeys } from '@/hooks/sandbox/useSandboxes';
 import { useSandboxEventsSocket } from '@/hooks/sandbox/useSandboxEventsSocket';
 import { useRuntimeAuthSync } from '@/hooks/credential/useRuntimeAuthSync';
-import { useEscapeKey } from '@/hooks/_shared/useEscapeKey';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
 import { useOfflineMode } from '@/hooks/system/useGlobalBanner';
 import { useAppStore } from '@/stores';
 import { WorkbenchShellView } from '@/views/workbench/WorkbenchShell.view';
-import { ModalShellView } from '@/views/common/ModalShell.view';
+import { AppDialogView } from '@/views/common/AppDialog.view';
 import { useRouter } from 'next/navigation';
-import { useModalFocus } from '@/hooks/_shared/useModalFocus';
 import { ProjectInfoBarView } from '@/views/project/ProjectInfoBar.view';
 import { SandboxTerminalContainer } from '@/containers/sandbox/SandboxTerminalContainer';
 import { NewProjectContainer } from '@/containers/project/NewProjectContainer';
@@ -210,11 +208,6 @@ export function WorkbenchContainer() {
     groupMenuRecovery.actionError ??
     (cancelClone.isError ? describeProjectActionError(cancelClone.error) : undefined);
 
-  /** 组头「⋯」：再点一次收起（没有第二个"关闭菜单"的入口，别让用户找不着北）。 */
-  const handleOpenGroupMenu = (projectId: string): void => {
-    setGroupMenuProjectId((current) => (current === projectId ? null : projectId));
-  };
-
   /**
    * 组头「⋯」→ 项目菜单侧弹层（§5）。
    * ⚠️ 只置 `selectedProjectForMenu`，**不改 `selectedProjectId`** —— 看 B 的项目菜单
@@ -227,43 +220,49 @@ export function WorkbenchContainer() {
     setCurrentModal('projectMenu');
   };
 
+  /**
+   * 组头「⋯」→ 直接进保留成果 / 自动化规则（2026-09-14 起菜单拍平，不再中转一层面板）。
+   * 与 `handleOpenProjectMenu` 同一套上下文纪律：只置 `selectedProjectForMenu`，
+   * ⛔ 不改 `selectedProjectId` —— 看 B 的成果不该把我正在干活的上下文从 A 搬走。
+   */
+  const handleOpenPanelFor = (
+    projectId: string,
+    modal: 'retainedVolumes' | 'automations',
+  ): void => {
+    setGroupMenuProjectId(null);
+    setMenuOpensOnDelete(false);
+    setSelectedProjectForMenu(projectId);
+    setCurrentModal(modal);
+  };
+
   const closeModal = (): void => {
     setCurrentModal(null);
     // 弹层关了，指向也就没有意义了（这一位不 persist，留着只会让下一次打开闪一帧旧项目）。
     setSelectedProjectForMenu(null);
     setMenuOpensOnDelete(false);
   };
-  // Esc 关「新建项目」弹层（「新建任务」那一个由 SandboxTerminalContainer 自己管——
-  // 它的 busy 判据是那边的 mutation.isPending）。
-  useEscapeKey(currentModal === 'createProject', closeModal);
-  // 焦点移进弹层 + Tab 陷阱 + 关闭还原。缺了它，焦点会留在打开弹窗的那个元素上
-  // （这个产品里常常是正在跑的终端）⇒ 用户敲的字进了另一个 agent 的 shell。
-  const projectModalRef = useRef<HTMLDivElement>(null);
-  useModalFocus(currentModal === 'createProject', projectModalRef);
+  /*
+   * ⚠️ **Esc 与焦点陷阱不再在这里接**（2026-09-14）：四个弹层换成 `AppDialogView`
+   * （内部是 shadcn/Radix `Dialog`），Esc、焦点移入、Tab 陷阱、关闭还原由它一并管。
+   * 此前这里有 8 个调用（每个弹层各一对 `useEscapeKey` + `useModalFocus`）——
+   * 四处协作才凑齐一个弹层该有的行为，**少接一处就是一个静默的无障碍缺陷**：
+   *  · 少 `useEscapeKey` ⇒ 弹层"能打开、关不掉"（里面全是按钮时键盘用户被困住）；
+   *  · 少 `useModalFocus` ⇒ 焦点留在打开它的那个元素上，而这个产品里那常常是**正在跑的
+   *    终端** ⇒ 用户敲的字进了另一个 agent 的 shell。
+   * ⛔ 不要因为"看不见它们了"就以为这些行为没了，也⛔ 不要再补回来 —— 会和 Radix 打架
+   * （两处都响应 Esc，关一次触发两遍）。
+   *
+   * ⚠️ 弹层内部的视图切换仍然**不吃 Esc**：自动化面板的列表/详情/表单、项目面板的
+   * 详情/删除确认，退回上一视图走的是 [返回列表] / [取消]。modal 不堆叠 ⇒ Esc 没有
+   * "退一层"的语义可退，它关的永远是整个弹层。
+   *
+   * 「新建任务」那个弹层由 `SandboxTerminalContainer` 自己管（busy 判据是那边的
+   * mutation.isPending），不在此列。
+   */
 
-  // 「已保留卷」弹层同样要 Esc 与焦点陷阱——少给一个，这个弹层就成了"能打开、关不掉"
-  // （它里面全是链接与按钮，键盘用户会被困住）。
-  const retainedModalRef = useRef<HTMLDivElement>(null);
-  useEscapeKey(currentModal === 'retainedVolumes', closeModal);
-  useModalFocus(currentModal === 'retainedVolumes', retainedModalRef);
-
-  // 「自动化规则」弹层同理。⚠️ 它内部还有列表/详情/表单三个视图，Esc 关的是**整个弹层**
-  // —— 面板内退回上一视图走的是 [返回列表] / [取消]，两条路不混（modal 不堆叠 ⇒
-  // Esc 也没有"退一层"的语义可退）。
-  const automationsModalRef = useRef<HTMLDivElement>(null);
-  useEscapeKey(currentModal === 'automations', closeModal);
-  useModalFocus(currentModal === 'automations', automationsModalRef);
-
-  // 「项目菜单」弹层同理。⚠️ 面板内的「详情 ⇄ 删除确认」也是**视图切换**，Esc 关的是
-  // 整个弹层——删除确认取消走的是面板内的 [取消]。
-  const projectMenuModalRef = useRef<HTMLDivElement>(null);
-  useEscapeKey(currentModal === 'projectMenu', closeModal);
-  useModalFocus(currentModal === 'projectMenu', projectMenuModalRef);
-
-  // 组头「⋯」下拉：Esc 收起。它不是弹层（没有遮罩、不夺焦点），所以只接 Esc 这一条。
-  useEscapeKey(groupMenuProjectId !== null, () => {
-    setGroupMenuProjectId(null);
-  });
+  // 组头「⋯」下拉：Esc 收起。⚠️ 它现在是 shadcn `DropdownMenu`，Esc 由 Radix 管，
+  // 这里只需要在关闭时把 container 侧的"当前打开哪个项目"复位 —— 见 `renderGroupMenu`
+  // 的 `onOpenChange`。
 
   /**
    * [+ 新任务] 的可用性（§9.1 #33）。
@@ -380,8 +379,6 @@ export function WorkbenchContainer() {
       onLocateCurrentProject={() => {
         if (selectedProjectId !== null) expandProject(selectedProjectId);
       }}
-      openMenuProjectId={groupMenuProjectId}
-      onOpenGroupMenu={handleOpenGroupMenu}
       // 组头折叠箭头（design-notes.md §4 Phase 3）：`toggleProjectFold` 这个 store action
       // 在本轮之前一直存在却从未被任何 UI 调用过——折叠状态有地方存，却没有入口写它。
       onToggleGroupCollapse={toggleProjectFold}
@@ -390,22 +387,44 @@ export function WorkbenchContainer() {
       statusFilter={statusFilter}
       onStatusFilterChange={setStatusFilter}
       hasNoFilterMatches={hasNoFilterMatches}
-      groupMenuSlot={
-        groupMenuProject === null ? undefined : (
+      /*
+       * ⚠️ 每一行都渲染一个菜单实例（2026-09-14 起）：触发器住在菜单组件里，
+       * 旧的"只给当前打开那一行"写法会让其余行连 ⋯ 按钮都没有。
+       * 展开状态仍由 container 持有 —— `groupMenuRecovery` / `cancelClone` 这两个 hook
+       * 是按"当前打开的项目"取的，⛔ 不能让每行各持一份。
+       */
+      renderGroupMenu={(projectId) => {
+        const proj = (projects.data ?? []).find((p) => p.id === projectId);
+        if (proj === undefined) return null;
+        const isOpen = groupMenuProjectId === projectId;
+        return (
           <ProjectGroupMenuView
-            projectName={groupMenuProject.name}
-            cloneStatus={groupMenuProject.cloneStatus}
-            busy={groupMenuRecovery.busy || cancelClone.isPending}
-            {...(groupMenuActionError === undefined ? {} : { actionError: groupMenuActionError })}
-            onOpenPanel={() => {
-              handleOpenProjectMenu(groupMenuProject.id, false);
+            projectId={proj.id}
+            projectName={proj.name}
+            cloneStatus={proj.cloneStatus}
+            open={isOpen}
+            onOpenChange={(next) => {
+              setGroupMenuProjectId(next ? projectId : null);
+            }}
+            busy={isOpen && (groupMenuRecovery.busy || cancelClone.isPending)}
+            {...(isOpen && groupMenuActionError !== undefined
+              ? { actionError: groupMenuActionError }
+              : {})}
+            onOpenDetail={() => {
+              handleOpenProjectMenu(projectId, false);
+            }}
+            onOpenRetainedVolumes={() => {
+              handleOpenPanelFor(projectId, 'retainedVolumes');
+            }}
+            onOpenAutomations={() => {
+              handleOpenPanelFor(projectId, 'automations');
             }}
             // ⚠️ 这两个直接是恢复面板那一个 hook 的方法（§10.2 A），⛔ 不在这里另发请求。
             onRetryClone={groupMenuRecovery.retry}
             onConvertToEmpty={groupMenuRecovery.convertToEmpty}
             onCancelClone={() => {
               // ⛔ 不乐观收起菜单：失败了要在原地把原因说出来（与删除 409 同一条纪律）。
-              cancelClone.mutate(groupMenuProject.id, {
+              cancelClone.mutate(projectId, {
                 onSuccess: () => {
                   setGroupMenuProjectId(null);
                 },
@@ -413,11 +432,11 @@ export function WorkbenchContainer() {
             }}
             onRequestDelete={() => {
               // 删除确认只有一处实现：进同一个侧弹层，直接落在确认视图上。
-              handleOpenProjectMenu(groupMenuProject.id, true);
+              handleOpenProjectMenu(projectId, true);
             }}
           />
-        )
-      }
+        );
+      }}
       selectedTaskId={selectedSandboxId}
       onSelectTask={(taskId) => {
         // 点任务要同时定位到它所属项目：主区的终端挂在 selectedProject 上，
@@ -435,19 +454,15 @@ export function WorkbenchContainer() {
       overlaySlot={
         <>
           {currentModal === 'createProject' && (
-            <ModalShellView
-              shellRef={projectModalRef}
-              title="新建项目"
-              onClose={closeModal}
-              testId="modal-new-project"
-            >
+            <AppDialogView title="新建项目" onClose={closeModal} testId="modal-new-project">
               <NewProjectContainer onProjectReady={handleProjectReady} onCancel={closeModal} />
-            </ModalShellView>
+            </AppDialogView>
           )}
           {currentModal === 'projectMenu' && menuProject !== null && (
-            <ModalShellView
-              shellRef={projectMenuModalRef}
-              title="项目菜单"
+            <AppDialogView
+              // ⚠️ 标题随视图变：从 ⋯ 菜单直奔 [删除项目…] 时这个面板**不是**详情。
+              // 顶着「项目详情」问人家要不要删，是两句话打架。
+              title={menuOpensOnDelete ? '删除项目' : '项目详情'}
               subtitle={menuProject.name}
               onClose={closeModal}
               testId="modal-project-menu"
@@ -459,23 +474,16 @@ export function WorkbenchContainer() {
                 taskCount={menuProject.taskCount}
                 createdAt={menuProject.createdAt}
                 initialConfirmingDelete={menuOpensOnDelete}
-                onOpenRetainedVolumes={() => {
-                  // modal 不堆叠：换 `currentModal` 的值，本面板随之关闭（§10.5）。
-                  setCurrentModal('retainedVolumes');
-                }}
-                onOpenAutomations={() => {
-                  setCurrentModal('automations');
-                }}
+                onClose={closeModal}
                 onDeleted={() => {
                   // 选中态的清理在 `useDeleteProject` 里（§10.6 第 1 条）：这里只负责关面板。
                   closeModal();
                 }}
               />
-            </ModalShellView>
+            </AppDialogView>
           )}
           {currentModal === 'automations' && menuProject !== null && (
-            <ModalShellView
-              shellRef={automationsModalRef}
+            <AppDialogView
               title="自动化规则"
               subtitle={`在 ${menuProject.name} 中`}
               onClose={closeModal}
@@ -490,18 +498,17 @@ export function WorkbenchContainer() {
                   setSelectedSandboxId(sandboxId);
                 }}
               />
-            </ModalShellView>
+            </AppDialogView>
           )}
           {currentModal === 'retainedVolumes' && menuProject !== null && (
-            <ModalShellView
-              shellRef={retainedModalRef}
+            <AppDialogView
               title="保留下来的成果"
               subtitle={`在 ${menuProject.name} 中`}
               onClose={closeModal}
               testId="modal-retained-volumes"
             >
               <RetainedVolumesContainer projectId={menuProject.id} projectName={menuProject.name} />
-            </ModalShellView>
+            </AppDialogView>
           )}
         </>
       }

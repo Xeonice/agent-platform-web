@@ -110,13 +110,17 @@ export interface WorkbenchShellProps {
   /** 指示器点击 = **只做树内定位展开**（§5），⛔ 不是下拉、不承载管理入口。 */
   onLocateCurrentProject?: () => void;
   /** 组头「⋯」当前展开的是哪个项目的菜单（null = 都没开）。 */
-  openMenuProjectId?: string | null;
-  onOpenGroupMenu?: (projectId: string) => void;
   /**
    * 组头菜单本体：由 container 渲染 `ProjectGroupMenu.view` 并接上
    * **同一个** `useProjectRecovery`（§10.2 A）。本层只负责把它插在正确的组头下。
    */
-  groupMenuSlot?: ReactNode;
+  /**
+   * 按项目渲染组头「⋯」菜单。⚠️ 2026-09-14 从 `groupMenuSlot?: ReactNode` 改成按行调用的
+   * 函数：菜单换成 shadcn `DropdownMenu` 之后**触发器住在菜单组件里**，所以每一行都要有
+   * 自己的一个实例 —— 旧的单个 slot 只喂给"当前打开的那一行"，其余行会连 ⋯ 按钮都没有。
+   * Radix 的 Content 只在展开时才挂载（Portal），每行一个实例不会带来常驻开销。
+   */
+  renderGroupMenu?: (projectId: string) => ReactNode;
   /** 组头折叠箭头（design-notes.md §4 Phase 3）：只切折叠，不改变选中项目。 */
   onToggleGroupCollapse?: (projectId: string) => void;
 
@@ -153,9 +157,7 @@ export function WorkbenchShellView({
   overlaySlot,
   currentProjectName = null,
   onLocateCurrentProject,
-  openMenuProjectId = null,
-  onOpenGroupMenu,
-  groupMenuSlot,
+  renderGroupMenu,
   onToggleGroupCollapse,
   searchQuery = '',
   onSearchQueryChange,
@@ -425,12 +427,10 @@ export function WorkbenchShellView({
                     onToggleCollapse={(projectId) => {
                       onToggleGroupCollapse?.(projectId);
                     }}
-                    onOpenMenu={(projectId) => {
-                      onOpenGroupMenu?.(projectId);
-                    }}
-                    {...(openMenuProjectId === group.projectId && groupMenuSlot !== undefined
-                      ? { menuSlot: groupMenuSlot }
-                      : {})}
+                    {...(() => {
+                      const menu = renderGroupMenu?.(group.projectId);
+                      return menu === undefined || menu === null ? {} : { menuSlot: menu };
+                    })()}
                   />
                   {!group.collapsed &&
                     (group.tasks.length === 0 ? (

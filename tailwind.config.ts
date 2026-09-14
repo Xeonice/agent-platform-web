@@ -24,7 +24,17 @@ const config: Config = {
         'muted-foreground': 'hsl(var(--foreground-muted))',
         primary: 'hsl(var(--primary))',
         'primary-foreground': 'hsl(var(--primary-foreground))',
-        accent: 'hsl(var(--accent))',
+        // ⚠️ shadcn 组件里的 `accent` 语义是「当前项的低对比底色」，⛔ 不是本仓
+        // --accent 那个高饱和强调蓝（焦点环 / 链接）。此前这里直接接到 --accent，
+        // 结果是：① `bg-accent` 让菜单焦点项刷成亮蓝；② `text-accent-foreground`
+        // 因为没有 .foreground 子键而**根本不存在**、被 Tailwind 静默丢弃 ——
+        // 亮蓝底配没被改过的浅灰字，实测对比度 2.8:1，低于 WCAG AA 的 4.5:1。
+        // 改成成对映射到 --accent-surface（与 card/popover/secondary 同一写法）。
+        // --accent 变量本身不动，它继续服务 --ring。
+        accent: {
+          DEFAULT: 'hsl(var(--accent-surface))',
+          foreground: 'hsl(var(--accent-surface-foreground))',
+        },
         success: 'hsl(var(--success))',
         warning: 'hsl(var(--warning))',
         error: 'hsl(var(--error))',
