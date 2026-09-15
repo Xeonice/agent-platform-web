@@ -41,24 +41,34 @@ describe('系统状态页两栏栅格（Phase 1 补做）', () => {
     expect(grid).toHaveClass('items-start');
   });
 
-  it('三个栅格子项按序：左列 → 右列 → 审计流整行（lg:col-span-2），审计流不跟两列强制等高', async () => {
+  it('四个栅格子项按序：左列 → 右列 → 诊断整行 → 审计流整行（两条整行都 lg:col-span-2）', async () => {
     renderPage();
     await screen.findByRole('heading', { level: 2, name: /本机资源水位/ });
 
     const grid = screen.getByTestId('system-status-grid');
     const children = Array.from(grid.children);
-    // ⚠️ 注入验证②：把审计流挪到栅格最前面、或把左右两列顺序对调，都会让下面这条
+    // ⚠️ 注入验证②：把任一整行挪到栅格最前面、或把左右两列顺序对调，都会让下面这条
     // 按 `data-testid` 记录的顺序断言变红。
     expect(children.map((el) => el.getAttribute('data-testid'))).toEqual([
       'system-status-column-left',
       'system-status-column-right',
+      'system-status-diagnostics-row',
       'system-status-audit-row',
     ]);
 
-    const auditRow = screen.getByTestId('system-status-audit-row');
-    expect(auditRow).toHaveClass('lg:col-span-2');
-    // 审计流是栅格的直接子项（跨两列的整行），不是塞进某一列内部。
-    expect(auditRow.parentElement).toBe(grid);
+    /*
+     * ⭐ **诊断 2026-09-15 起也是整行**（原型 v3，design-notes §1 问题 6）：
+     * 它的高度在「未跑 98px」与「跑完八项 789px」之间跳，固定指派给某一列的话，
+     * 另一列必然一会儿空一会儿挤 —— 这正是「系统状态左列大片空白」反复复发的原因。
+     * ⛔ 把它塞回任一列 ⇒ 本条与 `SystemStatusContainer.test.tsx` 那两条否定断言同时红。
+     */
+    for (const id of ['system-status-diagnostics-row', 'system-status-audit-row']) {
+      const row = screen.getByTestId(id);
+      expect(row).toHaveClass('lg:col-span-2');
+      // 整行是栅格的直接子项（跨两列），不是塞进某一列内部。
+      expect(row.parentElement).toBe(grid);
+    }
+    expect(screen.getByRole('heading', { level: 2, name: /诊断/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: /审计流/ })).toBeInTheDocument();
   });
 });
