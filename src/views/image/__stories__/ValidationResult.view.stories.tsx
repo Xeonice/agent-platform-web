@@ -22,10 +22,21 @@ export const Valid: Story = {
     await expect(canvas.getByTestId('pinned-digest')).toHaveTextContent('sha256:4b17e…a02');
     // ✅ 态不该出现 [查看镜像要求]——那是 ❌ 的出路。
     await expect(canvas.queryByRole('button', { name: '查看镜像要求' })).toBeNull();
-    // MUTATION：把 `HEADLINE_ICON.valid` 换回 emoji 字符或换成另一个图标 ⇒ 这条先红。
-    await expect(
-      canvas.getByTestId('validation-headline-icon').classList.contains('lucide-check'),
-    ).toBe(true);
+    // MUTATION：把结论 pill 换成别的 status（或换回 emoji/自制边框条）⇒ 这两条先红——
+    // 断言要落到 `data-status` 这一级，不是"有个 pill 就行"。
+    const pill = canvas.getByTestId('validation-status-pill');
+    await expect(pill).toHaveAttribute('data-status', 'ok');
+    await expect(pill.querySelector('svg')?.classList.contains('lucide-check')).toBe(true);
+
+    /*
+     * ⭐ **结论词全区块只念一遍**。产品文档 P21-4 §5 的句式是「✅ 验证通过：镜像可用」
+     * —— 结论当时由 emoji 旁边的文字承担。换成 pill 之后 pill 自己就带文字，若
+     * `HEADLINE` 仍保留整句，屏幕上会变成 `[✓ 验证通过] 验证通过：镜像可用`。
+     * v3 收口时确实一度是这样，是肉眼看截图才发现的 —— 当时没有任何断言锁这三句。
+     * ⛔ 把结论词写回 HEADLINE ⇒ 本条红。
+     */
+    const text = canvas.getByTestId('validation-result').textContent;
+    await expect(text.split('验证通过').length - 1).toBe(1);
   },
 };
 
@@ -37,8 +48,9 @@ export const Warning: Story = {
     warnings: ['未预装 claude-code，创建时需现装，实测约 12.5 分钟'],
   },
   play: async ({ canvasElement }) => {
-    const icon = within(canvasElement).getByTestId('validation-headline-icon');
-    await expect(icon.classList.contains('lucide-triangle-alert')).toBe(true);
+    const pill = within(canvasElement).getByTestId('validation-status-pill');
+    await expect(pill).toHaveAttribute('data-status', 'warn');
+    await expect(pill.querySelector('svg')?.classList.contains('lucide-triangle-alert')).toBe(true);
   },
 };
 
@@ -68,9 +80,9 @@ export const Invalid: Story = {
     await expect(canvas.getByTestId('validation-result')).toHaveAttribute('data-status', 'invalid');
     await expect(canvas.queryByTestId('pinned-digest')).toBeNull();
     await expect(canvas.getByRole('button', { name: '查看镜像要求' })).toBeInTheDocument();
-    await expect(
-      canvas.getByTestId('validation-headline-icon').classList.contains('lucide-x'),
-    ).toBe(true);
+    const pill = canvas.getByTestId('validation-status-pill');
+    await expect(pill).toHaveAttribute('data-status', 'fail');
+    await expect(pill.querySelector('svg')?.classList.contains('lucide-x')).toBe(true);
   },
 };
 

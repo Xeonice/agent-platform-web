@@ -85,10 +85,11 @@ export const ValidBuiltin: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.queryByRole('button', { name: '删除' })).toBeNull();
     await expect(canvas.getByRole('button', { name: '禁用' })).toBeInTheDocument();
-    const icon = canvas.getByTestId('enable-state-icon');
-    await expect(icon).toHaveAttribute('data-active', 'true');
-    await expect(icon.classList.contains('lucide-circle')).toBe(true);
-    await expect(icon.classList.contains('text-success')).toBe(true);
+    // MUTATION：把「已启用」的 pill 换成别的 status（或换回小圆点 + 文字）⇒ 这条先红——
+    // 断言落到 `data-status` 这一级，不是"有个 pill 就行"。
+    const pill = canvas.getByTestId('enable-state');
+    await expect(pill).toHaveAttribute('data-status', 'ok');
+    await expect(pill.querySelector('svg')?.classList.contains('lucide-check')).toBe(true);
   },
 };
 
@@ -194,9 +195,10 @@ export const Disabled: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('button', { name: '启用' })).toBeInTheDocument();
     await expect(canvas.getByTestId('enable-state')).toHaveTextContent('已禁用');
-    // MUTATION：把 `⚪`/`🟢` 拼回文案 ⇒ 下面这条锁不住的是"哪个状态"，
-    // `data-active` 才是——这条在 emoji 写法与图标写法下都不该绿，除非真的按 isActive 切色。
-    await expect(canvas.getByTestId('enable-state-icon')).toHaveAttribute('data-active', 'false');
+    // MUTATION：把「已禁用」的 pill 换成 `fail`（或换回 `⚪`/`🟢` 拼文案）⇒ 这条先红——
+    // 禁用是用户主动做的，不是坏了，⛔ 不该跟"无效"共用红色；锁的是 `data-status`
+    // 而不是某个具体的图标类名，emoji 写法与图标写法下都不该绿，除非真的按 isActive 切色。
+    await expect(canvas.getByTestId('enable-state')).toHaveAttribute('data-status', 'pending');
   },
 };
 

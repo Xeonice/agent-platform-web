@@ -20,7 +20,18 @@ export default meta;
 
 type Story = StoryObj<typeof GitCredentialCardView>;
 
-export const Unconfigured: Story = { args: { credential: null } };
+export const Unconfigured: Story = {
+  args: { credential: null },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // ⭐ 「未配置」= skipped（虚线框），⛔ 不是 fail：断言到 data-status 这一级，
+    // 换成 fail 这条会先红——只断言"有个 pill"锁不住这条。
+    await expect(canvas.getByTestId('git-unconfigured-badge')).toHaveAttribute(
+      'data-status',
+      'skipped',
+    );
+  },
+};
 
 /**
  * ⛔ **接口挂了 ≠ 没配过。**
@@ -33,7 +44,7 @@ export const LoadFailed: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('git-load-error')).toBeVisible();
     await expect(canvas.getByRole('button', { name: '重试' })).toBeVisible();
-    await expect(canvas.queryByText('○ 未配置')).toBeNull();
+    await expect(canvas.queryByTestId('git-unconfigured-badge')).toBeNull();
     await expect(canvas.queryByRole('button', { name: '配置 SSH 密钥' })).toBeNull();
   },
 };

@@ -1,8 +1,9 @@
 // 模式单选行（F21-3 §3，P21-3 §6）：◉/○ 单选 + [当前使用] 徽标 + 帐号尾号 + 有效期
 // （警告 <7 天 / 已过期）**+ 到期后该做什么** + 行内动作。
 // 点未配置项 → onNeedSetup（就地补配，不报错）而非 onSwitch（F21-3 §5 / §7.2 play）。纯展示、props 驱动、零副作用。
-import { AlertTriangle, X, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { AuthModeRow } from '@/types/runtimeCredential';
 
 export interface AuthMethodRadioRowProps {
@@ -32,10 +33,20 @@ export interface AuthMethodRadioRowProps {
  */
 interface ExpiryMarker {
   text: string;
-  className: string;
-  /** 装饰图标；缺席 = 普通有效期（既不警告也没过期），不需要图标提醒。 */
-  icon?: LucideIcon;
   hint?: string;
+  /** 装饰图标；缺席 = 普通有效期（既不警告也没过期），不需要图标提醒。仅纯文字分支使用。 */
+  icon?: LucideIcon;
+  className?: string;
+  /**
+   * 设了这个字段 = 这一格改走 `StatusPill`，不再走下面 icon+className 的纯文字渲染。
+   *
+   * ⚠️ **只有 `expired` 走 pill，`warning` 刻意不跟进**：`warning` 这里显示的是
+   * `expiryLabel`（"剩 6 天" 这种动态倒计时），不是"即将过期"这句固定状态文案——
+   * 原型（design/prototype.html #credentials 第 647 行）里同一格也是纯色 mono 文字，
+   * 不是 pill；`expired` 才是没有倒计时可言的终态，对应 design-notes.md Phase 6
+   * 映射表里的「已过期 → fail」。
+   */
+  pillStatus?: StatusPillStatus;
 }
 
 function expiryMarker(row: AuthModeRow): ExpiryMarker | null {
@@ -52,8 +63,7 @@ function expiryMarker(row: AuthModeRow): ExpiryMarker | null {
   if (row.expiryState === 'expired') {
     return {
       text: '已过期',
-      className: 'text-red-400',
-      icon: X,
+      pillStatus: 'fail',
       hint: '现在用它发任务会失败，点 [重新登录] 换一份。',
     };
   }
@@ -82,7 +92,11 @@ export function AuthMethodRadioRowView({
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+    // ⭐ 不自带边框/圆角：这一行不是自己的卡，是父卡（`RuntimeCredentialCardView`）内部
+    // 用分隔线分出来的一法。此前这里自带 `rounded-md border`，卡片内再套一层边框，
+    // 「哪个是一张卡」变得含糊（design/prototype.html #credentials + design-notes.md
+    // Phase 6 ③：分隔线代替卡中卡）。分隔线本身由父级的 `divide-y` 提供，⛔ 这里不重复画。
+    <div className="flex flex-col gap-2 p-3">
       <div className="flex items-center justify-between gap-2">
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -94,22 +108,27 @@ export function AuthMethodRadioRowView({
           />
           <span className="font-medium">{row.label}</span>
           {row.active && (
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+            <StatusPill status="ok" data-testid="auth-active-badge">
               当前使用
-            </span>
+            </StatusPill>
           )}
         </label>
-        {marker !== null && (
-          <span
-            className={'flex items-center gap-1 text-xs ' + marker.className}
-            data-testid="auth-expiry-marker"
-          >
-            {marker.icon !== undefined && (
-              <marker.icon aria-hidden="true" className="h-3 w-3 shrink-0" />
-            )}
-            {marker.text}
-          </span>
-        )}
+        {marker !== null &&
+          (marker.pillStatus !== undefined ? (
+            <StatusPill status={marker.pillStatus} data-testid="auth-expiry-marker">
+              {marker.text}
+            </StatusPill>
+          ) : (
+            <span
+              className={'flex items-center gap-1 text-xs ' + (marker.className ?? '')}
+              data-testid="auth-expiry-marker"
+            >
+              {marker.icon !== undefined && (
+                <marker.icon aria-hidden="true" className="h-3 w-3 shrink-0" />
+              )}
+              {marker.text}
+            </span>
+          ))}
       </div>
 
       {marker?.hint !== undefined && (
@@ -138,7 +157,9 @@ export function AuthMethodRadioRowView({
         </div>
       ) : (
         <div className="flex flex-wrap gap-2 pl-6">
-          <span className="text-xs text-muted-foreground">未配置</span>
+          <StatusPill status="skipped" data-testid="auth-unconfigured-badge">
+            未配置
+          </StatusPill>
           <Button
             type="button"
             variant="outline"
