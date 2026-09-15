@@ -20,10 +20,25 @@ export const TERMINAL_INSTANCE_LIMIT = 6;
 /**
  * 这一刻该保留哪几个 Terminal 实例（其余的标签仍在栏上，只是没有实例）。
  *
- * 两条纪律（08 §5.3）都在这里：
+ * 三条纪律（08 §5.3）都在这里：
  *   ① **活跃会话永不淘汰** —— `activeSessionId` 无条件入选。否则在上限边缘会出现
  *      "刚切过去就被自己挤掉"。
  *   ② 淘汰顺序按最近激活序号，最久未激活的先出局。
+ *   ③ **没有激活记录的标签不自动挂载**，哪怕远没到上限（2026-09-15 裁决）。
+ *
+ * ── ③ 是这一轮改的，原来是 `if (order.length <= limit) return [...order]` ──────────
+ * 那行短路让"该挂载谁"**只由上限决定**，没有"用户这次点过它没有"这个维度。后果：
+ * 刷新一次，`recordShellInventory` 恢复出来的 N 个标签只要没超上限就全都挂起来 ——
+ * N 条 WS + N 次 tmux attach 同时发生，而用户只看其中一个。
+ * ⚠️ store 那边**本来就刻意不给恢复出来的标签发激活记录**
+ * （见 `createTerminalTabsSlice` 的 `recordShellInventory`），但意图被这行短路吃掉了：
+ * 记录有没有，在没超上限时根本不影响结果。现在"有记录"成了挂载的**准入条件**，
+ * 那个意图才真正生效。
+ *
+ * ⚠️ 代价是首次点一个恢复出来的标签要多一次 tmux re-attach（几百毫秒，静默，
+ * §5.3 明说这种重建不提示不确认）。scrollback 的权威一直在后端 tmux 里，不会丢。
+ *
+ * ⛔ 不要为了"省那一次 re-attach"把短路加回来：那等于让刷新去赌标签数没超上限。
  *
  * ⚠️ 返回值**保持 `order` 的顺序**，不是按激活序号排。调用方拿它去渲染，顺序一抖
  * React 就会把 DOM 搬来搬去，而终端实例挂在那些 DOM 上。
@@ -34,10 +49,11 @@ export function selectMountedSessions(
   activeSessionId: string,
   limit: number = TERMINAL_INSTANCE_LIMIT,
 ): string[] {
-  if (order.length <= limit) return [...order];
   const keep = new Set<string>([activeSessionId]);
   const rest = order
-    .filter((id) => id !== activeSessionId)
+    // ⚠️ `has` 而不是 `?? 0`：没有记录 = **没资格**，不是"排在最后"。
+    // 用 `?? 0` 的话它们仍然会在名额有余时被捞进来 —— 那正是上面说的那个口子。
+    .filter((id) => id !== activeSessionId && activatedAt.has(id))
     .sort((a, b) => (activatedAt.get(b) ?? 0) - (activatedAt.get(a) ?? 0));
   for (const id of rest) {
     if (keep.size >= limit) break;
