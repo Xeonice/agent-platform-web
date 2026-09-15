@@ -8,7 +8,7 @@
 //
 // ⚠️ 它**不持有** xterm 实例，也不碰 socket —— 那是 `useTerminalInstance` 与
 //    `useSandboxTerminalSocket` 的事。这里只管"有哪几个标签、谁在前台"。
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useAppStore } from '@/stores';
 import { agentSessionIdOf } from '@/stores/createTerminalTabsSlice';
 import { withTerminalTarget } from '@/lib/terminal/terminalSocket';
@@ -165,6 +165,30 @@ export function useTerminalSessions(
     activeOf !== undefined && tabs.some((t) => t.sessionId === activeOf)
       ? activeOf
       : agentSessionId;
+
+  /**
+   * ⭐ **给"没走过 `selectTab` 就成为活跃"的会话补一次激活记录**（2026-09-15 裁决）。
+   *
+   * 唯一会落进这里的是 **Agent 标签**：它不在 `shellTabsOf` 里（是上面 `tabs` memo
+   * 合成的），`openShellTab` 那条写入路径碰不到它；而首次打开沙箱时它是**默认选中**
+   * 的（`activeSessionId` 的回落分支），也不经过 `selectTab`。于是它从来没有激活记录，
+   * `selectMountedSessions` 里排序拿不到值 ⇒ 它在 LRU 里**恒垫底**，标签一超上限
+   * 它第一个出局 —— 而它恰恰是用户最可能切回去的那个（任务本身，`closable: false`）。
+   *
+   * ⛔ **不在 `selectMountedSessions` 里给 Agent 加特例**：那会让 LRU 多一条与"最近
+   * 使用"无关的规则，而真正缺的东西是一条**本就该有的记录** —— 它此刻确实是活跃的。
+   * 补上之后 LRU 语义保持干净：长期不看它，它照样会被淘汰，这是对的。
+   *
+   * ⚠️ 判据是 `!activatedAt.has(...)` 而不是"是不是 Agent 标签"：这条规则说的是
+   * "活跃的会话必然被激活过"，与是谁无关。⛔ 写成认 Agent 的话，将来任何一个
+   * 绕开 `selectTab` 成为活跃的标签都会再犯同一个病。
+   *
+   * ⚠️ 它**不会**给恢复出来的标签发记录：那些只有被 `selectTab` 点中才会变成活跃，
+   * 而那条路本来就 `markTabActivated`。`activeSessionOf` 不落盘，刷新后回落到 Agent。
+   */
+  useEffect(() => {
+    if (!activatedAt.has(activeSessionId)) markTabActivated(activeSessionId);
+  }, [activatedAt, activeSessionId, markTabActivated]);
 
   const mountedSessionIds = useMemo(
     () =>

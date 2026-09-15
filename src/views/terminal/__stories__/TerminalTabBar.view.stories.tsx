@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { expect, fn, userEvent, within } from 'storybook/test';
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { TerminalTabBarView } from '@/views/terminal/TerminalTabBar.view';
 
 const meta: Meta<typeof TerminalTabBarView> = {
@@ -193,16 +193,28 @@ export const LaunchMenu: Story = {
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
+    /*
+     * ⚠️ 下拉 2026-09-15 换成 shadcn `DropdownMenu`，**菜单内容挂在 Radix `Portal` 上**
+     * ⇒ 菜单项要从 `document.body` 上找，⛔ 不在 `canvasElement` 里（触发器还在）。
+     * 与设置菜单、项目菜单那两处同一条纪律。
+     */
+    const body = within(document.body);
     await userEvent.click(canvas.getByTestId('terminal-tab-new'));
-    await expect(canvas.getByTestId('terminal-launch-menu')).toBeInTheDocument();
+    await expect(await body.findByTestId('terminal-launch-menu')).toBeInTheDocument();
 
     // 选一个 CLI ⇒ 带着 runtimeId 上报。
-    await userEvent.click(canvas.getByTestId('terminal-launch-claude-code'));
+    await userEvent.click(body.getByTestId('terminal-launch-claude-code'));
     await expect(args.onNewTerminal).toHaveBeenCalledWith('claude-code');
+
+    // ⚠️ 等菜单真正卸载再开第二次：Radix 的关闭走退场动画，不等的话下一轮
+    // 会拿到正在退场、已经 detach 的旧节点，点下去什么都不发生。
+    await waitFor(async () => {
+      await expect(body.queryByTestId('terminal-launch-menu')).toBeNull();
+    });
 
     // 纯终端那一项**不带** runtimeId（⛔ 不许给它编一个默认 runtime）。
     await userEvent.click(canvas.getByTestId('terminal-tab-new'));
-    await userEvent.click(canvas.getByTestId('terminal-launch-shell'));
+    await userEvent.click(await body.findByTestId('terminal-launch-shell'));
     await expect(args.onNewTerminal).toHaveBeenLastCalledWith(undefined);
   },
 };
@@ -225,7 +237,9 @@ export const LaunchMenuShellOnly: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByTestId('terminal-tab-new'));
-    await expect(canvas.queryByTestId('terminal-launch-menu')).toBeNull();
+    // ⛔ 连 Portal 里也不该有 —— 没有别的可选时它根本不是个菜单触发器。
+    await expect(within(document.body).queryByTestId('terminal-launch-menu')).toBeNull();
+    await expect(canvas.getByTestId('terminal-tab-new')).not.toHaveAttribute('aria-haspopup');
     // 零参调用 —— 与上一个 story 里显式传 `undefined` 不是同一件事（vitest 区分这两者），
     // 而这正是本用例要说的：没有别的可选时，[+ 新终端] 直接建一个纯终端。
     await expect(args.onNewTerminal).toHaveBeenCalledWith();

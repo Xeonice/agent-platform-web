@@ -261,6 +261,57 @@ describe('TerminalTabsContainer —— 后端清单接线', () => {
     expect(last?.query['kind']).toBe('shell');
   });
 
+  /**
+   * ⭐ **恢复出来的标签补回栏上，但不自动挂载**（2026-09-15 裁决）。
+   *
+   * 旧行为：`selectMountedSessions` 开头 `if (order.length <= limit) return [...order]`
+   * ⇒ 只要没超上限，恢复出来的标签全都立刻挂起来。刷新一次同时起 N 条 WS +
+   * N 次 tmux attach，而用户只看其中一个。
+   *
+   * ⚠️ 钉的是**挂载点**（`terminal-pane-*`）而不是标签本身 —— 标签必须在栏上
+   * （上一条用例钉着"点得回去"），⛔ 不在的是实例。两者一起看才完整。
+   * 变异：把那行短路加回 `selectMountedSessions` ⇒ 本条红。
+   */
+  it('⭐ 恢复出来的标签在栏上但**不挂载**（刷新不再同时起 N 条连接）', () => {
+    mount();
+    pushShells(`${SANDBOX}:0`, [{ shellId: A }, { shellId: B }]);
+
+    // 标签补回来了。
+    expect(screen.getByTestId(`terminal-tab-${SANDBOX}:shell:1`)).toBeInTheDocument();
+    expect(screen.getByTestId(`terminal-tab-${SANDBOX}:shell:2`)).toBeInTheDocument();
+
+    // ⛔ 但它们没有实例 —— 只有当前活跃的 Agent 那一个挂着。
+    expect(screen.queryByTestId(`terminal-pane-${SANDBOX}:shell:1`)).toBeNull();
+    expect(screen.queryByTestId(`terminal-pane-${SANDBOX}:shell:2`)).toBeNull();
+    expect(screen.getByTestId(`terminal-pane-${SANDBOX}:0`)).toBeInTheDocument();
+
+    // 点一下才起（静默重建，§5.3 明说不提示不确认）。
+    act(() => {
+      screen.getByTestId(`terminal-tab-${SANDBOX}:shell:1`).click();
+    });
+    expect(screen.getByTestId(`terminal-pane-${SANDBOX}:shell:1`)).toBeInTheDocument();
+  });
+
+  /**
+   * ⭐ **Agent 标签拿得到激活记录，不再在 LRU 里恒垫底**（2026-09-15 裁决）。
+   *
+   * 它不在 `shellTabsOf` 里、首次打开又是默认选中（不走 `selectTab`）⇒ 从来没有
+   * 激活记录，`selectMountedSessions` 排序时 `?? 0` 让它排在所有标签之后，
+   * 一超上限它第一个出局 —— 而它恰恰是用户最可能切回去的那个。
+   *
+   * 修法是 `useTerminalSessions` 里补一条"活跃的会话必然被激活过"的 effect。
+   * 变异：删掉那个 effect ⇒ 本条红（Agent 没有记录 ⇒ 切走后不再入选）。
+   */
+  it('⭐ 切走之后 Agent 的实例仍在（它有激活记录，不是恒垫底）', () => {
+    mount();
+    // 开一个终端并切过去 —— Agent 不再是活跃会话，只能靠激活记录保住自己。
+    clickNewTerminal();
+    expect(screen.getByTestId(`terminal-pane-${SANDBOX}:shell:1`).style.display).toBe('block');
+    expect(screen.getByTestId(`terminal-pane-${SANDBOX}:0`).style.display).toBe('none');
+    // ⛔ 藏起来 ≠ 卸掉：实例必须还在。
+    expect(screen.getByTestId(`mount-${SANDBOX}:0`)).toBeInTheDocument();
+  });
+
   it('⛔ 清单为 null（问不出来）⇒ 标签栏**就地说查不到**，不许静默、不许当成"没有"', () => {
     mount();
     pushShells(`${SANDBOX}:0`, null);

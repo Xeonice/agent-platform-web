@@ -1,6 +1,18 @@
-import { useState } from 'react';
 // 终端标签栏（P21-1 §3/§6，08 §5）：同一个 Task 的多路会话 + [+ 新终端]。
 // 纯展示，props 驱动，零副作用（07 §3 规则 1）。
+//
+// ⚠️ **2026-09-15：[+ 新终端] 的下拉从手写 `role="menu"` 换成 shadcn `DropdownMenu`。**
+// 手写那版自持 `menuOpen` 状态，且只做了 `role` 与 `aria-haspopup` 两个属性 ——
+// 键盘操作（方向键在项间移动、Esc 收起、关闭后焦点归位）、点外部收起、Portal 定位
+// 全都没有。换成 Radix 之后这些一并由 primitive 承担，本组件回到**零状态**。
+import { ChevronDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 export interface TerminalTabItem {
   sessionId: string;
   label: string;
@@ -51,7 +63,6 @@ export function TerminalTabBarView({
   launchOptions = [],
   inventoryUnavailable = false,
 }: TerminalTabBarProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
   // 只有"纯终端"一项时不值得给一个菜单（多一次点击换不到任何选择）。
   const runtimeChoices = launchOptions.filter((o) => o.runtimeId !== undefined);
   const hasChoice = runtimeChoices.length > 0;
@@ -112,45 +123,52 @@ export function TerminalTabBarView({
         新 Task（起一台机器、跑一个 agent），这里只是在**同一个** Task 里多开一个
         终端——两者曾经都叫"新建"，在同一屏上造成过歧义（design-notes 2026-09）。
       */}
-      <div className="relative ml-1">
-        <button
-          type="button"
-          data-testid="terminal-tab-new"
-          aria-haspopup={hasChoice ? 'menu' : undefined}
-          aria-expanded={hasChoice ? menuOpen : undefined}
-          className="h-8 rounded-t-md px-2 text-xs text-muted-foreground hover:text-foreground"
-          onClick={() => {
-            // 没有别的可选 ⇒ 直接开一个纯终端（见 `launchOptions` 的注释）。
-            if (hasChoice) setMenuOpen((v) => !v);
-            else onNewTerminal();
-          }}
-        >
-          + 新终端{hasChoice ? ' ▾' : ''}
-        </button>
-        {hasChoice && menuOpen ? (
-          <div
-            role="menu"
-            data-testid="terminal-launch-menu"
-            className="absolute right-0 top-8 z-10 min-w-32 rounded-md border border-border bg-popover py-1 shadow-md"
-          >
+      {/*
+        ⚠️ **两个分支不是样式差异，是语义差异**：没有别的可选时这就**不是**一个菜单触发器
+        —— 它是"按下去直接开一个纯终端"的普通按钮，⛔ 不许挂 `aria-haspopup`，也不该有
+        下拉。给一个只有一项的菜单等于凭空多要一次点击（见 `launchOptions` 注释）。
+      */}
+      {hasChoice ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="terminal-tab-new"
+              className="ml-1 h-8 gap-1 rounded-t-md px-2 text-xs text-muted-foreground hover:text-foreground"
+            >
+              + 新终端
+              <ChevronDown aria-hidden="true" className="size-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" data-testid="terminal-launch-menu" className="min-w-32">
             {launchOptions.map((option) => (
-              <button
+              <DropdownMenuItem
                 key={option.runtimeId ?? '__shell__'}
-                type="button"
-                role="menuitem"
                 data-testid={`terminal-launch-${option.runtimeId ?? 'shell'}`}
-                className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted"
-                onClick={() => {
-                  setMenuOpen(false);
+                className="text-xs"
+                onSelect={() => {
                   onNewTerminal(option.runtimeId);
                 }}
               >
                 {option.label}
-              </button>
+              </DropdownMenuItem>
             ))}
-          </div>
-        ) : null}
-      </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="terminal-tab-new"
+          className="ml-1 h-8 rounded-t-md px-2 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            onNewTerminal();
+          }}
+        >
+          + 新终端
+        </Button>
+      )}
       {/*
         第三态就地说出来。⚠️ 文案里**不许**出现"没有别的终端"这类断言 —— 我们不知道。
         也不说"出错了"：任务本身与现有这些标签都好好的，坏掉的只是"清点"这一件事。
