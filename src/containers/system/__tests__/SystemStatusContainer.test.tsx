@@ -163,7 +163,7 @@ afterEach(() => {
 });
 
 describe('两栏分组（Phase 1 补做：design/design-notes.md §1「系统状态左列大片空白」+ design/prototype.html #system）', () => {
-  it('左列＝本机资源水位＋诊断，右列＝沙箱环境状态＋连接状态＋出网代理，且各列内部顺序固定', async () => {
+  it('左列＝本机资源水位＋连接状态，右列＝沙箱环境状态＋出网代理，诊断占整行，且各列内部顺序固定', async () => {
     serve();
     renderCards();
     await screen.findByText('资源充足');
@@ -176,24 +176,32 @@ describe('两栏分组（Phase 1 补做：design/design-notes.md §1「系统状
     expect(
       within(left).getByRole('heading', { level: 2, name: /本机资源水位/ }),
     ).toBeInTheDocument();
-    expect(within(left).getByRole('heading', { level: 2, name: /诊断/ })).toBeInTheDocument();
+    expect(within(left).getByRole('heading', { level: 2, name: /连接状态/ })).toBeInTheDocument();
     expect(
       within(left).queryByRole('heading', { level: 2, name: /沙箱环境状态/ }),
     ).not.toBeInTheDocument();
-    expect(
-      within(left).queryByRole('heading', { level: 2, name: /连接状态/ }),
-    ).not.toBeInTheDocument();
+    /*
+     * ⭐ **诊断不在任何一列**（2026-09-15 按原型 v3 重排）：它的高度在「未跑 98px」与
+     * 「跑完八项 789px」之间跳，固定指派给某一列必然让另一列一会儿空一会儿挤。
+     * ⛔ 这两条否定断言是本次重排的**核心钉子** —— 把它塞回任一列就红。
+     */
+    expect(within(left).queryByRole('heading', { level: 2, name: /诊断/ })).not.toBeInTheDocument();
 
     expect(
       within(right).getByRole('heading', { level: 2, name: /沙箱环境状态/ }),
     ).toBeInTheDocument();
-    expect(within(right).getByRole('heading', { level: 2, name: /连接状态/ })).toBeInTheDocument();
+    expect(within(right).getByRole('heading', { level: 2, name: /出网代理/ })).toBeInTheDocument();
     expect(
       within(right).queryByRole('heading', { level: 2, name: /本机资源水位/ }),
     ).not.toBeInTheDocument();
     expect(
       within(right).queryByRole('heading', { level: 2, name: /诊断/ }),
     ).not.toBeInTheDocument();
+
+    // 诊断在它自己那一整行里（`lg:col-span-2`）。
+    const diagRow = screen.getByTestId('system-status-diagnostics-row');
+    expect(diagRow).toHaveClass('lg:col-span-2');
+    expect(within(diagRow).getByRole('heading', { level: 2, name: /诊断/ })).toBeInTheDocument();
 
     // ⚠️ MUTATION：把右列内部两张卡顺序对调（连接状态在前、沙箱环境状态在后）只有下面
     // 这条顺序断言会红——"两张卡都在右列"测不出顺序被打乱。
@@ -203,13 +211,13 @@ describe('两栏分组（Phase 1 补做：design/design-notes.md §1「系统状
     // ⚠️ 「出网代理」在 2026-09-14 加进右列：代理配置此前**只在向导里**，而向导在连通性
     //    全绿时根本不让人进那一步 —— 用户遇到「能连上但太慢」（实测 200 KB/s，镜像拉到
     //    84% 断掉）时，界面上没有任何路径能配代理。⇒ 设置页必须有常驻入口。
-    // ⚠️ 放右列是因为它是**表单卡、高度稳定**，不该跟最高的诊断卡挤一列。
-    expect(rightHeadings).toEqual(['沙箱环境状态', '连接状态', '出网代理']);
+    // ⚠️ 放右列是因为它是**表单卡、高度稳定**，与同样稳定的沙箱环境状态配成一列。
+    expect(rightHeadings).toEqual(['沙箱环境状态', '出网代理']);
 
     const leftHeadings = within(left)
       .getAllByRole('heading', { level: 2 })
       .map((h) => h.textContent.trim());
-    expect(leftHeadings).toEqual(['本机资源水位', '诊断']);
+    expect(leftHeadings).toEqual(['本机资源水位', '连接状态']);
 
     // ⛔ 不强制等高：v1 被推翻的「三列卡片强制等高空出一大截」（design-notes.md §1）
     // 在这里落地为两列各自 `flex flex-col`，不给 `items-stretch`/固定高度。
