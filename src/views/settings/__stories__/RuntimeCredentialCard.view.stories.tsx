@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { expect, within } from 'storybook/test';
 import { RuntimeCredentialCardView } from '@/views/settings/RuntimeCredentialCard.view';
 import type { AuthModeRow, RuntimeCredentialCardModel } from '@/types/runtimeCredential';
 
@@ -98,6 +99,15 @@ export const Unconfigured: Story = {
       ],
     },
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // ⭐ 「未配置」必须是 skipped（虚线框），⛔ 不是 fail：把下面这个值换成 'fail'
+    // 这条会先红——只断言「有个 pill」锁不住"用的是哪一态"。
+    await expect(canvas.getByTestId('credential-status-pill')).toHaveAttribute(
+      'data-status',
+      'skipped',
+    );
+  },
 };
 
 /** ⚠️ <7 天预警。 */
@@ -109,6 +119,13 @@ export const Expiring: Story = {
       rows: [{ ...accountRow, expiryLabel: '剩 6 天', expiryState: 'warning' }, apiKeyRowEmpty],
     },
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('credential-status-pill')).toHaveAttribute(
+      'data-status',
+      'warn',
+    );
+  },
 };
 
 /** ❌ 已过期。 */
@@ -119,5 +136,12 @@ export const Expired: Story = {
       status: 'expired',
       rows: [{ ...accountRow, expiryLabel: '已过期', expiryState: 'expired' }, apiKeyRowEmpty],
     },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByTestId('credential-status-pill')).toHaveAttribute(
+      'data-status',
+      'fail',
+    );
   },
 };

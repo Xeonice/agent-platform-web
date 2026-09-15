@@ -20,6 +20,27 @@ const MENU: (SettingsMenuItem & { href: string })[] = [
   { key: 'system', label: '系统状态', icon: Settings, href: '/settings/system' },
 ];
 
+/**
+ * 每个子页归哪个宽度档。档位**定义**与理由写在 `SettingsLayout.view.tsx` 文件头，
+ * 这里只管"哪页归哪档"。
+ *
+ * ⚠️ **写成按 key 穷举的 Record，⛔ 不是 `activeKey === 'x' ? a : b` 那种三元**：
+ * 三元有一个**静默的默认**，新增子页会不声不响地继承它。而这两档的差别是实打实的
+ * （`max-w-3xl` 720px vs 满宽），继承错了就是一页白白空掉一半或一页表单拉到满屏。
+ * Record 少写一个 key，tsc 当场就红 —— 逼着加页的人做一次选择。
+ *
+ * ⚠️ 镜像页归 `wide` 是 design-notes.md Phase 6 的裁决：注册表单在**弹层**里，
+ * 页面本体（`src/views/image/*.view.tsx`）里 `<Input`/`<Label`/`<form` **全为 0 处**，
+ * 它是列表看板不是表单页 —— 按表单页给 `max-w-3xl` 实测左右各空约 250px，
+ * 反而把卡内的 sha256 摘要与运行参数挤成三行。
+ */
+const SETTINGS_WIDTH: Record<SettingsMenuItem['key'], 'form' | 'wide'> = {
+  // 帐号登录 / API Key 两组输入：`max-w-3xl` 才不会让 label 与 input 离得太远。
+  credentials: 'form',
+  images: 'wide',
+  system: 'wide',
+};
+
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -36,11 +57,9 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
     };
   }, [router]);
 
-  // ⚠️ 系统状态是**看板**（两栏卡片栅格），要满宽；凭证/镜像是**表单**，`max-w-3xl`
-  //    才不会让 label 与 input 离得太远。档位的理由写在 `SettingsLayout.view.tsx` 文件头。
   return (
     <SettingsLayoutView
-      width={activeKey === 'system' ? 'wide' : 'form'}
+      width={SETTINGS_WIDTH[activeKey]}
       menu={
         <SettingsMenuView
           items={MENU}

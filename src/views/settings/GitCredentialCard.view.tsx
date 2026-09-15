@@ -6,6 +6,7 @@
 //    屏幕上就是「○ 未配置」+ [配置 SSH 密钥] —— 用户会以为自己的密钥被清了，然后重新配一份。
 //    加载失败必须单独说，并给 [重试]，绝不给「去配一个新的」这种引导。
 import { Button } from '@/components/ui/button';
+import { StatusPill } from '@/components/ui/status-pill';
 import { KnownHostsRowView } from '@/views/settings/KnownHostsRow.view';
 import { TestConnectionResultView } from '@/views/settings/TestConnectionResult.view';
 import type { MaskedGitCredential } from '@/types/gitCredential';
@@ -60,7 +61,11 @@ export function GitCredentialCardView({
   if (credential === null) {
     return (
       <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border p-4">
-        <p className="text-sm text-muted-foreground">○ 未配置</p>
+        {/* ⭐ 状态用 StatusPill 的 skipped（虚线框），⛔ 不是 fail：没配 Git 凭证不等于
+            出错了，是「这一路没走」（design/prototype.html #credentials 第 663/717 行同款）。 */}
+        <StatusPill status="skipped" data-testid="git-unconfigured-badge">
+          未配置
+        </StatusPill>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={onConfigureSsh}>
             配置 SSH 密钥

@@ -9,8 +9,9 @@
 //   [重新验证] 问「这个 digest 还合格吗」——只改三级结论，不动 digest、不动 isActive；
 //   [检查更新] 问「这个 tag 现在还指向它吗」——才谈得上换镜像。
 import { useState, type ReactNode } from 'react';
-import { AlertTriangle, Circle, Loader2, RefreshCw, Wrench } from 'lucide-react';
+import { AlertTriangle, Loader2, RefreshCw, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { StatusPill } from '@/components/ui/status-pill';
 import { ValidationResultView } from '@/views/image/ValidationResult.view';
 import type { ImageCardModel } from '@/types/image';
 
@@ -104,18 +105,14 @@ export function ImageCardView({
           </h3>
           <span className="font-mono text-xs text-muted-foreground">{model.refDisplay}</span>
         </div>
-        <span
-          className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
-          data-testid="enable-state"
-        >
-          <Circle
-            aria-hidden="true"
-            data-testid="enable-state-icon"
-            data-active={String(model.isActive)}
-            className={`h-2 w-2 fill-current ${model.isActive ? 'text-success' : 'text-muted-foreground'}`}
-          />
+        {/*
+          ⭐ 「已启用」也走 StatusPill，⛔ 不是小圆点 + 文字（那是第三套写法，见
+          design-notes.md Phase 6 ①）。「已禁用」用 `pending`（灰）—— ⛔ 不是 `fail`：
+          禁用是用户主动做的，不是坏了；它和"无效"是原型里刻意分开的两件事。
+        */}
+        <StatusPill status={model.isActive ? 'ok' : 'pending'} data-testid="enable-state">
           {model.isActive ? '已启用' : '已禁用'}
-        </span>
+        </StatusPill>
       </header>
 
       <div className="relative">
@@ -138,91 +135,103 @@ export function ImageCardView({
         )}
       </div>
 
-      {model.supportedRuntimes.length > 0 && (
-        <p className="text-xs text-muted-foreground">适用：{model.supportedRuntimes.join('、')}</p>
-      )}
+      {/*
+        ⭐ 满宽之后一行放得下：「适用 / 运行的版本 / 来源」从各占一整行改成一行三列
+        （design-notes.md Phase 6 / prototype.html #images 的 `sm:grid-cols-3`）。
+        ⚠️ 三个格子内部的文案/testid 原样未动——只是外层从三条 flex 行并成一个 grid，
+        没有削减信息，也没有替 `lib/image/imageCardModel.ts` 算好的文案（如 `lineage.text`
+        自带的"来源："前缀）加二次标签，避免同一句话被念两遍。
+      */}
+      <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
+        {model.supportedRuntimes.length > 0 && (
+          <p className="text-muted-foreground">适用：{model.supportedRuntimes.join('、')}</p>
+        )}
 
-      {/* ——— 身份行：ref + 钉定 digest + 解析时间，全是派生值（F21-4 §5.1）——— */}
-      <div
-        className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
-        data-testid="image-identity-row"
-      >
-        {model.digestState === 'pinned' && digestFull !== undefined ? (
-          <>
-            <span className="font-mono text-muted-foreground" data-testid="pinned-digest">
-              运行的版本：{digestExpanded ? digestFull : model.digestShort}
-            </span>
-            <button
-              type="button"
-              className="text-muted-foreground underline-offset-2 hover:underline"
-              onClick={() => {
-                setDigestExpanded((v) => !v);
-              }}
-            >
-              {digestExpanded ? '收起' : '展开全串'}
-            </button>
-            {onCopyDigest !== undefined && (
+        {/* ——— 身份行：ref + 钉定 digest + 解析时间，全是派生值（F21-4 §5.1）——— */}
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-1"
+          data-testid="image-identity-row"
+        >
+          {model.digestState === 'pinned' && digestFull !== undefined ? (
+            <>
+              <span className="font-mono text-muted-foreground" data-testid="pinned-digest">
+                运行的版本：{digestExpanded ? digestFull : model.digestShort}
+              </span>
               <button
                 type="button"
-                aria-label="复制版本号"
                 className="text-muted-foreground underline-offset-2 hover:underline"
                 onClick={() => {
-                  onCopyDigest(digestFull);
+                  setDigestExpanded((v) => !v);
                 }}
               >
-                复制
+                {digestExpanded ? '收起' : '展开全串'}
               </button>
-            )}
-          </>
-        ) : (
-          // 不留白、不显示假哈希：留白读作"没有 digest"，假哈希读作"已钉死"，两句都是假话。
-          <span className="flex items-center gap-1 text-amber-400" data-testid="digest-unresolved">
-            <AlertTriangle aria-hidden="true" className="h-3 w-3" />
-            版本未确定
-          </span>
-        )}
-
-        {/* 缺席就整行不渲染——不是渲染「解析于 NaN 前」。措辞是「解析于」而非「最后验证」（P21-4 §3）。 */}
-        {model.resolvedAtLabel !== undefined && (
-          <span className="text-muted-foreground" data-testid="resolved-at">
-            {model.resolvedAtLabel}
-          </span>
-        )}
-
-        {model.refKind === 'digest' && (
-          <span className="text-muted-foreground" data-testid="digest-ref-note">
-            按版本直接注册（没有 tag）
-          </span>
-        )}
-      </div>
-
-      {/*
-        ——— 来源行（后端 `derivedFromDigest`，注册期算好落库）———
-
-        ⚠️ **这个答案一直在 DTO 里，此前一处都没渲染。** 于是用户在这一页拿到 ✅，
-        到建任务时才撞 `IMAGE_PROVIDER_MISMATCH` —— 而「注册期就判掉」这套设计存在的
-        全部意义就是不让这一幕发生。
-        ⛔ **这一行只陈述事实，不下"能不能用"的结论**：那取决于锚点属于哪一档，是平台自己
-        的配置，卡片推不出来（判定与文案都在 `lib/image/imageCardModel.ts#imageLineage`）。
-      */}
-      <div
-        className="flex flex-col gap-0.5 text-xs"
-        data-testid="image-lineage"
-        data-lineage={model.lineage.kind}
-      >
-        <span
-          className={`flex items-center gap-1 ${
-            model.lineage.kind === 'unknown' ? 'text-amber-400' : 'text-muted-foreground'
-          }`}
-        >
-          {model.lineage.kind === 'unknown' && (
-            <AlertTriangle aria-hidden="true" className="h-3 w-3 shrink-0" />
+              {onCopyDigest !== undefined && (
+                <button
+                  type="button"
+                  aria-label="复制版本号"
+                  className="text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => {
+                    onCopyDigest(digestFull);
+                  }}
+                >
+                  复制
+                </button>
+              )}
+            </>
+          ) : (
+            // 不留白、不显示假哈希：留白读作"没有 digest"，假哈希读作"已钉死"，两句都是假话。
+            <span
+              className="flex items-center gap-1 text-amber-400"
+              data-testid="digest-unresolved"
+            >
+              <AlertTriangle aria-hidden="true" className="h-3 w-3" />
+              版本未确定
+            </span>
           )}
-          {model.lineage.text}
-        </span>
-        {model.lineage.note !== undefined && (
-          <span className="text-muted-foreground">{model.lineage.note}</span>
-        )}
+
+          {/* 缺席就整行不渲染——不是渲染「解析于 NaN 前」。措辞是「解析于」而非「最后验证」（P21-4 §3）。 */}
+          {model.resolvedAtLabel !== undefined && (
+            <span className="text-muted-foreground" data-testid="resolved-at">
+              {model.resolvedAtLabel}
+            </span>
+          )}
+
+          {model.refKind === 'digest' && (
+            <span className="text-muted-foreground" data-testid="digest-ref-note">
+              按版本直接注册（没有 tag）
+            </span>
+          )}
+        </div>
+
+        {/*
+          ——— 来源行（后端 `derivedFromDigest`，注册期算好落库）———
+
+          ⚠️ **这个答案一直在 DTO 里，此前一处都没渲染。** 于是用户在这一页拿到 ✅，
+          到建任务时才撞 `IMAGE_PROVIDER_MISMATCH` —— 而「注册期就判掉」这套设计存在的
+          全部意义就是不让这一幕发生。
+          ⛔ **这一行只陈述事实，不下"能不能用"的结论**：那取决于锚点属于哪一档，是平台自己
+          的配置，卡片推不出来（判定与文案都在 `lib/image/imageCardModel.ts#imageLineage`）。
+        */}
+        <div
+          className="flex flex-col gap-0.5"
+          data-testid="image-lineage"
+          data-lineage={model.lineage.kind}
+        >
+          <span
+            className={`flex items-center gap-1 ${
+              model.lineage.kind === 'unknown' ? 'text-amber-400' : 'text-muted-foreground'
+            }`}
+          >
+            {model.lineage.kind === 'unknown' && (
+              <AlertTriangle aria-hidden="true" className="h-3 w-3 shrink-0" />
+            )}
+            {model.lineage.text}
+          </span>
+          {model.lineage.note !== undefined && (
+            <span className="text-muted-foreground">{model.lineage.note}</span>
+          )}
+        </div>
       </div>
 
       {upstreamUpdate !== undefined && (

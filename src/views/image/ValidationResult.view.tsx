@@ -5,7 +5,22 @@
 //
 // ⚠️ 这里**没有** [保存]：能不能保存是注册弹窗的事（`RegisterImageModal.view`），
 // 结论区只负责说清楚结论。把两件事塞进一个组件，就会出现"结论已作废但保存还在"的缝。
-import { AlertTriangle, Check, X, type LucideIcon } from 'lucide-react';
+//
+// ⚠️ v3 原型收口（design-notes.md Phase 6 / prototype.html #images ①）：这一条从
+// "自制的带边框条"（手写 TONE_CLASS 边框色）改成"一行 StatusPill + 一句话"——颜色/
+// 图标交给 `StatusPill` 统一管（八态对照表见 status-pill.tsx），这里不再自己维护
+// 一套边框色。
+//
+// ⚠️⚠️ **`HEADLINE` 只放「细节」那一半，结论词归 pill**。产品文档 P21-4 §5 写的是
+// 「✅ 验证通过：镜像可用」这种「结论：细节」句式 —— 当时结论由 emoji 旁边的文字承担。
+// 换成 pill 之后 pill 自己就带文字（八态体系要求"图标 + 文字 + 颜色三重线索"，
+// design-notes 问题 2），如果 HEADLINE 仍保留整句，屏幕上就会念两遍：
+//   ⛔ `[✓ 验证通过] 验证通过：镜像可用`
+//   ✅ `[✓ 验证通过] 镜像可用`
+// **信息一个字没少**（结论 + 细节都还在），只是结论从句子里搬进了 pill。
+// ⛔ 不要把「验证通过 / 验证失败」这类结论词写回 HEADLINE —— 下面那条 story
+// 断言（结论词全页只出现一次）会红。
+import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import { Button } from '@/components/ui/button';
 import type { ImageValidationResultData } from '@/types/image';
 
@@ -15,23 +30,26 @@ export interface ValidationResultProps extends ImageValidationResultData {
 }
 
 const HEADLINE: Record<ImageValidationResultData['status'], string> = {
-  valid: '验证通过：镜像可用',
-  warning: '验证通过但有警告',
-  invalid: '验证失败：镜像不符合平台约定',
+  valid: '镜像可用',
+  // ⚠️「仍可用」这三个字不能省：⚠️ 档的产品语义是**验证通过了**、只是有需要注意的地方
+  //（`lib/image/imageManifestCards.ts` 的注释专门强调过这一点）。pill 只说「有警告」，
+  // 不说"还能不能用" —— 那正是用户看到黄色时第一个要问的。
+  warning: '镜像仍可用',
+  invalid: '镜像不符合平台约定',
 };
 
-/** 图标选择对齐 `StatusPill` 的 ok/warn/fail 三态同款（valid→Check、warning→AlertTriangle、invalid→X）。 */
-const HEADLINE_ICON: Record<ImageValidationResultData['status'], LucideIcon> = {
-  valid: Check,
-  warning: AlertTriangle,
-  invalid: X,
+/** pill 短标签——字面抄自 prototype.html #images 区块的 `.status-pill` 文案。 */
+const PILL_LABEL: Record<ImageValidationResultData['status'], string> = {
+  valid: '验证通过',
+  warning: '有警告',
+  invalid: '无效',
 };
 
-/** 警告是黄、失败是红、通过是绿——三级各自一个色，别混。 */
-const TONE_CLASS: Record<ImageValidationResultData['status'], string> = {
-  valid: 'border-emerald-500/40 text-emerald-400',
-  warning: 'border-amber-500/40 text-amber-400',
-  invalid: 'border-red-500/40 text-red-400',
+/** 结论 → StatusPill 八态之三（design-notes.md Phase 6：「通过→ok、有警告→warn、无效→fail」）。 */
+const PILL_STATUS: Record<ImageValidationResultData['status'], StatusPillStatus> = {
+  valid: 'ok',
+  warning: 'warn',
+  invalid: 'fail',
 };
 
 export function ValidationResultView({
@@ -41,22 +59,19 @@ export function ValidationResultView({
   pinnedDigestShort,
   onViewRequirements,
 }: ValidationResultProps) {
-  const HeadlineIcon = HEADLINE_ICON[status];
   return (
     <div
       data-testid="validation-result"
       data-status={status}
       role={status === 'invalid' ? 'alert' : 'status'}
-      className={`flex flex-col gap-2 rounded-md border p-3 text-sm ${TONE_CLASS[status]}`}
+      className="flex flex-col gap-2 text-sm"
     >
-      <p className="flex items-center gap-1.5 font-medium">
-        <HeadlineIcon
-          aria-hidden="true"
-          data-testid="validation-headline-icon"
-          className="h-4 w-4 shrink-0"
-        />
-        {HEADLINE[status]}
-      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusPill status={PILL_STATUS[status]} data-testid="validation-status-pill">
+          {PILL_LABEL[status]}
+        </StatusPill>
+        <span className="text-muted-foreground">{HEADLINE[status]}</span>
+      </div>
 
       {/* 「这个绿勾属于这个 digest，不属于这个 tag」（P21-4 §5 ★）——所以结论旁边就把 digest 摆出来。 */}
       {pinnedDigestShort !== undefined && status !== 'invalid' && (
