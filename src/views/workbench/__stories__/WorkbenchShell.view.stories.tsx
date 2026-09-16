@@ -609,3 +609,39 @@ export const WithOverlay: Story = {
     ),
   },
 };
+
+/**
+ * ⭐ **外观是三态单选，⛔ 不是一个「暗色」开关**（Phase 5）。
+ *
+ * 「跟随系统」不是「暗色」的反面 —— 它是第三种状态。做成开关的话，用户一旦选过
+ * 暗/亮就再也**收不回去**（没法表达"我不想管，跟着系统走"）。
+ * 变异：把三项换成一个 Switch、或去掉 `system` 那一项 ⇒ 本条红。
+ *
+ * ⚠️ 菜单内容挂 Radix `Portal` ⇒ 断言走 `within(document.body)`。
+ */
+export const ThemeChoiceIsThreeWay: Story = {
+  args: {
+    groups,
+    waitingInputCount: 0,
+    healthLabel: null,
+    terminalSlot,
+    theme: 'light',
+    onThemeChange: fn(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const body = within(document.body);
+    await userEvent.click(canvas.getByTestId('nav-settings-menu-trigger'));
+
+    // 三项都在，且当前选中的是 light。
+    for (const t of ['system', 'dark', 'light']) {
+      await expect(await body.findByTestId(`theme-${t}`)).toBeInTheDocument();
+    }
+    await expect(body.getByTestId('theme-light')).toHaveAttribute('aria-checked', 'true');
+    await expect(body.getByTestId('theme-system')).toHaveAttribute('aria-checked', 'false');
+
+    // 选「跟随系统」⇒ 把已经表过的态收回去。
+    await userEvent.click(body.getByTestId('theme-system'));
+    await expect(args.onThemeChange).toHaveBeenCalledWith('system');
+  },
+};

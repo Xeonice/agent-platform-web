@@ -32,6 +32,8 @@ export interface PersistedState {
   sidebarCollapsed: boolean;
   taskListFolds: Record<string, boolean>;
   bannerDismissedToday: Record<string, string>;
+  /** 主题偏好（Phase 5）。纯显示偏好，与 sidebarCollapsed / terminalFontSize 同类。 */
+  theme: 'system' | 'dark' | 'light';
   terminalFontSize: number;
   lastUsedRuntime: string | null;
   lastUsedImage: string | null;
@@ -60,6 +62,7 @@ export function partializeAppState(state: AppState): PersistedState {
     sidebarCollapsed: state.sidebarCollapsed,
     taskListFolds: state.taskListFolds,
     bannerDismissedToday: state.bannerDismissedToday,
+    theme: state.theme,
     terminalFontSize: state.terminalFontSize,
     lastUsedRuntime: state.lastUsedRuntime,
     lastUsedImage: state.lastUsedImage,

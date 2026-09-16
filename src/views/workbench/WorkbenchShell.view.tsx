@@ -9,8 +9,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { StatusDot } from '@/components/ui/status-pill';
@@ -60,6 +62,14 @@ const STATUS_FILTER_ORDER: readonly TaskStatusFilter[] = [
  * 270px，只剩 1px，换个字体渲染就溢出 —— 而现在没有滚动条，溢出是**直接看不见**，
  * 不像以前还能滑。`FilterChipsFitWithoutScrolling` 那条 story 钉的就是这件事。
  */
+const THEME_CHOICES = ['system', 'dark', 'light'] as const;
+/** ⚠️「跟随系统」排第一：它是默认值，也是"我不想管这件事"的那个选项。 */
+const THEME_LABEL: Record<ThemeChoice, string> = {
+  system: '跟随系统',
+  dark: '暗色',
+  light: '亮色',
+};
+
 const PRIMARY_STATUS_FILTERS: readonly TaskStatusFilter[] = ['all', 'preparing', 'running'];
 /**
  * ⚠️ 从 `STATUS_FILTER_ORDER` **派生**，⛔ 不手列第二份：两份各写一遍的话，将来加第八档
@@ -69,6 +79,9 @@ const PRIMARY_STATUS_FILTERS: readonly TaskStatusFilter[] = ['all', 'preparing',
 const OVERFLOW_STATUS_FILTERS: readonly TaskStatusFilter[] = STATUS_FILTER_ORDER.filter(
   (status) => !PRIMARY_STATUS_FILTERS.includes(status),
 );
+
+/** 主题三态（与 `hooks/_shared/useTheme` 同一口径）。 */
+export type ThemeChoice = 'system' | 'dark' | 'light';
 
 export interface WorkbenchShellProps {
   groups: ProjectGroup[];
@@ -136,6 +149,16 @@ export interface WorkbenchShellProps {
   hasNoFilterMatches?: boolean;
   /** 系统状态入口（并行开发中的 21-5 页面，本文件只负责给一个链接）。 */
   systemStatusHref?: string;
+  /**
+   * 主题偏好与切换（design-notes §4 Phase 5 第 3 条）。
+   *
+   * ⚠️ 入口放在**设置菜单**里而不是顶栏摆一个太阳/月亮图标：它是一次性设好就不再碰的
+   * 偏好，不是高频动作。顶栏那点横向空间留给真的每天要点的东西。
+   * ⚠️ 缺省 `'system'` + 可选回调：⛔ 让它必填会逼着每个 story / 测试都传一份，
+   * 而它们大多不关心主题。
+   */
+  theme?: ThemeChoice;
+  onThemeChange?: (theme: ThemeChoice) => void;
 }
 
 // ⚠️ 组头（含 clone 徽标与「⋯」）本轮抽成了 `ProjectGroupHeader.view`（F21-6 §10.5）：
@@ -165,12 +188,21 @@ export function WorkbenchShellView({
   onStatusFilterChange,
   hasNoFilterMatches = false,
   systemStatusHref = '/settings/system',
+  theme = 'system',
+  onThemeChange,
 }: WorkbenchShellProps) {
   const overflowFilterActive = OVERFLOW_STATUS_FILTERS.includes(statusFilter);
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       <header className="flex h-12 items-center gap-3 border-b border-border px-4">
-        <span className="font-semibold">Agent 管理平台</span>
+        {/*
+          ⚠️ 是 `h1` 不是 `span`（2026-09-15，axe `page-has-heading-one`）：
+          每页要有且只有一个一级标题，读屏用户靠它知道"我在哪个应用/哪一页"。
+          ⛔ 不要为了排版换回 `span` —— 视觉上它本来就是这一页最大的那行字，
+          `font-semibold` 与其余样式一个字没动，改的只是标签语义。
+          e2e/a11y.spec.ts 的 `page-has-heading-one` 钉着它。
+        */}
+        <h1 className="font-semibold">Agent 管理平台</h1>
         {healthLabel !== null && (
           <span className="text-xs text-error" data-testid="health-label">
             {healthLabel}
@@ -269,6 +301,34 @@ export function WorkbenchShellView({
                   系统状态
                 </Link>
               </DropdownMenuItem>
+
+              {/*
+                外观：三态单选。⚠️ 用 `RadioGroup` 而不是一个「暗色」开关 ——
+                「跟随系统」不是「暗色」的反面，它是第三种状态；做成开关就表达不了，
+                用户也就没法把已经表过的态**收回去**。
+              */}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                外观
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={theme}
+                onValueChange={(v) => {
+                  const next = THEME_CHOICES.find((t) => t === v);
+                  if (next !== undefined) onThemeChange?.(next);
+                }}
+              >
+                {THEME_CHOICES.map((t) => (
+                  <DropdownMenuRadioItem
+                    key={t}
+                    value={t}
+                    data-testid={`theme-${t}`}
+                    className="text-xs"
+                  >
+                    {THEME_LABEL[t]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

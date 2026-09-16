@@ -89,6 +89,19 @@ export interface UiSlice {
   expandProject: (projectId: string) => void;
 
   // —— 字号/记忆（persist）——
+  /**
+   * 主题偏好（design-notes §4 Phase 5 第 3 条）。
+   *
+   * ⚠️ 三态而不是布尔：`system` 跟随操作系统。但它**不是默认值** —— 默认是 `dark`
+   * （产品裁决，见下方初始值的注释）。给三态是为了让用户**能把已经表过的态收回去**：
+   * 做成「暗色」开关的话，"我不想管、跟着系统走"这个意思就没法表达。
+   *
+   * ⚠️ 落盘（`partializeAppState` 白名单）：它与 `sidebarCollapsed`/`terminalFontSize`
+   * 同类 —— 纯显示偏好，不含任何指令/凭证/内部路径，不触碰 15 §3.5 的红线。
+   */
+  theme: 'system' | 'dark' | 'light';
+  setTheme: (theme: 'system' | 'dark' | 'light') => void;
+
   terminalFontSize: number;
   lastUsedRuntime: string | null;
   lastUsedImage: string | null;
@@ -212,6 +225,18 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
       selectedProjectId: projectId,
       taskListFolds: { ...s.taskListFolds, [projectId]: false },
     }));
+  },
+
+  /*
+   * ⚠️ 默认 **`dark`**，⛔ 不是 `system`。
+   * 产品文档 P21「暗色终端风格」一行写着「**全局默认暗色**」—— 那是一次产品裁决，
+   * 不是没人管的缺省值。把默认改成"跟随系统"，等于让一个系统设成亮色的新用户
+   * 第一眼看到的不是产品定下来的样子；那是替产品改主意。
+   * `system` 是用户**可以自己选**的第三态，不是出厂值。
+   */
+  theme: 'dark',
+  setTheme: (theme): void => {
+    set({ theme });
   },
 
   terminalFontSize: 14,

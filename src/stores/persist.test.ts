@@ -8,10 +8,15 @@ import { partializeAppState, useAppStore, type PersistedState } from '@/stores';
 // 且 initialPrompt / 任何瞬时敏感字段绝不落盘。
 //
 // 8 → 9（S6 `selectedTaskId`，与 selectedSandboxId 同型的不透明选中指向）
-//   → 10（`selectedSandboxTerminalAt`，一个**时刻**，不含任何内容）。
+//   → 10（`selectedSandboxTerminalAt`，一个**时刻**，不含任何内容）
+//   → 11（Phase 5 `theme`，一个**显示偏好**，与 sidebarCollapsed / terminalFontSize 同类）。
 // 红线本身没动——指令/输出/凭证仍然一个都不落盘（下方用例逐条钉死）。
+//
+// ⚠️ 这条用例每加一个落盘字段就会红一次 —— **那是它的用途，不是麻烦**：
+// 它逼着加字段的人显式说一句"这个字段为什么可以落盘"，⛔ 而不是让白名单
+// 在一次次"顺手加一个"里慢慢长成黑名单。
 describe('persist partialize 白名单（15 §3.5 安全红线）', () => {
-  it('只输出白名单 10 字段', () => {
+  it('只输出白名单 11 字段', () => {
     const persisted = partializeAppState(useAppStore.getState());
     expect(Object.keys(persisted).sort()).toEqual(
       [
@@ -25,6 +30,7 @@ describe('persist partialize 白名单（15 §3.5 安全红线）', () => {
         'sidebarCollapsed',
         'taskListFolds',
         'terminalFontSize',
+        'theme',
       ].sort(),
     );
   });
