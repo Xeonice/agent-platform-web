@@ -1014,6 +1014,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前实例的版本三元组（构建期注入）。⏳ 不含「检查更新」——那是 21-8 §4 的 v1.5 区块，缺的是更新源的裁决不是代码 */
+        get: operations["SystemController_getVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/providers": {
         parameters: {
             query?: never;
@@ -1758,6 +1775,12 @@ export interface components {
                 truncated: boolean;
             };
             activeTasks: number;
+        };
+        SystemVersionResponseDto: {
+            version: string | null;
+            commit: string | null;
+            /** Format: date-time */
+            builtAt: string | null;
         };
         SystemProvidersResponseDto: {
             providers: {
@@ -3444,6 +3467,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemResourcesResponseDto"];
+                };
+            };
+        };
+    };
+    SystemController_getVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemVersionResponseDto"];
                 };
             };
         };
