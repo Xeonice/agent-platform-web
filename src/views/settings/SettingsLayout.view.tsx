@@ -18,10 +18,25 @@ export interface SettingsLayoutProps {
   menu: ReactNode;
   /** 内容区宽度档位，见文件头。缺省 `form`。 */
   width?: 'form' | 'wide';
+  /**
+   * 当前子页的名字，渲染成**视觉隐藏的 `h1`**。
+   *
+   * ⚠️ 为什么是 `sr-only` 而不是一个看得见的标题：这一区的设计**刻意不显示页面标题** ——
+   * 「我在哪一页」由左侧菜单的选中态回答（`aria-current="page"`）。加一个可见标题是
+   * 在没人要求的情况下改设计。但读屏用户拿不到"选中态"这个视觉线索，`h1` 正是给他们的
+   * 那一份（axe `page-has-heading-one`，2026-09-15 补）。
+   * ⛔ 不要把它改成可见标题来"顺便美化"，也⛔ 不要删掉它 —— e2e/a11y.spec.ts 钉着。
+   */
+  pageTitle: string;
   children: ReactNode;
 }
 
-export function SettingsLayoutView({ menu, width = 'form', children }: SettingsLayoutProps) {
+export function SettingsLayoutView({
+  menu,
+  width = 'form',
+  pageTitle,
+  children,
+}: SettingsLayoutProps) {
   return (
     <div className="flex h-full w-full flex-col bg-background text-foreground sm:flex-row">
       {menu}
@@ -30,6 +45,8 @@ export function SettingsLayoutView({ menu, width = 'form', children }: SettingsL
           data-width={width}
           className={`mx-auto w-full p-6 ${width === 'wide' ? 'max-w-none' : 'max-w-3xl'}`}
         >
+          {/* 视觉隐藏的一级标题，理由见 `pageTitle` 的 prop 注释。 */}
+          <h1 className="sr-only">{pageTitle}</h1>
           {children}
         </div>
       </main>

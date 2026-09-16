@@ -26,6 +26,7 @@ import { useRuntimeAuthSync } from '@/hooks/credential/useRuntimeAuthSync';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
 import { useOfflineMode } from '@/hooks/system/useGlobalBanner';
 import { useAppStore } from '@/stores';
+import { useTheme } from '@/hooks/_shared/useTheme';
 import { WorkbenchShellView } from '@/views/workbench/WorkbenchShell.view';
 import { AppDialogView } from '@/views/common/AppDialog.view';
 import { useRouter } from 'next/navigation';
@@ -72,6 +73,8 @@ export function WorkbenchContainer() {
   const setSelectedSandboxId = useAppStore((s) => s.setSelectedSandboxId);
   const selectedSandboxId = useAppStore((s) => s.selectedSandboxId);
   const currentModal = useAppStore((s) => s.currentModal);
+  // 主题偏好 + 把它同步到 `<html>`（首帧前那一次由 app/layout.tsx 的内联脚本负责）。
+  const { theme, setTheme } = useTheme();
   const setCurrentModal = useAppStore((s) => s.setCurrentModal);
   const selectedProjectForMenu = useAppStore((s) => s.selectedProjectForMenu);
   const setSelectedProjectForMenu = useAppStore((s) => s.setSelectedProjectForMenu);
@@ -362,6 +365,8 @@ export function WorkbenchContainer() {
 
   return (
     <WorkbenchShellView
+      theme={theme}
+      onThemeChange={setTheme}
       groups={groups}
       waitingInputCount={waitingInputCount}
       healthLabel={healthLabel}

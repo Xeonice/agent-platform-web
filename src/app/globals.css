@@ -142,6 +142,40 @@
   }
 }
 
+/*
+ * 尊重系统的「减少动态效果」（design-notes.md §4 Phase 5 第 1 条）。
+ * ⚠️ 前庭功能障碍的用户开这个开关不是为了省电，是**动效会让人眩晕/恶心**。
+ *
+ * ── 为什么这里敢把动效**全部**压掉 ────────────────────────────────────────────
+ * 通常「一刀切压掉」是危险的：转圈停下来会被读成「卡住了」，那是个假信号。
+ * 但这套设计体系里不会 —— 它有一条硬纪律：**图标 + 文字 + 颜色三重线索，
+ * 颜色/动效都不是唯一判据**（design-notes §1 问题 2，落地在 `status-pill.tsx`）。
+ * 具体到这个仓库：
+ *  · `animate-spin` 只出现在 `StatusPill` 的 `pending` 态与两处同类指示上，
+ *    而那个转圈的图标恒 `aria-hidden="true"`、**旁边永远有文字**（「运行中」这类）。
+ *    停下来丢的只是装饰，"还在进行"这件事由文字说着。
+ *  · `animate-pulse` 只在骨架屏上，骨架的**形状**本身就是占位信号，不靠脉动。
+ *  · `animate-in/out` 是 Radix 的进出场，压掉 = 瞬间出现/消失，正是要的结果。
+ *  · `transition-colors` 之类压掉 = 颜色瞬变，终态一模一样。
+ *
+ * ⛔ 所以**不要**在这里给 spinner 开豁免。真要改，先确认那处 spinner 旁边有没有文字 ——
+ * 如果有人新加了一个"只靠转圈表达进行中"的地方，该修的是那个地方，不是这条规则。
+ *
+ * ⚠️ 用 `0.01ms` 而不是 `0`：有些浏览器对 `0s` 不触发 `transitionend`/`animationend`，
+ * 而代码里可能有等这个事件的逻辑（Radix 的退场就等 `animationend`）—— 直接归零会让
+ * 元素永远卡在退场中。0.01ms 在人眼看来是瞬时，但事件照常发出。
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 html,
 body {
   height: 100%;

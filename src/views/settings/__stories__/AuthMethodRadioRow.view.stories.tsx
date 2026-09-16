@@ -62,12 +62,22 @@ export const NotConfigured: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    // ⭐ 「未配置」= skipped（虚线框），⛔ 不是 fail：它不是错误，是"这一路没走"。
-    // 只断言"有个 pill"锁不住这条——换成 fail 这条会先红。
-    await expect(canvas.getByTestId('auth-unconfigured-badge')).toHaveAttribute(
-      'data-status',
-      'skipped',
-    );
+    /*
+     * ⭐ **未配置的行上没有任何状态标记**（2026-09-16 裁决，原本挂着一个 `skipped` pill）。
+     *
+     * 三条理由（`AuthMethodRadioRow.view.tsx` 里有完整版）：按钮文案已经分得开
+     * （未配置「登录帐号 / 添加 API Key」vs 已配置「重新登录 / 更换」）；卡头已经说过
+     * 一次；而 `skipped` 是 warning 橙 —— 「二选一没选的那一路」是产品明说的正常状态，
+     * 给它橙色等于误报。⚠️ 橙色要留给真的用不了的那一个（整张卡未配置）。
+     *
+     * ⛔ 这是**否定断言**，且必须连"任何 `data-status` 都不在场"一起锁：
+     * 只断言那个 testid 不存在的话，换个 testid 把 pill 加回来照样绿。
+     */
+    await expect(canvas.queryByTestId('auth-unconfigured-badge')).toBeNull();
+    await expect(canvas.queryByText('未配置')).toBeNull();
+    await expect(canvasElement.querySelector('[data-status]')).toBeNull();
+    // 而"这里还没有"这件事由按钮说：⛔ 不是「更换」，是「添加 API Key」。
+    await expect(canvas.getByRole('button', { name: /添加 API Key|登录帐号/ })).toBeInTheDocument();
   },
 };
 

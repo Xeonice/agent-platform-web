@@ -60,6 +60,8 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
   return (
     <SettingsLayoutView
       width={SETTINGS_WIDTH[activeKey]}
+      // 视觉隐藏的 h1 —— 复用菜单里那份 label，⛔ 不另写一套页名（两份就会有不一致的那天）。
+      pageTitle={MENU.find((item) => item.key === activeKey)?.label ?? '设置'}
       menu={
         <SettingsMenuView
           items={MENU}

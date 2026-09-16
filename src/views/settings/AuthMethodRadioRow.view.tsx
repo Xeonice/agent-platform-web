@@ -157,9 +157,18 @@ export function AuthMethodRadioRowView({
         </div>
       ) : (
         <div className="flex flex-wrap gap-2 pl-6">
-          <StatusPill status="skipped" data-testid="auth-unconfigured-badge">
-            未配置
-          </StatusPill>
+          {/*
+            ⛔ **这一行不挂「未配置」标记**（2026-09-16 裁决）。三条理由：
+             ① **按钮文案已经分得开**：未配置是「登录帐号 / 添加 API Key」，已配置是
+                「重新登录 / 更换」。再加一个标记是把按钮已经说了的话重说一遍。
+             ② **卡头已经说过了**：整张卡未配置时，卡头那个 `skipped` pill 就是这句话。
+                原来卡头 + 两个子行一屏说三遍（`RuntimeCredentialCard` 的截图实证）。
+             ③ ⭐ **颜色是误报**：`skipped` 是 warning 橙。而「帐号登录 / API Key 二选一」
+                是产品明说的（见本页说明文案）—— 没选的那一路本来就该是空的，**不是缺陷**。
+                给它一个橙色虚线框等于在说"这里有问题"。
+            ⚠️ 橙色要留给**真的用不了**的那一个：整张卡未配置（这个 Agent 现在跑不了）。
+               一屏 4 个等重的橙框，反而把那一个淹掉了。
+          */}
           <Button
             type="button"
             variant="outline"
