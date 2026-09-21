@@ -5,6 +5,7 @@
 //    只断言前者的话，「渲染工作台再盖一层向导」那种写法照样全绿 —— 而它的代价是工作台真的
 //    挂载了：去拉项目列表、开 `/events` WS、恢复上次选中的 Task，而这台机器还没初始化完。
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { SSE_DIAGNOSE_SCHEMA_HASH } from '@/types/sse-protocol';
 import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
@@ -127,7 +128,7 @@ function serve(opts: ServeOpts = {}): void {
         },
       });
       return new HttpResponse(stream, {
-        headers: { 'content-type': 'text/event-stream', 'x-schema-hash': 'sb-diagnose-v1' },
+        headers: { 'content-type': 'text/event-stream', 'x-schema-hash': SSE_DIAGNOSE_SCHEMA_HASH },
       });
     }),
   );

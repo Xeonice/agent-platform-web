@@ -1,0 +1,28 @@
+# 只为 web/Dockerfile 的构建上下文服务。node_modules 不排除的话 build context
+# 光传输就要传几百 MB（本机实测 743M），且宿主编译的产物混进 builder 阶段的
+# `pnpm install` 毫无意义——依赖是在镜像里重新装的。
+node_modules
+.next
+
+# 测试/工具产物，构建期用不上，跟着仓库一起 COPY . . 纯浪费上下文体积
+e2e
+playwright-report
+test-results
+blob-report
+storybook-static
+.storybook
+coverage
+
+# 本机密钥与本机专属配置——绝不能进镜像层（会被任何拿到镜像的人 docker history/inspect 出来）
+.env
+.env.local
+.env.*.local
+
+.git
+.github
+.husky
+.vscode
+.idea
+
+*.log
+.DS_Store

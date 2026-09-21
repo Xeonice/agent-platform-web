@@ -5,6 +5,19 @@ import { dirname } from 'node:path';
 const nextConfig = {
   // 仓库外层存在其它 lockfile，显式锁定本仓为 tracing root，消除 Next 的多 lockfile 警告。
   outputFileTracingRoot: dirname(fileURLToPath(import.meta.url)),
+  /**
+   * ★ 容器化产物用（web/Dockerfile）。`standalone` 让 `next build` 额外产出
+   * `.next/standalone/server.js` —— 一个只带**被追踪到的依赖**（而非整个
+   * node_modules）的最小 Node 服务器，运行镜像因此能瘦到几十 MB 依赖而不是
+   * 几百 MB。
+   *
+   * ⚠️ 只影响构建**产出物**，不影响本地 `pnpm build` / `pnpm dev` / `pnpm start`
+   * 的正常路径：`next start` 与 `next dev` 走的是 `.next/` 本体，从不读
+   * `.next/standalone`；CI（`.github/workflows/ci.yml` 的 `build (next build)`）
+   * 只跑 `next build` 到成功为止，同样不关心这个目录存不存在。加这一行前已
+   * 核对过——不会破坏任何现有流程。
+   */
+  output: 'standalone',
   reactStrictMode: true,
   /**
    * ⚠️ 为 socket.io 而开，**不是**风格偏好。socket.io 的握手路径带尾斜杠
