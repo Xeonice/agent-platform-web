@@ -8,6 +8,7 @@
 //    · 断流时把已有结果一起清空  ⇒「中断后已到达项仍在」红（「诊断中断」那句照样渲染）
 //    · 资源 500 时渲染成 0% 水位 ⇒「失败不许伪装成空闲」那条否定断言红
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { SSE_DIAGNOSE_SCHEMA_HASH } from '@/types/sse-protocol';
 import { render, screen, within, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
@@ -134,7 +135,7 @@ function serve(
         },
       });
       return new HttpResponse(stream, {
-        headers: { 'content-type': 'text/event-stream', 'x-schema-hash': 'sb-diagnose-v1' },
+        headers: { 'content-type': 'text/event-stream', 'x-schema-hash': SSE_DIAGNOSE_SCHEMA_HASH },
       });
     }),
   );

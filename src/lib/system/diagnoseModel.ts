@@ -2,7 +2,7 @@
 //
 // ⚠️ **四条纪律都在这个文件里落地，且每一条都对应一个"改完看起来完全正常"的写法：**
 //
-//  ① **清单来自首帧 `start`，不是本地 `DIAGNOSE_CHECK_IDS`。** 八项并行，最快的可能是第 ⑥ 项；
+//  ① **清单来自首帧 `start`，不是本地 `DIAGNOSE_CHECK_IDS`。** 各项并行，最快的可能是第 ⑥ 项；
 //     "收到一项画一项"会先画出一行孤零零的「WS 回环 ✅」，看起来像诊断只有一项。而用本地
 //     常量当清单，则是在后端已经告诉你之后又信了一份可能过期的抄本。
 //
@@ -196,7 +196,7 @@ function itemFor(
  * 跟逐项图标对不上。⇒ 它跟着 `failCount` 一起出现、一起消失。
  */
 function summaryTextOf(done: DiagnoseDoneFrame): string {
-  // ⚠️ 八项**并行**，所以整轮 ≈ 最慢那项，不是各项之和。
+  // ⚠️ 各项**并行**，所以整轮 ≈ 最慢那项，不是各项之和。
   const elapsed = `整轮 ${formatDurationMs(done.totalMs)}`;
   const bad = [
     done.infoCount > 0 ? `${String(done.infoCount)} 项提示` : null,

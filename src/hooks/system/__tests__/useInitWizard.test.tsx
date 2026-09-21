@@ -8,6 +8,7 @@
 //    · 把 409 一律当成"已初始化 ⇒ 放行"  ⇒「`OFFLINE_NOT_ACKNOWLEDGED` 不放行」红
 //    · `PUT settings` 顺手也放行         ⇒「保存代理不发 init、initialized 仍 false」红
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { SSE_DIAGNOSE_SCHEMA_HASH } from '@/types/sse-protocol';
 import { renderHook, act, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
@@ -157,7 +158,7 @@ function serve(opts: ServeOpts = {}): void {
         },
       });
       return new HttpResponse(stream, {
-        headers: { 'content-type': 'text/event-stream', 'x-schema-hash': 'sb-diagnose-v1' },
+        headers: { 'content-type': 'text/event-stream', 'x-schema-hash': SSE_DIAGNOSE_SCHEMA_HASH },
       });
     }),
   );

@@ -130,10 +130,10 @@ describe('SSE_PROTOCOL_CANONICAL ↔ zod schema 自洽', () => {
     expect(DIAGNOSE_STATUSES).toContain('timeout');
   });
 
-  it('diagnose.checks：八项 id 与**顺序**都对得上（顺序本身是产品要求）', () => {
+  it('diagnose.checks：九项 id 与**顺序**都对得上（顺序本身是产品要求）', () => {
     // 首帧 `start` 按这个顺序下发、前端照它渲染占位；只断言集合会让一次重排安静通过。
     expect(describeEnum(DiagnoseCheckIdSchema)).toBe(segment('diagnose.checks'));
-    expect(DIAGNOSE_CHECK_IDS).toHaveLength(8);
+    expect(DIAGNOSE_CHECK_IDS).toHaveLength(9);
     expect(DIAGNOSE_CHECK_IDS[7]).toBe('preset-image');
   });
 
@@ -188,11 +188,11 @@ describe('SSE_PROTOCOL_CANONICAL ↔ zod schema 自洽', () => {
     ]);
   });
 
-  it('长度与 api 侧一致（821 字符）——字面量被改动时最先响的一条', () => {
-    expect(SSE_PROTOCOL_CANONICAL).toHaveLength(821);
+  it('长度与 api 侧一致（833 字符）——字面量被改动时最先响的一条', () => {
+    expect(SSE_PROTOCOL_CANONICAL).toHaveLength(833);
   });
 
   it('schema hash 是钉死的字面量（它是告知不是门，但版本本身不许悄悄变）', () => {
-    expect(SSE_DIAGNOSE_SCHEMA_HASH).toBe('sb-diagnose-v1');
+    expect(SSE_DIAGNOSE_SCHEMA_HASH).toBe('sb-diagnose-v2');
   });
 });

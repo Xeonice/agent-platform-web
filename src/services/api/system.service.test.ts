@@ -1,5 +1,6 @@
 // `services/api/system.service.ts` 单测（F21-5 §7.1 ⑥⑦）。MSW node server 由 vitest.setup.ts 全局 listen。
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { SSE_DIAGNOSE_SCHEMA_HASH } from '@/types/sse-protocol';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/mocks/node';
 import {
@@ -347,7 +348,11 @@ function serveDiagnose(chunks: readonly string[], opts: { hash?: string | null }
   server.use(
     http.post(`${API_BASE}/api/system/diagnose`, () => {
       const headers: Record<string, string> = { 'content-type': 'text/event-stream' };
-      const hash = opts.hash === undefined ? 'sb-diagnose-v1' : opts.hash;
+      // ⚠️ 这里**派生**而不是钉死字面量，与 `sse-protocol.test.ts` 的纪律不冲突：
+      //    那边钉的是「hash 这个值本身不许悄悄变」，而这个 fixture 表达的是
+      //    「服务端与我们同版本」。写死 ⇒ 每次改版都要追着改四个 fixture，
+      //    而它们一条都不是在测 hash 的取值（不匹配的行为由带显式 hash 的用例测）。
+      const hash = opts.hash === undefined ? SSE_DIAGNOSE_SCHEMA_HASH : opts.hash;
       if (hash !== null) headers['x-schema-hash'] = hash;
       return new HttpResponse(sseStream(chunks), { headers });
     }),
