@@ -205,7 +205,7 @@ export type DiagnoseRunPhase = 'idle' | 'running' | 'done' | 'aborted';
 
 export interface DiagnosticsCardModel {
   phase: DiagnoseRunPhase;
-  /** 恒八项、恒固定顺序；未开始时为空数组（还没有 `start` 帧，别用本地常量顶上）。 */
+  /** 项数与首帧一致、恒固定顺序；未开始时为空数组（还没有 `start` 帧，别用本地常量顶上）。 */
   items: DiagnosticItemModel[];
   /** `'8 项全部正常 · 整轮 5.0s'` / `'6 项正常 · 1 项警告 · 1 项失败（含超时）· 整轮 5.0s'`。 */
   summaryText?: string;

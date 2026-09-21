@@ -13,7 +13,7 @@
 import { z } from 'zod';
 
 /**
- * 八项检查的 id，**数组顺序 = 展示顺序**（P21-5 §6：异步并行但顺序固定）。
+ * 各项检查的 id，**数组顺序 = 展示顺序**（P21-5 §6：异步并行但顺序固定）。
  *
  * ⚠️ **前端不要拿它当渲染清单的来源。** 每一轮诊断的首帧（`start`）会把服务端那份原样
  * 下发，界面应当照那一帧渲染 —— 本常量的职责只有两个：给 zod 一个闭集，以及参与
@@ -102,7 +102,7 @@ export const DiagnoseStartFrameSchema = z.object({
 });
 export type DiagnoseStartFrame = z.infer<typeof DiagnoseStartFrameSchema>;
 
-// ——— 逐项结论：八项并行，到达顺序 ≠ 展示顺序，按 id 归位 ———
+// ——— 逐项结论：各项并行，到达顺序 ≠ 展示顺序，按 id 归位 ———
 export const DiagnoseCheckFrameSchema = z.object({
   event: z.literal('check'),
   id: DiagnoseCheckIdSchema,

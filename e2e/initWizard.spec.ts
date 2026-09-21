@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { SSE_DIAGNOSE_SCHEMA_HASH } from '../src/types/sse-protocol';
 import type { InitStatusDto, SystemResourcesDto, SystemSettingsDto } from '../src/types/system';
 import type { ProjectDto } from '../src/types/project';
 import type { SandboxDto } from '../src/types/sandbox';
@@ -132,7 +133,7 @@ async function routeInitApis(page: Page, opts: RouteOpts = {}): Promise<{ initCa
   await page.route('**/api/system/diagnose', async (route) => {
     await route.fulfill({
       status: 200,
-      headers: { 'content-type': 'text/event-stream', 'x-schema-hash': 'sb-diagnose-v1' },
+      headers: { 'content-type': 'text/event-stream', 'x-schema-hash': SSE_DIAGNOSE_SCHEMA_HASH },
       body: DIAGNOSE_BODY,
     });
   });

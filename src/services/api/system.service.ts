@@ -235,7 +235,7 @@ export class ProvisionStreamAborted extends Error {
 }
 
 export interface DiagnoseCallbacks {
-  /** 首帧：八项清单 + 单项超时预算。**照它渲染占位**，不要用本地 `DIAGNOSE_CHECK_IDS`。 */
+  /** 首帧：检查项清单 + 单项超时预算。**照它渲染占位**，不要用本地 `DIAGNOSE_CHECK_IDS`。 */
   onStart: (frame: DiagnoseStartFrame) => void;
   /** 逐项结论。到达顺序 ≠ 展示顺序，归位由上层按 `id` 做。 */
   onCheck: (frame: DiagnoseCheckFrame) => void;

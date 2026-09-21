@@ -1057,7 +1057,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 八项诊断，SSE 逐项流式（帧类型手写于两仓 sse-protocol.ts）。八项并行、单项超时 5s，整轮 ≈ 最慢那项；断连即中止剩余检查 */
+        /** 逐项诊断，SSE 流式（帧类型手写于两仓 sse-protocol.ts）。各项并行、单项超时 5s，整轮 ≈ 最慢那项；断连即中止剩余检查 */
         post: operations["SystemController_diagnose"];
         delete?: never;
         options?: never;
