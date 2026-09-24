@@ -95,6 +95,17 @@ function checkedRadiosNamed(group: RadioGroup): HTMLElement[] {
  *
  * 幂等（已选过就直接返回），好让它能统一插进既有用例而不打乱它们自己的选择。
  */
+/**
+ * 展开闸门里的授权面板。
+ *
+ * ⚠️ **这一步是判据的一部分，不是样板。** 闸门在场 ≠ 面板已挂载：面板挂载即 `begin()`，
+ * 而后端每次 begin 都在 helper 容器里新开一个 CLI 登录会话且不去重。所以「拦住」与
+ * 「开始登录」必须是两个动作 —— 见下方 ⭐⭐ 那条。
+ */
+async function openAuthGate(): Promise<void> {
+  fireEvent.click(await screen.findByTestId('auth-gate-start'));
+}
+
 async function chooseRuntime(id?: string): Promise<void> {
   const radios = await waitFor(() => {
     const found = radiosNamed('sandbox-runtime');
@@ -1050,6 +1061,8 @@ describe('SandboxTerminalContainer · 鉴权拦截层（P20 §5.1 三分支）',
     // 判据不止"按钮禁着":这条链路的原始故障就是**请求发出去了**,后端只能事后 WARN。
     expect(posted).toBe(0);
     // 分支②才说"只用配一次"——这是一次性语义,已过期那支说这句话是假的。
+    // ⚠️ 那句话在面板里,而面板要人点开(见 `openAuthGate` 的注释)。
+    await openAuthGate();
     expect(screen.getByText(/只.*配.*一次/)).toBeInTheDocument();
   });
 
@@ -1097,6 +1110,111 @@ describe('SandboxTerminalContainer · 鉴权拦截层（P20 §5.1 三分支）',
     expect(screen.getByTestId('runtime-identity')).toHaveTextContent(/即将到期/);
   });
 
+  /**
+   * ⭐⭐ 拦住 ≠ 已经替用户开始登录。
+   *
+   * ── 它修的是什么（2026-09-24 真机）──────────────────────────────────────────
+   * 闸门此前是 `authBlocked ? <AuthGateContainer/> : undefined` —— 由服务端的
+   * `credentialStatus` 直接决定面板挂不挂载。而面板**挂载即 `begin()`**
+   * （`AuthBranchSlot` 的 effect），后端 `beginAuth` 每次都在 helper 容器里新开一个
+   * CLI 登录会话、**既不去重也不取消上一个**。两者一叠加，「在下拉里选中一个没配凭证
+   * 的 Agent」这种纯浏览动作就会真的拉起一个登录进程。
+   *
+   * 实测：在新建任务面板里点三下单选框（claude-code → codex → claude-code，全程没碰
+   * 任何授权按钮），helper 里堆出 3 个隔离会话、2 个并存的 `claude setup-token`、
+   * 35 个 chrome（`claude setup-token` 会 xdg-open，而 AIO 镜像自带桌面），
+   * 内存 94MB → 479MB / 512MB（93.6%）—— 再点几下整个 helper OOM，届时连凭证刷新和
+   * 别的 runtime 登录一起死。用户看到的就是「任务里的授权卡死，凭证页却正常」。
+   *
+   * ⇒ 判据是**真的有没有发出 begin**，不是"面板长什么样"——后者正是这个 bug 藏身的地方。
+   */
+  it('⭐⭐ 闸门在场但没人点 ⇒ 一个 auth/begin 都不发；点了才发，且只发一次', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    // ⚠️ 必须显式给帐号方式：`runtimeDto` 默认只有 `api-key`，那条 tab 不发 begin，
+    //    用它当样本这条用例会「因为走错分支」而绿。
+    mockRuntimeRegistry([
+      runtimeDto({
+        id: 'codex',
+        credentialStatus: 'none',
+        authMethods: ['oauth-device', 'api-key'],
+      }),
+    ]);
+    let begins = 0;
+    server.use(
+      http.post(`${API_BASE}/api/runtimes/:rt/auth/begin`, () => {
+        begins += 1;
+        return HttpResponse.json({
+          challengeRef: 'ref-1',
+          method: 'oauth-device',
+          kind: 'device-code',
+          instructions: '在打开的页面里粘贴设备码。',
+          verificationUrl: 'https://example.invalid/device',
+          userCode: 'ABCD-EFGH1',
+        });
+      }),
+    );
+    renderContainer();
+    await chooseRuntime('codex');
+
+    // 闸门在场（拦住了），但**还没有人按下那个按钮**。
+    expect(await screen.findByTestId('auth-gate')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
+    // MUTATION: 把 authGateSlot 改回 `authBlocked ? <AuthGateContainer/> : undefined` ⇒ 本条红。
+    expect(begins).toBe(0);
+
+    await openAuthGate();
+    await waitFor(() => {
+      expect(begins).toBe(1);
+    });
+  });
+
+  /**
+   * ⭐ 切走再切回**不累积**登录会话。
+   *
+   * 闸门挂载条件此前完全由 `credentialStatus` 算出来 ⇒ 切到别的 runtime 面板卸载、
+   * 切回来又重新挂载 ⇒ 又一次 `begin`，而上一个会话在后端还占着（要等 15 分钟超时才
+   * `dispose`）。真机上就是这样一路堆到 OOM 的。
+   */
+  it('⭐ 切走再切回不会再发一次 begin（展开态由人控制，不由状态重算）', async () => {
+    mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
+    mockRuntimeRegistry([
+      runtimeDto({
+        id: 'codex',
+        credentialStatus: 'none',
+        authMethods: ['oauth-device', 'api-key'],
+      }),
+      runtimeDto({ id: 'claude-code', credentialStatus: 'active' }),
+    ]);
+    let begins = 0;
+    server.use(
+      http.post(`${API_BASE}/api/runtimes/:rt/auth/begin`, () => {
+        begins += 1;
+        return HttpResponse.json({
+          challengeRef: 'ref-1',
+          method: 'oauth-device',
+          kind: 'device-code',
+          instructions: '在打开的页面里粘贴设备码。',
+          verificationUrl: 'https://example.invalid/device',
+          userCode: 'ABCD-EFGH1',
+        });
+      }),
+    );
+    renderContainer();
+
+    await chooseRuntime('codex');
+    await openAuthGate();
+    await waitFor(() => {
+      expect(begins).toBe(1);
+    });
+
+    await chooseRuntime('claude-code'); // 切走：面板收起
+    await chooseRuntime('codex'); // 切回：闸门又在场，但面板**不该**自己回来
+
+    expect(await screen.findByTestId('auth-gate-start')).toBeInTheDocument();
+    // MUTATION: 去掉 onSelectRuntime 里的 authPanel.close() ⇒ 切回时面板仍展开 ⇒ 本条红。
+    expect(begins).toBe(1);
+  });
+
   it('闸门页脚 [管理所有凭证] → 跳凭证页（此前该 prop 只有 storybook 在传）', async () => {
     mockRegistry([{ name: 'aio', capabilities: caps(), isDefault: true }]);
     mockRuntimeRegistry([runtimeDto({ id: 'codex', credentialStatus: 'none' })]);
@@ -1104,6 +1222,7 @@ describe('SandboxTerminalContainer · 鉴权拦截层（P20 §5.1 三分支）',
     await chooseRuntime('codex');
 
     await screen.findByTestId('auth-gate');
+    await openAuthGate();
     fireEvent.click(screen.getByRole('button', { name: /管理所有凭证/ }));
     expect(nav.push).toHaveBeenCalledWith('/settings/credentials');
   });

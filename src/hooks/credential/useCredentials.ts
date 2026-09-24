@@ -2,14 +2,16 @@
 // 模式单选切换（确认/补配二分支）+ 吊销二次确认（受影响 Task + P0-4 文案）。副作用/lib/service 归 hook（07 §6）。
 // 凭证明文不经此 hook（粘贴 code / api-key 只在 AuthGateContainer 局部 state，15 §3.5）。
 import { useCallback, useMemo, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useRuntimes } from '@/hooks/credential/useRuntimes';
 import {
   useSetAuthMode,
   useRevokeRuntimeCredential,
-  notifyRuntimeAuthConfigured,
 } from '@/hooks/credential/useRuntimeAuthMutations';
+import {
+  useRuntimeAuthPanel,
+  type RuntimeAuthPanelTarget,
+} from '@/hooks/credential/useRuntimeAuthPanel';
 import {
   runtimeCardModel,
   switchModeDecision,
@@ -33,11 +35,13 @@ import type {
   RuntimeAuthMode,
 } from '@/types/runtimeCredential';
 
-/** 就地展开的授权面板定位（哪张卡的哪个方式）。 */
-export interface ExpandedAuthPanel {
-  runtimeId: string;
-  method: RuntimeAuthMethod;
-}
+/**
+ * 就地展开的授权面板定位（哪张卡的哪个方式）。
+ *
+ * ⚠️ 现在是共用类型的别名：展开态本身搬进了 {@link useRuntimeAuthPanel}，三处宿主
+ * （凭证页 / 向导 / 任务侧闸门）共用同一份。本名字留着是因为它是本 hook 的对外接口。
+ */
+export type ExpandedAuthPanel = RuntimeAuthPanelTarget;
 
 /** 切「当前使用」确认弹层状态。 */
 export interface PendingModeSwitch {
@@ -139,14 +143,13 @@ function errorMessageOf(error: unknown, fallback: string): string {
 }
 
 export function useCredentials(): CredentialsRuntimeManager {
-  const queryClient = useQueryClient();
   const runtimes = useRuntimes();
   const affectedTasks = useAffectedTasks();
   const setAuthModeMutation = useSetAuthMode();
   const revokeMutation = useRevokeRuntimeCredential();
 
   const [search, setSearch] = useState('');
-  const [expandedPanel, setExpandedPanel] = useState<ExpandedAuthPanel | null>(null);
+  const authPanel = useRuntimeAuthPanel();
   const [pendingSwitch, setPendingSwitch] = useState<PendingModeSwitch | null>(null);
   const [pendingRevoke, setPendingRevoke] = useState<PendingRevokeIdentity | null>(null);
 
@@ -172,23 +175,27 @@ export function useCredentials(): CredentialsRuntimeManager {
     [allCards],
   );
 
-  const reauth = useCallback((runtimeId: string, method: RuntimeAuthMethod): void => {
-    setExpandedPanel({ runtimeId, method });
-  }, []);
+  const openPanel = authPanel.open;
 
-  const addKey = useCallback((runtimeId: string): void => {
-    setExpandedPanel({ runtimeId, method: 'api-key' });
-  }, []);
+  const reauth = useCallback(
+    (runtimeId: string, method: RuntimeAuthMethod): void => {
+      openPanel(runtimeId, method);
+    },
+    [openPanel],
+  );
 
-  const closePanel = useCallback((): void => {
-    setExpandedPanel(null);
-  }, []);
+  const addKey = useCallback(
+    (runtimeId: string): void => {
+      openPanel(runtimeId, 'api-key');
+    },
+    [openPanel],
+  );
 
-  const onAuthSuccess = useCallback((): void => {
-    // ⚠️ 刷新 + 提示走共用的那一份（向导也调它）—— 两处各写一遍时，向导那份漏了这两件事。
-    notifyRuntimeAuthConfigured(queryClient);
-    setExpandedPanel(null);
-  }, [queryClient]);
+  const closePanel = authPanel.close;
+
+  // ⚠️ 刷新 + 提示 + 收起，三件都在共用 hook 里（向导与任务侧调的是同一份）——
+  //    此前各写一遍时，向导那份只做了收起。
+  const onAuthSuccess = authPanel.handleSuccess;
 
   const switchMode = useCallback(
     (runtimeId: string, mode: RuntimeAuthMode): SwitchModeDecision | null => {
@@ -198,7 +205,7 @@ export function useCredentials(): CredentialsRuntimeManager {
       if (decision === null) return null;
       if (decision.kind === 'needs-setup') {
         // 切到未配置模式：不报错，就地展开该模式配置面板（F21-3 §5）。
-        setExpandedPanel({ runtimeId, method: decision.method });
+        openPanel(runtimeId, decision.method);
       } else {
         setPendingSwitch({
           runtimeId,
@@ -210,7 +217,7 @@ export function useCredentials(): CredentialsRuntimeManager {
       }
       return decision;
     },
-    [cardOf],
+    [cardOf, openPanel],
   );
 
   const confirmSwitch = useCallback((): void => {
@@ -346,7 +353,7 @@ export function useCredentials(): CredentialsRuntimeManager {
     cards,
     search,
     setSearch,
-    expandedPanel,
+    expandedPanel: authPanel.target,
     reauth,
     addKey,
     closePanel,

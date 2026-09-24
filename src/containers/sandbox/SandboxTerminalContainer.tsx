@@ -21,8 +21,8 @@
 // 类型层拦不住（契约是 `runtime: z.string().min(1)`，开放集**故意**不收窄），
 // 正确的防线只有"注册表驱动 UI + 前端不出现任何字面量默认值"这一条 —— 就是本文件现在的形状。
 import { useCallback, useEffect, useState, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { useProviders } from '@/hooks/sandbox/useProviders';
@@ -38,7 +38,7 @@ import { useAppStore } from '@/stores';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/dialog';
 import { AuthGateContainer } from '@/containers/credential/AuthGateContainer';
-import { invalidateRuntimeAuth } from '@/hooks/credential/useRuntimeAuthMutations';
+import { useRuntimeAuthPanel } from '@/hooks/credential/useRuntimeAuthPanel';
 import { SandboxLifecycleContainer } from '@/containers/sandbox/SandboxLifecycleContainer';
 import { HeadlessTaskContainer } from '@/containers/task/HeadlessTaskContainer';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
@@ -230,8 +230,80 @@ export function SandboxTerminalContainer({
   const selectedRuntimeDto = runtimeList.find((r) => r.id === runtime);
   const credentialStatus = selectedRuntimeDto?.credentialStatus;
   const authBlocked = credentialStatus === 'none' || credentialStatus === 'expired';
+
+  /**
+   * ⚠️⚠️ **闸门拦不拦由 `credentialStatus` 决定，面板展不展开只由人决定。**
+   *
+   * 这两件事此前是一件：`authBlocked` 为真就直接挂 `AuthGateContainer`，而面板挂载即
+   * `begin()`（`AuthBranchSlot` 的 effect），后端 `beginAuth` 又不去重 —— 于是「在下拉里
+   * 选中一个没配凭证的 Agent」这种纯浏览动作，就会在 helper 容器里真的拉起一个登录进程。
+   * 2026-09-24 真机实测：点三下单选框堆出 3 个会话、2 个并存的 `claude setup-token`、
+   * 35 个 chrome，内存 94MB→479MB/512MB —— 用户一个授权按钮都没按。
+   *
+   * ⇒ 与凭证页、初始化向导**共用同一份展开态**（`useRuntimeAuthPanel`）：拦下来先给一个
+   *   按钮，用户点了才挂面板。⛔ 不要再让服务端状态替用户按下那个按钮。
+   */
+  const authPanel = useRuntimeAuthPanel();
   const router = useRouter();
-  const queryClient = useQueryClient();
+
+  /**
+   * 闸门内容 —— **与凭证页 `CredentialsContainer.panelFor` 同构**：先给一个入口，
+   * 用户点了才挂 `AuthGateContainer`，面板里再给「收起」。
+   *
+   * ⚠️ 差别只在入口长在哪：凭证页是卡片行上的「配置 / 重新授权」，这里是闸门里的按钮。
+   * 展开态、成功后的三件事（刷新 + toast + 收起）两处走的是同一个 `useRuntimeAuthPanel`。
+   */
+  const renderAuthGate = (): ReactNode => {
+    if (!authBlocked || selectedRuntimeDto === undefined) return undefined;
+    if (!authPanel.isOpenFor(selectedRuntimeDto.id)) {
+      return (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            {credentialStatus === 'none'
+              ? `${selectedRuntimeDto.displayName} 还没有配置凭证，配置好才能发起任务。`
+              : `${selectedRuntimeDto.displayName} 的凭证已过期，重新授权后才能发起任务。`}
+          </p>
+          <button
+            type="button"
+            data-testid="auth-gate-start"
+            onClick={() => {
+              authPanel.open(selectedRuntimeDto.id);
+            }}
+            className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
+          >
+            {credentialStatus === 'none' ? '配置凭证' : '重新授权'}
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className="mt-1">
+        <AuthGateContainer
+          runtimeId={selectedRuntimeDto.id}
+          runtimeName={selectedRuntimeDto.displayName}
+          methods={selectedRuntimeDto.authMethods}
+          apiKeyPrefix={selectedRuntimeDto.apiKeyPrefix}
+          // 一次性语义文案只在"从未配置"那支出现;已过期是**再来一次**,那句
+          //「只需配置一次」在这里是假话(P20 §5.1 分支③走同一面板但说法不同)。
+          showOneTimeNotice={credentialStatus === 'none'}
+          onOpenCredentials={() => {
+            router.push('/settings/credentials');
+          }}
+          // 刷新 + toast + 收起三件一起（与凭证页、向导同一份实现）。runtimes 重取后
+          // `credentialStatus` 翻成 active，闸门自行消失、发起按钮解禁 —— 本层不记任何
+          // 凭证态（单一来源在服务端）。
+          onSuccess={authPanel.handleSuccess}
+        />
+        <button
+          type="button"
+          onClick={authPanel.close}
+          className="mt-2 text-xs text-muted-foreground underline-offset-2 hover:underline"
+        >
+          收起
+        </button>
+      </div>
+    );
+  };
 
   const handleCreate = (): void => {
     // 无可选档位 / 无可选 runtime / 该档位不支持终端时不发请求（按钮已禁用，这里兜住键盘等旁路触发）。
@@ -365,7 +437,11 @@ export function SandboxTerminalContainer({
             <NewSandboxPanelView
               runtimes={runtimeList}
               runtime={runtime}
-              onSelectRuntime={setPickedRuntime}
+              onSelectRuntime={(nextRuntime) => {
+                setPickedRuntime(nextRuntime);
+                // ⚠️ 切走必须收起：面板留着 = 换一个 runtime 又自动 begin 一次。
+                authPanel.close();
+              }}
               loadingRuntimes={runtimes.isPending}
               runtimesErrorMessage={
                 runtimes.isError ? runtimes.error.message || '请求失败' : undefined
@@ -383,27 +459,7 @@ export function SandboxTerminalContainer({
               onRetryProviders={() => {
                 void providers.refetch();
               }}
-              authGateSlot={
-                authBlocked && selectedRuntimeDto !== undefined ? (
-                  <AuthGateContainer
-                    runtimeId={selectedRuntimeDto.id}
-                    runtimeName={selectedRuntimeDto.displayName}
-                    methods={selectedRuntimeDto.authMethods}
-                    apiKeyPrefix={selectedRuntimeDto.apiKeyPrefix}
-                    // 一次性语义文案只在"从未配置"那支出现;已过期是**再来一次**,那句
-                    //「只需配置一次」在这里是假话(P20 §5.1 分支③走同一面板但说法不同)。
-                    showOneTimeNotice={credentialStatus === 'none'}
-                    onOpenCredentials={() => {
-                      router.push('/settings/credentials');
-                    }}
-                    // 配置成功 ⇒ 让 runtimes 列表重取,`credentialStatus` 翻成 active 后
-                    // 闸门自行消失、发起按钮解禁。不在本层记任何凭证态(单一来源在服务端)。
-                    onSuccess={() => {
-                      invalidateRuntimeAuth(queryClient);
-                    }}
-                  />
-                ) : undefined
-              }
+              authGateSlot={renderAuthGate()}
               runtimeIdentityNotice={
                 credentialStatus === 'active' || credentialStatus === 'expiring'
                   ? `将以 ${selectedRuntimeDto?.maskedIdentifier ?? '已配置凭证'} 身份运行${
