@@ -82,7 +82,7 @@ describe('EVT · REST/events ordering and reconnect resynchronization', () => {
     const tree = await screen.findByRole('navigation', { name: '项目分组任务树' });
     await within(tree).findByText('修复首页');
     expect(useAppStore.getState().sandboxStatuses['task-a']?.status).toBe('running');
-    expect(within(tree).getByText('运行中')).toBeInTheDocument();
+    expect(within(tree).getByRole('img', { name: '运行中' })).toBeInTheDocument();
     expect(reads).toHaveBeenCalledTimes(1);
     vi.useFakeTimers();
     act(() => {
@@ -98,7 +98,7 @@ describe('EVT · REST/events ordering and reconnect resynchronization', () => {
     await waitFor(() => {
       expect(reads.mock.calls.length).toBeGreaterThan(1);
     });
-    await within(tree).findByText('已停止');
+    await within(tree).findByRole('img', { name: '已停止' });
     expect(useAppStore.getState().sandboxStatuses['task-a']?.status).toBe('stopped');
     mounted.unmount();
   });
@@ -165,7 +165,7 @@ describe('EVT · REST/events ordering and reconnect resynchronization', () => {
       reconnect?.handlers.get('connect')?.(undefined);
     });
     vi.useRealTimers();
-    await within(tree).findByText('运行中');
+    await within(tree).findByRole('img', { name: '运行中' });
     await waitFor(() => {
       expect(within(tree).queryByText('任务 B')).not.toBeInTheDocument();
       expect(screen.getByTestId('restored-outside-list')).toHaveTextContent('running');
@@ -221,7 +221,7 @@ describe('EVT · REST/events ordering and reconnect resynchronization', () => {
       });
     });
     const tree = screen.getByRole('navigation', { name: '项目分组任务树' });
-    await within(tree).findByText('运行中');
+    await within(tree).findByRole('img', { name: '运行中' });
     expect(useAppStore.getState().sandboxStatuses['task-a']?.status).toBe('running');
     expect(screen.getByTestId('modal-new-task')).toBeInTheDocument();
     act(accepted.release);
