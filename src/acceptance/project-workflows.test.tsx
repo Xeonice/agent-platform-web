@@ -13,6 +13,61 @@ import { useAppStore } from '@/stores';
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 const close = () => undefined;
 describe('PRJ · create → clone/recovery → governance', () => {
+  it('AC-PRJ-005: fast Git completion still waits for Open project', async () => {
+    const ready = vi.fn();
+    server.use(
+      http.post(`${API}/api/projects`, () =>
+        HttpResponse.json(project({ cloneStatus: 'ready' }), { status: 202 }),
+      ),
+    );
+    mount(<NewProjectContainer onProjectReady={ready} onCancel={close} />);
+    fireEvent.change(await screen.findByLabelText('项目名称'), {
+      target: { value: 'infra-scripts' },
+    });
+    fireEvent.change(screen.getByLabelText('仓库地址'), {
+      target: { value: 'https://github.com/acme/infra.git' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '创建项目' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('项目可用了');
+    expect(ready).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '打开项目' }));
+    expect(ready).toHaveBeenCalledWith('project-a');
+  });
+  it('AC-PRJ-005: failure announces its title, subject and cause before the credential return', async () => {
+    const cancel = vi.fn();
+    server.use(
+      http.post(`${API}/api/projects`, () =>
+        HttpResponse.json(project({ cloneStatus: 'cloning' }), { status: 202 }),
+      ),
+    );
+    mount(<NewProjectContainer onProjectReady={vi.fn()} onCancel={cancel} />);
+    fireEvent.change(await screen.findByLabelText('项目名称'), {
+      target: { value: 'infra-scripts' },
+    });
+    fireEvent.change(screen.getByLabelText('仓库地址'), {
+      target: { value: 'https://github.com/acme/infra.git' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '创建项目' }));
+    await screen.findByText('正在克隆项目…');
+    act(() => {
+      useAppStore.getState().applyProjectCloneEvent({
+        event: 'project.clone_progress',
+        projectId: 'project-a',
+        phase: 'failed',
+        errorCode: 'CLONE_FAILED_PERMISSION',
+      });
+    });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('克隆失败');
+    expect(alert).toHaveTextContent('acme-web');
+    expect(alert).toHaveTextContent('远端拒绝了这次访问');
+    fireEvent.click(screen.getByRole('button', { name: '配置 Git 凭证' }));
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().pendingProjectCreate).toMatchObject({
+      projectId: 'project-a',
+      url: 'https://github.com/acme/infra.git',
+    });
+  });
   it('AC-PRJ-002/006: empty source omits repository/branch and becomes ready without clone UI', async () => {
     const accepted = vi.fn();
     const ready = vi.fn();

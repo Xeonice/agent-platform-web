@@ -365,8 +365,14 @@ export function useGitCredentialManager(): GitCredentialManager {
 
   const retryClone = (): void => {
     if (pendingProjectCreate === null) return;
-    retryCloneMutation.mutate(pendingProjectCreate.projectId, {
+    const projectId = pendingProjectCreate.projectId;
+    retryCloneMutation.mutate(projectId, {
       onSuccess: () => {
+        const store = useAppStore.getState();
+        store.setSelectedSandboxId(null);
+        store.setSelectedProjectId(projectId);
+        store.setCurrentModal(null);
+        store.setProjectCreateSource(null);
         setPendingProjectCreate(null);
         router.push('/');
       },

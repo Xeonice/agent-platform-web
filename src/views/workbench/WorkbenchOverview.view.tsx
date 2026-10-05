@@ -233,7 +233,7 @@ export function WorkbenchOverviewView({
                 onClick={() => {
                   onNewProject(source);
                 }}
-                className="flex flex-col gap-4 rounded-[var(--v2-radius-xl)] bg-card p-6 text-left shadow-[var(--v2-shadow-card)] hover:shadow-[var(--v2-shadow-raised)]"
+                className="flex flex-col gap-4 rounded-[var(--v2-radius-xl)] bg-card p-6 text-left shadow-[shadow:var(--v2-shadow-card)] hover:shadow-[shadow:var(--v2-shadow-raised)]"
                 aria-haspopup="dialog"
                 aria-labelledby={`welcome-${source}-title`}
                 aria-describedby={`welcome-${source}-description`}
@@ -266,7 +266,7 @@ export function WorkbenchOverviewView({
               <h3 id="overview-resources" className="mb-3 text-sm font-medium">
                 本机资源
               </h3>
-              <div className="space-y-3 rounded-md bg-card p-4 text-sm shadow-[var(--v2-shadow-card)]">
+              <div className="space-y-3 rounded-md bg-card p-4 text-sm shadow-[shadow:var(--v2-shadow-card)]">
                 {resourceRows === undefined ? (
                   resourcesError ? (
                     <div role="alert">
@@ -292,7 +292,7 @@ export function WorkbenchOverviewView({
                 需要你处理{' '}
                 <span className="ml-1 text-xs text-muted-foreground">{attention.length}</span>
               </h3>
-              <div className="overflow-hidden rounded-md bg-card shadow-[var(--v2-shadow-card)]">
+              <div className="overflow-hidden rounded-md bg-card shadow-[shadow:var(--v2-shadow-card)]">
                 {attention.length === 0 ? (
                   <p className="p-4 text-sm text-muted-foreground">目前没有需要你处理的任务。</p>
                 ) : (
@@ -326,7 +326,7 @@ export function WorkbenchOverviewView({
               <h3 id="overview-recent" className="mb-3 text-sm font-medium">
                 最近任务
               </h3>
-              <div className="overflow-hidden rounded-md bg-card shadow-[var(--v2-shadow-card)]">
+              <div className="overflow-hidden rounded-md bg-card shadow-[shadow:var(--v2-shadow-card)]">
                 {recent.length === 0 ? (
                   <p className="p-4 text-sm text-muted-foreground">
                     {statusFilter === 'waitingInput' || statusFilter === 'error'
@@ -377,11 +377,11 @@ export function WorkbenchOverviewView({
                   return (
                     <div
                       key={project.id}
-                      className="rounded-md bg-card shadow-[var(--v2-shadow-card)]"
+                      className="rounded-md bg-card shadow-[shadow:var(--v2-shadow-card)]"
                     >
                       <button
                         type="button"
-                        className="flex min-h-28 w-full flex-col gap-4 rounded-md p-4 text-left transition-shadow hover:shadow-[var(--v2-shadow-raised)]"
+                        className="flex min-h-28 w-full flex-col gap-4 rounded-md p-4 text-left transition-shadow hover:shadow-[shadow:var(--v2-shadow-raised)]"
                         onClick={() => {
                           onSelectProject(project.id);
                         }}

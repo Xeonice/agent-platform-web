@@ -12,7 +12,7 @@
 // ③ **刷新后的恢复走 `shells` 帧**（06 §5.5）：后端在 Agent 那条连接上报回"这个 Task
 //    下还活着哪几个用户终端"，标签栏据此**只加不减**地补回来。清单问不出来时
 //    （第三态）标签栏就地说"查不到"—— ⛔ 绝不渲染成"没有别的终端"。
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { TerminalContainer } from '@/containers/terminal/TerminalContainer';
 import { TerminalTabBarView } from '@/views/terminal/TerminalTabBar.view';
 import { useTerminalSessions } from '@/hooks/terminal/useTerminalSessions';
@@ -29,13 +29,6 @@ export interface TerminalTabsContainerProps {
    * ⛔ 由上层从**沙箱 DTO** 传下来，⛔ 不在这里用 `/api/runtimes` 全集现算。
    */
   availableRuntimes?: readonly string[];
-  /**
-   * 仪表壳工具栏的面包屑（design-notes.md §4 Phase 3 / 原型 `renderTerminal()`：
-   * `${项目名} / ${任务名}`）。**同一个 Task 下的每个标签都用同一句**——它说的是
-   * "这个终端属于哪个项目/哪个任务"，不是"这个标签叫什么"（标签名已经由
-   * `TerminalTabBarView` 单独顶栏显示，两者不重复）。
-   */
-  breadcrumb?: string;
   disabledReason?: string;
 }
 
@@ -43,9 +36,10 @@ export function TerminalTabsContainer({
   sandboxId,
   socketConfig,
   availableRuntimes = [],
-  breadcrumb,
   disabledReason,
 }: TerminalTabsContainerProps) {
+  // 活动会话的工具仍由自己的 TerminalMount 持有，只把视图放进共享终端栏。
+  const [toolbarTarget, setToolbarTarget] = useState<HTMLDivElement | null>(null);
   /**
    * runtimeId → 展示名。⚠️ 只拿**名字**：能开哪几个由沙箱行说了算（上面那个 prop），
    * 这里的列表只负责把 `claude-code` 译成「Claude Code」。
@@ -150,6 +144,7 @@ export function TerminalTabsContainer({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <TerminalTabBarView
+        toolsSlot={<div ref={setToolbarTarget} className="ml-auto shrink-0" />}
         tabs={tabs.map((t) => ({
           sessionId: t.sessionId,
           label: t.label,
@@ -194,7 +189,7 @@ export function TerminalTabsContainer({
                   onShellId={cb.onShellId}
                   onShells={cb.onShells}
                   registerSend={cb.registerSend}
-                  {...(breadcrumb === undefined ? {} : { breadcrumb })}
+                  toolbarTarget={toolbarTarget}
                 />
               </div>
             );

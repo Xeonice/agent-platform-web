@@ -80,7 +80,7 @@ export function RuntimeCredentialsSectionView({
             name="runtime-search"
             aria-label="搜索 Agent 名字或帐号尾号"
             placeholder="搜索 Agent 名字或帐号尾号…"
-            className="h-9 w-full rounded-md border border-border bg-background pl-9 pr-3 text-sm focus-visible:outline-none focus-visible:shadow-[var(--v2-focus-input)]"
+            className="h-9 w-full rounded-md border border-border bg-background pl-9 pr-3 text-sm focus-visible:outline-none focus-visible:shadow-[shadow:var(--v2-focus-input)]"
             value={search}
             onChange={(e) => {
               onSearch(e.target.value);

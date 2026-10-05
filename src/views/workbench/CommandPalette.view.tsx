@@ -41,7 +41,7 @@ export function CommandPaletteView({
           aria-modal="true"
           aria-describedby={undefined}
           onCloseAutoFocus={onCloseAutoFocus}
-          className="fixed left-1/2 top-[10vh] z-50 w-[calc(100%-2rem)] max-w-[640px] -translate-x-1/2 overflow-hidden rounded-[var(--v2-radius-xl)] border border-[var(--v2-border)] bg-[var(--v2-surface)] shadow-[var(--v2-shadow-modal)] focus:outline-none"
+          className="fixed left-1/2 top-[10vh] z-50 w-[calc(100%-2rem)] max-w-[640px] -translate-x-1/2 overflow-hidden rounded-[var(--v2-radius-xl)] border border-[var(--v2-border)] bg-[var(--v2-surface)] shadow-[shadow:var(--v2-shadow-modal)] focus:outline-none"
           data-testid="command-palette"
         >
           <DialogPrimitive.Title className="sr-only">查找任务、项目与动作</DialogPrimitive.Title>

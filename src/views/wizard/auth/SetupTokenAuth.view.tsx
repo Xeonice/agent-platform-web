@@ -73,7 +73,7 @@ export function SetupTokenAuthView({
             name="setup-token-code"
             autoComplete="off"
             placeholder="页面没给码就不用填"
-            className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-[13px] focus-visible:outline-none focus-visible:shadow-[var(--v2-focus-input)]"
+            className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-[13px] focus-visible:outline-none focus-visible:shadow-[shadow:var(--v2-focus-input)]"
             value={code}
             disabled={submitting}
             onChange={(e) => {

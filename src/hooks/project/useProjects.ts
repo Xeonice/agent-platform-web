@@ -18,7 +18,7 @@ import { sandboxListKeys } from '@/hooks/sandbox/useSandboxes';
 import { ApiErrorException } from '@/services/api/apiError';
 import { PROJECT_ERROR_COPY, projectErrorMessage } from '@/lib/project/projectErrorCopy';
 import { useAppStore } from '@/stores';
-import type { CreateProjectInput, ProjectDto } from '@/types/project';
+import type { CreateProjectInput, ProjectCloneState, ProjectDto } from '@/types/project';
 
 export const projectKeys = {
   all: () => ['projects'] as const,
@@ -60,26 +60,55 @@ function knownCloneErrorCode(code: string | undefined): ProjectDto['cloneErrorCo
   }
 }
 
+function withCloneProgress(project: ProjectDto, clone: ProjectCloneState | undefined): ProjectDto {
+  return clone === undefined
+    ? project
+    : {
+        ...project,
+        cloneStatus:
+          clone.phase === 'done' ? 'ready' : clone.phase === 'failed' ? 'failed' : 'cloning',
+        cloneErrorCode:
+          clone.phase === 'failed'
+            ? (knownCloneErrorCode(clone.errorCode) ?? project.cloneErrorCode)
+            : null,
+      };
+}
+
+function cloneSeed(project: ProjectDto): ProjectCloneState {
+  switch (project.cloneStatus) {
+    case 'ready':
+      return { phase: 'done' };
+    case 'failed':
+      return { phase: 'failed', errorCode: project.cloneErrorCode ?? undefined };
+    default:
+      return { phase: 'cloning' };
+  }
+}
+
 export function useProjects(): UseQueryResult<ProjectDto[]> {
   const clones = useAppStore((state) => state.projectClones);
   return useQuery({
     queryKey: projectKeys.all(),
-    queryFn: listProjects,
-    select: (projects) =>
-      projects.map((project) => {
-        const clone = clones[project.id];
-        return clone === undefined
-          ? project
-          : {
-              ...project,
-              cloneStatus:
-                clone.phase === 'done' ? 'ready' : clone.phase === 'failed' ? 'failed' : 'cloning',
-              cloneErrorCode:
-                clone.phase === 'failed'
-                  ? (knownCloneErrorCode(clone.errorCode) ?? project.cloneErrorCode)
-                  : null,
-            };
-      }),
+    queryFn: async () => {
+      const before = useAppStore.getState().projectClones;
+      const projects = await listProjects();
+      for (const project of projects) {
+        const current = useAppStore.getState();
+        const clone = current.projectClones[project.id];
+        // 请求期间的新事件/重试仍优先；没有新事件时 REST 可补回断线漏掉的终态。
+        if (clone !== before[project.id]) continue;
+        if (
+          project.cloneStatus === 'cloning' &&
+          (clone?.phase === 'cloning' || clone?.phase === 'slow')
+        )
+          continue;
+        const seed = cloneSeed(project);
+        if (clone?.phase === seed.phase && clone.errorCode === seed.errorCode) continue;
+        current.setCloneProgress(project.id, seed);
+      }
+      return projects;
+    },
+    select: (projects) => projects.map((project) => withCloneProgress(project, clones[project.id])),
     staleTime: 30_000,
   });
 }
@@ -89,10 +118,19 @@ export function useCreateProject(): UseMutationResult<ProjectDto, Error, CreateP
   return useMutation({
     mutationFn: createProject,
     onSuccess: (project) => {
-      queryClient.setQueryData<ProjectDto[]>(projectKeys.all(), (rows) => [
-        ...(rows ?? []),
-        project,
-      ]);
+      const existing = queryClient
+        .getQueryData<ProjectDto[]>(projectKeys.all())
+        ?.find((row) => row.id === project.id);
+      // 受理响应可能晚于事件或列表终态；只有没有进度时才填种子。
+      const seedSource =
+        existing !== undefined && existing.cloneStatus !== 'cloning' ? existing : project;
+      useAppStore.getState().seedCloneProgress(project.id, cloneSeed(seedSource));
+      const clone = useAppStore.getState().projectClones[project.id];
+      queryClient.setQueryData<ProjectDto[]>(projectKeys.all(), (rows) =>
+        rows?.some((row) => row.id === project.id)
+          ? rows.map((row) => (row.id === project.id ? withCloneProgress(row, clone) : row))
+          : [...(rows ?? []), withCloneProgress(project, clone)],
+      );
       void queryClient.invalidateQueries({ queryKey: projectKeys.all() });
     },
   });

@@ -2,6 +2,7 @@
 // 真正实例化 xterm 的子层（08 §2.2）：仅由 TerminalContainer 经 next/dynamic({ssr:false}) 懒加载。
 // xterm.css 由 useTerminalInstance（唯一 @xterm/* import 点）随 terminal chunk 注入（08 §2.3）。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
   useTerminalInstance,
@@ -51,12 +52,8 @@ export interface TerminalMountProps {
    * 还挂着的标签里借一条代发 `close_shell`（帧里带 shellId，见 10 §7.4）。
    */
   registerSend?: (send: ((frame: TerminalClientFrame) => boolean) | null) => void;
-  /**
-   * 仪表壳内工具栏的面包屑（design-notes.md §4 Phase 3 / 原型 `renderTerminal()`：
-   * `${项目名} / ${任务名}`）。缺席 ⇒ 不渲染工具栏——纯终端场景（没有项目/任务上下文
-   * 可供拼接）不该憋出一句空面包屑。
-   */
-  breadcrumb?: string;
+  /** 活动会话把工具放进共享终端栏；画布与PTY实例仍常驻原位置。 */
+  toolbarTarget?: HTMLDivElement | null;
 }
 
 export default function TerminalMount({
@@ -67,7 +64,7 @@ export default function TerminalMount({
   onShellId,
   onShells,
   registerSend,
-  breadcrumb,
+  toolbarTarget,
 }: TerminalMountProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const term = useTerminalInstance();
@@ -336,7 +333,20 @@ export default function TerminalMount({
   }, [active, term, sessionId]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
+      {active && toolbarTarget != null
+        ? createPortal(
+            <TerminalToolbarView
+              onCopy={handleCopy}
+              onClear={handleClear}
+              onDecreaseFontSize={handleDecreaseFontSize}
+              onIncreaseFontSize={handleIncreaseFontSize}
+              canDecreaseFontSize={fontSize > MIN_TERMINAL_FONT_SIZE}
+              canIncreaseFontSize={fontSize < MAX_TERMINAL_FONT_SIZE}
+            />,
+            toolbarTarget,
+          )
+        : null}
       {/*
         退避耗尽后必须给一条出路：ptySocket 现在真的会撞到上限并停手（STABLE_CONNECTION_MS），
         而终端上的"停手"＝用户正盯着的 shell 被判死。接线在这里，那个「手动重连」才不是死按钮。
@@ -351,24 +361,7 @@ export default function TerminalMount({
         {...(endedMessage === null ? {} : { sessionEndedMessage: endedMessage })}
       />
       <div className="min-h-0 flex-1">
-        <TerminalPaneView
-          ref={containerRef}
-          {...(breadcrumb === undefined
-            ? {}
-            : {
-                toolbar: (
-                  <TerminalToolbarView
-                    breadcrumb={breadcrumb}
-                    onCopy={handleCopy}
-                    onClear={handleClear}
-                    onDecreaseFontSize={handleDecreaseFontSize}
-                    onIncreaseFontSize={handleIncreaseFontSize}
-                    canDecreaseFontSize={fontSize > MIN_TERMINAL_FONT_SIZE}
-                    canIncreaseFontSize={fontSize < MAX_TERMINAL_FONT_SIZE}
-                  />
-                ),
-              })}
-        />
+        <TerminalPaneView ref={containerRef} />
       </div>
     </div>
   );

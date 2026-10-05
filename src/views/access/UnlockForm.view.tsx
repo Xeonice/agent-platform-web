@@ -24,7 +24,7 @@ export function UnlockFormView({
     : errorMessage;
   return (
     <form
-      className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border bg-card p-6 shadow-[var(--v2-shadow-card)]"
+      className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border bg-card p-6 shadow-[shadow:var(--v2-shadow-card)]"
       onSubmit={(event) => {
         event.preventDefault();
         if (trimmed && !submitting && !blocked) onSubmit(trimmed);
@@ -43,7 +43,7 @@ export function UnlockFormView({
           autoFocus
           aria-invalid={!!message}
           aria-describedby={message ? 'access-error access-source' : 'access-source'}
-          className={`h-9 rounded-md border bg-background px-3 text-sm focus-visible:outline-none ${message ? 'border-destructive shadow-[var(--v2-focus-input-error)]' : 'border-border focus-visible:shadow-[var(--v2-focus-input)]'}`}
+          className={`h-9 rounded-md border bg-background px-3 text-sm focus-visible:outline-none ${message ? 'border-destructive shadow-[shadow:var(--v2-focus-input-error)]' : 'border-border focus-visible:shadow-[shadow:var(--v2-focus-input)]'}`}
           value={passcode}
           disabled={submitting}
           onChange={(event) => {

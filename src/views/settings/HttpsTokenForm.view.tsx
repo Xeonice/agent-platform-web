@@ -90,7 +90,7 @@ export function HttpsTokenFormView({
           name="https-token"
           autoComplete="off"
           placeholder="ghp_…"
-          className="rounded-md border border-border bg-transparent px-3 py-2 font-mono text-[13px] focus-visible:outline-none focus-visible:shadow-[var(--v2-focus-input)]"
+          className="rounded-md border border-border bg-transparent px-3 py-2 font-mono text-[13px] focus-visible:outline-none focus-visible:shadow-[shadow:var(--v2-focus-input)]"
           value={token}
           disabled={submitting}
           onChange={(e) => {

@@ -52,6 +52,7 @@ export function WorkbenchContainer() {
   const menuOpensOnDelete = useAppStore((s) => s.projectMenuDeleteRequested);
   const setMenuOpensOnDelete = useAppStore((s) => s.setProjectMenuDeleteRequested);
   const [newProjectBusy, setNewProjectBusy] = useState(false);
+  const [newProjectAccepted, setNewProjectAccepted] = useState(false);
   const [readyProjectId, setReadyProjectId] = useState<string | null>(null);
   const selectedProject =
     projects.data?.find((project) => project.id === selectedProjectId) ?? null;
@@ -67,13 +68,17 @@ export function WorkbenchContainer() {
     setCurrentModal(null);
   };
   const handleProjectReady = (id: string): void => {
+    setNewProjectAccepted(false);
     setProjectCreateSource(null);
     setReadyProjectId(id);
     setSelectedProjectId(id);
+    setSelectedSandboxId(null);
     setCurrentModal(null);
     void queryClient.invalidateQueries({ queryKey: projectKeys.all() });
   };
   const closeModal = (): void => {
+    setNewProjectAccepted(false);
+    setNewProjectBusy(false);
     setCurrentModal(null);
     setProjectCreateSource(null);
     setSelectedProjectForMenu(null);
@@ -135,8 +140,18 @@ export function WorkbenchContainer() {
       <WorkbenchOverviewView
         {...overview}
         onRecoverProject={(id, credentials) => {
-          if (credentials) router.push('/settings/credentials?section=git');
-          else overviewRecovery.retry(id);
+          if (credentials) {
+            const project = projects.data?.find((row) => row.id === id);
+            if (project === undefined) return;
+            useAppStore.getState().setPendingProjectCreate({
+              projectId: id,
+              name: project.name,
+              source: 'git',
+              ...(project.repoUrl ? { url: project.repoUrl } : {}),
+            });
+            closeModal();
+            router.push('/settings/credentials?section=git');
+          } else overviewRecovery.retry(id);
         }}
         onConvertProject={(id) => {
           overviewRecovery.convertToEmpty(id);
@@ -218,6 +233,8 @@ export function WorkbenchContainer() {
           {currentModal === 'createProject' && (
             <AppDialogView
               title="新建项目"
+              layout="form"
+              subtitle={newProjectAccepted ? undefined : '从 Git 仓库克隆，或创建一个空项目'}
               busy={newProjectBusy}
               onClose={closeModal}
               testId="modal-new-project"
@@ -227,9 +244,8 @@ export function WorkbenchContainer() {
                 initialSourceType={projectCreateSource ?? 'git'}
                 onBusyChange={setNewProjectBusy}
                 onProjectReady={handleProjectReady}
-                onProjectCreated={(id) => {
-                  setSelectedProjectId(id);
-                  setSelectedSandboxId(null);
+                onProjectCreated={() => {
+                  setNewProjectAccepted(true);
                 }}
                 onCancel={closeModal}
               />

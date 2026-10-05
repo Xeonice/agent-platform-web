@@ -74,7 +74,10 @@ export function GitCredentialsSectionView({
       </header>
 
       {pendingRetry !== undefined && pendingRetry !== null && (
-        <div className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-4">
+        <section
+          aria-label="重试克隆"
+          className="flex flex-col gap-2 rounded-lg border border-border bg-[var(--v2-surface-inset)] p-4"
+        >
           <p className="text-sm">为项目「{pendingRetry.name}」配置凭证后，可重试克隆。</p>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -95,7 +98,7 @@ export function GitCredentialsSectionView({
               放弃
             </Button>
           </div>
-        </div>
+        </section>
       )}
 
       {loading ? (

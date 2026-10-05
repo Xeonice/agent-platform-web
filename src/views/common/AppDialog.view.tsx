@@ -24,6 +24,8 @@ export interface AppDialogProps {
   title: string;
   /** 副标题：用来交代上下文（如「在 ProjectA 中」）。 */
   subtitle?: string;
+  /** Form layouts keep their own scrolling body and footer inside the dialog. */
+  layout?: 'standard' | 'form';
   /**
    * 关闭（[✕] / 遮罩点击 / Esc 都走它）。
    * `busy` 为真时**不触发**——创建中被误关会留下一个用户以为没发生过的请求。
@@ -40,6 +42,7 @@ export interface AppDialogProps {
 export function AppDialogView({
   title,
   subtitle,
+  layout = 'standard',
   onClose,
   onCloseAutoFocus,
   onOpenAutoFocus,
@@ -69,7 +72,7 @@ export function AppDialogView({
           {...(subtitle ? {} : { 'aria-describedby': undefined })}
           onCloseAutoFocus={onCloseAutoFocus}
           onOpenAutoFocus={onOpenAutoFocus}
-          className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[var(--v2-radius-xl)] border border-[var(--v2-border)] bg-[var(--v2-surface)] shadow-[var(--v2-shadow-modal)] focus:outline-none"
+          className={`fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] ${layout === 'form' ? 'w-[calc(100%-3rem)]' : 'w-[calc(100%-2rem)]'} max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[var(--v2-radius-xl)] ${layout === 'form' ? 'border-0' : 'border border-[var(--v2-border)]'} bg-[var(--v2-surface)] shadow-[shadow:var(--v2-shadow-modal)] focus:outline-none`}
           // busy 时 Esc 与点遮罩都不关（见文件头：这是守卫，不是样式）。
           onEscapeKeyDown={(e) => {
             if (busy) e.preventDefault();
@@ -79,10 +82,16 @@ export function AppDialogView({
           }}
         >
           <div
-            className={`flex shrink-0 items-start gap-3 border-b px-5 py-3 ${scrolled ? 'border-border' : 'border-transparent'}`}
+            className={`flex shrink-0 items-start gap-3 ${layout === 'form' ? 'pb-0 pl-6 pr-14 pt-6' : 'border-b px-5 py-3'} ${scrolled ? 'shadow-[0_1px_0_var(--v2-border)]' : 'border-transparent'}`}
           >
             <div className="min-w-0 flex-1 text-left">
-              <DialogPrimitive.Title className="text-base font-semibold">
+              <DialogPrimitive.Title
+                className={
+                  layout === 'form'
+                    ? 'text-xl font-semibold leading-7 tracking-[-0.02em]'
+                    : 'text-base font-semibold'
+                }
+              >
                 {title}
               </DialogPrimitive.Title>
               {/*
@@ -90,14 +99,20 @@ export function AppDialogView({
                 但**编一句描述出来**比告警更糟 —— 读屏用户会听到一句没信息量的废话。
               */}
               {subtitle !== undefined && subtitle !== '' && (
-                <DialogPrimitive.Description className="mt-0.5 truncate text-xs text-muted-foreground">
+                <DialogPrimitive.Description
+                  className={
+                    layout === 'form'
+                      ? 'mt-1 text-sm leading-5 text-muted-foreground'
+                      : 'mt-0.5 truncate text-xs text-muted-foreground'
+                  }
+                >
                   {subtitle}
                 </DialogPrimitive.Description>
               )}
             </div>
           </div>
           <div
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+            className={`flex min-h-0 flex-1 flex-col ${layout === 'form' ? 'overflow-hidden' : 'overflow-y-auto'}`}
             onScrollCapture={(event) => {
               if (event.target instanceof HTMLElement) setScrolled(event.target.scrollTop > 0);
             }}
@@ -115,7 +130,7 @@ export function AppDialogView({
             aria-label="关闭"
             disabled={busy}
             data-modal-close=""
-            className="absolute right-4 top-3 rounded px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+            className={`absolute right-[18px] ${layout === 'form' ? 'top-6' : 'top-3'} grid size-7 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50`}
           >
             <X aria-hidden="true" className="h-4 w-4" />
           </DialogPrimitive.Close>

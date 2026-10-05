@@ -200,7 +200,6 @@ export function SandboxTerminalContainer({
    * `${t.project} / ${t.name}`）。任务名缺席时（还没拿到名字的极短窗口）只给项目名，
    * ⛔ 不拼一个空的 `/ undefined`。
    */
-  const terminalBreadcrumb = taskName === undefined ? projectName : `${projectName} / ${taskName}`;
   // 无头任务打给沙箱自己的 runtime（本会话取创建响应，刷新后取 DTO）。
   const sandboxRuntime = localTask?.runtime ?? restored.runtime;
   const taskImage = localTask?.image ?? restored.image;
@@ -770,7 +769,6 @@ export function SandboxTerminalContainer({
         image={taskImage}
         projectId={projectId}
         taskName={taskName}
-        breadcrumb={terminalBreadcrumb}
         headlessSlot={
           sandboxRuntime === undefined || !sandboxHeadless ? undefined : (
             <HeadlessTaskContainer

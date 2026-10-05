@@ -242,6 +242,12 @@ export function AppFrameContainer({ children }: { children: ReactNode }) {
               needsCredentials={recovery.guidance.needsCredentials}
               onConfigureCredentials={() => {
                 setMenuProjectId(null);
+                useAppStore.getState().setPendingProjectCreate({
+                  projectId: id,
+                  name: project.name,
+                  source: 'git',
+                  ...(project.repoUrl ? { url: project.repoUrl } : {}),
+                });
                 router.push('/settings/credentials?section=git');
               }}
               {...(open && actionError !== undefined ? { actionError } : {})}

@@ -30,6 +30,62 @@ beforeEach(() => {
   navigation.pathname = '/';
 });
 describe('WB · shared navigation, object routing and overview', () => {
+  it('AC-PRJ-004/005: Git creation preserves the current task until Open project clears it', async () => {
+    const original = project({
+      id: 'project-old',
+      cloneStatus: 'failed',
+      cloneErrorCode: 'CLONE_FAILED_PERMISSION',
+    });
+    const created = project({ id: 'project-new', name: 'infra-scripts', cloneStatus: 'cloning' });
+    let accepted = false;
+    server.use(
+      http.get(`${API}/api/projects`, () =>
+        HttpResponse.json(accepted ? [original, created] : [original]),
+      ),
+      http.get(`${API}/api/sandboxes`, () =>
+        HttpResponse.json([sandbox({ projectId: 'project-old', status: 'stopped' })]),
+      ),
+      http.post(`${API}/api/projects`, () => {
+        accepted = true;
+        return HttpResponse.json(created, { status: 202 });
+      }),
+    );
+    act(() => {
+      useAppStore.getState().setSelectedProjectId('project-old');
+      useAppStore.getState().setSelectedSandboxId('task-a');
+    });
+    workbench();
+    await screen.findByRole('button', { name: '配置 Git 凭证' });
+    fireEvent.click(screen.getAllByRole('button', { name: '新建项目' })[0]!);
+    const dialog = await screen.findByRole('dialog', { name: '新建项目' });
+    fireEvent.change(within(dialog).getByLabelText('项目名称'), {
+      target: { value: 'infra-scripts' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('仓库地址'), {
+      target: { value: 'https://github.com/acme/infra.git' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: '创建项目' }));
+    await within(dialog).findByText('正在克隆项目…');
+    expect(useAppStore.getState().selectedProjectId).toBe('project-old');
+    expect(useAppStore.getState().selectedSandboxId).toBe('task-a');
+    expect(dialog).not.toHaveAccessibleDescription('从 Git 仓库克隆，或创建一个空项目');
+    created.cloneStatus = 'ready';
+    act(() => {
+      useAppStore.getState().applyProjectCloneEvent({
+        event: 'project.clone_progress',
+        projectId: 'project-new',
+        phase: 'done',
+      });
+    });
+    await within(dialog).findByText('项目可用了');
+    expect(useAppStore.getState().selectedSandboxId).toBe('task-a');
+    fireEvent.click(within(dialog).getByRole('button', { name: '打开项目' }));
+    await waitFor(() => {
+      expect(useAppStore.getState().selectedProjectId).toBe('project-new');
+    });
+    expect(useAppStore.getState().selectedSandboxId).toBeNull();
+    expect(screen.queryByRole('dialog', { name: '新建项目' })).not.toBeInTheDocument();
+  });
   it('AC-WB-003/004: first-use welcome creates nothing and unavailable task entry explains its prerequisite', async () => {
     const creates = vi.fn();
     server.use(

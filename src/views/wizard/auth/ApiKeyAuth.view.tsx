@@ -69,8 +69,8 @@ export function ApiKeyAuthView({
           className={
             'h-9 min-w-0 rounded-md border bg-background px-3 font-mono text-[13px] focus-visible:outline-none ' +
             (prefixValid
-              ? 'border-border focus-visible:shadow-[var(--v2-focus-input)]'
-              : 'border-destructive shadow-[var(--v2-focus-input-error)]')
+              ? 'border-border focus-visible:shadow-[shadow:var(--v2-focus-input)]'
+              : 'border-destructive shadow-[shadow:var(--v2-focus-input-error)]')
           }
           value={value}
           disabled={submitting}

@@ -135,7 +135,7 @@ export function InitWizardShellView({
             </li>
           ))}
         </ol>
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-[var(--v2-shadow-raised)]">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-[shadow:var(--v2-shadow-raised)]">
           <header className="shrink-0 px-5 pb-4 pt-5 sm:px-6">
             <h2 className="text-xl font-semibold">{title}</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>

@@ -137,6 +137,38 @@ body {
 body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@keyframes clone-progress-slide {
+  from {
+    left: -30%;
+  }
+  to {
+    left: 100%;
+  }
+}
+.clone-progress-indeterminate {
+  position: absolute;
+  top: 0;
+  left: 35%;
+  width: 30%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--foreground)) 25%,
+    hsl(var(--foreground)) 75%,
+    transparent
+  );
+  animation: clone-progress-slide 1.6s ease infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .clone-progress-indeterminate {
+    animation: none;
+  }
 }
 
 @layer base {

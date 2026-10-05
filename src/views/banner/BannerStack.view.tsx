@@ -97,7 +97,7 @@ export function BannerStackView({ model, onAction, onDismiss }: BannerStackProps
           aria-expanded={expanded}
           aria-controls={stackId}
           data-testid="banner-stack-more"
-          className="flex h-8 min-w-0 items-center gap-2 border-b border-border bg-background px-4 text-left text-[13px] text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:shadow-[var(--v2-focus-ring-inset)]"
+          className="flex h-8 min-w-0 items-center gap-2 border-b border-border bg-background px-4 text-left text-[13px] text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:shadow-[shadow:var(--v2-focus-ring-inset)]"
           onClick={() => {
             setExpanded((previous) => !previous);
           }}

@@ -44,7 +44,7 @@ export function ProxySettingsCardView({
     <section
       aria-labelledby="proxy-settings-heading"
       data-testid="proxy-settings-card"
-      className="rounded-md bg-card p-4 shadow-[var(--v2-shadow-card)]"
+      className="rounded-md bg-card p-4 shadow-[shadow:var(--v2-shadow-card)]"
     >
       <div className="flex items-center gap-2">
         <h2 id="proxy-settings-heading" className="text-base font-semibold">

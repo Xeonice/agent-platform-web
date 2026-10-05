@@ -46,36 +46,28 @@ const LIGHT_TERMINAL_CHROME_VARS: TerminalChromeVars = {
   '--terminal-chrome-border': '#e5e5e5',
 };
 
-/**
- * ⭐ `toolbar` 是本轮新增的**可选**插槽（design-notes.md §4 Phase 3）：不传时
- * 一个字节都不多渲染（见 `Dark`/`Light` 两条既有 story 不受影响）；传了就渲染在
- * 画布上方、仪表壳内部——⛔ 不是外层另包一层，那样就不算"壳里的工具栏"了。
- */
-export const WithToolbar: Story = {
-  args: {
-    toolbar: <div data-testid="toolbar-slot-probe">工具栏插槽</div>,
-  },
+/** 满幅画布没有圆角、边框或相框留白。 */
+export const EdgeToEdgeCanvas: Story = {
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const probe = canvas.getByTestId('toolbar-slot-probe');
-    const canvasEl = canvas.getByTestId('terminal-frame-canvas');
-    const shell = canvasEl.parentElement;
+    const canvas = within(canvasElement).getByTestId('terminal-frame-canvas');
+    const shell = canvas.parentElement;
     if (!shell) throw new Error('terminal-shell 节点缺失');
-    // 工具栏与画布是**同一个仪表壳内的兄弟节点**，不是画布之外单独一层。
-    await expect(probe.parentElement).toBe(shell);
-    await expect(canvasEl.parentElement).toBe(shell);
+    await expect(getComputedStyle(shell).padding).toBe('0px');
+    await expect(getComputedStyle(shell).borderRadius).toBe('0px');
+    await expect(getComputedStyle(canvas).borderRadius).toBe('0px');
+    await expect(getComputedStyle(canvas).padding).toBe('12px 16px');
   },
 };
 
-/** 不传 `toolbar`（默认）⇒ 插槽不渲染——新增 prop 对既有消费方零影响。 */
-export const WithoutToolbar: Story = {
+/** 画布ref目标与容器保持独立；没有额外的相框工具栏行。 */
+export const CanvasOnly: Story = {
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await expect(canvas.queryByTestId('toolbar-slot-probe')).not.toBeInTheDocument();
+    const canvas = within(canvasElement).getByTestId('terminal-frame-canvas');
+    await expect(canvas.parentElement?.children.length).toBe(1);
   },
 };
 
-/** 亮色：仪表壳改用浅灰相框（问题 4 的核心结论——相框跟随主题，画心恒黑不变）。 */
+/** 亮色：画布满幅恒黑，无浅色仪表相框（f-wb-live-01）。 */
 export const Light: Story = {
   decorators: [
     (Story) => (
@@ -89,8 +81,8 @@ export const Light: Story = {
     const shell = canvas.getByTestId('terminal-frame-canvas').parentElement;
     if (!shell) throw new Error('terminal-shell 节点缺失');
     const shellStyle = getComputedStyle(shell);
-    // v2 亮色画布 #fafafa，终端内容仍为黑色。
-    await expect(shellStyle.backgroundColor).toBe('rgb(250, 250, 250)');
+    // v2 两套主题的终端画布都恒黑；主题色只用于共享终端栏。
+    await expect(shellStyle.backgroundColor).toBe('rgb(0, 0, 0)');
     const canvasEl = canvas.getByTestId('terminal-frame-canvas');
     // 画布恒黑不变——亮色模式下也不能被相框的浅色带偏。
     await expect(getComputedStyle(canvasEl).backgroundColor).toBe('rgb(0, 0, 0)');

@@ -31,11 +31,6 @@ export interface SandboxLifecycleContainerProps {
   /** 后端派生的默认任务名（10 §7.3）；前端不自己从 prompt 派生。 */
   taskName?: string;
   /**
-   * 终端仪表壳工具栏的面包屑（design-notes.md §4 Phase 3），只在 `running` 分支
-   * 转发给 `TerminalTabsContainer`——启动中/失败/结束态没有终端可挂工具栏。
-   */
-  breadcrumb?: string;
-  /**
    * 无头 Task 面板（S6）。**只在 running 的无头分支渲染**，不附着交互式 Agent：
    * 无头任务和终端共用凭证，挂终端可能额外启动一个交互式会话。
    * 沙箱还没起来时发无头任务必然失败，
@@ -53,7 +48,6 @@ export function SandboxLifecycleContainer({
   onRetry,
   taskName,
   headlessSlot,
-  breadcrumb,
   image,
   projectId,
 }: SandboxLifecycleContainerProps) {
@@ -91,34 +85,13 @@ export function SandboxLifecycleContainer({
       return <div className="flex h-full min-h-0 flex-col">{headlessSlot}</div>;
     }
     return (
-      <div className="flex h-full min-h-0 flex-col">
-        {
-          <div className="flex shrink-0 justify-end border-b border-border px-2 py-1">
-            <TaskActionsContainer
-              id={sandboxId}
-              name={taskName ?? '未命名任务'}
-              projectId={projectId}
-              status={status ?? undefined}
-              imageLabel={imageView.label}
-            />
-          </div>
-        }
-        <div className="min-h-0 flex-1">
-          {/*
-            多标签（P21-1 §6 / 08 §5）：Agent 那个会话是第 1 个标签，用户可以再开
-            独立终端。⚠️ `sessionId` 不再从这里传下去 —— 标签身份由
-            `useTerminalSessions` 按 sandboxId 派生（Agent 那个仍是 `<id>:0`），
-            让"有哪几个标签"只有一个知情者。
-          */}
-          <TerminalTabsContainer
-            sandboxId={sandboxId}
-            socketConfig={socketConfig}
-            disabledReason={status === 'stopping' ? '正在停止，暂时不能新建终端。' : undefined}
-            {...(availableRuntimes === undefined ? {} : { availableRuntimes })}
-            {...(breadcrumb === undefined ? {} : { breadcrumb })}
-          />
-        </div>
-      </div>
+      // 对象菜单已在共享顶栏和任务树；主区直接从终端栏开始（f-wb-live-01）。
+      <TerminalTabsContainer
+        sandboxId={sandboxId}
+        socketConfig={socketConfig}
+        disabledReason={status === 'stopping' ? '正在停止，暂时不能新建终端。' : undefined}
+        {...(availableRuntimes === undefined ? {} : { availableRuntimes })}
+      />
     );
   }
 

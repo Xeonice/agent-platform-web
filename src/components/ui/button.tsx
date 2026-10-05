@@ -7,7 +7,7 @@ import { cn } from '@/lib/_shared/utils';
 const buttonVariants = cva(
   // `[&_svg]` 三条来自官方：图标统一 16px、不收缩、不吃指针事件（否则点在图标上
   // 事件 target 是 svg，一些依赖 currentTarget 的处理会错位）。
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:shadow-[var(--v2-focus-ring)] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:shadow-[shadow:var(--v2-focus-ring)] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
   {
     variants: {
       variant: {

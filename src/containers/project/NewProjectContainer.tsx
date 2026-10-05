@@ -57,7 +57,7 @@ export function NewProjectContainer({
 
   const createProject = useCreateProject();
   const { reportRestError } = useReportUnauthorized();
-  const setCloneProgress = useAppStore((s) => s.setCloneProgress);
+  const seedCloneProgress = useAppStore((s) => s.seedCloneProgress);
   const clearCloneProgress = useAppStore((s) => s.clearCloneProgress);
   const setPendingProjectCreate = useAppStore((s) => s.setPendingProjectCreate);
 
@@ -78,9 +78,9 @@ export function NewProjectContainer({
     createProject.mutate(input, {
       onSuccess: (project) => {
         setProjectName(project.name);
-        setCloneProgress(project.id, seedFor(project.cloneStatus)); // 立即展示，不等首个事件
+        seedCloneProgress(project.id, seedFor(project.cloneStatus)); // 不覆盖先到的进度/结果事件
         setProjectId(project.id);
-        if (project.cloneStatus === 'ready') onProjectReady(project.id);
+        if (input.sourceType === 'empty') onProjectReady(project.id);
         else onProjectCreated?.(project.id);
       },
       onError: (error) => {
@@ -104,6 +104,7 @@ export function NewProjectContainer({
       source: 'git',
       ...(repoUrl !== undefined && repoUrl !== '' ? { url: repoUrl } : {}),
     });
+    onCancel();
     router.push('/settings/credentials?section=git');
   };
 
