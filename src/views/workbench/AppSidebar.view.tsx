@@ -74,6 +74,14 @@ const TASK_LABEL: Record<SandboxStatus, string> = {
   stopping: '停止中',
   deleting: '删除中',
 };
+const TASK_DOT_CLASS = {
+  ok: 'bg-[var(--v2-status-ok-solid)]',
+  warn: 'bg-[var(--v2-status-warn-solid)]',
+  fail: 'bg-[var(--v2-status-fail-solid)]',
+  timeout: 'bg-[var(--v2-status-timeout-solid)]',
+  info: 'bg-[var(--v2-status-info-solid)]',
+  unknown: 'bg-[var(--v2-status-neutral-solid)]',
+};
 
 export interface AppSidebarProps {
   groups: ProjectGroup[];
@@ -228,7 +236,7 @@ export function AppSidebarView({
           </p>
         </div>
       )}
-      <nav aria-label="主导航" className="flex flex-col gap-1 px-2 pb-4 sm:px-3">
+      <nav aria-label="主导航" className="flex flex-col gap-1 px-2 pb-3 sm:px-3">
         {navigation.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
@@ -257,11 +265,8 @@ export function AppSidebarView({
         ))}
       </nav>
       {!sidebarCollapsed && (
-        <section
-          className="mx-3 hidden min-h-0 flex-1 flex-col border-t border-[var(--v2-sidebar-sep)] sm:flex"
-          aria-label="项目"
-        >
-          <div className="flex h-12 items-center gap-1 px-1">
+        <section className="hidden min-h-0 flex-1 flex-col sm:flex" aria-label="项目">
+          <div className="mx-2 flex h-8 shrink-0 items-center gap-0.5 border-t border-[var(--v2-sidebar-sep)] pl-3 pr-1">
             <h2 className="flex-1 text-xs font-medium text-muted-foreground">项目</h2>
             {(groups.length > 0 || statusFilter !== 'all') && (
               <DropdownMenu>
@@ -320,7 +325,7 @@ export function AppSidebarView({
               <X aria-hidden="true" className="size-3" />
             </Button>
           )}
-          <nav className="min-h-0 flex-1 overflow-y-auto pb-3" aria-label="项目分组任务树">
+          <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" aria-label="项目分组任务树">
             {isLoading ? (
               <div role="status" aria-label="正在加载项目和任务…" className="space-y-4 px-2">
                 {[0, 1].map((i) => (
@@ -340,13 +345,13 @@ export function AppSidebarView({
               </p>
             ) : (
               groups.map((group) => (
-                <section key={group.projectId} className="mb-3">
+                <section key={group.projectId}>
                   <ProjectGroupHeaderView
                     projectId={group.projectId}
                     projectName={group.projectName}
                     taskCount={group.taskCount}
                     cloneStatus={group.cloneStatus}
-                    selected={selectedProjectId === group.projectId}
+                    selected={selectedTaskId === null && selectedProjectId === group.projectId}
                     onSelect={(id) => onSelectProject?.(id)}
                     collapsed={group.collapsed}
                     onToggleCollapse={(id) => onToggleGroupCollapse?.(id)}
@@ -360,7 +365,7 @@ export function AppSidebarView({
                         data-testid={`empty-group-new-task-${group.projectId}`}
                         title={newTaskDisabledReason ?? `在 ${group.projectName} 中发起第一个任务`}
                         aria-disabled={newTaskDisabledReason !== undefined}
-                        className="w-full px-7 py-2 text-left text-xs text-muted-foreground hover:text-foreground"
+                        className="h-8 w-full rounded-md pl-[52px] pr-1 text-left text-xs leading-4 text-muted-foreground hover:bg-[var(--v2-fill)] hover:text-foreground focus-visible:[box-shadow:var(--v2-focus-ring-inset)]"
                         onClick={() => {
                           if (newTaskDisabledReason !== undefined) return;
                           onSelectProject?.(group.projectId);
@@ -371,84 +376,116 @@ export function AppSidebarView({
                       </button>
                     ) : (
                       <ul>
-                        {group.tasks.map((task) => (
-                          <li
-                            key={task.id}
-                            className={task.status === 'deleting' ? 'opacity-50' : undefined}
-                          >
-                            <div className="flex items-center">
+                        {group.tasks.map((task) => {
+                          const selected = selectedTaskId === task.id;
+                          const waiting = task.waitingInput || task.status === 'waiting-input';
+                          const error = task.status === 'error';
+                          const dotStatus = task.stuck
+                            ? 'warn'
+                            : waiting
+                              ? 'info'
+                              : TASK_DOT[task.status];
+                          const phase = waiting
+                            ? '等待你输入'
+                            : task.rawStatus === 'idle'
+                              ? '空闲'
+                              : task.status === 'running'
+                                ? undefined
+                                : task.phaseLabel;
+                          const summary = task.stuck
+                            ? `可能卡住${task.stuckElapsed ? ` · ${task.stuckElapsed} 无进展` : ''}`
+                            : error
+                              ? (task.phaseLabel ?? TASK_LABEL[task.status])
+                              : undefined;
+                          return (
+                            <li
+                              key={task.id}
+                              data-task-id={task.id}
+                              className={
+                                'group/task relative flex flex-col rounded-md p-1.5 ' +
+                                (selected
+                                  ? 'bg-[var(--v2-fill-selected)] '
+                                  : 'hover:bg-[var(--v2-fill)] ') +
+                                (task.status === 'deleting' ? 'opacity-50' : '')
+                              }
+                            >
                               <button
                                 type="button"
-                                aria-current={selectedTaskId === task.id || undefined}
+                                aria-current={selected || undefined}
                                 className={
-                                  'flex min-w-0 flex-1 items-center gap-2 rounded-md py-2 pl-7 pr-2 text-left text-sm hover:bg-muted ' +
-                                  (selectedTaskId === task.id ? 'bg-[var(--v2-fill-selected)]' : '')
+                                  'mr-[26px] grid h-5 min-w-0 grid-cols-[46px_minmax(0,1fr)] items-center text-left text-sm leading-5 text-foreground after:absolute after:inset-0 after:rounded-md focus-visible:[box-shadow:none] focus-visible:after:[box-shadow:var(--v2-focus-ring-inset)] ' +
+                                  (selected ? 'font-medium' : 'font-normal')
                                 }
                                 disabled={task.status === 'deleting'}
                                 onClick={() => onSelectTask?.(task.id)}
                               >
                                 <StatusDot
-                                  status={
-                                    task.stuck
-                                      ? 'warn'
-                                      : task.waitingInput
-                                        ? 'info'
-                                        : TASK_DOT[task.status]
-                                  }
+                                  status={dotStatus}
                                   className={
-                                    task.status === 'stopped' || task.status === 'stopping'
-                                      ? 'rounded-none'
+                                    'ml-[26px] h-2 w-2 ' +
+                                    TASK_DOT_CLASS[dotStatus] +
+                                    ' ' +
+                                    (task.status === 'stopped' || task.status === 'stopping'
+                                      ? 'rounded-[2px]'
                                       : task.status === 'preparing'
                                         ? 'animate-pulse'
-                                        : undefined
+                                        : '')
                                   }
                                   label={
                                     task.stuck
                                       ? '可能卡住'
-                                      : task.waitingInput
+                                      : waiting
                                         ? '等待你输入'
                                         : TASK_LABEL[task.status]
                                   }
                                 />
-                                <span className="truncate">{task.name}</span>
-                                {task.sourceAutomationId && (
-                                  <span className="shrink-0 rounded bg-muted px-1 text-xs text-muted-foreground">
-                                    自动
-                                  </span>
-                                )}
+                                <span className="flex min-w-0 items-center gap-1">
+                                  <span className="truncate">{task.name}</span>
+                                  {task.sourceAutomationId && (
+                                    <span className="shrink-0 rounded bg-muted px-1 text-xs font-normal text-muted-foreground">
+                                      自动
+                                    </span>
+                                  )}
+                                </span>
                               </button>
-                              {renderTaskMenu?.(task)}
-                            </div>
-                            {task.phaseLabel !== undefined && (
-                              <p
-                                className={
-                                  'truncate pb-1 pl-11 text-xs ' +
-                                  (task.stuck
-                                    ? 'text-warning'
-                                    : task.status === 'error'
-                                      ? task.failureCode === 'TIMEOUT'
-                                        ? 'text-timeout'
-                                        : 'text-error'
-                                      : 'text-muted-foreground')
-                                }
-                              >
-                                {task.stuck
-                                  ? `可能卡住 · ${task.stuckElapsed ?? ''} 无进展`
-                                  : task.phaseLabel}
-                              </p>
-                            )}
-                            {(task.activityLabel !== undefined || task.waitingInput) && (
-                              <p
-                                className="truncate pb-1 pl-11 text-xs text-muted-foreground"
-                                data-testid={`task-activity-${task.id}`}
-                              >
-                                {task.activityLabel}
-                                {task.activityLabel !== undefined && task.waitingInput && ' · '}
-                                {task.waitingInput && <span className="text-info">等待输入</span>}
-                              </p>
-                            )}
-                          </li>
-                        ))}
+                              {summary !== undefined ? (
+                                <p
+                                  className={
+                                    'truncate pl-[46px] text-xs leading-4 ' +
+                                    (task.stuck
+                                      ? 'text-warning'
+                                      : task.status === 'error'
+                                        ? task.failureCode === 'TIMEOUT'
+                                          ? 'text-timeout'
+                                          : 'text-error'
+                                        : 'text-muted-foreground')
+                                  }
+                                >
+                                  {summary}
+                                </p>
+                              ) : (
+                                <p
+                                  className="h-4 truncate pl-[46px] text-xs leading-4 text-muted-foreground"
+                                  data-testid={`task-activity-${task.id}`}
+                                >
+                                  {task.activityLabel}
+                                  {task.activityLabel !== undefined && phase !== undefined && ' · '}
+                                  {waiting ? <span className="text-info">{phase}</span> : phase}
+                                </p>
+                              )}
+                              {renderTaskMenu && (
+                                <div
+                                  className={
+                                    'absolute right-1 top-1 z-10 size-6 transition-opacity group-hover/task:opacity-100 group-focus-within/task:opacity-100 has-[[data-state=open]]:opacity-100 [&>button]:size-6 [&>button]:p-0 ' +
+                                    (selected ? 'opacity-100' : 'opacity-0')
+                                  }
+                                >
+                                  {renderTaskMenu(task)}
+                                </div>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     ))}
                 </section>
