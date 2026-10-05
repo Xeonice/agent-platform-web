@@ -7,7 +7,7 @@ import {
 } from '@/views/system/DiagnosticsCard.view';
 import type { DiagnosticItemModel, DiagnosticsCardModel } from '@/types/system';
 
-const EIGHT: DiagnosticItemModel[] = [
+const CHECKLIST: DiagnosticItemModel[] = [
   { id: 'container-runtime', label: '容器服务可达' },
   { id: 'dev-kvm', label: '轻量虚拟机沙箱可用' },
   { id: 'disk-space', label: '磁盘余量' },
@@ -16,10 +16,11 @@ const EIGHT: DiagnosticItemModel[] = [
   { id: 'ws-loopback', label: '实时推送自检' },
   { id: 'data-root-fs', label: '数据目录文件系统' },
   { id: 'preset-image', label: '预制镜像就绪' },
+  { id: 'auth-helper', label: '帐号登录环境' },
 ];
 
 function withResult(id: DiagnosticItemModel['id'], patch: Partial<DiagnosticItemModel>) {
-  return EIGHT.map((i) => (i.id === id ? { ...i, ...patch } : i));
+  return CHECKLIST.map((i) => (i.id === id ? { ...i, ...patch } : i));
 }
 
 /**
@@ -117,7 +118,7 @@ export const Completed: Story = {
   args: {
     model: {
       phase: 'done',
-      items: EIGHT.map((i) => {
+      items: CHECKLIST.map((i) => {
         if (i.id === 'outbound-network') {
           return {
             ...i,
@@ -174,7 +175,7 @@ export const DefaultDisclosure: Story = {
   args: {
     model: {
       phase: 'done',
-      items: EIGHT.map((i, index) => {
+      items: CHECKLIST.map((i, index) => {
         if (i.id === 'outbound-network') {
           return { ...i, status: 'warn' as const, headline: '拉不到新镜像，Agent 仍可用' };
         }
@@ -202,7 +203,7 @@ export const DefaultDisclosure: Story = {
           ...(index === 0 ? { detailText: '这是一段证据，默认应该看不见。' } : {}),
         };
       }),
-      summaryText: '5 项正常 · 1 项警告 · 2 项失败（含超时）· 整轮 8s',
+      summaryText: '5 项正常 · 1 项警告 · 1 项失败 · 1 项超时未响应 · 整轮 8s',
     },
   },
   play: async ({ canvasElement }) => {
@@ -251,13 +252,14 @@ export const Aborted: Story = {
         status: 'ok',
         headline: '容器服务可达',
         durationText: '142ms',
-      }),
-      abortedText: '诊断中断：1/8 项已返回，其余项没有结论',
+      }).map((item) => (item.status === undefined ? { ...item, notReturned: true } : item)),
+      abortedText:
+        '诊断中断：1/9 项已返回，其余项没有结论 —— 已到达的结果保留在下方，可点 [重新诊断] 重跑',
     },
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('diagnose-aborted')).toHaveTextContent('1/8');
+    await expect(canvas.getByTestId('diagnose-aborted')).toHaveTextContent('1/9');
     // ⭐ 中断提示的图标真的换成了 lucide `AlertTriangle`（渲染 class 是
     // `lucide-triangle-alert`，不是看名字猜的 `lucide-alert-triangle`）。
     await expect(
@@ -276,14 +278,14 @@ export const AllFailed: Story = {
   args: {
     model: {
       phase: 'done',
-      items: EIGHT.map((i) => ({
+      items: CHECKLIST.map((i) => ({
         ...i,
         status: 'fail' as const,
         headline: `${i.label}未通过`,
         nextStep: `按这一项自己的办法修：${i.id}`,
         durationText: '10ms',
       })),
-      summaryText: '0 项正常 · 8 项失败（含超时）· 整轮 5s',
+      summaryText: '8 项失败 · 整轮 5s',
     },
   },
 };
@@ -304,9 +306,12 @@ export const SchemaMismatch: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByRole('status')).toHaveTextContent('sb-diagnose-v99');
+    const mismatch = canvas.getByText(/诊断格式已更新/);
+    await expect(mismatch).toHaveAttribute('role', 'status');
+    await expect(mismatch).toHaveTextContent('sb-diagnose-v99');
     // ⭐ ℹ️ 换成了 lucide `Info`（class `lucide-info`）。
-    await expect(canvas.getByRole('status').querySelector('.lucide-info')).not.toBeNull();
+    await expect(mismatch.querySelector('.lucide-info')).not.toBeNull();
+    await expect(canvas.getByTestId('diagnose-summary')).toHaveAttribute('role', 'status');
     // 认得的项照常显示 —— 中断一次只读诊断等于在最需要它的时候把它关掉。
     await expect(canvas.getByTestId('diagnostic-item-container-runtime')).toHaveTextContent('正常');
   },

@@ -28,7 +28,7 @@ export interface TaskTreeFilterResult {
   matchedTaskCount: number;
 }
 
-function matchesStatus(task: Sandbox, status: TaskStatusFilter): boolean {
+export function matchesTaskStatus(task: Sandbox, status: TaskStatusFilter): boolean {
   switch (status) {
     case 'preparing':
       return task.status === 'preparing';
@@ -37,7 +37,7 @@ function matchesStatus(task: Sandbox, status: TaskStatusFilter): boolean {
       // （domain.ts 注释），算进「运行中」会让同一条任务同时出现在两个筛选结果里。
       return task.status === 'running' && !task.waitingInput;
     case 'waitingInput':
-      return task.waitingInput;
+      return task.waitingInput && task.status === 'running';
     case 'paused':
       return task.status === 'paused';
     case 'error':
@@ -77,7 +77,7 @@ export function filterProjectGroups(
   for (const group of groups) {
     const tasks = group.tasks.filter(
       (task) =>
-        matchesStatus(task, filter.status) &&
+        matchesTaskStatus(task, filter.status) &&
         (!hasQuery || task.name.toLowerCase().includes(query)),
     );
     if (tasks.length === 0) continue;

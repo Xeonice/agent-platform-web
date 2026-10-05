@@ -7,6 +7,8 @@ import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { AuthModeRow } from '@/types/runtimeCredential';
 
 export interface AuthMethodRadioRowProps {
+  runtimeId?: string;
+  panelExpanded?: boolean;
   row: AuthModeRow;
   /** ○ 切到已配置模式（确认弹层）。 */
   onSwitch: () => void;
@@ -53,7 +55,7 @@ function expiryMarker(row: AuthModeRow): ExpiryMarker | null {
   if (row.expiryState === 'warning') {
     return {
       text: row.expiryLabel ?? '快到期了',
-      className: 'text-amber-400',
+      className: 'text-[var(--v2-status-warn-fg)]',
       icon: AlertTriangle,
       // ⚠️ 不在这里重算天数、也不重复念一遍 —— 「还剩多久」就在旁边那个标记里（`expiryLabel`），
       //    这一句只负责补上它缺的那一半：**该做什么**。
@@ -75,6 +77,8 @@ function expiryMarker(row: AuthModeRow): ExpiryMarker | null {
 
 export function AuthMethodRadioRowView({
   row,
+  runtimeId = 'agent',
+  panelExpanded = false,
   onSwitch,
   onNeedSetup,
   onReauth,
@@ -84,25 +88,20 @@ export function AuthMethodRadioRowView({
 }: AuthMethodRadioRowProps) {
   const isAccount = row.mode === 'account';
   const marker = expiryMarker(row);
-
   const handleSelect = (): void => {
     if (row.active) return;
     if (row.configured) onSwitch();
     else onNeedSetup();
   };
-
   return (
-    // ⭐ 不自带边框/圆角：这一行不是自己的卡，是父卡（`RuntimeCredentialCardView`）内部
-    // 用分隔线分出来的一法。此前这里自带 `rounded-md border`，卡片内再套一层边框，
-    // 「哪个是一张卡」变得含糊（design/prototype.html #credentials + design-notes.md
-    // Phase 6 ③：分隔线代替卡中卡）。分隔线本身由父级的 `divide-y` 提供，⛔ 这里不重复画。
-    <div className="flex flex-col gap-2 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <label className="flex items-center gap-2 text-sm">
+    <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 px-5 py-2">
+      <div className="min-w-0 flex-1">
+        <label className="flex flex-wrap items-center gap-2 text-sm">
           <input
             type="radio"
-            name={`auth-mode-${row.mode}`}
+            name={`auth-mode-${runtimeId}`}
             checked={row.active}
+            disabled={busy}
             aria-label={row.label}
             onChange={handleSelect}
           />
@@ -113,73 +112,64 @@ export function AuthMethodRadioRowView({
             </StatusPill>
           )}
         </label>
-        {marker !== null &&
-          (marker.pillStatus !== undefined ? (
-            <StatusPill status={marker.pillStatus} data-testid="auth-expiry-marker">
-              {marker.text}
-            </StatusPill>
-          ) : (
-            <span
-              className={'flex items-center gap-1 text-xs ' + (marker.className ?? '')}
-              data-testid="auth-expiry-marker"
-            >
-              {marker.icon !== undefined && (
-                <marker.icon aria-hidden="true" className="h-3 w-3 shrink-0" />
-              )}
-              {marker.text}
-            </span>
-          ))}
-      </div>
-
-      {marker?.hint !== undefined && (
-        <p className="pl-6 text-xs text-muted-foreground">{marker.hint}</p>
-      )}
-
-      {row.configured ? (
-        <div className="flex flex-col gap-2 pl-6">
-          {row.maskedIdentifier !== undefined && (
-            <span className="font-mono text-xs text-muted-foreground">{row.maskedIdentifier}</span>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={isAccount ? onReauth : onAddKey}
-            >
-              {isAccount ? '重新登录' : '更换'}
-            </Button>
-            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onRevoke}>
-              删除
-            </Button>
+        {(row.maskedIdentifier !== undefined || marker !== null) && (
+          <div className="mt-1 flex flex-wrap items-center gap-2 pl-6 text-[13px] text-muted-foreground">
+            {row.maskedIdentifier !== undefined && (
+              <span className="break-all font-mono">{row.maskedIdentifier}</span>
+            )}
+            {marker !== null &&
+              (marker.pillStatus !== undefined ? (
+                <StatusPill status={marker.pillStatus} data-testid="auth-expiry-marker">
+                  {marker.text}
+                </StatusPill>
+              ) : (
+                <span
+                  className={'flex items-center gap-1 tabular-nums ' + (marker.className ?? '')}
+                  data-testid="auth-expiry-marker"
+                >
+                  {marker.icon !== undefined && (
+                    <marker.icon aria-hidden="true" className="size-3.5 shrink-0" />
+                  )}
+                  {marker.text}
+                </span>
+              ))}
           </div>
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-2 pl-6">
-          {/*
-            ⛔ **这一行不挂「未配置」标记**（2026-09-16 裁决）。三条理由：
-             ① **按钮文案已经分得开**：未配置是「登录帐号 / 添加 API Key」，已配置是
-                「重新登录 / 更换」。再加一个标记是把按钮已经说了的话重说一遍。
-             ② **卡头已经说过了**：整张卡未配置时，卡头那个 `skipped` pill 就是这句话。
-                原来卡头 + 两个子行一屏说三遍（`RuntimeCredentialCard` 的截图实证）。
-             ③ ⭐ **颜色是误报**：`skipped` 是 warning 橙。而「帐号登录 / API Key 二选一」
-                是产品明说的（见本页说明文案）—— 没选的那一路本来就该是空的，**不是缺陷**。
-                给它一个橙色虚线框等于在说"这里有问题"。
-            ⚠️ 橙色要留给**真的用不了**的那一个：整张卡未配置（这个 Agent 现在跑不了）。
-               一屏 4 个等重的橙框，反而把那一个淹掉了。
-          */}
+        )}
+        {marker?.hint !== undefined && (
+          <p className="mt-1 pl-6 text-[13px] text-muted-foreground">{marker.hint}</p>
+        )}
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={isAccount ? onReauth : onAddKey}
+          aria-expanded={panelExpanded}
+          aria-controls={`runtime-auth-panel-${runtimeId}`}
+        >
+          {row.configured
+            ? isAccount
+              ? '重新登录'
+              : '更换'
+            : isAccount
+              ? '登录帐号'
+              : '添加 API Key'}
+        </Button>
+        {row.configured && (
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
+            className="text-destructive hover:text-destructive"
             disabled={busy}
-            onClick={isAccount ? onReauth : onAddKey}
+            onClick={onRevoke}
           >
-            {isAccount ? '登录帐号' : '添加 API Key'}
+            删除
           </Button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

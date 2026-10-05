@@ -13,6 +13,10 @@ import { Button } from '@/components/ui/button';
 import type { CreateProjectInput, ProjectSourceType } from '@/types/project';
 
 export interface NewProjectFormProps {
+  initialSourceType?: ProjectSourceType;
+  focusRepository?: boolean;
+  initialName?: string;
+  suggestedEmptyName?: string;
   submitting?: boolean;
   errorMessage?: string;
   onSubmit: (input: CreateProjectInput) => void;
@@ -20,13 +24,17 @@ export interface NewProjectFormProps {
 }
 
 export function NewProjectFormView({
+  initialSourceType = 'git',
+  focusRepository = false,
+  initialName = '',
+  suggestedEmptyName = '未命名项目 1',
   submitting = false,
   errorMessage,
   onSubmit,
   onCancel,
 }: NewProjectFormProps) {
-  const [name, setName] = useState('');
-  const [sourceType, setSourceType] = useState<ProjectSourceType>('git');
+  const [name, setName] = useState(initialName);
+  const [sourceType, setSourceType] = useState<ProjectSourceType>(initialSourceType);
   const [repoUrl, setRepoUrl] = useState('');
   const [repoBranch, setRepoBranch] = useState('');
 
@@ -59,12 +67,12 @@ export function NewProjectFormView({
         <input
           type="text"
           name="project-name"
-          autoFocus
+          autoFocus={!focusRepository || sourceType !== 'git'}
           className="rounded-md border border-border bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           value={name}
           disabled={submitting}
           onChange={(e) => {
-            setName(e.target.value);
+            setName(Array.from(e.target.value).slice(0, 40).join(''));
           }}
         />
       </label>
@@ -91,6 +99,7 @@ export function NewProjectFormView({
             checked={sourceType === 'empty'}
             onChange={() => {
               setSourceType('empty');
+              if (name.trim() === '') setName(suggestedEmptyName);
             }}
           />
           <span>空项目</span>
@@ -103,6 +112,8 @@ export function NewProjectFormView({
           <input
             type="text"
             name="repo-url"
+            aria-describedby="private-repository-note"
+            autoFocus={focusRepository}
             placeholder="https://github.com/org/repo.git"
             className="rounded-md border border-border bg-transparent px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             value={repoUrl}
@@ -111,6 +122,9 @@ export function NewProjectFormView({
               setRepoUrl(e.target.value);
             }}
           />
+          <span id="private-repository-note" className="text-xs text-muted-foreground">
+            私有仓库需要先配置 Git 凭证；克隆失败后可以去配置，再回来重试。
+          </span>
         </label>
       )}
 

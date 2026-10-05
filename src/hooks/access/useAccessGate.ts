@@ -1,9 +1,10 @@
 // 口令门 hook（副作用归此层，07 §3）：解锁提交 + 401/未授权上报，读写 access store。
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { submitPasscode } from '@/services/api/access.service';
 import { ApiErrorException } from '@/services/api/apiError';
 import { useAppStore } from '@/stores';
+import { systemKeys } from '@/hooks/system/useAuditStream';
 
 export interface AccessGateApi {
   /** 是否处于锁定（需解锁）态。 */
@@ -14,6 +15,7 @@ export interface AccessGateApi {
   submitting: boolean;
   /** 解锁失败信息（口令错误/锁定等，来自后端信封）。 */
   errorMessage?: string;
+  lockedForMinutes: number;
   /** 提交口令解锁。 */
   submit: (passcode: string) => void;
 }
@@ -26,11 +28,15 @@ export function useAccessGate(): AccessGateApi {
   const locked = useAppStore((s) => s.accessLocked);
   const reason = useAppStore((s) => s.accessLockReason);
   const clearAccessLock = useAppStore((s) => s.clearAccessLock);
+  const lockedUntil = useAppStore((s) => s.accessLockUntil);
+  const lockAccess = useAppStore((s) => s.lockAccess);
   const queryClient = useQueryClient();
 
+  const [now, setNow] = useState(() => Date.now());
   const mutation = useMutation({
     mutationFn: submitPasscode,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.resetQueries({ queryKey: systemKeys.init() });
       clearAccessLock();
       void queryClient.invalidateQueries(); // 重试原 REST 请求（查询）
     },
@@ -38,16 +44,46 @@ export function useAccessGate(): AccessGateApi {
 
   const submit = useCallback(
     (passcode: string): void => {
+      if (lockedUntil > Date.now() || mutation.isPending) return;
       mutation.mutate(passcode);
     },
-    [mutation],
+    [mutation, lockedUntil],
   );
+
+  useEffect(() => {
+    const error = mutation.error;
+    if (error instanceof ApiErrorException && error.envelope.code === 'PASSCODE_LOCKED') {
+      const seconds = error.envelope.retryAfterSec ?? 300;
+      lockAccess(null, seconds);
+      setNow(Date.now());
+    }
+  }, [mutation.error, lockAccess]);
+  useEffect(() => {
+    if (lockedUntil <= Date.now()) return;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [lockedUntil]);
 
   return {
     locked,
     reason,
     submitting: mutation.isPending,
-    errorMessage: mutation.error?.message,
+    lockedForMinutes: Math.max(0, Math.ceil((lockedUntil - now) / 60000)),
+    errorMessage:
+      mutation.error instanceof ApiErrorException &&
+      mutation.error.envelope.code === 'PASSCODE_INVALID'
+        ? '口令不对，再试一次。'
+        : mutation.error &&
+            !(
+              mutation.error instanceof ApiErrorException &&
+              mutation.error.envelope.code === 'PASSCODE_LOCKED'
+            )
+          ? '暂时无法验证口令，请稍后重试。'
+          : undefined,
     submit,
   };
 }
@@ -64,7 +100,7 @@ export function useAccessGate(): AccessGateApi {
  * 也不对（这不是任务配置的问题）。根子是把「零副作用」当成了「改配置能解决」——
  * 前者是**平台没动过状态**（事实），后者是**出路**（推论），`PASSCODE_LOCKED` 只占前一半。
  */
-const PASSCODE_CODES = new Set(['PASSCODE_REQUIRED', 'PASSCODE_INVALID', 'PASSCODE_LOCKED']);
+export const PASSCODE_CODES = new Set(['PASSCODE_REQUIRED', 'PASSCODE_INVALID', 'PASSCODE_LOCKED']);
 
 export interface ReportUnauthorizedApi {
   /** 检查 REST 错误：口令门的拒绝（含 429 锁定）一律置锁（供 mutation/query 的 onError 调用）。 */
@@ -83,7 +119,12 @@ export function useReportUnauthorized(): ReportUnauthorizedApi {
       // 401 一律置锁（含没带信封的裸未授权）；其余状态只认口令门自己的码——
       // 否则任何 429 限流都会被误读成"要重新解锁"。
       if (error.httpStatus === 401 || PASSCODE_CODES.has(error.envelope.code)) {
-        lockAccess(error.envelope.message);
+        lockAccess(
+          error.envelope.message,
+          error.envelope.code === 'PASSCODE_LOCKED'
+            ? (error.envelope.retryAfterSec ?? 300)
+            : undefined,
+        );
       }
     },
     [lockAccess],
@@ -94,4 +135,11 @@ export function useReportUnauthorized(): ReportUnauthorizedApi {
   }, [lockAccess]);
 
   return { reportRestError, reportUnauthorized };
+}
+
+export function isAccessDenied(error: unknown): boolean {
+  return (
+    error instanceof ApiErrorException &&
+    (error.httpStatus === 401 || PASSCODE_CODES.has(error.envelope.code))
+  );
 }

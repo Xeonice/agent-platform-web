@@ -36,6 +36,7 @@ export interface TerminalTabsContainerProps {
    * `TerminalTabBarView` 单独顶栏显示，两者不重复）。
    */
   breadcrumb?: string;
+  disabledReason?: string;
 }
 
 export function TerminalTabsContainer({
@@ -43,6 +44,7 @@ export function TerminalTabsContainer({
   socketConfig,
   availableRuntimes = [],
   breadcrumb,
+  disabledReason,
 }: TerminalTabsContainerProps) {
   /**
    * runtimeId → 展示名。⚠️ 只拿**名字**：能开哪几个由沙箱行说了算（上面那个 prop），
@@ -159,8 +161,14 @@ export function TerminalTabsContainer({
         onNewTerminal={openShellTab}
         launchOptions={launchOptions}
         inventoryUnavailable={inventoryUnavailable}
+        disabledReason={disabledReason}
       />
-      <div className="relative min-h-0 flex-1">
+      {disabledReason !== undefined && (
+        <p role="status" className="border-b border-border bg-muted px-3 py-2 text-xs">
+          正在停止…
+        </p>
+      )}
+      <div className="relative min-h-0 flex-1" inert={disabledReason !== undefined}>
         {tabs
           .filter((t) => mountedSessionIds.includes(t.sessionId))
           .map((t) => {

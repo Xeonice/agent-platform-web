@@ -16,7 +16,8 @@
 //
 // ⚠️ **三个字段留空 = 清空代理**，这是刻意的：表单从已存配置回填，用户看到当前值把它删掉
 // 就是明确的"我不要代理了"。（拼请求体的三态处理在 `lib/system/initWizardModel.ts::toProxyUpdate`。）
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ProxyFormValues } from '@/types/init';
 
@@ -27,6 +28,9 @@ export interface ProxyConfigFormProps {
   cooldownSec: number;
   /** 保存失败的人话原因。 */
   errorMessage: string | null;
+  fieldErrors?: Partial<Record<keyof ProxyFormValues, string>> | undefined;
+  onFieldChange?: (() => void) | undefined;
+  successMessage?: string | undefined;
   /**
    * 按钮上的字。⚠️ **由调用方给，因为两处的动作不是同一件事**：向导里保存完要立刻
    * 重新跑连通性检查（用户正卡在那一步上等结论），设置页里只是存配置。
@@ -47,12 +51,16 @@ export function ProxyConfigFormView({
   isSaving,
   cooldownSec,
   errorMessage,
+  fieldErrors,
+  onFieldChange,
+  successMessage,
   saveLabel = '保存并重新检测',
   onSaveAndRecheck,
 }: ProxyConfigFormProps) {
   // 受控表单的局部 state 属于 view 的**展示状态**（15 §1：不跨组件、不跨路由，不进 store）。
   const [values, setValues] = useState<ProxyFormValues>(initial);
   const cooling = cooldownSec > 0;
+  const formId = useId();
 
   return (
     <form
@@ -72,34 +80,56 @@ export function ProxyConfigFormView({
             placeholder={field.placeholder}
             spellCheck={false}
             autoComplete="off"
+            aria-invalid={fieldErrors?.[field.key] !== undefined || undefined}
+            aria-describedby={
+              fieldErrors?.[field.key] === undefined ? undefined : `${formId}-error`
+            }
             className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"
             onChange={(e) => {
               const next = e.target.value;
               setValues((prev) => ({ ...prev, [field.key]: next }));
+              onFieldChange?.();
             }}
           />
         </label>
       ))}
 
       <p className="text-xs text-muted-foreground">
-        三个都留空 = 清空代理配置。⚠️ 代理串里如果带用户名密码（`http://user:pass@host`），
-        它会被存进平台配置 —— 审计日志只记 host，但请确认这台机器上存它是可以接受的。
+        三个都留空 = 清空代理配置。地址支持 <code>http://</code> 和<code>https://</code>
+        ；用户名密码会随地址保存在平台配置中。
       </p>
 
       {errorMessage === null ? null : (
-        <p role="alert" data-testid="proxy-error" className="text-sm text-red-500">
+        <p
+          id={`${formId}-error`}
+          role="alert"
+          data-testid="proxy-error"
+          className="text-sm text-destructive"
+        >
           保存失败：{errorMessage}
+        </p>
+      )}
+      {successMessage === undefined ? null : (
+        <p role="status" className="text-sm">
+          {successMessage}
         </p>
       )}
 
       <div className="flex items-center gap-2">
-        <Button type="submit" disabled={isSaving || cooling}>
+        <Button
+          type="submit"
+          variant={saveLabel === '保存' ? 'default' : 'secondary'}
+          disabled={isSaving || cooling}
+        >
+          {isSaving ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : null}
           {isSaving ? '保存中…' : cooling ? `${saveLabel}（${String(cooldownSec)}s）` : saveLabel}
         </Button>
         {/* ⚠️ 这句不是废话：它是 §8 约束 2 在界面上的那一半。 */}
-        <span className="text-xs text-muted-foreground">
-          只保存配置，不会结束初始化 —— 放行在最后一步。
-        </span>
+        {saveLabel === '保存' ? null : (
+          <span className="text-xs text-muted-foreground">
+            只保存配置，不会结束初始化 —— 放行在最后一步。
+          </span>
+        )}
       </div>
     </form>
   );

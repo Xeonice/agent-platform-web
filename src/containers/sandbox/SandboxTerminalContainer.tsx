@@ -22,6 +22,7 @@
 // 正确的防线只有"注册表驱动 UI + 前端不出现任何字面量默认值"这一条 —— 就是本文件现在的形状。
 import { useCallback, useEffect, useState, useRef } from 'react';
 import type { ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
@@ -36,13 +37,20 @@ import { readNewTaskDeepLink } from '@/hooks/_shared/useDeepLinkModal';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
 import { useAppStore } from '@/stores';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
+import { SandboxRestoreStateView } from '@/views/sandbox/SandboxRestoreState.view';
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/dialog';
+import { revealLaunchAuthPanel } from '@/hooks/workbench/useWorkbenchObjectFocus';
+import { Button } from '@/components/ui/button';
+import { useOfflineMode } from '@/hooks/system/useGlobalBanner';
 import { AuthGateContainer } from '@/containers/credential/AuthGateContainer';
 import { useRuntimeAuthPanel } from '@/hooks/credential/useRuntimeAuthPanel';
 import { SandboxLifecycleContainer } from '@/containers/sandbox/SandboxLifecycleContainer';
 import { HeadlessTaskContainer } from '@/containers/task/HeadlessTaskContainer';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
-import type { ProjectSourceType } from '@/types/project';
+import type { ProjectDto, ProjectSourceType } from '@/types/project';
+import type { TaskImageSnapshot } from '@/types/image';
+import { useLaunchImages, launchQueryErrorMessage } from '@/hooks/image/useLaunchImages';
+import { sandboxTaskImage } from '@/hooks/image/useTaskImageView';
 
 /**
  * 深链进来时挂在指令框下的那句话（F21-2 §2.1）。⛔ 不许省：深链恢复的是「弹窗打开 +
@@ -52,6 +60,7 @@ const DEEP_LINK_PROMPT_NOTICE = '刷新后指令未保留，请重新输入';
 
 /** 已创建的任务：id + **后端派生的**默认任务名（前端不再自己从 prompt 派生一份，T-1）。 */
 interface CreatedTask {
+  image?: TaskImageSnapshot;
   id: string;
   name?: string;
   /** 沙箱的 runtime（S6 无头任务 POST 路径里的 `:rt`）。 */
@@ -65,6 +74,8 @@ interface CreatedTask {
 }
 
 export interface SandboxTerminalContainerProps {
+  projects?: readonly ProjectDto[];
+  launchProjectId?: string | null;
   wsBaseUrl: string;
   /** 选中的真实项目（沙箱 /workspace 即该项目文件）。 */
   projectId: string;
@@ -79,6 +90,8 @@ export function SandboxTerminalContainer({
   projectId,
   projectName,
   projectSourceType,
+  projects,
+  launchProjectId,
 }: SandboxTerminalContainerProps) {
   // null = 用户尚未手选 → 跟随服务端默认档（前端无默认常量，registry 换默认档即刻生效）。
   // runtime 一侧：null = **用户还没选**（平台没有默认 runtime 概念，既不预选也不猜）。
@@ -96,16 +109,31 @@ export function SandboxTerminalContainer({
    * `''` 时请求体**不含** `branch` 字段，由后端走缺省（§9.4 ④）。
    */
   const [branch, setBranch] = useState('');
+  const [formProjectId, setFormProjectId] = useState(
+    launchProjectId === undefined ? projectId : (launchProjectId ?? ''),
+  );
+  const launchProject = projects?.find((project) => project.id === formProjectId);
+  const formProjectReady =
+    projects === undefined ? formProjectId !== '' : launchProject?.cloneStatus === 'ready';
+  const formProjectName =
+    launchProject?.name ?? (formProjectId === projectId ? projectName : undefined);
+  const [pickedImage, setPickedImage] = useState('');
+  const [relaunch, setRelaunch] = useState<{ name: string; image?: TaskImageSnapshot } | null>(
+    null,
+  );
+  const offlineMode = useOfflineMode();
   const providers = useProviders();
   const runtimes = useRuntimes();
-  const isGitProject = projectSourceType === 'git';
+  const isGitProject =
+    (launchProject?.sourceType ?? (formProjectId === projectId ? projectSourceType : undefined)) ===
+    'git';
   // 空项目不发这个请求（enabled:false）——没有 git，谈不上分支。
-  const branches = useProjectBranches({ projectId, isGitProject });
+  const branches = useProjectBranches({ projectId: formProjectId, isGitProject });
   const createSandbox = useCreateSandbox();
+  const queryClient = useQueryClient();
   const createErrorView = useCreateSandboxErrorView(createSandbox.error);
   const { reportRestError } = useReportUnauthorized();
   const setSandboxStatus = useAppStore((s) => s.setSandboxStatus);
-  const clearSandboxStatus = useAppStore((s) => s.clearSandboxStatus);
   // 弹层开关（真 overlay，不再是"沙箱为空时的兜底渲染"，§N.0）。入口在工作台 [+ 新任务]。
   const currentModal = useAppStore((s) => s.currentModal);
   const setCurrentModal = useAppStore((s) => s.setCurrentModal);
@@ -139,6 +167,7 @@ export function SandboxTerminalContainer({
   // 本次会话已有 task 时不发这个请求（内存里的状态更新）。
   const persistedSandboxId = useAppStore((s) => s.selectedSandboxId);
   const setSelectedSandboxId = useAppStore((s) => s.setSelectedSandboxId);
+  const setSelectedProjectId = useAppStore((s) => s.setSelectedProjectId);
   /**
    * ⛔ **选中态才是权威，本会话创建的那个 task 不许压过它**（2026-09-09 修）。
    *
@@ -159,7 +188,11 @@ export function SandboxTerminalContainer({
    * 所以只有它**就是当前选中那个**时才采用，否则一律走 restore 拉回来。
    */
   const { localTask, restoreId } = useActiveSandbox(persistedSandboxId, task);
-  const restored = useSandboxRestore(restoreId, projectId);
+  // 创建响应也必须明确模式；若响应缺失，不凭 running 状态推断成终端。
+  const restored = useSandboxRestore(
+    localTask?.headless === undefined ? (localTask?.id ?? restoreId) : restoreId,
+    projectId,
+  );
   const sandboxId = localTask?.id ?? (restored.notFound ? null : restoreId);
   const taskName = localTask?.name ?? restored.name;
   /**
@@ -170,6 +203,7 @@ export function SandboxTerminalContainer({
   const terminalBreadcrumb = taskName === undefined ? projectName : `${projectName} / ${taskName}`;
   // 无头任务打给沙箱自己的 runtime（本会话取创建响应，刷新后取 DTO）。
   const sandboxRuntime = localTask?.runtime ?? restored.runtime;
+  const taskImage = localTask?.image ?? restored.image;
   /**
    * 终端 [+ 新终端] 下拉能开哪几个 CLI（06 §5.6）。
    *
@@ -228,6 +262,14 @@ export function SandboxTerminalContainer({
    * (P21 §2.2),拦下来等于把"还有一周到期"当成"现在不能用"。
    */
   const selectedRuntimeDto = runtimeList.find((r) => r.id === runtime);
+  const launchImages = useLaunchImages(
+    hostProvider?.name,
+    runtime,
+    runtime,
+    pickedImage,
+    relaunch?.image,
+  );
+  const { effectiveImage, selectedImage, disabledReason: imageDisabledReason } = launchImages;
   const credentialStatus = selectedRuntimeDto?.credentialStatus;
   const authBlocked = credentialStatus === 'none' || credentialStatus === 'expired';
 
@@ -254,7 +296,8 @@ export function SandboxTerminalContainer({
    * 展开态、成功后的三件事（刷新 + toast + 收起）两处走的是同一个 `useRuntimeAuthPanel`。
    */
   const renderAuthGate = (): ReactNode => {
-    if (!authBlocked || selectedRuntimeDto === undefined) return undefined;
+    if (selectedRuntimeDto === undefined) return undefined;
+    if (!authBlocked && !authPanel.isOpenFor(selectedRuntimeDto.id)) return undefined;
     if (!authPanel.isOpenFor(selectedRuntimeDto.id)) {
       return (
         <div className="space-y-2">
@@ -268,6 +311,7 @@ export function SandboxTerminalContainer({
             data-testid="auth-gate-start"
             onClick={() => {
               authPanel.open(selectedRuntimeDto.id);
+              revealLaunchAuthPanel();
             }}
             className="rounded border border-border px-2 py-1 text-xs hover:bg-accent"
           >
@@ -277,10 +321,11 @@ export function SandboxTerminalContainer({
       );
     }
     return (
-      <div className="mt-1">
+      <div id="launch-auth-panel" className="mt-1">
         <AuthGateContainer
           runtimeId={selectedRuntimeDto.id}
           runtimeName={selectedRuntimeDto.displayName}
+          vendor={selectedRuntimeDto.vendor}
           methods={selectedRuntimeDto.authMethods}
           apiKeyPrefix={selectedRuntimeDto.apiKeyPrefix}
           // 一次性语义文案只在"从未配置"那支出现;已过期是**再来一次**,那句
@@ -310,14 +355,23 @@ export function SandboxTerminalContainer({
     // 与上面三条同理:按钮已禁用,这里兜住键盘等旁路触发。今天按钮是原生
     // `<button disabled>`(挡得住一切激活路径),但同函数里其余三条都兜了,少这一条
     // 只是等着某天换成自定义控件时变成真口子。
-    if (hostProvider === undefined || runtime === '' || ttyUnsupported || authBlocked) return;
+    if (
+      hostProvider === undefined ||
+      runtime === '' ||
+      ttyUnsupported ||
+      authBlocked ||
+      !formProjectReady ||
+      selectedRuntimeDto === undefined ||
+      imageDisabledReason !== undefined
+    )
+      return;
     const prompt = initialPrompt.trim();
     if (Array.from(prompt).length > INITIAL_PROMPT_MAX_LENGTH) return; // 视图已禁用，这里兜旁路触发
     // **提交即清空**（安全红线）：值只在这一刻进入请求体，之后前端不再持有。
     setInitialPrompt('');
     createSandbox.mutate(
       {
-        projectId,
+        projectId: formProjectId,
         // 取自 GET /api/runtimes 的真实注册键（用户可改选）——前端不再有任何 runtime 字面量。
         runtime,
         // ⚠️ **刻意不传 `provider`**（契约里它是 optional）：档位由后端按宿主平台决定，
@@ -327,14 +381,20 @@ export function SandboxTerminalContainer({
         // **不选就不带**（§9.4 ④）：缺省 = 基线当前分支，由后端裁决。
         // 前端填一个值等于把"跟随基线"偷偷变成"锁死在某个分支上"。
         ...(branch === '' ? {} : { branch }),
+        ...(effectiveImage === '' || selectedImage === undefined
+          ? {}
+          : { image: selectedImage.reference }),
       },
       {
         onSuccess: (sandbox) => {
-          // 种子首值（通常 pending）；随后 /events 的 status_changed 推进到 running 才开终端。
-          setSandboxStatus(sandbox.id, sandbox.status, {
-            failureCode: sandbox.failureCode,
-            failureMessage: sandbox.failureMessage,
-          });
+          // Creation acceptance may arrive after provision events or a fresher REST list.
+          // Seed only a new projection; never downgrade an already observed task to pending.
+          if (useAppStore.getState().sandboxStatuses[sandbox.id] === undefined) {
+            setSandboxStatus(sandbox.id, sandbox.status, {
+              failureCode: sandbox.failureCode,
+              failureMessage: sandbox.failureMessage,
+            });
+          }
           // 任务名直接用后端返回的 name（从 prompt 派生，规则 P21-1 §9）——前端不派生第二份。
           // provider 取**后端回的**——它才知道这次真的落在哪个档位上（前端已不再参与选择）。
           setTask({
@@ -344,15 +404,22 @@ export function SandboxTerminalContainer({
             availableRuntimes: sandbox.availableRuntimes,
             provider: sandbox.provider,
             headless: sandbox.headless,
+            image: sandboxTaskImage(sandbox),
           });
           // 落进 persist 白名单里的选中位 ⇒ 刷新后能靠 DTO 把任务名与失败原因取回来。
           setSelectedSandboxId(sandbox.id);
+          setSelectedProjectId(sandbox.projectId);
           // 创建**受理**即关弹窗：进度卡在主区继续推进（§6「创建中」那一格就在主区）。
           // 失败/门口拒绝时弹窗**留着**——那两条都要求"就地提示改配置"。
           setCurrentModal(null);
+          setPickedRuntime(null);
+          setPickedImage('');
+          setBranch('');
+          setRelaunch(null);
         },
         // 启用口令时建沙箱会 401 → 置锁弹解锁门（11 §3.1）；健康探针 passcode-exempt 不受影响。
         onError: (error) => {
+          setInitialPrompt(prompt);
           reportRestError(error);
         },
       },
@@ -366,15 +433,31 @@ export function SandboxTerminalContainer({
    */
   const handleCloseModal = useCallback((): void => {
     setInitialPrompt('');
+    setPickedRuntime(null);
+    setPickedImage('');
+    setBranch('');
+    setRelaunch(null);
+    setFormProjectId(launchProjectId === undefined ? projectId : (launchProjectId ?? ''));
     createSandbox.reset();
     setCurrentModal(null);
-  }, [createSandbox, setCurrentModal]);
+  }, [createSandbox, setCurrentModal, launchProjectId, projectId]);
 
-  const handleRetry = (): void => {
-    if (sandboxId !== null) clearSandboxStatus(sandboxId);
-    setTask(null);
-    setSelectedSandboxId(null); // 回新建入口 = 不再恢复这个任务（否则刷新又被拉回失败卡）
+  const handleRetry = (omitRuntime = false, fromFailure = true): void => {
+    setPickedRuntime(omitRuntime || !fromFailure ? null : (sandboxRuntime ?? null));
+    setPickedImage(taskImage?.id === undefined || !fromFailure ? '' : `manifest:${taskImage.id}`);
+    setFormProjectId(projectId);
+    setInitialPrompt('');
+    setBranch('');
+    setRelaunch(
+      fromFailure
+        ? {
+            name: taskName ?? '未命名任务',
+            ...(taskImage === undefined ? {} : { image: taskImage }),
+          }
+        : null,
+    );
     createSandbox.reset();
+    setCurrentModal('newTask');
   };
 
   /**
@@ -420,9 +503,9 @@ export function SandboxTerminalContainer({
             // 留给调用方显式声明，不是漏了。`ModalShellView` 此前手写了这个属性，这里
             // 照抄，不能指望换个组件就白拿。
             aria-modal="true"
-            className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-lg border border-border bg-background focus:outline-none"
+            className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border border-border bg-background focus:outline-none"
           >
-            <div className="flex items-start gap-3 border-b border-border px-5 py-3">
+            <div className="flex shrink-0 items-start gap-3 border-b border-border px-5 py-3">
               <div className="min-w-0 flex-1 text-left">
                 <DialogPrimitive.Title className="text-base font-semibold">
                   新建任务
@@ -430,11 +513,48 @@ export function SandboxTerminalContainer({
                 {/* ⚠️ 精确串（不是正则）：`NewSandboxPanelView` 的首句也以同样的话开头，
                     用正则会同时命中这里与那句，触发 strict-mode 二义匹配。 */}
                 <DialogPrimitive.Description className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {`在「${projectName}」中发起`}
+                  {formProjectName === undefined
+                    ? '选择项目与 Agent，发起一个任务'
+                    : `在「${formProjectName}」中发起`}
                 </DialogPrimitive.Description>
               </div>
             </div>
             <NewSandboxPanelView
+              {...(projects === undefined
+                ? {}
+                : {
+                    projects: [...projects]
+                      .sort(
+                        (a, b) =>
+                          Number(b.id === launchProjectId) - Number(a.id === launchProjectId),
+                      )
+                      .map((project) => ({
+                        id: project.id,
+                        label: `${project.name}${project.cloneStatus === 'ready' ? '' : project.cloneStatus === 'cloning' ? '（克隆中）' : '（克隆失败）'}`,
+                        disabled: project.cloneStatus !== 'ready',
+                      })),
+                    selectedProjectId: formProjectId,
+                    onSelectProject: (id: string) => {
+                      setFormProjectId(id);
+                      setBranch('');
+                    },
+                  })}
+              relaunchNotice={
+                relaunch === null
+                  ? undefined
+                  : `从失败的任务「${relaunch.name}」重新发起。项目、Agent 和镜像已按原任务选好。原来那个任务留在左侧不动，不需要了可以从它的任务菜单销毁。`
+              }
+              branchNotice={
+                relaunch === null ? undefined : '原任务用的分支没有带过来；需要的话在这里重新选。'
+              }
+              images={launchImages.options}
+              image={effectiveImage}
+              onSelectImage={setPickedImage}
+              loadingImages={launchImages.isPending}
+              imagesErrorMessage={launchImages.errorMessage}
+              imageDisabledReason={imageDisabledReason}
+              imageWarning={selectedImage?.warning}
+              defaultImageLabel={launchImages.defaultLabel}
               runtimes={runtimeList}
               runtime={runtime}
               onSelectRuntime={(nextRuntime) => {
@@ -444,7 +564,7 @@ export function SandboxTerminalContainer({
               }}
               loadingRuntimes={runtimes.isPending}
               runtimesErrorMessage={
-                runtimes.isError ? runtimes.error.message || '请求失败' : undefined
+                runtimes.isError ? launchQueryErrorMessage(runtimes.error) : undefined
               }
               onRetryRuntimes={() => {
                 void runtimes.refetch();
@@ -454,12 +574,13 @@ export function SandboxTerminalContainer({
               creating={createSandbox.isPending}
               loadingProviders={providers.isPending}
               providersErrorMessage={
-                providers.isError ? providers.error.message || '请求失败' : undefined
+                providers.isError ? launchQueryErrorMessage(providers.error) : undefined
               }
               onRetryProviders={() => {
                 void providers.refetch();
               }}
               authGateSlot={renderAuthGate()}
+              authGateBlocked={authBlocked}
               runtimeIdentityNotice={
                 credentialStatus === 'active' || credentialStatus === 'expiring'
                   ? `将以 ${selectedRuntimeDto?.maskedIdentifier ?? '已配置凭证'} 身份运行${
@@ -479,11 +600,13 @@ export function SandboxTerminalContainer({
                 //    `<p>{createDisabledReason}</p>` 里，全仓没有 markdown 渲染器 ⇒ 屏幕上会
                 //    真的出现两颗星号。（同一份面板 199 行用的是 `<strong>`，说明这是笔误。）
                 //    要强调就改句序，把重点放句首。
-                ttyUnsupported
-                  ? '这台机器的沙箱环境开不了终端。' +
-                    '跑在哪种沙箱环境上是这台机器的事实，不是一个可以在这里改的选项；' +
-                    '改发无头任务就可以——不开终端，agent 启动就开始执行。'
-                  : undefined
+                offlineMode.offline
+                  ? offlineMode.disabledReason
+                  : ttyUnsupported
+                    ? '这台机器的沙箱环境开不了终端。跑在哪种沙箱环境上是这台机器的事实，不是一个可以在这里改的选项；在「系统状态」的「沙箱环境状态」里能看到它是哪一种、支持哪些能力。'
+                    : runtime !== '' && selectedRuntimeDto === undefined
+                      ? '原任务的 Agent 现在不可用，请改选一个已注册的 Agent。'
+                      : undefined
               }
               // 两条**互斥**的错误呈现路径（P22 §1 / 04 §5）：
               //  · rejection = 后端显式标了 `sideEffectFree` 的门口拒绝，请求在落库前被拒（没有
@@ -491,6 +614,17 @@ export function SandboxTerminalContainer({
               //    ⚠️ 判据不是 HTTP 码：这六条拒绝散在 400/404/409 上，反推必漏（见 lib 里的注释）；
               //  · errorMessage = 其余创建期失败（含后端**漏标**时的保守回落），人话 + 建议。
               rejectionMessage={createErrorView.rejection}
+              onViewProjectStatus={
+                createErrorView.rejectionCode === 'PROJECT_NOT_READY'
+                  ? () => {
+                      handleCloseModal();
+                      const state = useAppStore.getState();
+                      state.setSelectedSandboxId(null);
+                      state.setSelectedProjectId(formProjectId);
+                      void queryClient.invalidateQueries({ queryKey: ['projects'] });
+                    }
+                  : undefined
+              }
               errorMessage={
                 createErrorView.failure === undefined
                   ? undefined
@@ -501,7 +635,13 @@ export function SandboxTerminalContainer({
               // 深链把弹窗与项目上下文恢复回来了，**但指令没有**（它只在这个容器的局部
               // state 里，既不进 URL 也不进 localStorage，15 §3.5）。所以要**明说**一句——
               // 用户看见弹窗还在，会默认自己写的东西也还在。站内点开时不给这句。
-              {...(openedFromDeepLink ? { promptNotice: DEEP_LINK_PROMPT_NOTICE } : {})}
+              promptNotice={
+                relaunch !== null
+                  ? '原来的任务指令没有带过来（平台不回显提交过的指令），需要的话重新填写。'
+                  : openedFromDeepLink
+                    ? DEEP_LINK_PROMPT_NOTICE
+                    : undefined
+              }
               // —— 分支选择器（§N.1）——
               // 空项目**整块不渲染**（没有 git，谈不上分支）；加载失败只降级、不拦创建。
               showBranchPicker={isGitProject}
@@ -510,7 +650,7 @@ export function SandboxTerminalContainer({
               onSelectBranch={setBranch}
               loadingBranches={branches.isPending}
               branchesErrorMessage={branches.isError ? '读取本地引用失败' : undefined}
-              projectName={projectName}
+              projectName={formProjectName}
               onCancel={handleCloseModal}
             />
             <DialogPrimitive.Close asChild>
@@ -537,7 +677,16 @@ export function SandboxTerminalContainer({
           className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground"
         >
           <p>「{projectName}」下还没有任务。</p>
-          <p>点左侧 [＋ 新任务] 发起一个 —— 填了指令，agent 启动时就开始执行。</p>
+          <p>填了指令，Agent 启动时就开始执行。</p>
+          <Button
+            className="mt-3"
+            disabled={offlineMode.offline}
+            onClick={() => {
+              setCurrentModal('newTask');
+            }}
+          >
+            发起第一个任务
+          </Button>
         </div>
       </>
     );
@@ -569,6 +718,22 @@ export function SandboxTerminalContainer({
    */
   const sandboxHeadless = localTask?.headless ?? restored.headless;
 
+  // 列表和 /events 能先种入 running，但只有详情能确认运行方式。
+  // 在模式未知的窗口绝不能挂 TerminalTabs，否则无头任务会额外附着交互式 Agent。
+  // 有完整缓存时即使后台 refetch 失败也走下面的原现场。
+  if (sandboxHeadless === undefined) {
+    return (
+      <>
+        {newTaskModal}
+        <SandboxRestoreStateView
+          pending={restored.isPending}
+          errorMessage={restored.errorMessage}
+          onRetry={restored.retry}
+        />
+      </>
+    );
+  }
+
   // 交给生命周期门：startup 展示进度、running 才开终端、failed 可重试。
   // ⚠️ 这里**不再传 sessionId**：多标签之后"有哪几个标签、各自叫什么 id"由
   //    `useTerminalSessions` 一处派生（Agent 那个仍是 `<sandboxId>:0`，08 §11.1）。
@@ -579,20 +744,41 @@ export function SandboxTerminalContainer({
   return (
     <>
       {newTaskModal}
+      {restored.sourceAutomationId && (
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2 text-xs">
+          <span>来自自动化规则「{restored.sourceAutomationName ?? '来源规则'}」</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const state = useAppStore.getState();
+              state.setSelectedProjectForMenu(projectId);
+              state.setAutomationFocusRuleId(restored.sourceAutomationId ?? null);
+              state.setCurrentModal('automations');
+            }}
+          >
+            查看来源规则
+          </Button>
+        </div>
+      )}
       <SandboxLifecycleContainer
         sandboxId={sandboxId}
+        headless={sandboxHeadless}
         availableRuntimes={availableRuntimes}
         socketConfig={socketConfig}
         onRetry={handleRetry}
+        image={taskImage}
+        projectId={projectId}
         taskName={taskName}
         breadcrumb={terminalBreadcrumb}
         headlessSlot={
-          sandboxRuntime === undefined || sandboxHeadless !== true ? undefined : (
+          sandboxRuntime === undefined || !sandboxHeadless ? undefined : (
             <HeadlessTaskContainer
               sandboxId={sandboxId}
               runtime={sandboxRuntime}
               wsBaseUrl={wsBaseUrl}
               headlessTaskSupported={headlessTaskSupported}
+              image={taskImage}
             />
           )
         }

@@ -8,6 +8,7 @@
 //    于是后端下发的前缀一旦有偏差（或第三方 runtime 的 key 长得不一样），用户手里一串
 //    完全合法的 key **根本按不下保存键**。⇒ 提示归提示，判定权交后端。
 import { Button } from '@/components/ui/button';
+import { CircleAlert } from 'lucide-react';
 
 export interface ApiKeyAuthProps {
   /** key 明文（受控，容器持有，提交即清空）。 */
@@ -56,7 +57,7 @@ export function ApiKeyAuthView({
       }}
     >
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">API Key（保存后仅展示尾号）</span>
+        <span className="font-medium">API Key（保存后仅展示尾号）</span>
         <input
           type="password"
           name="api-key"
@@ -66,8 +67,10 @@ export function ApiKeyAuthView({
           // 否则 placeholder 会退化成一个光秃秃的「…」。
           placeholder={expectedPrefix === '' ? '粘贴密钥' : `${expectedPrefix}…`}
           className={
-            'rounded-md border bg-transparent px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ' +
-            (prefixValid ? 'border-border' : 'border-red-400')
+            'h-9 min-w-0 rounded-md border bg-background px-3 font-mono text-[13px] focus-visible:outline-none ' +
+            (prefixValid
+              ? 'border-border focus-visible:shadow-[var(--v2-focus-input)]'
+              : 'border-destructive shadow-[var(--v2-focus-input-error)]')
           }
           value={value}
           disabled={submitting}
@@ -76,11 +79,15 @@ export function ApiKeyAuthView({
           }}
         />
         {!prefixValid && (
-          <span role="alert" className="text-xs text-red-400">
-            这串 key 一般以 {expectedPrefix} 开头 —— 确认没拿错的话，也可以直接提交，由服务端判定。
+          <span role="alert" className="flex items-start gap-1.5 text-[13px] text-destructive">
+            <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <span>
+              这串 key 一般以 {expectedPrefix} 开头 ——
+              确认没拿错的话，也可以直接提交，由服务端判定。
+            </span>
           </span>
         )}
-        <span className="text-xs text-muted-foreground">
+        <span className="text-[13px] text-muted-foreground">
           {vendor === undefined || vendor === ''
             ? 'API Key 在签发它的厂商控制台里创建；按用量计费。'
             : `在 ${vendor} 的控制台创建一个 API Key，粘到这里；按用量计费。`}
@@ -88,8 +95,11 @@ export function ApiKeyAuthView({
       </label>
 
       {error !== undefined && error !== '' && (
-        <div role="alert" className="flex flex-col gap-1 text-xs text-red-400">
-          <span>{error}</span>
+        <div
+          role="alert"
+          className="flex flex-col gap-1 rounded-md border border-[var(--v2-status-fail-subtle-border)] bg-[var(--v2-status-fail-subtle-bg)] p-3 text-sm text-destructive"
+        >
+          <span className="font-medium">{error}</span>
           {reasons !== undefined && reasons.length > 0 && (
             <ul className="list-inside list-disc">
               {reasons.map((reason) => (

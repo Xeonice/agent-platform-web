@@ -42,6 +42,7 @@ export interface AutomationFormFields {
 
 export interface AutomationFormErrors {
   name?: string;
+  description?: string;
   prompt?: string;
   runtime?: string;
   schedule?: string;
@@ -64,6 +65,7 @@ export interface AutomationFormProps {
   webhookTestErrorMessage?: string;
   saveErrorMessage?: string;
   onPatch: (patch: Partial<AutomationFormFields>) => void;
+  onBlurField?: (field: keyof AutomationFormErrors) => void;
   onTimeZoneChange: (timezone: string) => void;
   onTestWebhook: () => void;
   onSave: () => void;
@@ -89,6 +91,7 @@ export function AutomationFormView({
   webhookTestErrorMessage,
   saveErrorMessage,
   onPatch,
+  onBlurField,
   onTimeZoneChange,
   onTestWebhook,
   onSave,
@@ -97,242 +100,283 @@ export function AutomationFormView({
   const promptTooLong = promptCount > TASK_PROMPT_MAX_LENGTH;
 
   return (
-    <div className="flex flex-col gap-4 px-5 py-4 text-sm" data-testid="automation-form">
-      <p className="text-xs text-muted-foreground">
-        {mode === 'create' ? '新建自动化规则' : '编辑自动化规则'}
-        ：到点自动起一个无头任务，跑完自动销毁实例、只留成果。
-      </p>
+    <div
+      className="flex min-h-0 max-h-[calc(85dvh-64px)] flex-col text-sm"
+      data-testid="automation-form"
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto flex flex-col gap-4 px-5 py-4">
+        <p className="text-xs text-muted-foreground">
+          {mode === 'create' ? '新建自动化规则' : '编辑自动化规则'}
+          ：到点自动起一个无头任务，跑完自动销毁实例、只留成果。
+        </p>
 
-      <label className="flex flex-col gap-1 text-xs">
-        名称
-        <input
-          type="text"
-          value={draft.name}
-          className="rounded border border-border bg-background px-2 py-1"
-          onChange={(e) => {
-            onPatch({ name: e.target.value });
-          }}
-          data-testid="form-name"
-        />
-        {errors.name !== undefined && (
-          <span role="alert" className="text-red-400" data-testid="form-name-error">
-            {errors.name}
-          </span>
-        )}
-      </label>
+        <label className="flex flex-col gap-1 text-xs">
+          名称
+          <input
+            type="text"
+            autoFocus
+            value={draft.name}
+            className="rounded border border-border bg-background px-2 py-1"
+            onChange={(e) => {
+              onPatch({ name: e.target.value });
+            }}
+            onBlur={() => onBlurField?.('name')}
+            aria-invalid={errors.name !== undefined}
+            aria-describedby={errors.name === undefined ? undefined : 'form-name-error'}
+            data-testid="form-name"
+          />
+          {errors.name !== undefined && (
+            <span
+              role="alert"
+              className="text-red-400"
+              id="form-name-error"
+              data-testid="form-name-error"
+            >
+              {errors.name}
+            </span>
+          )}
+        </label>
 
-      <label className="flex flex-col gap-1 text-xs">
-        描述（可选）
-        <input
-          type="text"
-          value={draft.description}
-          className="rounded border border-border bg-background px-2 py-1"
-          onChange={(e) => {
-            onPatch({ description: e.target.value });
-          }}
-          data-testid="form-description"
-        />
-      </label>
+        <label className="flex flex-col gap-1 text-xs">
+          描述（可选）
+          <input
+            type="text"
+            value={draft.description}
+            className="rounded border border-border bg-background px-2 py-1"
+            onChange={(e) => {
+              onPatch({ description: e.target.value });
+            }}
+            onBlur={() => onBlurField?.('description')}
+            aria-invalid={errors.description !== undefined}
+            aria-describedby={
+              errors.description === undefined ? undefined : 'form-description-error'
+            }
+            data-testid="form-description"
+          />
+        </label>
 
-      {/* 屏上叫 Agent；`runtime` 是内部字段名（10 §6.5），⛔ 不上屏。 */}
-      <label className="flex flex-col gap-1 text-xs">
-        用哪个 Agent 跑
-        <select
-          value={draft.runtime}
-          className="rounded border border-border bg-background px-2 py-1"
-          onChange={(e) => {
-            onPatch({ runtime: e.target.value });
-          }}
-          data-testid="form-runtime"
-        >
-          <option value="">{runtimesLoading ? '正在读取…' : '请选择'}</option>
-          {runtimeOptions.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        {errors.runtime !== undefined && (
-          <span role="alert" className="text-red-400" data-testid="form-runtime-error">
-            {errors.runtime}
-          </span>
-        )}
-      </label>
-
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="flex items-baseline justify-between">
-          <span>任务内容</span>
-          <span
-            className={promptTooLong ? 'text-red-400' : 'text-muted-foreground'}
-            data-testid="form-prompt-count"
+        {/* 屏上叫 Agent；`runtime` 是内部字段名（10 §6.5），⛔ 不上屏。 */}
+        <label className="flex flex-col gap-1 text-xs">
+          用哪个 Agent 跑
+          <select
+            value={draft.runtime}
+            className="rounded border border-border bg-background px-2 py-1"
+            onChange={(e) => {
+              onPatch({ runtime: e.target.value });
+            }}
+            onBlur={() => onBlurField?.('runtime')}
+            aria-invalid={errors.runtime !== undefined}
+            aria-describedby={errors.runtime === undefined ? undefined : 'form-runtime-error'}
+            data-testid="form-runtime"
           >
-            {promptCount} / {TASK_PROMPT_MAX_LENGTH}
+            <option value="">{runtimesLoading ? '正在读取…' : '请选择'}</option>
+            {runtimeOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {errors.runtime !== undefined && (
+            <span
+              role="alert"
+              className="text-red-400"
+              id="form-runtime-error"
+              data-testid="form-runtime-error"
+            >
+              {errors.runtime}
+            </span>
+          )}
+        </label>
+
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="flex items-baseline justify-between">
+            <span>任务内容</span>
+            <span
+              className={promptTooLong ? 'text-red-400' : 'text-muted-foreground'}
+              data-testid="form-prompt-count"
+            >
+              {promptCount} / {TASK_PROMPT_MAX_LENGTH}
+            </span>
           </span>
-        </span>
-        <textarea
-          rows={5}
-          value={draft.prompt}
-          className="rounded border border-border bg-background px-2 py-1 font-mono"
-          onChange={(e) => {
-            onPatch({ prompt: e.target.value });
-          }}
-          data-testid="form-prompt"
-        />
-        {errors.prompt !== undefined && (
-          <span role="alert" className="text-red-400" data-testid="form-prompt-error">
-            {errors.prompt}
-          </span>
-        )}
-      </label>
+          <textarea
+            rows={5}
+            value={draft.prompt}
+            className="rounded border border-border bg-background px-2 py-1 font-mono"
+            onChange={(e) => {
+              onPatch({ prompt: e.target.value });
+            }}
+            onBlur={() => onBlurField?.('prompt')}
+            aria-invalid={errors.prompt !== undefined}
+            aria-describedby={errors.prompt === undefined ? undefined : 'form-prompt-error'}
+            data-testid="form-prompt"
+          />
+          {errors.prompt !== undefined && (
+            <span
+              role="alert"
+              className="text-red-400"
+              id="form-prompt-error"
+              data-testid="form-prompt-error"
+            >
+              {errors.prompt}
+            </span>
+          )}
+        </label>
 
-      <fieldset className="flex flex-col gap-1 text-xs">
-        <legend className="font-medium">最长运行时间</legend>
-        <div className="flex flex-wrap gap-3">
-          {AUTOMATION_TIMEOUT_OPTIONS.map((minutes) => (
-            <label key={minutes} className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="timeout"
-                checked={draft.timeoutMinutes === minutes}
-                onChange={() => {
-                  onPatch({ timeoutMinutes: minutes });
-                }}
-                data-testid={`form-timeout-${String(minutes)}`}
-              />
-              {timeoutLabel(minutes)}
-            </label>
-          ))}
-        </div>
-        <span className="text-[11px] text-muted-foreground">
-          任务最长能跑多久。跑过头会被强制结束，并且这次算一次失败。
-        </span>
-      </fieldset>
-
-      <ScheduleSelectorView
-        kind={draft.scheduleKind}
-        config={draft.scheduleConfig}
-        timezone={draft.timezone}
-        editing={mode === 'edit'}
-        timezoneTouched={draft.timezoneTouched}
-        {...(errors.schedule === undefined ? {} : { errorMessage: errors.schedule })}
-        onKindChange={(scheduleKind) => {
-          // 换预设要同时换掉配置形状，否则「每天 08:00」切到「每小时」会留着一个
-          // 没人读的 time 字段，切回来时又冒出一个用户没设过的旧值。
-          onPatch({
-            scheduleKind,
-            scheduleConfig:
-              scheduleKind === 'hourly'
-                ? { minute: 0 }
-                : scheduleKind === 'weekly'
-                  ? { time: draft.scheduleConfig.time ?? '08:00', days: [1] }
-                  : { time: draft.scheduleConfig.time ?? '08:00' },
-          });
-        }}
-        onConfigChange={(scheduleConfig) => {
-          onPatch({ scheduleConfig });
-        }}
-        onTimeZoneChange={onTimeZoneChange}
-      />
-
-      <p className="text-[11px] text-muted-foreground" data-testid="form-schedule-preview">
-        预览：{schedulePreview}
-      </p>
-
-      <details className="rounded border border-border px-3 py-2" data-testid="form-advanced">
-        <summary className="cursor-pointer text-xs font-medium">高级选项</summary>
-
-        <fieldset className="mt-2 flex flex-col gap-1 text-xs">
-          <legend className="font-medium">并发模式</legend>
-          <label className="flex items-center gap-1.5">
-            <input
-              type="radio"
-              name="concurrency"
-              checked
-              readOnly
-              data-testid="form-concurrency-skip"
-            />
-            跳过（上次还在跑就不再起一个）
-          </label>
-          <label className="flex cursor-not-allowed items-center gap-1.5 text-muted-foreground">
-            <input type="radio" name="concurrency" disabled data-testid="form-concurrency-queue" />
-            排队（v1.2）
-          </label>
-          <label className="flex cursor-not-allowed items-center gap-1.5 text-muted-foreground">
-            <input
-              type="radio"
-              name="concurrency"
-              disabled
-              data-testid="form-concurrency-parallel"
-            />
-            并发（v1.2）
-          </label>
-        </fieldset>
-
-        <fieldset className="mt-3 flex flex-col gap-1 text-xs">
-          <legend className="font-medium">成果保留期</legend>
+        <fieldset className="flex flex-col gap-1 text-xs">
+          <legend className="font-medium">最长运行时间</legend>
           <div className="flex flex-wrap gap-3">
-            {ARTIFACT_RETENTION_OPTIONS.map((days) => (
-              <label key={days} className="flex items-center gap-1.5">
+            {AUTOMATION_TIMEOUT_OPTIONS.map((minutes) => (
+              <label key={minutes} className="flex items-center gap-1.5">
                 <input
                   type="radio"
-                  name="retention"
-                  checked={draft.artifactRetentionDays === days}
+                  name="timeout"
+                  checked={draft.timeoutMinutes === minutes}
                   onChange={() => {
-                    onPatch({ artifactRetentionDays: days });
+                    onPatch({ timeoutMinutes: minutes });
                   }}
-                  data-testid={`form-retention-${String(days)}`}
+                  data-testid={`form-timeout-${String(minutes)}`}
                 />
-                {days} 天
+                {timeoutLabel(minutes)}
               </label>
             ))}
           </div>
-          {/* ⭐ 与项目菜单里那个面板是同一条路（13 §2.2.2 / F21-7 §10.4）：这个天数直接
+          <span className="text-[11px] text-muted-foreground">
+            任务最长能跑多久。跑过头会被强制结束，并且这次算一次失败。
+          </span>
+        </fieldset>
+
+        <ScheduleSelectorView
+          kind={draft.scheduleKind}
+          config={draft.scheduleConfig}
+          timezone={draft.timezone}
+          editing={mode === 'edit'}
+          timezoneTouched={draft.timezoneTouched}
+          {...(errors.schedule === undefined ? {} : { errorMessage: errors.schedule })}
+          onKindChange={(scheduleKind) => {
+            // 换预设要同时换掉配置形状，否则「每天 08:00」切到「每小时」会留着一个
+            // 没人读的 time 字段，切回来时又冒出一个用户没设过的旧值。
+            onPatch({
+              scheduleKind,
+              scheduleConfig:
+                scheduleKind === 'hourly'
+                  ? { minute: 0 }
+                  : scheduleKind === 'weekly'
+                    ? { time: draft.scheduleConfig.time ?? '08:00', days: [1] }
+                    : { time: draft.scheduleConfig.time ?? '08:00' },
+            });
+          }}
+          onConfigChange={(scheduleConfig) => {
+            onPatch({ scheduleConfig });
+          }}
+          onTimeZoneChange={onTimeZoneChange}
+        />
+
+        <p className="text-[11px] text-muted-foreground" data-testid="form-schedule-preview">
+          预览：{schedulePreview}
+        </p>
+
+        <details className="rounded border border-border px-3 py-2" data-testid="form-advanced">
+          <summary className="cursor-pointer text-xs font-medium">高级选项</summary>
+
+          <fieldset className="mt-2 flex flex-col gap-1 text-xs">
+            <legend className="font-medium">并发模式</legend>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="concurrency"
+                checked
+                readOnly
+                data-testid="form-concurrency-skip"
+              />
+              跳过（上次还在跑就不再起一个）
+            </label>
+            <label className="flex cursor-not-allowed items-center gap-1.5 text-muted-foreground">
+              <input
+                type="radio"
+                name="concurrency"
+                disabled
+                data-testid="form-concurrency-queue"
+              />
+              排队（还没开放）
+            </label>
+            <label className="flex cursor-not-allowed items-center gap-1.5 text-muted-foreground">
+              <input
+                type="radio"
+                name="concurrency"
+                disabled
+                data-testid="form-concurrency-parallel"
+              />
+              并发（还没开放）
+            </label>
+          </fieldset>
+
+          <fieldset className="mt-3 flex flex-col gap-1 text-xs">
+            <legend className="font-medium">成果保留期</legend>
+            <div className="flex flex-wrap gap-3">
+              {ARTIFACT_RETENTION_OPTIONS.map((days) => (
+                <label key={days} className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="retention"
+                    checked={draft.artifactRetentionDays === days}
+                    onChange={() => {
+                      onPatch({ artifactRetentionDays: days });
+                    }}
+                    data-testid={`form-retention-${String(days)}`}
+                  />
+                  {days} 天
+                </label>
+              ))}
+            </div>
+            {/* ⭐ 与项目菜单里那个面板是同一条路（13 §2.2.2 / F21-7 §10.4）：这个天数直接
               喂 `retained_volumes.retain_until`，产物以 source='automation-artifact' 落进
               项目的「🎁 保留下来的成果」面板，不是另开一套存储。说出来用户才知道去哪儿找成果。
               ⚠️ 这句里的按钮名必须与 `ProjectMenuPanel.view` 的那一个**逐字一致**，
                  否则这条指路指向一个界面上找不到的名字。 */}
-          <span className="text-[11px] text-muted-foreground" data-testid="form-retention-note">
-            成果会留在项目的「保留下来的成果」里，到期自动清理；到期之前都可以下载。
-          </span>
-        </fieldset>
-      </details>
+            <span className="text-[11px] text-muted-foreground" data-testid="form-retention-note">
+              成果会留在项目的「保留下来的成果」里，到期自动清理；到期之前都可以下载。
+            </span>
+          </fieldset>
+        </details>
 
-      <WebhookSectionView
-        enabled={draft.webhookEnabled}
-        url={draft.webhookUrl}
-        triggerOn={draft.triggerOn}
-        {...(errors.webhookUrl === undefined ? {} : { errorMessage: errors.webhookUrl })}
-        deliveryNote={webhookDeliveryNote}
-        testPhase={webhookTestPhase}
-        {...(webhookTestErrorMessage === undefined
-          ? {}
-          : { testErrorMessage: webhookTestErrorMessage })}
-        onEnabledChange={(webhookEnabled) => {
-          onPatch({ webhookEnabled });
-        }}
-        onUrlChange={(webhookUrl) => {
-          onPatch({ webhookUrl });
-        }}
-        onTriggerOnChange={(triggerOn) => {
-          onPatch({ triggerOn });
-        }}
-        onTest={onTestWebhook}
-      />
-
-      {saveErrorMessage !== undefined && saveErrorMessage !== '' && (
-        <p role="alert" className="text-xs text-red-400" data-testid="form-save-error">
-          {saveErrorMessage}
-        </p>
-      )}
-
-      <div className="flex gap-2">
-        <Button disabled={!canSave || saving} onClick={onSave} data-testid="form-save">
-          {saving ? '保存中…' : '保存规则'}
-        </Button>
-        <Button variant="ghost" disabled={saving} onClick={onCancel} data-testid="form-cancel">
-          取消
-        </Button>
+        <WebhookSectionView
+          enabled={draft.webhookEnabled}
+          url={draft.webhookUrl}
+          triggerOn={draft.triggerOn}
+          {...(errors.webhookUrl === undefined ? {} : { errorMessage: errors.webhookUrl })}
+          deliveryNote={webhookDeliveryNote}
+          testPhase={webhookTestPhase}
+          {...(webhookTestErrorMessage === undefined
+            ? {}
+            : { testErrorMessage: webhookTestErrorMessage })}
+          onEnabledChange={(webhookEnabled) => {
+            onPatch({ webhookEnabled });
+          }}
+          onUrlChange={(webhookUrl) => {
+            onPatch({ webhookUrl });
+          }}
+          onTriggerOnChange={(triggerOn) => {
+            onPatch({ triggerOn });
+          }}
+          onTest={onTestWebhook}
+        />
       </div>
+      <footer className="shrink-0 border-t border-border bg-background px-5 py-3">
+        {saveErrorMessage !== undefined && saveErrorMessage !== '' && (
+          <p role="alert" className="text-xs text-red-400" data-testid="form-save-error">
+            {saveErrorMessage}
+          </p>
+        )}
+
+        <div className="flex gap-2">
+          <Button disabled={!canSave || saving} onClick={onSave} data-testid="form-save">
+            {saving ? '保存中…' : '保存规则'}
+          </Button>
+          <Button variant="ghost" disabled={saving} onClick={onCancel} data-testid="form-cancel">
+            取消
+          </Button>
+        </div>
+      </footer>
     </div>
   );
 }

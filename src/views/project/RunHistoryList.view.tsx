@@ -1,5 +1,5 @@
 // 运行历史列表（P21-7 §3.3：最近 10 条 + [查看全部]，每页 20）。纯展示。
-import { useState } from 'react';
+import { useState, type RefObject } from 'react';
 import { Button } from '@/components/ui/button';
 import { RunHistoryItemView } from '@/views/project/RunHistoryItem.view';
 import type { RunRow } from '@/types/automation';
@@ -7,6 +7,7 @@ import type { RunRow } from '@/types/automation';
 export interface RunHistoryListProps {
   /** 全部已加载行（展开后显示）。 */
   rows: RunRow[];
+  focusRegionRef?: RefObject<HTMLElement | null>;
   /** 折叠态的最近 10 条。 */
   previewRows: RunRow[];
   loading: boolean;
@@ -15,6 +16,8 @@ export interface RunHistoryListProps {
   loadingMore: boolean;
   /** 展开全部 + 继续翻页。 */
   onLoadMore: () => void;
+  onRetry?: () => void;
+  onViewArtifacts?: (sandboxId: string) => void;
   onOpenTask?: (sandboxId: string) => void;
   /**
    * ★ 从列表行的 [查看原因] 进来的：**自动展开最近一次算失败的运行**。
@@ -31,12 +34,15 @@ export interface RunHistoryListProps {
 
 export function RunHistoryListView({
   rows,
+  focusRegionRef,
   previewRows,
   loading,
   loadErrorMessage,
   hasMore,
   loadingMore,
   onLoadMore,
+  onRetry,
+  onViewArtifacts,
   onOpenTask,
   focusLatestFailure = false,
 }: RunHistoryListProps) {
@@ -58,7 +64,12 @@ export function RunHistoryListView({
   const visible = showAll ? rows : previewRows;
 
   return (
-    <section className="flex flex-col gap-2" data-testid="run-history">
+    <section
+      ref={focusRegionRef}
+      aria-busy={loading}
+      className="flex flex-col gap-2"
+      data-testid="run-history"
+    >
       <div className="flex items-baseline gap-2">
         <h4 className="text-sm font-semibold">运行历史</h4>
         {/*
@@ -67,7 +78,11 @@ export function RunHistoryListView({
           「已加载 N 次」。⛔ 拿已加载条数去填「共 N 次」是撒谎，那正是这个项目最忌讳的。
         */}
         <span className="text-xs text-muted-foreground" data-testid="run-history-total">
-          {hasMore ? `已加载 ${String(rows.length)} 次` : `共 ${String(rows.length)} 次`}
+          {loading || loadErrorMessage !== undefined
+            ? '共 — 次'
+            : hasMore
+              ? `已加载 ${String(rows.length)} 次`
+              : `共 ${String(rows.length)} 次`}
         </span>
       </div>
 
@@ -79,7 +94,10 @@ export function RunHistoryListView({
 
       {loadErrorMessage !== undefined && loadErrorMessage !== '' && (
         <p role="alert" className="text-xs text-red-400" data-testid="run-history-error">
-          {loadErrorMessage}
+          运行历史没读出来：{loadErrorMessage}
+          <Button variant="outline" size="sm" disabled={loading} onClick={onRetry}>
+            重试
+          </Button>
         </p>
       )}
 
@@ -102,6 +120,7 @@ export function RunHistoryListView({
                 }));
               }}
               {...(onOpenTask === undefined ? {} : { onOpenTask })}
+              {...(onViewArtifacts === undefined ? {} : { onViewArtifacts })}
             />
           ))}
         </ul>

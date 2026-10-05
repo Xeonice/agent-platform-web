@@ -7,6 +7,7 @@
 //   （凭证过期 / 上次没跑完）在没有它的时候，会和 ❌ 失败一起被读成"我的规则一直在挂"，
 //   而这三件事该做的处置完全不同。⚠️ 但它的**视觉权重**要比"算一次失败"低一档，
 //   理由见下面那段注释。
+import { useId } from 'react';
 import { AlertTriangle, Check, Circle, Loader2, Minus, X, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { RunOutcomeCategory, RunRow } from '@/types/automation';
@@ -17,6 +18,7 @@ export interface RunHistoryItemProps {
   onToggleDetail: (id: string) => void;
   /** 只有 run 带得出 sandboxId 才渲染（契约暂缺时不摆一个点了没反应的按钮）。 */
   onOpenTask?: (sandboxId: string) => void;
+  onViewArtifacts?: (sandboxId: string) => void;
 }
 
 /** category → 配色。**语义分三档**：坏（红）/ 没跑（灰）/ 在路上（琥珀）/ 好（绿）。 */
@@ -57,12 +59,16 @@ export function RunHistoryItemView({
   expanded = false,
   onToggleDetail,
   onOpenTask,
+  onViewArtifacts,
 }: RunHistoryItemProps) {
   const { outcome } = row;
+  const detailId = useId();
+  const finished = outcome.category === 'success' || outcome.category === 'failure';
   const OutcomeIcon = CATEGORY_ICON[outcome.category];
   return (
     <li
-      className="rounded border border-border px-3 py-2"
+      className="scroll-mt-3 rounded border border-border px-3 py-2"
+      data-run-id={row.id}
       data-testid="run-history-item"
       data-category={outcome.category}
       data-counts-toward-failure={String(outcome.countsTowardFailure)}
@@ -97,6 +103,8 @@ export function RunHistoryItemView({
           onClick={() => {
             onToggleDetail(row.id);
           }}
+          aria-expanded={expanded}
+          aria-controls={detailId}
           data-testid="run-toggle-detail"
         >
           {expanded ? '收起' : '详情'}
@@ -123,7 +131,12 @@ export function RunHistoryItemView({
       </p>
 
       {expanded && (
-        <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2">
+        <div
+          id={detailId}
+          role="region"
+          aria-label="运行详情"
+          className="mt-2 flex flex-col gap-2 border-t border-border pt-2"
+        >
           <p className="text-xs text-muted-foreground" data-testid="run-detail">
             {outcome.detail}
           </p>
@@ -154,7 +167,18 @@ export function RunHistoryItemView({
               {row.outputSummary}
             </pre>
           )}
-          {row.sandboxId !== undefined && onOpenTask !== undefined && (
+          {finished && row.sandboxId !== undefined && onViewArtifacts !== undefined && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onViewArtifacts(row.sandboxId ?? '');
+              }}
+            >
+              查看成果
+            </Button>
+          )}
+          {row.sandboxId !== undefined && !finished && onOpenTask !== undefined && (
             <div>
               <Button
                 variant="outline"

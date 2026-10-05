@@ -35,6 +35,7 @@ export function ConnectivityCheckView({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p
           data-testid="connectivity-verdict"
+          role="status"
           className={
             model.verdict === 'offline'
               ? 'text-sm text-red-500'
@@ -61,7 +62,7 @@ export function ConnectivityCheckView({
           {isChecking ? '正在检测联网状况…' : '还没有检测结果，点 [重新检测] 跑一轮。'}
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
           {model.rows.map((row) => (
             <ConnectivityItemView key={row.id} row={row} pending={isChecking} />
           ))}

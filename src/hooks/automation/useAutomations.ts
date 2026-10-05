@@ -8,12 +8,13 @@
 // ⚠️ F21-7 §8 曾把「`automationKeys` 已合入 15 §2.1」标成 **✅**。那是假的：全仓搜
 //   `automationKeys` 此前只命中 `useAuditStream` 里的**一处注释**，代码里一行都没有。
 //   本文件是它第一次真的存在。
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createAutomation,
   deleteAutomation,
   listAutomations,
+  listAutomationAttention,
   setAutomationEnabled,
   testWebhook,
   updateAutomation,
@@ -22,9 +23,10 @@ import { ApiErrorException } from '@/services/api/apiError';
 import { automationRows } from '@/lib/automation/automationModel';
 import { automationErrorMessage } from '@/lib/automation/automationErrorCopy';
 import {
-  automationAttention,
+  globalAutomationAttention,
   type AutomationAttention,
 } from '@/lib/automation/automationAttention';
+import { useAppStore } from '@/stores';
 import { resolveEnvironmentTimeZone } from '@/lib/automation/timeZone';
 import {
   AUTOMATION_RULE_LIMIT,
@@ -54,6 +56,7 @@ import {
  */
 export const automationKeys = {
   all: () => ['automations'] as const,
+  attention: () => [...automationKeys.all(), 'attention'] as const,
   list: (projectId: string) => [...automationKeys.all(), 'list', { projectId }] as const,
   /** 见上：**不带 page**，页码活在 `useInfiniteQuery` 的 pageParam 里。 */
   runs: (ruleId: string) => [...automationKeys.all(), 'runs', ruleId] as const,
@@ -82,32 +85,38 @@ export function describeAutomationError(error: unknown): string | undefined {
   );
 }
 
+export function describeAutomationReadError(error: unknown): string | undefined {
+  if (error instanceof ApiErrorException && error.envelope.code === 'INTERNAL')
+    return '服务出错了。';
+  return describeAutomationError(error);
+}
+
 /**
- * 自动化侧「需要用户知道的事」的只读订阅 —— **给全局横幅层用的那一位**。
- *
- * ★ **⛔ 不新拉一次数据**（与 `useGlobalBanner` 文件头纪律 ① 同一手法）：`enabled:false`
- *   ⇒ queryFn 永不执行，只读 `automationKeys.list(projectId)` 这份**已经在缓存里**的
- *   规则列表。写成一个会自己发请求的 hook，代价是每次挂载都多打一次列表接口，
- *   而横幅挂在工作台外壳上、随每一次页面加载而挂载。
- *
- * ⚠️ 缓存里没有 ⇒ `hasData:false`，含义是**「这一刻我们不知道」**，
- *   ⛔ 不是「没有问题」。判定与文案见 `lib/automation/automationAttention`。
+ * Cross-project attention is read on mount and whenever the window returns to the foreground.
+ * Failed reads suppress this banner even if an older snapshot exists; there is no project-cache fallback.
  */
-export function useAutomationAttention(projectId: string | null): AutomationAttention {
-  const query = useQuery<AutomationDto[]>({
-    queryKey: automationKeys.list(projectId ?? ''),
-    // ⚠️ `enabled:false` 单独用**不够** —— TanStack Query v5 在建 observer 那一刻就校验
-    // queryFn 在不在，不管 enabled 是什么，缺了直接抛「No queryFn was passed」。
-    // 给一个必然抛错的 queryFn：enabled:false 保证它永不执行，而万一哪天有人把
-    // enabled 打开，这里会当场炸出来 —— ⛔ 好过它安静地替横幅多打一次列表接口。
-    // 同一手法见 `useSystemStatus.ts` 的 `DIAGNOSE_CACHE_OPTIONS`。
-    queryFn: (): never => {
-      throw new Error('自动化列表只由 useAutomations 拉取，这里只读缓存、不发请求');
-    },
-    enabled: false,
+export function useAutomationAttention(pathname: string): AutomationAttention {
+  const accessLocked = useAppStore((state) => state.accessLocked);
+  const lastPathname = useRef(pathname);
+  const query = useQuery({
+    queryKey: automationKeys.attention(),
+    queryFn: listAutomationAttention,
+    enabled: !accessLocked,
+    staleTime: 60_000,
+    gcTime: 600_000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
+    retry: false,
   });
-  const data = query.data;
-  return useMemo(() => automationAttention(data), [data]);
+  const refetch = query.refetch;
+  useEffect(() => {
+    // The AppFrame persists across pages. Mount already reads once; only navigation needs another read.
+    if (lastPathname.current === pathname || accessLocked) return;
+    lastPathname.current = pathname;
+    void refetch();
+  }, [pathname, accessLocked, refetch]);
+  const data = query.isError || accessLocked ? undefined : query.data;
+  return useMemo(() => globalAutomationAttention(data), [data]);
 }
 
 export interface UseAutomationsResult {
@@ -122,6 +131,8 @@ export interface UseAutomationsResult {
   /** 正在启停的那条 id：**只禁这一行**。 */
   togglingId: string | null;
   savingId: string | null;
+  saving: boolean;
+  refresh: () => void;
   create: (body: CreateAutomationRequest) => Promise<AutomationDto>;
   update: (id: string, body: UpdateAutomationRequest) => Promise<AutomationDto>;
   remove: (id: string) => Promise<void>;
@@ -135,7 +146,10 @@ export interface UseAutomationsResult {
 export type WebhookTestState =
   { phase: 'idle' } | { phase: 'testing' } | { phase: 'ok' } | { phase: 'error'; message: string };
 
-export function useAutomations(projectId: string | null): UseAutomationsResult {
+export function useAutomations(
+  projectId: string | null,
+  runtimeNames?: Readonly<Record<string, string>>,
+): UseAutomationsResult {
   const queryClient = useQueryClient();
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -152,6 +166,7 @@ export function useAutomations(projectId: string | null): UseAutomationsResult {
   });
 
   const invalidateList = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: automationKeys.attention() });
     if (projectId === null) return;
     void queryClient.invalidateQueries({ queryKey: automationKeys.list(projectId) });
   }, [projectId, queryClient]);
@@ -234,13 +249,23 @@ export function useAutomations(projectId: string | null): UseAutomationsResult {
   // ⚠️ `Date.now()` 与环境时区都在 hook 里取、传进 lib：lib 保持纯函数（可测），
   //    而"现在几点"和"这台机器在哪个时区"是环境输入。与 `useRetainedVolumes` 同一处理。
   const rows = useMemo(
-    () => automationRows(dtos, Date.now(), resolveEnvironmentTimeZone()),
-    [dtos],
+    () => automationRows(dtos, Date.now(), resolveEnvironmentTimeZone(), runtimeNames),
+    [dtos, runtimeNames],
   );
 
   const createAsync = createMutation.mutateAsync;
   const updateAsync = updateMutation.mutateAsync;
-  const removeAsync = removeMutation.mutateAsync;
+  const removeAsync = useCallback(
+    async (id: string) => {
+      try {
+        await removeMutation.mutateAsync(id);
+      } catch (error) {
+        if (error instanceof ApiErrorException && error.envelope.code === 'NOT_FOUND') return;
+        throw error;
+      }
+    },
+    [removeMutation],
+  );
   const toggleMutate = toggleMutation.mutate;
   const webhookTestAsync = webhookTestMutation.mutateAsync;
 
@@ -260,22 +285,33 @@ export function useAutomations(projectId: string | null): UseAutomationsResult {
     [updateAsync],
   );
 
-  const loadErrorMessage = query.isError ? describeAutomationError(query.error) : undefined;
+  const loadErrorMessage =
+    query.isError && !query.isFetching
+      ? `规则没读出来：${query.error instanceof ApiErrorException && query.error.envelope.code === 'INTERNAL' ? '服务出错了。' : (describeAutomationError(query.error) ?? '网络不通，请稍后再试。')}`
+      : undefined;
   const actionErrorMessage =
-    describeAutomationError(createMutation.error) ??
-    describeAutomationError(updateMutation.error) ??
+    (createMutation.error !== null && !(createMutation.error instanceof ApiErrorException)
+      ? '规则没保存：网络不通，检查网络后再点 [保存规则]。'
+      : describeAutomationError(createMutation.error)) ??
+    (updateMutation.error !== null && !(updateMutation.error instanceof ApiErrorException)
+      ? '规则没保存：网络不通，检查网络后再点 [保存规则]。'
+      : describeAutomationError(updateMutation.error)) ??
     describeAutomationError(removeMutation.error) ??
     describeAutomationError(toggleMutation.error);
 
   return {
     rows,
     dtos,
-    loading: query.isPending && projectId !== null,
+    loading: (query.isPending || query.isFetching) && projectId !== null,
     ...(loadErrorMessage === undefined ? {} : { loadErrorMessage }),
     ...(actionErrorMessage === undefined ? {} : { actionErrorMessage }),
     atLimit: dtos.length >= AUTOMATION_RULE_LIMIT,
     togglingId,
     savingId,
+    saving: createMutation.isPending || updateMutation.isPending || removeMutation.isPending,
+    refresh: () => {
+      void query.refetch();
+    },
     create: createAsync,
     update: doUpdate,
     remove: removeAsync,

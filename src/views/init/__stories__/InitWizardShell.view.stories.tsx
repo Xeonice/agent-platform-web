@@ -8,11 +8,11 @@ import type { InitStepKey, InitStepModel } from '@/types/init';
 // 那条派生逻辑自己的用例在 `lib/system/__tests__/initWizardModel.test.ts`。
 const ORDER: InitStepKey[] = ['connectivity', 'proxy', 'preset-image', 'subscription', 'resource'];
 const LABEL: Record<InitStepKey, string> = {
-  connectivity: '出网检测',
+  connectivity: '联网检查',
   proxy: '代理配置',
   'preset-image': '沙箱镜像',
-  subscription: '订阅配置',
-  resource: '资源确认',
+  subscription: '模型帐号',
+  resource: '本机资源',
 };
 function steps(current: InitStepKey, proxyActive: boolean): InitStepModel[] {
   const currentIndex = ORDER.indexOf(current);
@@ -35,7 +35,7 @@ const meta: Meta<typeof InitWizardShellView> = {
   parameters: { layout: 'fullscreen' },
   args: {
     steps: steps('connectivity', true),
-    title: '第 1 步 · 出网可达性',
+    title: '联网检查',
     description: '平台需要够得着模型 API 与镜像仓库。',
     children: <p>内容插槽</p>,
     onNext: fn(),
@@ -50,7 +50,7 @@ export const Step1: Story = {};
 export const Step2: Story = {
   args: {
     steps: steps('proxy', true),
-    title: '第 2 步 · 代理配置',
+    title: '代理配置',
     description: '上一步有目标不可达。',
     onBack: fn(),
   },
@@ -59,7 +59,7 @@ export const Step2: Story = {
 export const Step3: Story = {
   args: {
     steps: steps('preset-image', true),
-    title: '第 3 步 · 沙箱镜像就绪',
+    title: '沙箱镜像',
     description: '平台自建的沙箱镜像备齐了没有。',
     onBack: fn(),
     nextLabel: '稍后配置，下一步',

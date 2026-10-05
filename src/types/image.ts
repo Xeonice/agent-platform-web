@@ -17,6 +17,24 @@
 
 import type { components } from '@/types/generated/openapi';
 
+/** 新建任务字段的展示模型；value 标识整张镜像，提交时取当前版本的坐标。 */
+export interface LaunchImageOption {
+  value: string;
+  reference: string;
+  label: string;
+  disabled: boolean;
+  reason?: string;
+  warning?: string;
+}
+
+/** 任务锁定的镜像快照，来自任务 DTO，不能用管理页当前版本替代。 */
+export interface TaskImageSnapshot {
+  id?: string;
+  reference: string;
+  digest?: string;
+  isBuiltin?: boolean;
+}
+
 /** 三级验证结论（P21-4 §5）。 */
 export type ImageValidationStatus = 'valid' | 'warning' | 'invalid';
 
@@ -61,6 +79,7 @@ export interface ImageCardInput {
    */
   derivedFromDigest?: string | null;
   /** ⚠️ 档的后果说明（P21-4 §5：当前真实存在的只有「未预装 claude-code」一档）。 */
+  unknownCodes?: readonly string[];
   warnings?: readonly string[];
   /** ❌ 档的失败原因列表。 */
   errors?: readonly string[];
@@ -111,6 +130,7 @@ export interface ImageCardModel {
   /** 「来源」那一行。**恒存在**（三档之一），⛔ 不许缺席——缺席读起来就是"这张镜像没有来源"。 */
   lineage: ImageLineageModel;
   validationStatus: ImageValidationStatus;
+  unknownCodes?: readonly string[];
   warnings: readonly string[];
   errors: readonly string[];
   supportedRuntimes: readonly string[];
@@ -212,6 +232,7 @@ export interface ImageValidationResultData {
   errors?: readonly string[];
   /** ✅/⚠️ 时回显本次解析出的 digest 短串（P21-4 §6「并回显本次解析出的 digest」）。 */
   pinnedDigestShort?: string;
+  unknownCodes?: readonly string[];
 }
 
 // ——— wire 类型（**生成物别名**，本轮后端 8 个端点落地后才有）———
@@ -253,3 +274,13 @@ export interface RegisterImageResult {
   validation: ValidationOutcomeDto;
   created: boolean;
 }
+
+export interface ImageRequestFailureModel {
+  message: string;
+  code: string;
+  retryable: boolean;
+  systemLink: boolean;
+  operation: 'validate' | 'save';
+}
+
+export type ImageDeletionPreviewDto = components['schemas']['ImageDeletionPreviewResponseDto'];

@@ -73,9 +73,13 @@ export function retainedVolumeRow(dto: RetainedVolumeDto, now: Date): RetainedVo
 
   return {
     id: dto.id,
+    projectId: dto.projectId,
     ...(dto.sandboxId === undefined ? {} : { sandboxId: dto.sandboxId }),
-    originText: originText(dto.sandboxId),
-    sourceText: SOURCE_LABEL[dto.source],
+    originText: dto.sandboxName ?? originText(dto.sandboxId),
+    sourceText:
+      dto.source === 'automation-artifact' && dto.sourceAutomationName
+        ? `自动化产物 · ${dto.sourceAutomationName}`
+        : SOURCE_LABEL[dto.source],
     retainedAtText: formatStamp(dto.retainedAt),
     diskText: formatVolumeBytes(dto.diskBytes),
     downloadText: formatVolumeBytes(dto.downloadBytes),

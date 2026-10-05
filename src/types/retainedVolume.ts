@@ -34,6 +34,9 @@ export const RetainedVolumeDtoSchema = z.object({
   projectId: z.string(),
   /** 来源 Task。⚠️ 弱引用：sandbox 记录归档后置 undefined，卷仍可管理（10 §7.3）。 */
   sandboxId: z.string().optional(),
+  sandboxName: z.string().optional(),
+  sourceAutomationId: z.string().optional(),
+  sourceAutomationName: z.string().optional(),
   source: z.enum(RETAINED_VOLUME_SOURCES),
   retainedAt: z.string().datetime(),
   /** 到点由 VolumeReaper 清理（3/7/30 天）。倒计时口径见 P21-5 §6。 */
@@ -58,6 +61,7 @@ export type RetainedVolumeSource = RetainedVolumeDto['source'];
 
 export interface RetainedVolumeRow {
   id: string;
+  projectId?: string;
   /** 来源 Task；弱引用，sandbox 归档后为 undefined（10 §7.3）。 */
   sandboxId?: string;
   /** 弱引用断掉时的替代说法——空格子会被读成"加载失败"。 */

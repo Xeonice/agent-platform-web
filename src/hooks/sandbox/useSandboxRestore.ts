@@ -3,11 +3,12 @@
 //
 // 本 hook 负责：持久化的 `selectedSandboxId` → 拉一次 DTO → 把状态与失败原因**种子**进 store，
 // 之后仍由 /events 的 status_changed 继续推进。
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getSandbox } from '@/services/api/sandbox.service';
 import { ApiErrorException } from '@/services/api/apiError';
 import { useAppStore } from '@/stores';
+import type { TaskImageSnapshot } from '@/types/image';
 
 /**
  * 终态：不会再有后续变化的三个。`stopping` / `destroying` 是过渡态,马上会落到
@@ -36,6 +37,9 @@ export const sandboxKeys = {
 };
 
 export interface SandboxRestore {
+  sourceAutomationId?: string;
+  sourceAutomationName?: string;
+  image?: TaskImageSnapshot;
   /** 后端派生的默认任务名（前端不派生）。 */
   name?: string;
   /** 沙箱的 runtime（S6：无头任务 POST 路径里的 `:rt` 取它，前端不另造选择器）。 */
@@ -54,6 +58,10 @@ export interface SandboxRestore {
   headless?: boolean;
   /** 该 id 在后端已不存在（404）：调用方回到新建入口。 */
   notFound: boolean;
+  /** 读取失败的人话提示；已有完整 DTO 时调用方保留现场。 */
+  errorMessage?: string;
+  /** 重新读取详情，不清空选中任务或已缓存的模式。 */
+  retry: () => void;
   isPending: boolean;
 }
 
@@ -103,7 +111,21 @@ export function useSandboxRestore(
 
   const query = useQuery({
     queryKey: sandboxKeys.detail(sandboxId ?? ''),
-    queryFn: () => getSandbox(sandboxId ?? ''),
+    queryFn: async () => {
+      const id = sandboxId ?? '';
+      const before = useAppStore.getState().sandboxStatuses[id];
+      const dto = await getSandbox(id);
+      const current = useAppStore.getState();
+      if (current.sandboxStatuses[id] === before) {
+        current.setSandboxStatus(dto.id, dto.status, {
+          failureCode: dto.failureCode,
+          failureMessage: dto.failureMessage,
+          failureOperation: dto.failureOperation,
+          restarting: dto.hasRun === true && dto.status === 'starting',
+        });
+      }
+      return dto;
+    },
     enabled: sandboxId !== null && !staleTerminal,
     retry: false,
   });
@@ -116,6 +138,10 @@ export function useSandboxRestore(
   }, [status, markTerminal]);
 
   const data = query.data;
+  const refetch = query.refetch;
+  const retry = useCallback(() => {
+    void refetch();
+  }, [refetch]);
   useEffect(() => {
     if (data === undefined) return;
     // **只在 store 尚无该沙箱记录时种子**：DTO 可能比内存里的 WS 推送旧（focus refetch 等），
@@ -125,6 +151,8 @@ export function useSandboxRestore(
       // 失败原因两条通道写同一字段：这里是**刷新恢复**那条（DTO 才带自由文本细节）。
       failureCode: data.failureCode,
       failureMessage: data.failureMessage,
+      failureOperation: data.failureOperation,
+      restarting: data.hasRun === true && data.status === 'starting',
     });
   }, [data, setSandboxStatus]);
 
@@ -139,16 +167,44 @@ export function useSandboxRestore(
   useEffect(() => {
     // 沙箱已被销毁/清理：清掉持久化的选中，免得每次刷新都去打一个必 404 的请求。
     // 只对 404 生效——网络抖动不该把用户的选中状态抹掉。
-    if (notFound) setSelectedSandboxId(null);
+    if (notFound) {
+      setSelectedSandboxId(null);
+      const store = useAppStore.getState();
+      store.setSelectedProjectId(null);
+      store.setWorkbenchNotice({ message: '找不到这个任务：可能已被销毁。' });
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('taskId');
+        window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
+      }
+    }
   }, [notFound, setSelectedSandboxId]);
 
   return {
+    sourceAutomationId: data?.sourceAutomationId,
+    sourceAutomationName: data?.sourceAutomationName,
+    ...(data?.image === undefined
+      ? {}
+      : {
+          image: {
+            reference: data.image,
+            ...(data.imageId === undefined ? {} : { id: data.imageId }),
+            ...(data.imageDigest === undefined ? {} : { digest: data.imageDigest }),
+            ...(data.imageIsBuiltin === undefined ? {} : { isBuiltin: data.imageIsBuiltin }),
+          },
+        }),
     ...(data?.name === undefined ? {} : { name: data.name }),
     ...(data?.runtime === undefined ? {} : { runtime: data.runtime }),
     ...(data?.availableRuntimes === undefined ? {} : { availableRuntimes: data.availableRuntimes }),
     ...(data?.provider === undefined ? {} : { provider: data.provider }),
     ...(data?.headless === undefined ? {} : { headless: data.headless }),
     notFound,
-    isPending: sandboxId !== null && !staleTerminal && query.isPending,
+    ...(query.isError ? { errorMessage: '暂时无法读取任务详情，请检查网络后重试。' } : {}),
+    retry,
+    // 未确认模式时，手动重试也属于读取中；已缓存模式的后台刷新不遮挡现场。
+    isPending:
+      sandboxId !== null &&
+      !staleTerminal &&
+      (query.isPending || (data?.headless === undefined && query.isFetching)),
   };
 }

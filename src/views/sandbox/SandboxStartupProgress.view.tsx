@@ -4,6 +4,8 @@
 //
 // ⚠️ 格的**顺序由 props.phases 决定**（容器从 lib/sandboxLifecycle 取，展示序刻意 ≠ 状态机序）；
 // 本视图不排序、不重排、不硬编码任何阶段名。
+import type { ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
 import { Check, Circle } from 'lucide-react';
 
 export interface SandboxStartupProgressProps {
@@ -33,6 +35,13 @@ export interface SandboxStartupProgressProps {
   subtitle?: string;
   /** 后端派生的默认任务名（10 §7.3 SandboxDto.name）；前端不自己派生。 */
   taskName?: string;
+  imageLabel?: string;
+  stuckElapsed?: string;
+  stuckNote?: string;
+  cancelSlot?: ReactNode;
+  onContinue?: () => void;
+  reused?: boolean;
+  footnote?: string;
   /**
    * 挂在某一格下的子文案（来源：起实例的 `sandbox.instance_progress` 与装 CLI 的
    * `runtime.install_progress`，两者都挂「启动实例」格）。视图只按 phaseKey 找格子渲染，
@@ -57,6 +66,13 @@ export function SandboxStartupProgressView({
   dataStatus,
   subtitle,
   taskName,
+  imageLabel,
+  reused,
+  stuckElapsed,
+  stuckNote,
+  cancelSlot,
+  onContinue,
+  footnote,
   phaseNote,
   activeElapsedLabel,
 }: SandboxStartupProgressProps) {
@@ -73,6 +89,9 @@ export function SandboxStartupProgressView({
         <h2 className="text-lg font-semibold">
           {taskName !== undefined && taskName !== '' ? `正在启动：${taskName}` : '正在启动任务…'}
         </h2>
+        {imageLabel !== undefined && (
+          <p className="mt-1 break-all text-sm text-muted-foreground">镜像：{imageLabel}</p>
+        )}
         {hasSubtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
 
@@ -112,6 +131,7 @@ export function SandboxStartupProgressView({
                     className={state === 'pending' ? 'text-muted-foreground' : 'text-foreground'}
                   >
                     {phase.label}
+                    {reused && i < activeIndex ? ' · 沿用' : ''}
                   </span>
                   {state === 'active' && activeElapsedLabel !== undefined && (
                     <span
@@ -135,6 +155,26 @@ export function SandboxStartupProgressView({
           })}
         </ol>
       </div>
+      {stuckElapsed !== undefined && (
+        <div
+          role="alert"
+          className="max-w-lg rounded-lg border border-warning/30 bg-warning/10 p-4 text-left text-sm text-warning"
+        >
+          <p className="font-medium">可能卡住了：已 {stuckElapsed} 没有新进展</p>
+          <p className="mt-2">
+            {stuckNote ?? '这个阶段很久没有新进展。可以继续等待，或取消并删除后重新发起。'}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {cancelSlot}
+            <Button variant="ghost" onClick={onContinue}>
+              继续等待
+            </Button>
+          </div>
+        </div>
+      )}
+      {footnote !== undefined && (
+        <p className="max-w-lg text-sm text-muted-foreground">{footnote}</p>
+      )}
     </div>
   );
 }

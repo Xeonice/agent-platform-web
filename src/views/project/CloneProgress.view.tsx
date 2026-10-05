@@ -1,10 +1,12 @@
 // 克隆进度 UI（10 §7.4 project.clone_progress）：cloning 进度条 / slow 提示 / done 完成 / failed 分支引导。
 // 纯展示、props 驱动、零副作用。所有决策（percent/引导/可重试）由 hook+lib 派生后传入。
 import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
 import type { CloneProgressPhase } from '@/types/project';
 
 export interface CloneProgressProps {
   projectName: string;
+  mainArea?: boolean;
   phase: CloneProgressPhase;
   /** 0–100；null → indeterminate（脉冲条）。 */
   percent: number | null;
@@ -34,6 +36,7 @@ export interface CloneProgressProps {
 
 export function CloneProgressView({
   projectName,
+  mainArea = false,
   phase,
   percent,
   detailLabel,
@@ -51,11 +54,19 @@ export function CloneProgressView({
 }: CloneProgressProps) {
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-5 p-6 text-center">
-      <div>
+      {mainArea && (
+        <div className="grid size-10 place-items-center rounded-lg border border-border bg-muted">
+          <Loader2 aria-hidden="true" className="size-5 animate-spin" />
+        </div>
+      )}
+      <div role={phase === 'done' ? 'status' : undefined}>
         <h2 className="text-lg font-semibold">
           {phase === 'done' ? '项目可用了' : phase === 'failed' ? '克隆失败' : '正在克隆项目…'}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">{projectName}</p>
+        {mainArea && (
+          <p className="mt-3 text-sm text-muted-foreground">项目正在克隆，克隆完就能发起任务。</p>
+        )}
       </div>
 
       {(phase === 'cloning' || phase === 'slow') && (
@@ -71,6 +82,9 @@ export function CloneProgressView({
           </div>
           {/* 百分比挪到条子右上角：与条子同一视线，不再挤占明细行。
               percent 为 null（空窗期/git 还没给数）时不出这一格，条子走脉冲态。 */}
+          {percent === null && (
+            <p className="mt-1 text-right text-xs text-muted-foreground">进度未知</p>
+          )}
           {percent !== null && (
             <p className="mt-1 text-right text-xs tabular-nums text-muted-foreground">{percent}%</p>
           )}
@@ -94,16 +108,14 @@ export function CloneProgressView({
               还在克隆。仓库比较大或者网络比较慢，可能要等一会儿——不用一直守在这一屏。
             </p>
           )}
-          {onCancel !== undefined && (
-            <div className="mt-4">
-              <Button type="button" variant="ghost" onClick={onCancel}>
-                返回（后台继续克隆）
-              </Button>
-            </div>
-          )}
         </div>
       )}
 
+      {!mainArea && (phase === 'cloning' || phase === 'slow') && onCancel !== undefined && (
+        <Button variant="ghost" onClick={onCancel}>
+          返回（后台继续克隆）
+        </Button>
+      )}
       {phase === 'done' && (
         <Button onClick={onDone} disabled={busy}>
           打开项目
@@ -141,7 +153,7 @@ export function CloneProgressView({
             </Button>
           </div>
           {/* [改为空项目] 留下什么，说法与 `ProjectGroupMenu.view` 那条保持一致。 */}
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
+          <p className="text-xs leading-relaxed text-muted-foreground">
             [改为空项目]：项目留着、已有的任务也留着，只是工作区从空的开始，不再关联这个仓库。
           </p>
         </div>

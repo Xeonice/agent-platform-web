@@ -59,3 +59,28 @@ export async function listSandboxes(projectId?: string): Promise<SandboxResponse
   }
   return data;
 }
+
+export async function stopSandbox(id: string): Promise<SandboxResponse> {
+  const { data, error, response } = await apiClient.POST('/api/sandboxes/{id}/stop', {
+    params: { path: { id } },
+  });
+  if (!response.ok || data === undefined)
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
+  return data;
+}
+export async function startSandbox(id: string): Promise<SandboxResponse> {
+  const { data, error, response } = await apiClient.POST('/api/sandboxes/{id}/start', {
+    params: { path: { id } },
+  });
+  if (!response.ok || data === undefined)
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
+  return data;
+}
+export async function destroySandbox(id: string, keepVolume: boolean): Promise<void> {
+  const { error, response } = await apiClient.DELETE('/api/sandboxes/{id}', {
+    params: { path: { id } },
+    body: { keepVolume },
+  });
+  if (!response.ok)
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
+}

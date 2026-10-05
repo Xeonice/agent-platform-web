@@ -10,7 +10,7 @@ export const TERMINAL_THEME = {
 
 /** 等宽字体栈，必须以 monospace 收尾，否则回落比例字体会导致列对不齐（08 §7.3）。 */
 export const TERMINAL_FONT_FAMILY =
-  "'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace";
+  "'Geist Mono', Menlo, 'SF Mono', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Apple Symbols', 'DejaVu Sans Mono', 'Noto Sans Symbols 2', 'Segoe UI Symbol', monospace";
 
 export const DEFAULT_TERMINAL_FONT_SIZE = 14;
 /**

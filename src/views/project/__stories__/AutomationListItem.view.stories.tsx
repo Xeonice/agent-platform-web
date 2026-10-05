@@ -86,7 +86,7 @@ export const ManuallyDisabled: Story = {
     // `off` 在八态里没有精确对应，见交付报告"待拍板点"。
     const icon = canvas.getByTestId('automation-lifecycle-icon');
     await expect(icon).toHaveAttribute('data-lifecycle-status', 'off');
-    await expect(icon.classList.contains('lucide-pause')).toBe(true);
+    await expect(icon.classList.contains('lucide-square')).toBe(true);
   },
 };
 
@@ -138,6 +138,6 @@ export const AutoDisabled: Story = {
     await expect(icon).toHaveAttribute('data-lifecycle-status', 'fail');
     await expect(icon.classList.contains('lucide-x')).toBe(true);
     // ⭐ 与「手动禁用」的图标必须不同（一个中性、一个红色 X）——判定顺序写反的回归。
-    await expect(icon.classList.contains('lucide-pause')).toBe(false);
+    await expect(icon.classList.contains('lucide-square')).toBe(false);
   },
 };

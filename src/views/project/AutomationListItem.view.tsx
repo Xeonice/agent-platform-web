@@ -4,14 +4,14 @@
 //   「下次: 8-10 08:00」单独存在是有歧义的：用户换台机器、或者同事在另一个时区打开，
 //   会按自己的钟点读这个时刻，然后以为触发时间漂了。规则的 `timezone` 是**创建时快照**的，
 //   界面上把它写出来，"没漂"这件事才是可见的。
-import { AlertTriangle, Check, Pause, X, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, Check, Square, X, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { AutomationRow } from '@/types/automation';
 
 /**
  * `row.status` → 图标/颜色（复用 `StatusPill` 的 ok/warn/fail 三态同款图标+token 色，
  * 07 §4.1：view 才能碰图标组件，lib 只给语义字面量）。
- * `undefined`（`off`，手动关掉）不在八态里有精确对应，用中性 `Pause` 兜底——
+ * `undefined`（`off`，手动关掉）不在八态里有精确对应，用中性 `Square` 兜底——
  * 见交付报告"待拍板点"。
  */
 const STATUS_ICON: Record<'ok' | 'warn' | 'fail', LucideIcon> = {
@@ -28,11 +28,11 @@ const STATUS_ICON_CLASS: Record<'ok' | 'warn' | 'fail', string> = {
 function LifecycleIcon({ status }: { status: AutomationRow['status'] }) {
   if (status === undefined) {
     return (
-      <Pause
+      <Square
         aria-hidden="true"
         data-testid="automation-lifecycle-icon"
         data-lifecycle-status="off"
-        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+        className="h-3.5 w-3.5 shrink-0 fill-current text-muted-foreground"
       />
     );
   }

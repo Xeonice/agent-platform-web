@@ -9,12 +9,13 @@
 //
 // ⚠️ **审计卡与这四张卡同屏共存，且不合并**（P21-5 §10.1）：审计流是结构化事件、给产品
 // 用户看；provider 那边的运行日志是文本行、给运维看。两者在组件层不共享任何视图。
-import { useCallback } from 'react';
+import { useCallback, type Ref } from 'react';
 import { toast } from 'sonner';
 import { useSystemStatus } from '@/hooks/system/useSystemStatus';
 import { useSystemStatusModels } from '@/hooks/system/useSystemStatusModels';
 import { useExportAuditLogs } from '@/hooks/system/useExportAuditLogs';
 import { useDiagnosticsDisclosure } from '@/hooks/system/useDiagnosticsDisclosure';
+import { useProviderLogs } from '@/hooks/system/useProviderLogs';
 import { useProxySettings } from '@/hooks/system/useProxySettings';
 import { ResourcePoolCardView } from '@/views/system/ResourcePoolCard.view';
 import { SandboxEnvStatusCardView } from '@/views/system/SandboxEnvStatusCard.view';
@@ -25,13 +26,18 @@ import { DiagnosticsCardView } from '@/views/system/DiagnosticsCard.view';
 export interface SystemStatusContainerProps {
   /** [清理保留卷] 的去处（页面注入路由跳转；story 注入 spy）。 */
   onCleanupRetained?: () => void;
+  cleanupTriggerRef?: Ref<HTMLButtonElement>;
 }
 
-export function SystemStatusContainer({ onCleanupRetained }: SystemStatusContainerProps = {}) {
+export function SystemStatusContainer({
+  onCleanupRetained,
+  cleanupTriggerRef,
+}: SystemStatusContainerProps = {}) {
   const status = useSystemStatus();
   const models = useSystemStatusModels(status);
   const disclosure = useDiagnosticsDisclosure(models.diagnostics.items);
   const proxy = useProxySettings();
+  const providerLogs = useProviderLogs();
   const exportLogs = useExportAuditLogs();
 
   const copyHint = useCallback((hint: string) => {
@@ -73,16 +79,38 @@ export function SystemStatusContainer({ onCleanupRetained }: SystemStatusContain
           isRefreshing={status.isRefreshing}
           onRefresh={status.refresh}
           onCleanupRetained={cleanup}
+          cleanupTriggerRef={cleanupTriggerRef}
         />
         <ConnectionStatusCardView model={models.connection} />
       </div>
       <div className="flex flex-col gap-4" data-testid="system-status-column-right">
-        <SandboxEnvStatusCardView model={models.sandboxEnvStatus} isError={status.providersError} />
+        <SandboxEnvStatusCardView
+          model={models.sandboxEnvStatus}
+          isError={status.providersError}
+          loadingProviderCount={models.loadingProviderCount}
+          loadingRuntimeCount={models.loadingRuntimeCount}
+          openLogProviderId={providerLogs.providerId}
+          onToggleLogs={providerLogs.toggle}
+          logPanel={{
+            lines: providerLogs.lines,
+            isLoading: providerLogs.isLoading,
+            isError: providerLogs.isError,
+            unavailableReason: providerLogs.unavailableReason,
+            onRetry: providerLogs.retry,
+          }}
+        />
         {/* ⚠️ 一张高度稳定的表单卡，与沙箱环境状态配成一列正好（见上方的实测数字）。 */}
         <ProxySettingsCardView
           initial={proxy.initial}
+          isLoading={proxy.isLoading}
+          loadError={proxy.loadError}
+          onRetry={proxy.retry}
           isSaving={proxy.isSaving}
           errorMessage={proxy.errorMessage}
+          fieldErrors={proxy.fieldErrors}
+          onFieldChange={proxy.clearSaveError}
+          saveSucceeded={proxy.saveSucceeded}
+          configured={proxy.configured}
           onSave={proxy.save}
         />
       </div>

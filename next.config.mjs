@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
   // 仓库外层存在其它 lockfile，显式锁定本仓为 tracing root，消除 Next 的多 lockfile 警告。
   outputFileTracingRoot: dirname(fileURLToPath(import.meta.url)),
   /**
@@ -27,6 +28,7 @@ const nextConfig = {
    */
   skipTrailingSlashRedirect: true,
   typescript: {
+    tsconfigPath: process.env.NEXT_TSCONFIG_PATH ?? 'tsconfig.json',
     // 类型检查由独立 `pnpm typecheck` / CI 的 static-checks 门禁负责，不在 build 内重复
     ignoreBuildErrors: false,
   },

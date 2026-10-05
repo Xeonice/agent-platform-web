@@ -7,10 +7,13 @@
 // ⚠️ **失败率的分档与 `healthy` 不是一回事**：`healthy` 只管有没有越过 ❌ 线（10%），
 // ⚠️ 线（1%）在它眼里也是"健康"。分档在 lib 算，这里只翻图标。
 //
-// ⏳ **[查看日志] 本轮没有**：`ProviderLogPanel` 要的"最近 20 行运行日志"在契约里还没有
-// 端点（10 §6.6 只有 providers 概览）。摆一个点了什么都不会发生的按钮，比暂时没有它更糟
-// ——用户会以为日志功能坏了。缺口记在本轮报告里。
-import { XCircle } from 'lucide-react';
+import { Square, XCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  ProviderLogPanelView,
+  type ProviderLogPanelProps,
+} from '@/views/system/ProviderLogPanel.view';
+import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { ProviderHealthLevel, SandboxEnvStatusCardModel } from '@/types/system';
 
@@ -36,13 +39,27 @@ const SANDBOX_ENV_LEVEL_TEXT: Readonly<Record<ProviderHealthLevel, string>> = {
 export interface SandboxEnvStatusCardProps {
   model: SandboxEnvStatusCardModel | null;
   isError: boolean;
+  openLogProviderId?: string | null;
+  logPanel?: Omit<ProviderLogPanelProps, 'id'>;
+  onToggleLogs?: (providerId: string) => void;
+  loadingProviderCount?: number;
+  loadingRuntimeCount?: number;
 }
 
-export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCardProps) {
+export function SandboxEnvStatusCardView({
+  model,
+  isError,
+  openLogProviderId,
+  logPanel,
+  onToggleLogs,
+  loadingProviderCount = 1,
+  loadingRuntimeCount = 1,
+}: SandboxEnvStatusCardProps) {
   return (
     <section
       aria-labelledby="sandbox-env-status-heading"
-      className="flex flex-col gap-3 rounded-lg border border-border p-4"
+      aria-busy={!isError && model === null}
+      className="flex flex-col gap-3 rounded-lg border border-border p-4 [container-type:inline-size]"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         {/* ⚠️ 只改可见文案，不改文件名/组件名/类型名（design-notes §4 Phase 1 +
@@ -52,9 +69,15 @@ export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCar
         <h2 id="sandbox-env-status-heading" className="text-base font-semibold">
           沙箱环境状态
         </h2>
-        {model === null ? null : (
+        {model === null && !isError ? (
+          <Skeleton
+            aria-hidden="true"
+            className="h-8 w-full [@container(min-width:400px)]:hidden"
+          />
+        ) : model === null ? null : (
           <span className="text-xs text-muted-foreground">
-            健康统计窗口：{model.windowText}（阈值 &gt;1% 警告 · &gt;10% 故障）
+            健康统计窗口：{model.windowText}
+            {model.thresholdText === undefined ? '' : `（${model.thresholdText}）`}
           </span>
         )}
       </header>
@@ -65,7 +88,34 @@ export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCar
           沙箱环境概览读取失败 —— 这里的空白不代表这台机器上没有沙箱环境
         </p>
       ) : model === null ? (
-        <p className="text-sm text-muted-foreground">读取中…</p>
+        <div>
+          <p role="status" className="sr-only">
+            沙箱环境读取中…
+          </p>
+          <div aria-hidden="true" className="space-y-3" data-testid="providers-skeleton">
+            {Array.from({ length: loadingProviderCount }, (_, id) => (
+              <div
+                key={id}
+                className="flex flex-col gap-0.5 rounded-md border border-border/60 px-3 py-2"
+              >
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-4 w-56 max-w-full" />
+                <Skeleton className="h-8 w-full [@container(min-width:400px)]:h-4" />
+                <Skeleton className="h-8 w-16" />
+              </div>
+            ))}
+            <div className="space-y-1">
+              <Skeleton className="h-5 w-16" />
+              {Array.from({ length: loadingRuntimeCount }, (_, id) => (
+                <Skeleton key={id} className="h-8 w-full [@container(min-width:400px)]:h-[18px]" />
+              ))}
+            </div>
+            <div className="space-y-1">
+              <Skeleton className="h-5 w-24" />
+              <Skeleton className="h-4 w-40" />
+            </div>
+          </div>
+        </div>
       ) : (
         <>
           <ul className="flex flex-col gap-2">
@@ -90,6 +140,24 @@ export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCar
                 </span>
                 <span className="text-xs text-muted-foreground">{p.failureText}</span>
                 <span className="text-xs text-muted-foreground">能力：{p.capabilityText}</span>
+                {onToggleLogs === undefined ? null : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="self-start"
+                    aria-expanded={openLogProviderId === p.id}
+                    aria-controls={`provider-log-${p.id}`}
+                    onClick={() => {
+                      onToggleLogs(p.id);
+                    }}
+                  >
+                    {openLogProviderId === p.id ? '收起日志' : '查看日志'}
+                  </Button>
+                )}
+                {openLogProviderId === p.id && logPanel !== undefined ? (
+                  <ProviderLogPanelView id={`provider-log-${p.id}`} {...logPanel} />
+                ) : null}
               </li>
             ))}
           </ul>
@@ -105,10 +173,17 @@ export function SandboxEnvStatusCardView({ model, isError }: SandboxEnvStatusCar
                 >
                   {/* 紧凑型：只留图标（design/prototype.html Agent 分组的 `status-pill`
                       同样只给 18px 高、无文字，行内密度高不需要重复的文字标签）。 */}
-                  <StatusPill
-                    status={r.credentialConfigured ? 'ok' : 'unknown'}
-                    className="h-[18px] px-1"
-                  />
+                  {r.credentialConfigured ? (
+                    <StatusPill status="ok" className="h-[18px] px-1" aria-label="凭证已配置" />
+                  ) : (
+                    <span
+                      aria-label="凭证未配置"
+                      className="inline-flex h-[18px] items-center gap-1 rounded-full bg-[var(--v2-status-neutral-subtle-bg)] px-2 text-xs text-muted-foreground"
+                    >
+                      <Square aria-hidden="true" className="h-2.5 w-2.5 fill-current" />
+                      停用
+                    </span>
+                  )}
                   <span>
                     {r.displayName}（{r.vendor}）· {r.credentialText} · 授权方式 {r.authMethodsText}
                   </span>

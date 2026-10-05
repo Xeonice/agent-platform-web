@@ -36,7 +36,10 @@ export const createProjectCloneSlice: StateCreator<ProjectCloneSlice, [], [], Pr
       projectClones: {
         ...s.projectClones,
         [event.projectId]: {
-          phase: event.phase,
+          phase:
+            event.phase === 'cloning' && s.projectClones[event.projectId]?.phase === 'slow'
+              ? 'slow'
+              : event.phase,
           stage: event.stage,
           percent: event.percent,
           objectsDone: event.objectsDone,
@@ -45,7 +48,10 @@ export const createProjectCloneSlice: StateCreator<ProjectCloneSlice, [], [], Pr
           bytesPerSecond: event.bytesPerSecond,
           errorCode: event.errorCode,
           // 起始时刻只认第一次：后续事件不得把它重置，否则"已用"会一直归零。
-          startedAt: s.projectClones[event.projectId]?.startedAt ?? Date.now(),
+          startedAt:
+            event.startedAt !== undefined && Number.isFinite(Date.parse(event.startedAt))
+              ? Date.parse(event.startedAt)
+              : s.projectClones[event.projectId]?.startedAt,
         },
       },
     }));

@@ -1,12 +1,14 @@
 // 建沙箱 mutation（15 §2.4：mutation 不自动重试，走全局 mutations.retry:0）。
 import { useMemo } from 'react';
-import { useMutation, type UseMutationResult } from '@tanstack/react-query';
+import { useMutation, useQuery, type UseMutationResult } from '@tanstack/react-query';
 import {
   createSandbox,
   type CreateSandboxInput,
   type SandboxResponse,
 } from '@/services/api/sandbox.service';
 import { ApiErrorException } from '@/services/api/apiError';
+import { getResources } from '@/services/api/system.service';
+import { systemKeys } from '@/hooks/system/useAuditStream';
 import {
   describeSandboxError,
   isZeroSideEffectRejection,
@@ -31,26 +33,41 @@ export interface CreateSandboxErrorView {
    * 状态码上，从码反推必然漏。缺席（后端未表态）按保守读法落进下面的 `failure`。
    */
   rejection?: string;
+  rejectionCode?: string;
   /** 其余创建期错误：人话 + 可操作建议（P22 §1）。 */
   failure?: SandboxErrorCopy;
 }
 
 /** 把 mutation 的 error 归一化为可渲染形状（container 不碰 lib，故在 hook 层派生）。 */
 export function useCreateSandboxErrorView(error: Error | null): CreateSandboxErrorView {
+  const resources = useQuery({
+    queryKey: systemKeys.resources(),
+    queryFn: getResources,
+    staleTime: 0,
+    enabled: error instanceof ApiErrorException && error.envelope.code === 'RESOURCE_EXHAUSTED',
+  });
   return useMemo(() => {
     if (error === null) return {};
     if (error instanceof ApiErrorException) {
       if (isZeroSideEffectRejection(error.envelope)) {
         // 'create' 是必填语境：同一个标记在终止那条路上的人话完全不同（见 lib 里的注释）。
-        return { rejection: zeroSideEffectRejectionMessage(error.envelope, 'create') };
+        return {
+          rejection: zeroSideEffectRejectionMessage(error.envelope, 'create'),
+          rejectionCode: error.envelope.code,
+        };
       }
+      const failure = describeSandboxError({ code: error.envelope.code });
+      const capacity = resources.data?.capacity;
       return {
-        failure: describeSandboxError({
-          code: error.envelope.code,
-          message: error.envelope.message,
-        }),
+        failure:
+          error.envelope.code === 'RESOURCE_EXHAUSTED' && capacity !== undefined
+            ? {
+                ...failure,
+                title: `${failure.title}（${String(capacity.registeredTasks)} / ${String(capacity.maxTasks)}）`,
+              }
+            : failure,
       };
     }
-    return { failure: describeSandboxError({ message: error.message }) };
-  }, [error]);
+    return { failure: describeSandboxError({}) };
+  }, [error, resources.data]);
 }

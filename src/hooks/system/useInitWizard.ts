@@ -36,6 +36,8 @@
 //     第 3 次必须由用户点 [重新检测]。⛔ 无上限的自动重试在一台真的连不上的机器上
 //     就是一个自己转下去的死循环。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
+import { describeErrorCode } from '@/lib/_shared/errorCopy';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   diagnose,
@@ -124,6 +126,8 @@ export interface UseInitWizardResult {
   acknowledgeOffline: () => void;
 
   presetImage: PresetImageChainModel;
+  presetHasConclusion: boolean;
+  copyFix: (command: string) => void;
   /**
    * 这一轮的结论是「平台自己就能把镜像铺开」吗 —— container 据它决定要不要**自动开始**。
    *
@@ -148,6 +152,8 @@ export interface UseInitWizardResult {
   isFinishing: boolean;
   /** 保存失败的人话原因；非 null ⇒ `InitErrorPanel` + [重试]，**且不放行**。 */
   finishError: string | null;
+  finishNeedsOfflineReview: boolean;
+  returnToConnectivity: () => void;
 }
 
 export function useInitWizard(): UseInitWizardResult {
@@ -157,6 +163,7 @@ export function useInitWizard(): UseInitWizardResult {
   const [offlineAcknowledged, setOfflineAcknowledged] = useState(false);
   const [recheckCooldownSec, setRecheckCooldownSec] = useState(0);
   const [finishError, setFinishError] = useState<string | null>(null);
+  const [finishNeedsOfflineReview, setFinishNeedsOfflineReview] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const lastRunAtRef = useRef(0);
@@ -236,19 +243,19 @@ export function useInitWizard(): UseInitWizardResult {
   const isChecking = diagnoseRun.isPending;
 
   const startRun = useCallback(
-    (auto: boolean): void => {
+    (auto: boolean, force = false): void => {
       if (auto) {
         if (autoRunsRef.current >= MAX_AUTO_RUNS) return; // ⑦
         autoRunsRef.current += 1;
       } else {
         // ⑥ 闸门用 ref 读实时时刻：同一批次里的连点都会被这一句挡住。
-        if (Date.now() - lastRunAtRef.current < RECHECK_THROTTLE_MS) return;
-        setRecheckCooldownSec(Math.ceil(RECHECK_THROTTLE_MS / 1000));
+        if (!force && Date.now() - lastRunAtRef.current < RECHECK_THROTTLE_MS) return;
       }
       // ⚠️ **必须在这里同步打时刻，⛔ 不能等到 `mutationFn` 里**：`mutate()` 是异步调度的，
       //    等到 mutationFn 跑起来时，同一批次里的第二、三下点击**早就已经过了闸门**。
       //    （这条是实测出来的：打在 mutationFn 里那一版，连点 3 次发了 3 个请求。）
       lastRunAtRef.current = Date.now();
+      setRecheckCooldownSec(Math.ceil(RECHECK_THROTTLE_MS / 1000));
       runDiagnose(undefined, {
         onError: () => {
           // 断流已写进 `run.phase = 'aborted'` 并由 UI 呈现；这里只让 rejection 不上抛。
@@ -386,6 +393,7 @@ export function useInitWizard(): UseInitWizardResult {
   const admit = useCallback(
     (status?: InitStatusDto): void => {
       setFinishError(null);
+      setFinishNeedsOfflineReview(false);
       client.setQueryData<InitStatusDto>(
         systemKeys.init(),
         (prev) =>
@@ -409,7 +417,10 @@ export function useInitWizard(): UseInitWizardResult {
       if (error.envelope.code === INIT_OFFLINE_NOT_ACKNOWLEDGED) {
         // ⛔ **不放行**。后端标了 `sideEffectFree: true`：`initialized` 仍是 false，
         //    这台机器还没被初始化。message 里已经写清了两条出路，原样上 `InitErrorPanel`。
-        setFinishError(messageOf(error));
+        setFinishNeedsOfflineReview(true);
+        setFinishError(
+          '刚才这一轮联网检查发现模型 API 全部连不上：回第 1 步重新检测，确认以离线模式继续后再完成。',
+        );
         return;
       }
       // 兜底：**旧版后端**（两种 409 共用 `INVALID_STATE`），或任何本前端认不出的 409。
@@ -444,6 +455,7 @@ export function useInitWizard(): UseInitWizardResult {
   const finishMutate = finishInit.mutate;
   const finish = useCallback((): void => {
     setFinishError(null);
+    setFinishNeedsOfflineReview(false);
     finishMutate({
       // ③ 只有用户在 `OfflineNotice` 上点过 [继续] 才带上它。
       ...(offlineAcknowledged ? { acknowledgeOffline: true } : {}),
@@ -494,7 +506,15 @@ export function useInitWizard(): UseInitWizardResult {
     proxyInitial,
     saveProxyAndRecheck,
     isSavingProxy: saveProxy.isPending,
-    proxyError: saveProxy.error === null ? null : messageOf(saveProxy.error),
+    proxyError:
+      saveProxy.error === null
+        ? null
+        : saveProxy.error instanceof ApiErrorException
+          ? describeErrorCode(saveProxy.error.envelope.code, {
+              fallback: '没能保存代理配置，请稍后再试。',
+              traceId: saveProxy.error.envelope.traceId,
+            })
+          : '网络不通，请稍后再试。',
 
     offlineAcknowledged,
     acknowledgeOffline: useCallback(() => {
@@ -502,6 +522,17 @@ export function useInitWizard(): UseInitWizardResult {
     }, []),
 
     presetImage,
+    presetHasConclusion: run.preset !== undefined,
+    copyFix: useCallback((command: string) => {
+      void navigator.clipboard.writeText(command).then(
+        () => {
+          toast.success('已复制');
+        },
+        () => {
+          toast.error('复制失败，请手动选中命令复制');
+        },
+      );
+    }, []),
     autoStage: autoStageOffer(presetImage) !== undefined,
 
     subscription,
@@ -517,12 +548,20 @@ export function useInitWizard(): UseInitWizardResult {
     finish,
     isFinishing: finishInit.isPending,
     finishError,
+    finishNeedsOfflineReview,
+    returnToConnectivity: useCallback(() => {
+      setStep('connectivity');
+      setFinishError(null);
+      setFinishNeedsOfflineReview(false);
+      setOfflineAcknowledged(false);
+      startRun(false, true);
+    }, [startRun]),
   };
 }
 
 /** 后端信封的 `message` 已是人话（10 §6.8），原样上 UI；非信封错误退到 `Error.message`。 */
 function messageOf(error: unknown): string {
   if (error instanceof ApiErrorException) return error.envelope.message;
-  if (error instanceof Error) return error.message;
-  return '未知错误';
+  if (error instanceof TypeError) return '网络不通，请稍后再试。';
+  return '没能写入初始化设置，请稍后再试。';
 }

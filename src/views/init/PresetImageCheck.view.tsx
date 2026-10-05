@@ -120,20 +120,29 @@ export function PresetImageCheckView({
         </p>
       )}
 
-      <ol className="flex flex-col gap-2">
+      <ol className="divide-y divide-border overflow-hidden rounded-lg border border-border">
         {model.steps.map((s) => (
           <li
             key={s.step}
             data-testid={`preset-step-${s.step}`}
             data-state={s.state}
-            className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
+            className="flex flex-col gap-2 px-4 py-3 text-sm"
           >
             <span className="flex flex-wrap items-center gap-2">
-              <StatusPill status={statusPillStatusFor(s.state, isChecking)}>
-                {isChecking && s.state === 'pending' ? '检查中…' : STATE_TEXT[s.state]}
+              <StatusPill
+                status={statusPillStatusFor(
+                  s.state,
+                  isChecking && model.steps.every((step) => step.state === 'pending'),
+                )}
+              >
+                {model.steps.every((step) => step.state === 'pending') &&
+                isChecking &&
+                s.state === 'pending'
+                  ? '检查中…'
+                  : STATE_TEXT[s.state]}
               </StatusPill>
               <span className="font-medium">
-                第 {String(s.ordinal)} 步（共 {String(model.steps.length)} 步） · {s.label}
+                第 {String(s.ordinal)} 项（共 {String(model.steps.length)} 项） · {s.label}
               </span>
             </span>
 
@@ -148,15 +157,6 @@ export function PresetImageCheckView({
                 className="whitespace-pre-wrap break-words text-xs text-muted-foreground"
               >
                 {s.detail}
-              </span>
-            )}
-
-            {s.errorCode === undefined ? null : (
-              <span
-                data-testid={`preset-step-code-${s.step}`}
-                className="text-xs text-muted-foreground"
-              >
-                错误码 {s.errorCode}
               </span>
             )}
 
@@ -190,6 +190,7 @@ export function PresetImageCheckView({
                   <Button
                     type="button"
                     size="sm"
+                    variant="outline"
                     disabled={isProvisioning}
                     onClick={onProvision}
                     data-testid="preset-provision-button"
@@ -220,13 +221,18 @@ export function PresetImageCheckView({
                       </span>
                     ) : (
                       <>
-                        <span
-                          data-testid="preset-provision-percent"
-                          className="font-mono text-sm font-medium"
-                        >
-                          {String(Math.round(provisionProgress * 100))}%
+                        <span className="flex items-center gap-3">
+                          <Progress
+                            className="flex-1"
+                            value={Math.round(provisionProgress * 100)}
+                          />
+                          <span
+                            data-testid="preset-provision-percent"
+                            className="text-xs tabular-nums text-muted-foreground"
+                          >
+                            {String(Math.round(provisionProgress * 100))}%
+                          </span>
                         </span>
-                        <Progress value={Math.round(provisionProgress * 100)} />
                       </>
                     )}
                     {provisionElapsedSeconds === undefined ? null : (
@@ -268,9 +274,8 @@ export function PresetImageCheckView({
                       data-testid="preset-provision-error-hint"
                       className="text-xs text-muted-foreground"
                     >
-                      多半是网速：镜像下载源够得着、但拉得太慢，中途就断了。
-                      回上一步「代理配置」填一个代理再试；初始化完成后也能在「设置 → 系统状态 →
-                      出网代理」里改。
+                      多半是网速：镜像下载源够得着、但拉得太慢，中途就断了。 换个网络环境后再点
+                      [准备镜像] 重试；也可以先点 [下一步]，初始化完成后在「镜像管理」里再下载。
                     </span>
                   </span>
                 )}
@@ -294,6 +299,14 @@ export function PresetImageCheckView({
                 </Button>
               </span>
             )}
+            {s.errorCode === undefined ? null : (
+              <span
+                data-testid={`preset-step-code-${s.step}`}
+                className="text-xs text-muted-foreground"
+              >
+                错误码 {s.errorCode}
+              </span>
+            )}
           </li>
         ))}
       </ol>
@@ -302,6 +315,7 @@ export function PresetImageCheckView({
       {model.blockedText === undefined ? null : (
         <p
           role="alert"
+          id="preset-image-blocked"
           data-testid="preset-image-blocked"
           className="flex items-start gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-amber-600"
         >

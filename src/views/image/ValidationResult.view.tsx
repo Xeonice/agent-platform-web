@@ -27,6 +27,7 @@ import type { ImageValidationResultData } from '@/types/image';
 export interface ValidationResultProps extends ImageValidationResultData {
   /** ❌ 时的唯一出路（P22 §1：禁止只报错不给动作）。 */
   onViewRequirements?: () => void;
+  requirementsOpen?: boolean;
 }
 
 const HEADLINE: Record<ImageValidationResultData['status'], string> = {
@@ -57,6 +58,8 @@ export function ValidationResultView({
   warnings = [],
   errors = [],
   pinnedDigestShort,
+  unknownCodes = [],
+  requirementsOpen = false,
   onViewRequirements,
 }: ValidationResultProps) {
   return (
@@ -99,9 +102,20 @@ export function ValidationResultView({
         </ul>
       )}
 
+      {unknownCodes.map((code) => (
+        <p key={code} className="font-mono text-xs text-muted-foreground">
+          错误码：{code}
+        </p>
+      ))}
       {status === 'invalid' && onViewRequirements !== undefined && (
         <div>
-          <Button type="button" variant="outline" size="sm" onClick={onViewRequirements}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-expanded={requirementsOpen}
+            onClick={onViewRequirements}
+          >
             查看镜像要求
           </Button>
         </div>

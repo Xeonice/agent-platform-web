@@ -29,10 +29,10 @@ async function readErrorBody(response: Response): Promise<unknown> {
  * 因此前端**没有**"过滤已清理"这一步 —— DTO 里连 `deletedAt` 字段都没有，想过滤也无从下手。
  * 这是刻意的分工：23 I-RV-2 的"转只读"是后端不变量，界面上的体现就是它压根不出现。
  */
-export async function listRetainedVolumes(projectId: string): Promise<RetainedVolumeDto[]> {
+export async function listRetainedVolumes(projectId?: string | null): Promise<RetainedVolumeDto[]> {
   // 手拼而不是 `new URL()`：`API_BASE_URL` 空串（= 同源）时 `new URL` 需要一个 base，
   // 而唯一能给的 `window.location.origin` 在 node 测试环境里不存在。
-  const url = `${apiOrigin()}/api/retained-volumes?projectId=${encodeURIComponent(projectId)}`;
+  const url = `${apiOrigin()}/api/retained-volumes${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`;
   const response = await fetch(url, { credentials: CREDENTIALS });
   if (!response.ok) {
     throw new ApiErrorException(

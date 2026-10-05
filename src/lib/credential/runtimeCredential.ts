@@ -86,6 +86,9 @@ export function runtimeCardModel(
   }
   return {
     runtimeId: runtime.id,
+    ...(runtime.pendingTeardownCount === undefined
+      ? {}
+      : { pendingTeardownCount: runtime.pendingTeardownCount }),
     displayName: runtime.displayName,
     vendor: runtime.vendor,
     status: runtime.credentialStatus,
@@ -118,8 +121,7 @@ export function switchModeDecision(
  *
  * ⚠️ 措辞按 P21-3 术语表落到用户语境：「吊销」→「删除」、「运行实例」→「正在跑的任务」。
  */
-export const RUNTIME_REVOKE_WARNING =
-  '删除会重启正在用这份凭证跑的任务；已经被带出沙箱的 token，平台这边删不掉。';
+export const RUNTIME_REVOKE_WARNING = '已经从任务里带出去的 token，平台删不掉。';
 
 /**
  * P0-4 的**下一步**（配 `RUNTIME_REVOKE_WARNING` 一起出现）。
@@ -129,7 +131,7 @@ export const RUNTIME_REVOKE_WARNING =
  * 否则它只是制造焦虑。可以排成次要行，但不能没有。
  */
 export const RUNTIME_REVOKE_FOLLOW_UP =
-  '担心已经外流的话，去签发这串凭证的厂商后台把它作废，那边才是唯一能真正吊销它的地方。';
+  '去签发这串凭证的厂商后台把它作废，只有那边能让它真正失效。';
 
 /** 切「当前使用」的确认文案（切到已配置模式，VS-1）。 */
 export function switchModeConfirmText(mode: RuntimeAuthMode): string {
@@ -145,7 +147,7 @@ export function authModeLabel(mode: RuntimeAuthMode): string {
 
 /** 切换弹层标题（术语表：「切换生效模式」→「切换到 X」）。 */
 export function switchModeTitle(mode: RuntimeAuthMode): string {
-  return `切换到${authModeLabel(mode)}`;
+  return `切换到 ${authModeLabel(mode)}`;
 }
 
 /**
@@ -155,7 +157,7 @@ export function switchModeTitle(mode: RuntimeAuthMode): string {
  * 另一份明明就在那儿，界面却一个字都不说，下次发任务才撞上「未配置」。
  */
 export function switchAfterRevokeText(mode: RuntimeAuthMode): string {
-  return `这个 Agent 现在没有可用的凭证了。它的${authModeLabel(mode)}还留着 —— 要现在切过去用吗？`;
+  return `这个 Agent 现在没有可用的凭证了。它的 ${authModeLabel(mode)} 还留着 —— 要现在切过去用吗？`;
 }
 
 /**

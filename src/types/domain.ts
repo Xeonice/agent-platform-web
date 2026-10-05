@@ -3,7 +3,14 @@
 
 /** Task（sandbox）的 6 个用户可见状态（P21 §2.1）。 */
 export type SandboxStatus =
-  'preparing' | 'running' | 'waiting-input' | 'paused' | 'error' | 'stopped';
+  | 'preparing'
+  | 'running'
+  | 'waiting-input'
+  | 'paused'
+  | 'error'
+  | 'stopped'
+  | 'stopping'
+  | 'deleting';
 
 export interface Project {
   id: string;
@@ -22,6 +29,14 @@ export interface Sandbox {
   /** running 的子态：等待用户输入（10 §7.4 派生字段 waitingInput）。 */
   waitingInput: boolean;
   lastActiveAt: number;
+  sourceAutomationId?: string;
+  sourceAutomationName?: string;
+  rawStatus?: string;
+  phaseLabel?: string;
+  failureCode?: string;
+  failureOperation?: string;
+  stuck?: boolean;
+  stuckElapsed?: string;
   /**
    * 任务树副行「活跃于 X 前」（design-notes.md §4 Phase 3 第 2 条 / 原型 `renderTaskTree()`）。
    * 由 `useProjectTaskTree` 基于 `lastActiveAt` 派生（`@/lib/project/taskActivity`）。

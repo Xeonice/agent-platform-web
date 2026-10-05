@@ -8,11 +8,11 @@
 // 全局横幅，加这个取值只会重复 `currentModal` 删掉 `'wizard'` 那同一个教训
 // （"只在类型里存在的取值比没有更坏"）——等第一个 info 生产方出现时再加。
 //
-// ⛔ 同理没有实现的：「⚠️ 最多堆叠 2 条 + 『还有 N 条』折叠」。今天最多同时 3 条，
-//    折叠计数**恒为 0** —— 一个永远是 0 的 `collapsedCount` 与一个接好了的折叠 UI
-//    在界面上长得一模一样，而后者不存在。等第四个生产方出现时连着它一起加。
+// The view initially shows two banners and keeps expansion as local presentation state.
 import type { AutomationAttention } from '@/types/automation';
 import type { ConnectivityCheckModel } from '@/types/init';
+import type { components } from '@/types/generated/openapi';
+import type { RuntimeDto } from '@/types/runtimeCredential';
 
 /**
  * 横幅等级。07 §8.4：优先级 🔴 阻断 > ⚠️ 治理 > ℹ️ 提示（`info` 暂无生产方，见文件头）。
@@ -28,7 +28,13 @@ import type { ConnectivityCheckModel } from '@/types/init';
 export type BannerSeverity = 'blocking' | 'warning';
 
 /** 今天的三个生产方。**新增一个就在这里加一个字面量**（穷尽性由 `BANNER_RANK` 兜住）。 */
-export type BannerId = 'platform-state-unknown' | 'offline' | 'automation-needs-attention';
+export type BannerId =
+  | 'platform-state-unknown'
+  | 'offline'
+  | 'automation-needs-attention'
+  | 'disk-pressure'
+  | 'retained-pressure'
+  | `credential-login:${string}`;
 
 export interface GlobalBannerModel {
   id: BannerId;
@@ -66,4 +72,7 @@ export interface GlobalBannerInput {
    * **可选**：省略等同「没有数据」（`hasData:false`），既有调用点不必逐个改。
    */
   automation?: AutomationAttention;
+  resources?: components['schemas']['SystemResourcesResponseDto'];
+  runtimes?: RuntimeDto[];
+  now?: number;
 }

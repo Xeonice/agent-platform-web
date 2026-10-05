@@ -47,7 +47,11 @@ export function ConnectionStatusCardView({ model }: ConnectionStatusCardProps) {
             className="flex flex-col gap-0.5 text-sm"
           >
             <span className="flex flex-wrap items-center gap-2">
-              <StatusPill status={STATE_PILL_STATUS[row.state]}>{STATE_TEXT[row.state]}</StatusPill>
+              {row.showBadge === false ? null : (
+                <StatusPill status={STATE_PILL_STATUS[row.state]}>
+                  {STATE_TEXT[row.state]}
+                </StatusPill>
+              )}
               <span className="font-medium">{row.label}</span>
               <span className="text-muted-foreground">{row.valueText}</span>
             </span>

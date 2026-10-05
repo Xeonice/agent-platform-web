@@ -113,7 +113,6 @@ export const StagedIsInfoNotWarning: Story = {
       // ⚠️ 证据（含**按档**的体积/耗时）在第二层，⛔ 不与结论挤在一行。
       detail:
         '镜像本身没问题，只是这台机器上还没有它的副本（镜像压缩后约 0.3GB，通常十几秒到一分钟）。',
-      action: '不需要任何操作：第一个任务会自动把镜像下载好（耗时见上一行）。',
     }),
   },
   play: async ({ canvasElement }) => {
@@ -126,10 +125,10 @@ export const StagedIsInfoNotWarning: Story = {
     await expect(row).not.toHaveTextContent('警告');
     await expect(canvas.queryByTestId('preset-image-blocked')).toBeNull();
     // ⭐ 序号自带上下文：「共 5 步」在屏幕上，⛔ 不是孤零零一个「第 5 步」。
-    await expect(row).toHaveTextContent('第 5 步（共 5 步）');
+    await expect(row).toHaveTextContent('第 5 项（共 5 项）');
     // ⛔ 耗时那句只在第二层出现一次，⛔ 不许两处各写一个数字互相打架。
     await expect(canvas.getByTestId('preset-step-detail-staged')).toHaveTextContent('0.3GB');
-    await expect(canvas.getByTestId('preset-step-action-staged')).not.toHaveTextContent('GB');
+    await expect(canvas.queryByTestId('preset-step-action-staged')).toBeNull();
   },
 };
 
@@ -341,8 +340,8 @@ export const ProvisionFailed: Story = {
     //    200 KB/s，镜像拉到 84% 断掉，而唯一能救的「代理配置」当时**界面上无法抵达**。
     // MUTATION：把提示那一段删掉 ⇒ 下面两条红；只删「设置」那半句 ⇒ 第二条红。
     const hint = within(canvasElement).getByTestId('preset-provision-error-hint');
-    await expect(hint).toHaveTextContent('代理');
+    await expect(hint).toHaveTextContent('换个网络环境后再点 [准备镜像] 重试');
     // ⛔ 两条路都要给：向导里回上一步，以及初始化完成之后去哪儿改。
-    await expect(hint).toHaveTextContent('系统状态');
+    await expect(hint).toHaveTextContent('「镜像管理」');
   },
 };

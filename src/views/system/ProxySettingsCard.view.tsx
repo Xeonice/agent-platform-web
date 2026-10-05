@@ -10,48 +10,86 @@
 // ⚠️ 表单本体复用 `ProxyConfigForm.view`（向导也用它），⛔ 不另写一份 —— 两份表单迟早
 //    会在"留空 = 清空"这类三态语义上分叉。
 import { ProxyConfigFormView } from '@/views/system/ProxyConfigForm.view';
+import { Button } from '@/components/ui/button';
 import type { ProxyFormValues } from '@/types/init';
 
 export interface ProxySettingsCardProps {
   initial: ProxyFormValues;
   isSaving: boolean;
+  isLoading?: boolean;
+  loadError?: boolean;
+  onRetry?: () => void;
   errorMessage: string | null;
+  fieldErrors?: Partial<Record<keyof ProxyFormValues, string>>;
+  onFieldChange?: () => void;
+  saveSucceeded?: boolean;
+  configured?: boolean;
   onSave: (values: ProxyFormValues) => void;
 }
 
 export function ProxySettingsCardView({
   initial,
   isSaving,
+  isLoading = false,
+  loadError = false,
+  onRetry,
   errorMessage,
+  fieldErrors,
+  onFieldChange,
+  saveSucceeded = false,
+  configured = false,
   onSave,
 }: ProxySettingsCardProps) {
   return (
     <section
       aria-labelledby="proxy-settings-heading"
       data-testid="proxy-settings-card"
-      className="rounded-lg border border-border bg-background-subtle p-4"
+      className="rounded-md bg-card p-4 shadow-[var(--v2-shadow-card)]"
     >
-      <h2 id="proxy-settings-heading" className="text-base font-semibold">
-        出网代理
-      </h2>
+      <div className="flex items-center gap-2">
+        <h2 id="proxy-settings-heading" className="text-base font-semibold">
+          出网代理
+        </h2>
+        {configured && !loadError ? (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            已配置
+          </span>
+        ) : null}
+      </div>
       {/* ⚠️ 说清**什么时候需要它** —— 「能连上」不等于「够快」，这正是用户会卡住的地方。 */}
       <p className="mt-1 text-xs text-muted-foreground">
-        拉取沙箱镜像、访问模型接口都走这里。连得上但很慢（镜像下载中途断掉）也该配一个 ——
-        联网检查只测得出「能不能连上」，测不出带宽。
+        联网检查会走这组代理；镜像下载和沙箱里的 Agent
+        现在还不读它。检查只测得出「能不能连上」，测不出带宽。
       </p>
       <div className="mt-3">
-        <ProxyConfigFormView
-          // key 让设置回填到达后表单重新初始化（受控 state 的初值只吃第一次）。
-          key={`${initial.httpProxy}|${initial.httpsProxy}|${initial.noProxy}`}
-          initial={initial}
-          isSaving={isSaving}
-          cooldownSec={0}
-          errorMessage={errorMessage}
-          // ⚠️ 这一页没有「重新检测」——那是向导的动作（用户正卡在那一步等结论）。
-          //    这里只存配置，所以按钮就叫「保存」。
-          saveLabel="保存"
-          onSaveAndRecheck={onSave}
-        />
+        {loadError ? (
+          <div role="alert" className="flex items-center gap-3 text-sm">
+            <span>读取代理配置失败，请重试。</span>
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              重试
+            </Button>
+          </div>
+        ) : isLoading ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            正在读取代理配置…
+          </p>
+        ) : (
+          <ProxyConfigFormView
+            // key 让设置回填到达后表单重新初始化（受控 state 的初值只吃第一次）。
+            key={`${initial.httpProxy}|${initial.httpsProxy}|${initial.noProxy}`}
+            initial={initial}
+            isSaving={isSaving}
+            cooldownSec={0}
+            errorMessage={errorMessage}
+            fieldErrors={fieldErrors}
+            onFieldChange={onFieldChange}
+            successMessage={saveSucceeded ? '已保存。下一轮联网检查会走这组代理。' : undefined}
+            // ⚠️ 这一页没有「重新检测」——那是向导的动作（用户正卡在那一步等结论）。
+            //    这里只存配置，所以按钮就叫「保存」。
+            saveLabel="保存"
+            onSaveAndRecheck={onSave}
+          />
+        )}
       </div>
     </section>
   );

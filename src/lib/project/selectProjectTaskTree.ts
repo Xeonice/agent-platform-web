@@ -68,5 +68,5 @@ export function selectProjectTaskTree(
  * waitingInput 是 running 的派生子字段，计数只看该字段；折叠不影响计数。
  */
 export function countWaitingInput(tasks: Sandbox[]): number {
-  return tasks.filter((t) => t.waitingInput).length;
+  return tasks.filter((t) => t.waitingInput && t.status === 'running').length;
 }

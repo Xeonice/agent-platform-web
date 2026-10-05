@@ -60,16 +60,16 @@ export function GitCredentialsSectionView({
   onRevoke,
 }: GitCredentialsSectionProps) {
   return (
-    <section className="flex flex-col gap-4">
+    <section id="git-credentials" className="flex scroll-mt-4 flex-col gap-4">
       <header className="flex flex-col gap-1">
         <h2 className="flex items-center gap-1.5 text-lg font-semibold">
           <Package aria-hidden="true" className="h-4 w-4" />
           Git 凭证（私有仓库访问）
         </h2>
-        <p className="text-xs text-muted-foreground">{guidanceText}</p>
-        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">{guidanceText}</p>
+        <p className="flex items-center gap-1 text-[13px] text-muted-foreground">
           <Info aria-hidden="true" className="h-3 w-3 shrink-0" />
-          Git 凭证用于克隆私有仓库，与 Agent 的 Runtime 凭证无关。
+          Git 凭证用于克隆私有仓库，与 Agent 凭证无关。
         </p>
       </header>
 
@@ -99,10 +99,35 @@ export function GitCredentialsSectionView({
       )}
 
       {loading ? (
-        <div className="h-24 animate-pulse rounded-lg border border-border bg-muted/30" />
+        <div role="status" aria-busy="true" aria-label="正在读取 Git 凭证…">
+          <span className="sr-only">正在读取 Git 凭证…</span>
+          <div
+            aria-hidden="true"
+            className="overflow-hidden rounded-lg border border-border bg-card"
+          >
+            <div className="flex flex-wrap justify-between gap-4 p-5">
+              <div className="min-w-0 space-y-1">
+                {[128, 176, 160, 136].map((width) => (
+                  <div key={width} className="flex h-5 items-center">
+                    <div className="h-3 animate-pulse rounded bg-muted" style={{ width }} />
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                {[0, 1, 2].map((key) => (
+                  <div key={key} className="h-8 w-16 animate-pulse rounded-md bg-muted" />
+                ))}
+              </div>
+            </div>
+            <div className="flex min-h-14 items-center justify-between gap-3 border-t border-border px-5 py-3">
+              <div className="h-3 w-28 animate-pulse rounded bg-muted" />
+              <div className="h-8 w-28 animate-pulse rounded-md bg-muted" />
+            </div>
+          </div>
+        </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {cards.map((model) => (
+        <div className="flex flex-col gap-4">
+          {cards.map((model, index) => (
             <GitCredentialCardView
               key={model.credential.id}
               credential={model.credential}
@@ -119,6 +144,30 @@ export function GitCredentialsSectionView({
               onRevoke={() => {
                 onRevoke(model.credential);
               }}
+              footerSlot={
+                index === cards.length - 1 && missingTypes.length > 0 ? (
+                  <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-[13px] text-muted-foreground">
+                    <span>添加其他类型凭证：</span>
+                    <div className="flex flex-wrap gap-2">
+                      {missingTypes.includes('ssh-key') && (
+                        <Button type="button" variant="outline" size="sm" onClick={onConfigureSsh}>
+                          配置 SSH 密钥
+                        </Button>
+                      )}
+                      {missingTypes.includes('https-token') && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={onConfigureHttps}
+                        >
+                          配置 HTTPS Token
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ) : undefined
+              }
             />
           ))}
 
@@ -132,22 +181,6 @@ export function GitCredentialsSectionView({
                 onConfigureHttps={onConfigureHttps}
               />
             ))}
-
-          {cards.length > 0 && missingTypes.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
-              <span>添加其他类型凭证：</span>
-              {missingTypes.includes('ssh-key') && (
-                <Button type="button" variant="outline" size="sm" onClick={onConfigureSsh}>
-                  配置 SSH 密钥
-                </Button>
-              )}
-              {missingTypes.includes('https-token') && (
-                <Button type="button" variant="outline" size="sm" onClick={onConfigureHttps}>
-                  配置 HTTPS Token
-                </Button>
-              )}
-            </div>
-          )}
         </div>
       )}
 

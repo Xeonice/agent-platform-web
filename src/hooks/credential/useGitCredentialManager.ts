@@ -1,7 +1,7 @@
 // Git 凭证编排逻辑（F21-3 §4/§5）：列表 + save/test/revoke + clone 401 回程重试。副作用/lib/service-error
 // 归 hook（07 §6，boundaries 禁 container→lib/service）。凭证明文只在本 hook 的局部 state，提交/关闭即清空
 // ——绝不进 store/persist（15 §3.5 安全红线）。GitCredentialsContainer 只消费本 hook 的返回并装配视图。
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useGitCredentials } from '@/hooks/credential/useGitCredentials';
@@ -10,7 +10,8 @@ import {
   useTestGitCredential,
   useRevokeGitCredential,
 } from '@/hooks/credential/useGitCredentialMutations';
-import { useRetryClone } from '@/hooks/project/useProjects';
+import { useRetryClone, useProjects } from '@/hooks/project/useProjects';
+import { gitDeletionModel, gitCredentialTestRepo } from '@/lib/credential/gitDeletion';
 import { useAppStore } from '@/stores';
 import {
   platformToHost,
@@ -30,12 +31,17 @@ import type {
   GitPlatform,
   GitTestRequest,
   MaskedGitCredential,
+  GitCredentialDeletionModel,
 } from '@/types/gitCredential';
 
 /** 前端测试连接 15s 兜底（P21-3 §10.3）：超时即中止 loading，避免按钮永远转圈。 */
 const TEST_TIMEOUT_MS = 15_000;
 
 export interface GitCredentialManager {
+  pendingRevoke: GitCredentialDeletionModel | null;
+  confirmRevoke: () => void;
+  cancelRevoke: () => void;
+  retryRevokeProjects: () => void;
   loading: boolean;
   /**
    * 列表**加载失败**（区别于「查到了、确实没配」）。
@@ -96,12 +102,6 @@ interface ActiveForm {
   kind: 'ssh' | 'https';
 }
 
-function errorMessageOf(error: unknown, fallback: string): string {
-  return error instanceof ApiErrorException && error.envelope.message !== ''
-    ? error.envelope.message
-    : fallback;
-}
-
 function errorCodeOf(error: unknown): string | undefined {
   return error instanceof ApiErrorException ? error.envelope.code : undefined;
 }
@@ -126,9 +126,17 @@ export function useGitCredentialManager(): GitCredentialManager {
   const testMutation = useTestGitCredential();
   const revokeMutation = useRevokeGitCredential();
   const retryCloneMutation = useRetryClone();
+  const projects = useProjects();
+  const [pendingRevoke, setPendingRevoke] = useState<MaskedGitCredential | null>(null);
 
   const pendingProjectCreate = useAppStore((s) => s.pendingProjectCreate);
   const setPendingProjectCreate = useAppStore((s) => s.setPendingProjectCreate);
+  useEffect(
+    () => () => {
+      if (window.location.pathname !== '/settings/credentials') setPendingProjectCreate(null);
+    },
+    [setPendingProjectCreate],
+  );
 
   const [activeForm, setActiveForm] = useState<ActiveForm | null>(null);
   const [sshKey, setSshKey] = useState('');
@@ -202,13 +210,15 @@ export function useGitCredentialManager(): GitCredentialManager {
   })();
 
   const runTest = async (body: GitTestRequest): Promise<GitCredentialTestOutcome> => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       const result = await Promise.race([
         testMutation.mutateAsync(body),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => {
-            reject(new Error('TIMEOUT_LOCAL'));
-          }, TEST_TIMEOUT_MS),
+        new Promise<never>(
+          (_, reject) =>
+            (timeout = setTimeout(() => {
+              reject(new Error('TIMEOUT_LOCAL'));
+            }, TEST_TIMEOUT_MS)),
         ),
       ]);
       return result.ok
@@ -220,12 +230,27 @@ export function useGitCredentialManager(): GitCredentialManager {
           ? 'TIMEOUT_LOCAL'
           : errorCodeOf(error);
       return { ok: false, message: gitTestErrorMessage(code) };
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
     }
   };
 
   // 表单内 [测试连接]：存前测 → inline（带当前粘贴的 secret + 表单配置）。
   const testForm = (): void => {
     if (activeForm === null) return;
+    const target =
+      repoTarget ??
+      gitCredentialTestRepo(
+        { type: activeForm.kind === 'ssh' ? 'ssh-key' : 'https-token', allowedHosts },
+        projects.data ?? [],
+      );
+    if (target === undefined) {
+      setFormTestResult({
+        ok: false,
+        message: '没有可用来测试的仓库。先创建一个相关项目，再测试连接；也可以直接保存凭证。',
+      });
+      return;
+    }
     const body: GitTestRequest =
       activeForm.kind === 'ssh'
         ? {
@@ -233,7 +258,7 @@ export function useGitCredentialManager(): GitCredentialManager {
             type: 'ssh-key',
             secret: sshKey,
             allowedHosts: [],
-            ...(repoTarget !== undefined ? { repoUrl: repoTarget } : {}),
+            repoUrl: target,
           }
         : {
             source: 'inline',
@@ -241,7 +266,7 @@ export function useGitCredentialManager(): GitCredentialManager {
             secret: token,
             platform,
             allowedHosts: allowedHosts.map((h) => h.trim().toLowerCase()),
-            ...(repoTarget !== undefined ? { repoUrl: repoTarget } : {}),
+            repoUrl: target,
           };
     setFormTesting(true);
     setFormTestResult(null);
@@ -253,10 +278,23 @@ export function useGitCredentialManager(): GitCredentialManager {
 
   // 卡片 [测试连接]：已入库 → stored（带 credentialId，按当前分区选，P21-3 §10.3）。
   const testCard = (credential: MaskedGitCredential): void => {
+    const target = repoTarget ?? gitCredentialTestRepo(credential, projects.data ?? []);
+    if (target === undefined) {
+      setCardTest({
+        id: credential.id,
+        outcome: {
+          ok: false,
+          message: projects.isError
+            ? '项目列表暂时读不到，无法确定测试仓库，请重试读取项目。'
+            : '没有可用来测试的仓库。先创建一个相关项目，再测试连接。',
+        },
+      });
+      return;
+    }
     const body: GitTestRequest = {
       source: 'stored',
       credentialId: credential.id,
-      ...(repoTarget !== undefined ? { repoUrl: repoTarget } : {}),
+      repoUrl: target,
     };
     setCardTestingId(credential.id);
     setCardTest(null);
@@ -275,8 +313,8 @@ export function useGitCredentialManager(): GitCredentialManager {
           toast.success('SSH 密钥已保存');
           closeForm();
         },
-        onError: (error) => {
-          toast.error(errorMessageOf(error, '保存失败，请稍后重试。'));
+        onError: () => {
+          toast.error('保存失败，请稍后重试。');
         },
       },
     );
@@ -296,20 +334,26 @@ export function useGitCredentialManager(): GitCredentialManager {
           toast.success('HTTPS Token 已保存');
           closeForm();
         },
-        onError: (error) => {
-          toast.error(errorMessageOf(error, '保存失败，请稍后重试。'));
+        onError: () => {
+          toast.error('保存失败，请稍后重试。');
         },
       },
     );
   };
 
   const revoke = (credential: MaskedGitCredential): void => {
-    revokeMutation.mutate(credential.id, {
+    setPendingRevoke(credential);
+  };
+  const confirmRevoke = (): void => {
+    if (pendingRevoke === null || revokeMutation.isPending) return;
+    revokeMutation.mutate(pendingRevoke.id, {
       onSuccess: () => {
-        toast.success('凭证已吊销');
+        toast.success('凭证已删除');
+        setPendingRevoke(null);
       },
-      onError: (error) => {
-        toast.error(errorMessageOf(error, '吊销失败，请稍后重试。'));
+      onError: () => {
+        toast.error('删除失败，请稍后重试。');
+        setPendingRevoke(null);
       },
     });
   };
@@ -326,8 +370,8 @@ export function useGitCredentialManager(): GitCredentialManager {
         setPendingProjectCreate(null);
         router.push('/');
       },
-      onError: (error) => {
-        toast.error(errorMessageOf(error, '重试克隆失败，请稍后重试。'));
+      onError: () => {
+        toast.error('重试克隆失败，请稍后重试。');
       },
     });
   };
@@ -353,6 +397,21 @@ export function useGitCredentialManager(): GitCredentialManager {
   })();
 
   return {
+    pendingRevoke:
+      pendingRevoke === null
+        ? null
+        : gitDeletionModel(
+            pendingRevoke,
+            formatLastUsed(pendingRevoke.lastUsedAt),
+            projects.isError ? undefined : projects.data,
+          ),
+    confirmRevoke,
+    cancelRevoke: () => {
+      if (!revokeMutation.isPending) setPendingRevoke(null);
+    },
+    retryRevokeProjects: () => {
+      void projects.refetch();
+    },
     loading: credentials.isPending,
     loadError: credentials.isError,
     retryLoad: (): void => {

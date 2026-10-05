@@ -10,6 +10,10 @@
 // ⚠️ [启用] **不是** `PATCH { isActive:true }`：`m.toggle(id, true)` 内部走
 // `POST /:id/activate`（后端对前者明确回 400 并指向 activate）。
 import { useRef } from 'react';
+import { useImageOperationFocus } from '@/hooks/image/useImageOperationFocus';
+import { useImageCardLocation } from '@/hooks/image/useImageCardLocation';
+import Link from 'next/link';
+import { useAppStore } from '@/stores';
 import { AlertTriangle, Check, X, type LucideIcon } from 'lucide-react';
 import { useImageManager } from '@/hooks/image/useImages';
 import { useEscapeKey } from '@/hooks/_shared/useEscapeKey';
@@ -20,7 +24,9 @@ import { EnvVarEditorView } from '@/views/image/EnvVarEditor.view';
 import { ImageRequirementsPanelView } from '@/views/image/ImageRequirementsPanel.view';
 import { RegisterImageModalView } from '@/views/image/RegisterImageModal.view';
 import { UpdateCompareDialogView } from '@/views/image/UpdateCompareDialog.view';
-import { ConfirmDialogView } from '@/views/settings/ConfirmDialog.view';
+import { DeleteImageConfirmView } from '@/views/image/DeleteImageConfirm.view';
+import { PresetImageDownloadView } from '@/views/image/PresetImageDownload.view';
+import { PresetDisableDialogView } from '@/views/image/PresetDisableDialog.view';
 import { Button } from '@/components/ui/button';
 import type { ImageStatusFilter } from '@/hooks/image/useImages';
 
@@ -34,16 +40,65 @@ const FILTERS: { key: ImageStatusFilter; label: string; icon?: LucideIcon }[] = 
 
 export function ImagesContainer() {
   const m = useImageManager();
+  const operationFocus = useImageOperationFocus(m.validating, m.saving);
   const registerModalRef = useRef<HTMLDivElement>(null);
+  const compareModalRef = useRef<HTMLDivElement>(null);
+  const disableModalRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useImageCardLocation(m.highlightedImageId, m.cards);
 
   // 三个弹层各自的 Esc；焦点入弹层由 useModalFocus 接管（URI 输入框自己还带 autoFocus）。
   useEscapeKey(m.registerOpen && !m.validating && !m.saving, m.closeRegister);
   useEscapeKey(m.compare !== null && !m.adopting, m.dismissCompare);
   useEscapeKey(m.pendingDelete !== null && !m.deleting, m.cancelDelete);
   useModalFocus(m.registerOpen, registerModalRef);
+  useModalFocus(m.compare !== null, compareModalRef);
+  useModalFocus(m.pendingBuiltinDisable !== null, disableModalRef);
+  useEscapeKey(m.pendingBuiltinDisable !== null && !m.disablingBuiltin, m.cancelBuiltinDisable);
 
   return (
     <div className="flex flex-col gap-4">
+      {m.taskSource !== null && (
+        <section
+          aria-label="任务来源提示"
+          className="relative rounded-lg border border-primary/25 bg-primary/5 p-4 pr-10"
+        >
+          <p className="text-sm font-medium">
+            从任务「{m.taskSource.taskName}」来：{m.taskSource.symptom}——看看镜像地址与验证结论
+          </p>
+          <p className="mt-2 break-all text-sm text-muted-foreground">
+            这个任务用的镜像：{m.taskSource.imageRef ?? '平台预制镜像'}
+            。下面已标出。地址与验证结论都没问题时，多半是这台机器连不上镜像下载源；到「系统状态」查看连接，改好之后回到任务点
+            [重新发起]。需要换镜像时，在新建任务的「镜像」一栏改选。
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button asChild variant="link" size="sm">
+              <Link
+                href="/"
+                onClick={() => {
+                  const source = m.taskSource;
+                  if (source === null) return;
+                  if (source.projectId !== undefined)
+                    useAppStore.getState().setSelectedProjectId(source.projectId);
+                  useAppStore.getState().setSelectedSandboxId(source.taskId);
+                }}
+              >
+                回到任务「{m.taskSource.taskName}」
+              </Link>
+            </Button>
+            <Button asChild variant="link" size="sm">
+              <Link href="/settings/system">系统状态</Link>
+            </Button>
+          </div>
+          <button
+            type="button"
+            aria-label="关闭来源提示"
+            onClick={m.dismissTaskSource}
+            className="absolute right-3 top-3 rounded p-1 hover:bg-muted"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </section>
+      )}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-semibold">已注册的 OCI 镜像</h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -87,9 +142,23 @@ export function ImagesContainer() {
       </header>
 
       {m.loading && (
-        <div className="flex flex-col gap-3">
+        <div aria-busy="true" className="flex flex-col gap-3">
+          <p role="status" className="sr-only">
+            镜像列表读取中…
+          </p>
           <ImageCardSkeleton />
           <ImageCardSkeleton />
+        </div>
+      )}
+      {m.loadFailed && (
+        <div
+          role="alert"
+          className="flex items-center gap-3 rounded-lg border border-destructive/30 p-4 text-sm"
+        >
+          <span>镜像列表没读出来，请重试。</span>
+          <Button size="sm" variant="outline" onClick={m.retryLoad}>
+            重试
+          </Button>
         </div>
       )}
 
@@ -99,7 +168,9 @@ export function ImagesContainer() {
           data-testid="images-empty"
           className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground"
         >
-          <p>还没有注册任何镜像。注册一张之后，它会出现在发起任务向导的镜像下拉里。</p>
+          <p>
+            还没有注册任何镜像。注册之后，它会出现在这个列表里；新建任务时，可以在「镜像」一栏选它。
+          </p>
           {/*
             ⚠️ **空态也要前置硬约束**（2026-09 修）：这里是很多人第一次接触注册这件事的地方，
             而真正会拒绝他的那一条（必须从平台预制镜像改起）此前在注册前一个字都没出现过。
@@ -126,7 +197,7 @@ export function ImagesContainer() {
         </div>
       )}
 
-      {!m.loading && !m.noImagesAtAll && m.cards.length === 0 && (
+      {!m.loading && !m.loadFailed && !m.noImagesAtAll && m.cards.length === 0 && (
         <p data-testid="images-filtered-empty" className="text-sm text-muted-foreground">
           没有符合当前搜索/过滤条件的镜像。
         </p>
@@ -136,12 +207,22 @@ export function ImagesContainer() {
         {m.cards.map((card) => (
           <div
             key={card.imageId}
+            ref={(node) => {
+              if (node === null) cardRefs.current.delete(card.imageId);
+              else cardRefs.current.set(card.imageId, node);
+            }}
+            tabIndex={-1}
             data-testid="image-card-slot"
             data-highlighted={String(m.highlightedImageId === card.imageId)}
             className={
               m.highlightedImageId === card.imageId ? 'rounded-lg ring-2 ring-primary' : undefined
             }
           >
+            {m.taskSource !== null && m.taskSourceImageId === card.imageId && (
+              <p className="px-4 pt-3 text-xs font-medium text-primary">
+                「{m.taskSource.taskName}」用的镜像
+              </p>
+            )}
             <ImageCardView
               model={card.model}
               {...(card.upstreamUpdate === undefined
@@ -151,6 +232,25 @@ export function ImagesContainer() {
               checkingUpdate={card.checkingUpdate}
               toggling={card.toggling}
               envSummary={card.envSummary}
+              downloadSlot={
+                !card.model.canDelete &&
+                m.presetDownload.offer !== undefined &&
+                (m.presetDownload.reference === undefined ||
+                  m.presetDownload.reference === card.model.refDisplay) ? (
+                  <PresetImageDownloadView
+                    offer={m.presetDownload.offer}
+                    headline={m.presetDownload.headline}
+                    isProvisioning={m.presetDownload.isProvisioning}
+                    statusText={m.presetDownload.statusText}
+                    progress={m.presetDownload.progress}
+                    elapsedSeconds={m.presetDownload.elapsedSeconds}
+                    error={m.presetDownload.error}
+                    notice={m.presetDownload.notice}
+                    disabledReason={m.presetDownload.disabledReason}
+                    onPrepare={m.presetDownload.start}
+                  />
+                ) : undefined
+              }
               runParamsSlot={
                 m.envEditor?.manifestId === card.manifestId ? (
                   <div className="mt-2 flex flex-col gap-2">
@@ -214,6 +314,7 @@ export function ImagesContainer() {
               onDelete={() => {
                 m.requestDelete(card.manifestId);
               }}
+              requirementsOpen={m.requirementsOpen}
               onViewRequirements={m.viewRequirements}
               onViewUpstreamChange={() => {
                 m.checkUpdate(card.manifestId);
@@ -223,7 +324,7 @@ export function ImagesContainer() {
             <div className="mt-2">
               <ImageVersionHistoryView
                 rows={card.history}
-                {...(card.toggling ? { switchingId: card.manifestId } : {})}
+                {...(card.switchingId === undefined ? {} : { switchingId: card.switchingId })}
                 onSwitchVersion={m.activateVersion}
               />
             </div>
@@ -234,6 +335,8 @@ export function ImagesContainer() {
       {m.registerOpen && (
         <div ref={registerModalRef}>
           <RegisterImageModalView
+            validateRef={operationFocus.validateRef}
+            saveRef={operationFocus.saveRef}
             uri={m.uri}
             onUriChange={m.onUriChange}
             onValidate={m.validate}
@@ -243,6 +346,9 @@ export function ImagesContainer() {
             saving={m.saving}
             {...(m.validationResult === undefined ? {} : { result: m.validationResult })}
             conclusionInvalidated={m.conclusionInvalidated}
+            requestFailure={m.requestFailure}
+            onRetry={m.retryRegistration}
+            requirementsOpen={m.requirementsOpen}
             {...(m.uriError === undefined ? {} : { uriError: m.uriError })}
             {...(m.duplicate === undefined ? {} : { duplicate: m.duplicate })}
             onLocateExisting={m.locateExisting}
@@ -252,20 +358,22 @@ export function ImagesContainer() {
       )}
 
       {m.compare !== null && (
-        <UpdateCompareDialogView
-          imageName={m.compare.imageName}
-          refDisplay={m.compare.refDisplay}
-          currentDigestShort={m.compare.currentDigestShort}
-          {...(m.compare.currentResolvedAtLabel === undefined
-            ? {}
-            : { currentResolvedAtLabel: m.compare.currentResolvedAtLabel })}
-          upstreamDigestShort={m.compare.upstreamDigestShort}
-          upstreamValidation={m.compare.upstreamValidation}
-          updating={m.adopting}
-          onAdopt={m.adoptNewVersion}
-          onDismiss={m.dismissCompare}
-          onViewRequirements={m.viewRequirements}
-        />
+        <div ref={compareModalRef}>
+          <UpdateCompareDialogView
+            imageName={m.compare.imageName}
+            refDisplay={m.compare.refDisplay}
+            currentDigestShort={m.compare.currentDigestShort}
+            {...(m.compare.currentResolvedAtLabel === undefined
+              ? {}
+              : { currentResolvedAtLabel: m.compare.currentResolvedAtLabel })}
+            upstreamDigestShort={m.compare.upstreamDigestShort}
+            upstreamValidation={m.compare.upstreamValidation}
+            updating={m.adopting}
+            onAdopt={m.adoptNewVersion}
+            onDismiss={m.dismissCompare}
+            onViewRequirements={m.viewRequirements}
+          />
+        </div>
       )}
 
       {/*
@@ -276,13 +384,30 @@ export function ImagesContainer() {
       {m.requirementsOpen && <ImageRequirementsPanelView onClose={m.closeRequirements} />}
 
       {m.pendingDelete !== null && (
-        <ConfirmDialogView
-          title="删除镜像版本"
-          message={`即将删除 ${m.pendingDelete.imageName}（${m.pendingDelete.version}）这一行 manifest。此操作不可逆；被 Task 引用中的版本会被平台拒绝删除，那时请改为 [禁用]。`}
-          confirmLabel="删除"
+        <DeleteImageConfirmView
+          reference={m.pendingDelete.reference}
+          version={m.pendingDelete.version}
+          isActive={m.pendingDelete.isActive}
+          envCount={m.pendingDelete.envCount}
+          secretCount={m.pendingDelete.secretCount}
+          preview={m.deletionPreview}
+          loading={m.deletionLoading}
+          error={m.deletionError}
           busy={m.deleting}
+          onRetry={m.retryDeletionPreview}
+          onDisable={m.disableInsteadOfDelete}
           onConfirm={m.confirmDelete}
           onCancel={m.cancelDelete}
+        />
+      )}
+      {m.pendingBuiltinDisable !== null && (
+        <PresetDisableDialogView
+          reference={m.pendingBuiltinDisable.reference}
+          version={m.pendingBuiltinDisable.version}
+          busy={m.disablingBuiltin}
+          dialogRef={disableModalRef}
+          onConfirm={m.confirmBuiltinDisable}
+          onCancel={m.cancelBuiltinDisable}
         />
       )}
     </div>

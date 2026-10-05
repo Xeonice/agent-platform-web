@@ -118,6 +118,7 @@ export default tseslint.config(
     ignores: [
       'node_modules/**',
       '.next/**',
+      '.next-*/**',
       'storybook-static/**',
       'coverage/**',
       'playwright-report/**',
@@ -365,6 +366,6 @@ export default tseslint.config(
   {
     files: ['**/*.{js,mjs,cjs}'],
     ...tseslint.configs.disableTypeChecked,
-    languageOptions: { globals: { ...globals.node } },
+    languageOptions: { parserOptions: { projectService: false }, globals: { ...globals.node } },
   },
 );

@@ -71,8 +71,9 @@ export interface AuditStreamCardProps {
   hasOlder: boolean;
   isFetchingOlder: boolean;
   expandedSeq: number | null;
+  timelineFiltered?: boolean;
   onToggleDetail: (seq: number) => void;
-  onOpenTimeline: (subjectId: string) => void;
+  onOpenTimeline: (subjectId: string, subjectName?: string) => void;
   onFillGap: () => void;
   onReachEnd: () => void;
   onRetry: () => void;
@@ -95,6 +96,7 @@ export function AuditStreamCardView({
   hasOlder,
   isFetchingOlder,
   expandedSeq,
+  timelineFiltered = false,
   onToggleDetail,
   onOpenTimeline,
   onFillGap,
@@ -192,6 +194,7 @@ export function AuditStreamCardView({
                   <AuditEventRowView
                     row={row}
                     expanded={expandedSeq === row.seq}
+                    timelineFiltered={timelineFiltered}
                     onToggleDetail={onToggleDetail}
                     onOpenTimeline={onOpenTimeline}
                   />

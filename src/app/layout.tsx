@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import './globals.css';
 import { Providers } from '@/app/providers';
 import { AppBootGate } from '@/containers/init/AppBootGate';
-import { GlobalBannerContainer } from '@/containers/banner/GlobalBannerContainer';
+import { AppFrameContainer } from '@/containers/workbench/AppFrameContainer';
 
 export const metadata: Metadata = {
   title: 'Agent 管理平台',
@@ -18,7 +18,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       下面那段脚本会在首屏绘制前按用户偏好改写它 —— 对没表过态的用户（`system`）
       结果多半仍是暗色，所以这个默认值是对的、不是随便挑的。
     */
-    <html lang="zh-CN" className="dark">
+    <html lang="zh-CN" className="dark" suppressHydrationWarning>
       <head>
         {/*
           ⚠️⚠️ **主题必须在首屏绘制之前定下来，所以这段脚本是内联同步的**（Phase 5）。
@@ -53,20 +53,7 @@ document.documentElement.classList.toggle('dark',t!=='light');
         */}
         <Providers>
           <AppBootGate>
-            {/*
-              全局横幅栈（F21-8 §4 / 07 §8.4）。**挂在 `AppBootGate` 的 children 里**，
-              于是它与阻塞式向导天然互斥（`initialized:false` 时整棵 children 不进树）——
-              理由见 `GlobalBannerContainer` 的文件头。
-
-              ⚠️ 这个 flex 列是横幅存在的**结构前提**：工作台壳与设置页壳此前各自 `h-screen`，
-              横幅一出现就把它们顶出视口 100vh + 横幅高度 ⇒ 整页滚动条 + xterm 按失控高度
-              算行数（`WorkbenchShell.view` 里已经为同一件事写过一次注释）。⇒ 两个壳改
-              `h-full`，高度由这里的 `min-h-0 flex-1` 给。**没有横幅时 DOM 高度与此前一致。**
-            */}
-            <div className="flex h-screen flex-col">
-              <GlobalBannerContainer />
-              <div className="min-h-0 flex-1">{children}</div>
-            </div>
+            <AppFrameContainer>{children}</AppFrameContainer>
           </AppBootGate>
         </Providers>
       </body>

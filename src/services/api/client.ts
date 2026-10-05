@@ -14,7 +14,7 @@ import type { paths } from '@/types/generated/openapi';
  * ——「默认值的作用是让『没配』这件事被看见」在这里正好反了：它让没配**看起来像配好了**。
  *
  * ⚠️ 测试与 Storybook **不跑在 Next 下**，没有 rewrites，而 node 的 `fetch` 不接受相对路径。
- * 它们由 `vitest.setup.ts` 显式把这个 env 设成绝对地址，让 MSW 有个确定的 origin 可拦。
+ * 它们由 `src/acceptance/setup.ts` 显式把这个 env 设成绝对地址，让 MSW 有个确定的 origin 可拦。
  */
 export const API_BASE_URL = process.env['NEXT_PUBLIC_API_BASE_URL'] ?? '';
 

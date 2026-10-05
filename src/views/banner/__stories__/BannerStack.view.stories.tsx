@@ -117,7 +117,7 @@ export const Governance: Story = {
     await expect(banner.querySelector('.lucide-triangle-alert')).not.toBeNull();
     await expect(banner.querySelector('.lucide-octagon-alert')).toBeNull();
     // ⛔ 不与阻断类共用红色三件套（design-notes.md §4 Phase 3 第 3 条：三色分层）。
-    await expect(banner.className).not.toContain('red-500');
+    await expect(banner.className).toContain('v2-status-warn-subtle-bg');
   },
 };
 
@@ -134,17 +134,20 @@ export const BlockingOutranksGovernance: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const alerts = canvas.getAllByRole('alert');
-    await expect(alerts).toHaveLength(3);
+    await expect(alerts).toHaveLength(2);
+    await userEvent.click(canvas.getByTestId('banner-stack-more'));
+    const expandedAlerts = canvas.getAllByRole('alert');
+    await expect(expandedAlerts).toHaveLength(3);
     // 顺序：两条阻断在前，治理殿后——这是排序层面的"阻断压过治理"。
-    await expect(alerts.map((a) => a.getAttribute('data-testid'))).toEqual([
+    await expect(expandedAlerts.map((a) => a.getAttribute('data-testid'))).toEqual([
       'banner-platform-state-unknown',
       'banner-offline',
       'banner-automation-needs-attention',
     ]);
     // 颜色层面同一件事：阻断类用红色三件套，治理类不与它共用。
-    await expect(alerts[0]?.className).toContain('red-500');
-    await expect(alerts[1]?.className).toContain('red-500');
-    await expect(alerts[2]?.className).not.toContain('red-500');
+    await expect(expandedAlerts[0]?.className).toContain('v2-status-fail-subtle-bg');
+    await expect(expandedAlerts[1]?.className).toContain('v2-status-fail-subtle-bg');
+    await expect(expandedAlerts[2]?.className).toContain('v2-status-warn-subtle-bg');
   },
 };
 

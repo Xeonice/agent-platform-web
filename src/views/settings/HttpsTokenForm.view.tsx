@@ -49,7 +49,7 @@ export function HttpsTokenFormView({
 }: HttpsTokenFormProps) {
   return (
     <form
-      className="flex flex-col gap-3 rounded-lg border border-border p-4"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-5"
       onSubmit={(e) => {
         e.preventDefault();
         if (!submitDisabled && !submitting) onSubmit();
@@ -90,7 +90,7 @@ export function HttpsTokenFormView({
           name="https-token"
           autoComplete="off"
           placeholder="ghp_…"
-          className="rounded-md border border-border bg-transparent px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="rounded-md border border-border bg-transparent px-3 py-2 font-mono text-[13px] focus-visible:outline-none focus-visible:shadow-[var(--v2-focus-input)]"
           value={token}
           disabled={submitting}
           onChange={(e) => {

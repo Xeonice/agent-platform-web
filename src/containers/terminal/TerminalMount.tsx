@@ -61,6 +61,7 @@ export interface TerminalMountProps {
 
 export default function TerminalMount({
   sessionId,
+  sandboxId,
   socketConfig,
   active = true,
   onShellId,
@@ -102,6 +103,11 @@ export default function TerminalMount({
     // ⚠️ 剪贴板写在 container（07 §3 规则 2）：非 HTTPS 局域网部署下 `navigator.clipboard`
     // 可能压根不存在，读 `.writeText` 会当场抛 TypeError——失败不许静默
     // （与 `SandboxLifecycleContainer.handleCopyDiagnostics` 同一条纪律）。
+    // DOM types assume clipboard exists; insecure origins may omit it.
+    if (typeof navigator.clipboard === 'undefined') {
+      toast.error('复制失败，请手动选中终端内容复制');
+      return;
+    }
     void navigator.clipboard.writeText(text).then(
       () => {
         toast.success('已复制到剪贴板');
@@ -115,6 +121,32 @@ export default function TerminalMount({
   const handleClear = useCallback((): void => {
     term.clear(sessionId);
   }, [term, sessionId]);
+
+  const setVisibleTerminal = useAppStore((s) => s.setVisibleTerminal);
+  useEffect(() => {
+    if (!active) return;
+    setVisibleTerminal({ sandboxId, sessionId });
+    return () => {
+      const current = useAppStore.getState().visibleTerminal;
+      if (current?.sandboxId === sandboxId && current.sessionId === sessionId)
+        setVisibleTerminal(null);
+    };
+  }, [active, sandboxId, sessionId, setVisibleTerminal]);
+
+  const clearRequest = useAppStore((s) => s.terminalClearRequest);
+  const consumeClear = useAppStore((s) => s.consumeTerminalClear);
+  useEffect(() => {
+    const visible = useAppStore.getState().visibleTerminal;
+    if (
+      active &&
+      clearRequest?.sandboxId === sandboxId &&
+      visible?.sandboxId === sandboxId &&
+      visible.sessionId === sessionId
+    ) {
+      term.clear(sessionId);
+      consumeClear();
+    }
+  }, [active, clearRequest, sandboxId, sessionId, term, consumeClear]);
 
   const handleDecreaseFontSize = useCallback((): void => {
     const next = Math.max(MIN_TERMINAL_FONT_SIZE, fontSize - 1);

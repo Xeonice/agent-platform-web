@@ -79,7 +79,7 @@ const ENDED_STATUSES = new Set(['stopping', 'stopped', 'destroying', 'destroyed'
 export function classifyStatus(status: string): LifecycleDecision {
   if (status in STATUS_TO_PHASE_KEY) return 'startup';
   // idle 是 running 的子态（空闲计时），终端仍可用 → 同样开终端。
-  if (status === 'running' || status === 'idle') return 'running';
+  if (status === 'running' || status === 'idle' || status === 'stopping') return 'running';
   if (status === 'failed') return 'failed';
   if (ENDED_STATUSES.has(status)) return 'ended';
   return 'unknown';
@@ -120,7 +120,9 @@ export function startupPercent(status: string): number {
  */
 export function toDisplayStatus(
   status: string,
-): 'preparing' | 'running' | 'paused' | 'error' | 'stopped' {
+): 'preparing' | 'running' | 'paused' | 'error' | 'stopped' | 'stopping' | 'deleting' {
+  if (status === 'stopping') return 'stopping';
+  if (status === 'destroying' || status === 'destroyed') return 'deleting';
   switch (classifyStatus(status)) {
     case 'startup':
       return 'preparing';

@@ -18,10 +18,13 @@
 // 中的一项再提交"，所以换成 shadcn `Switch`（Radix `role="switch"`），⛔ 不是原生
 // `<input type="checkbox">`。
 import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { X } from 'lucide-react';
+import type { Ref } from 'react';
 import type { AuditCategory } from '@/types/audit';
 
 const CATEGORY_OPTIONS: { value: AuditCategory; label: string }[] = [
-  { value: 'sandbox', label: '沙箱' },
+  { value: 'sandbox', label: '任务' },
   { value: 'project', label: '项目' },
   { value: 'credential', label: '凭证' },
   { value: 'image', label: '镜像' },
@@ -37,6 +40,11 @@ export interface AuditFilterBarProps {
   /** `datetime-local` 原样字符串（本地时区）。 */
   fromLocal: string;
   toLocal: string;
+  subjectName?: string;
+  onClearSubject?: () => void;
+  categoryRef?: Ref<HTMLSelectElement>;
+  timeError?: string | null;
+  timeErrorField?: 'from' | 'to';
   onCategoryChange: (next: AuditCategory | undefined) => void;
   onAlertsOnlyChange: (next: boolean) => void;
   onFromChange: (next: string) => void;
@@ -52,6 +60,11 @@ export function AuditFilterBarView({
   alertsOnly,
   fromLocal,
   toLocal,
+  subjectName,
+  onClearSubject,
+  categoryRef,
+  timeError,
+  timeErrorField,
   onCategoryChange,
   onAlertsOnlyChange,
   onFromChange,
@@ -63,6 +76,7 @@ export function AuditFilterBarView({
         <span className="text-muted-foreground">类别</span>
         <select
           aria-label="类别"
+          ref={categoryRef}
           className="rounded-md border border-border bg-transparent px-2 py-1 text-xs"
           value={category ?? ALL_CATEGORIES}
           onChange={(e) => {
@@ -88,6 +102,8 @@ export function AuditFilterBarView({
         <input
           type="datetime-local"
           aria-label="起始时间"
+          aria-invalid={timeErrorField === 'from' || undefined}
+          aria-describedby={timeErrorField === 'from' ? 'audit-time-error' : undefined}
           className="rounded-md border border-border bg-transparent px-2 py-1 text-xs"
           value={fromLocal}
           onChange={(e) => {
@@ -101,6 +117,8 @@ export function AuditFilterBarView({
         <input
           type="datetime-local"
           aria-label="结束时间"
+          aria-invalid={timeErrorField === 'to' || undefined}
+          aria-describedby={timeErrorField === 'to' ? 'audit-time-error' : undefined}
           className="rounded-md border border-border bg-transparent px-2 py-1 text-xs"
           value={toLocal}
           onChange={(e) => {
@@ -108,6 +126,26 @@ export function AuditFilterBarView({
           }}
         />
       </label>
+      {subjectName === undefined ? null : (
+        <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-border px-2 py-1">
+          <span className="truncate">任务：{subjectName}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5 shrink-0"
+            aria-label="清除任务筛选"
+            onClick={onClearSubject}
+          >
+            <X aria-hidden="true" className="h-3 w-3" />
+          </Button>
+        </span>
+      )}
+      {timeError == null ? null : (
+        <p id="audit-time-error" role="alert" className="w-full text-sm text-destructive">
+          {timeError}
+        </p>
+      )}
     </div>
   );
 }

@@ -35,7 +35,8 @@ export function connectivityVerdict(rows: readonly ConnectivityResultDto[]): Con
   const modelApis = rows.filter((r) => r.modelApi);
   // ⚠️ `modelApis.length > 0` 不可省：一份不含任何模型 API 目标的结果说明不了"离线"，
   //    它只是没测那一类（后端同一条判定里也写着这个前置）。
-  if (modelApis.length > 0 && modelApis.every((r) => !r.ok)) return 'offline';
+  if (modelApis.length > 0 && modelApis.every((r) => !r.ok && r.timedOut !== true))
+    return 'offline';
   if (rows.every((r) => r.ok)) return 'ok';
   return 'partial';
 }
@@ -111,6 +112,7 @@ function verdictTextOf(rows: readonly ConnectivityResultDto[]): string {
 
 function partialText(rows: readonly ConnectivityResultDto[]): string {
   const failed = rows.filter((r) => !r.ok);
+  const modelApis = rows.filter((row) => row.modelApi);
   const hitModelApi = failed.some((r) => r.modelApi);
   // ⚠️ 全是超时时连"没通过"都要说得更轻：那只是没在预算内应答。
   const verb = failed.every((r) => r.timedOut === true) ? '超时未响应' : '没通过检查';
@@ -118,8 +120,14 @@ function partialText(rows: readonly ConnectivityResultDto[]): string {
   //    runtime」钉着）：`api.openai.com` 这种名字念出来既像 runtime 名，又与逐行结果重复。
   //    哪几条没过由下方那张表自己说 —— 它本来就逐条渲染着。
   const tail = failed.every((r) => r.timedOut === true)
-    ? '⚠️ 超时不等于连不上：一条时快时慢的链路会周期性超过这次检查的超时时限，重跑一次看它是否稳定。'
+    ? '超时不等于连不上：一条时快时慢的链路会周期性超过这次检查的超时时限，重跑一次看它是否稳定。'
     : '';
+  if (modelApis.every((row) => row.timedOut === true) && hitModelApi)
+    return '模型 API 都超时未响应，暂时无法判定联网情况；这不等于连不上，请重跑一次检查。';
+  if (modelApis.length === 0)
+    return `有目标${verb}，本轮没有模型 API 检查结果，暂时无法判定 Agent 能否联网。${tail}`;
+  if (hitModelApi && !modelApis.some((row) => row.ok))
+    return '有模型 API 没通过检查，其余模型 API 超时未响应，暂时无法判定联网情况，请重跑一次检查。';
   if (!hitModelApi) {
     return `有镜像下载源${verb} —— 模型 API 都连得上，Agent 可用；受影响的只是下载新镜像。${tail}`;
   }
@@ -161,6 +169,7 @@ const ConnectivityDetailSchema = z.object({
       latencyMs: z.number().optional(),
       hint: z.string().optional(),
       modelApi: z.boolean(),
+      timedOut: z.boolean().optional(),
     }),
   ),
 });

@@ -63,7 +63,7 @@ export const FinishHintIsNotADatabaseDescription: Story = {
     const section = canvas.getByTestId('resource-confirm');
     await expect(section).not.toHaveTextContent('初始化完成标记');
     await expect(section).toHaveTextContent('点它才算装完');
-    await expect(section).toHaveTextContent('设置 → 系统状态');
+    await expect(section).toHaveTextContent('之后要改任何配置都在「系统状态」里');
   },
 };
 

@@ -8,6 +8,7 @@ import { RuntimeCredentialsSectionView } from '@/views/settings/RuntimeCredentia
 import { CredentialsSecurityFooterView } from '@/views/settings/CredentialsSecurityFooter.view';
 import { ConfirmDialogView } from '@/views/settings/ConfirmDialog.view';
 import { RevokeConfirmDialogView } from '@/views/settings/RevokeConfirmDialog.view';
+import { ChevronUp } from 'lucide-react';
 import type { RuntimeAuthMethod } from '@/types/runtimeCredential';
 
 export function CredentialsContainer() {
@@ -28,14 +29,18 @@ export function CredentialsContainer() {
           methods={methods}
           apiKeyPrefix={card.apiKeyPrefix}
           initialMethod={m.expandedPanel.method}
+          activateOnSuccess={m.expandedPanel.activateOnSuccess}
           onSuccess={m.onAuthSuccess}
         />
         <button
           type="button"
           onClick={m.closePanel}
-          className="mt-2 text-xs text-muted-foreground underline-offset-2 hover:underline"
+          aria-expanded="true"
+          aria-controls={`runtime-auth-panel-${runtimeId}`}
+          className="mt-2 inline-flex h-7 items-center gap-1 rounded-md px-2 text-[13px] text-muted-foreground hover:bg-muted"
         >
           收起
+          <ChevronUp aria-hidden="true" className="size-4" />
         </button>
       </div>
     );
@@ -52,6 +57,13 @@ export function CredentialsContainer() {
         search={m.search}
         onSearch={m.setSearch}
         panelFor={panelFor}
+        expandedModeFor={(runtimeId) =>
+          m.expandedPanel?.runtimeId === runtimeId
+            ? m.expandedPanel.method === 'api-key'
+              ? 'api-key'
+              : 'account'
+            : undefined
+        }
         isRowBusy={m.isRowBusy}
         onSwitch={(runtimeId, mode) => {
           m.switchMode(runtimeId, mode);
@@ -74,6 +86,7 @@ export function CredentialsContainer() {
       {m.pendingSwitch !== null && (
         <ConfirmDialogView
           title={m.pendingSwitch.title}
+          subtitle={m.pendingSwitch.subtitle}
           message={m.pendingSwitch.message}
           confirmLabel={m.pendingSwitch.confirmLabel}
           busy={m.switching}
@@ -89,6 +102,9 @@ export function CredentialsContainer() {
           affectedItems={m.pendingRevoke.affected.items}
           restCount={m.pendingRevoke.affected.restCount}
           affectedKnown={m.pendingRevoke.affectedKnown}
+          preparingItems={m.pendingRevoke.preparing}
+          onRetryPreview={m.pendingRevoke.retryPreview}
+          otherModeLabel={m.pendingRevoke.otherModeLabel}
           warningText={m.pendingRevoke.warningText}
           followUpText={m.pendingRevoke.followUpText}
           warnActiveMode={m.pendingRevoke.warnActiveMode}

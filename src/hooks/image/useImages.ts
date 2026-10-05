@@ -10,10 +10,10 @@
 // `lib/queryKeys.ts` **磁盘上不存在**；仓内 10 个 key 工厂全是这个形态）。向导那边的
 // `ImageSelect` 落地时直接 import 本文件的 `imageKeys`，两页共用同一份缓存——
 // 「禁用后向导下拉自动移除」因此是缓存失效的自然结果，不需要任何跨页通知机制。
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { listImages } from '@/services/api/image.service';
+import { listImages, getImageDeletionPreview } from '@/services/api/image.service';
 import { ApiErrorException } from '@/services/api/apiError';
 import {
   useActivateImage,
@@ -34,9 +34,15 @@ import {
   manifestToCardInput,
   type ImageCardGroup,
 } from '@/lib/image/imageManifestCards';
+import {
+  imageIssueCopy,
+  imageRequestFailure,
+  KNOWN_IMAGE_ISSUE_CODES,
+} from '@/lib/image/imageIssueCopy';
 import { mapEnvErrorResponse } from '@/lib/image/mapEnvErrorResponse';
 import { validateEnvVars } from '@/lib/image/validateEnvVar';
 import { describeSandboxError } from '@/lib/sandbox/sandboxErrorCopy';
+import { usePresetImageDownload } from '@/hooks/image/usePresetImageDownload';
 import { useAppStore } from '@/stores';
 import type {
   EnvVarRowModel,
@@ -54,13 +60,17 @@ import type {
 export const imageKeys = {
   all: () => ['images'] as const,
   /** 管理页用 `list()`（不带 runtimeId ⇒ 后端连历史版本一起回）；向导用 `list(runtimeId)`。 */
-  list: (runtimeId?: string) => [...imageKeys.all(), 'list', runtimeId ?? null] as const,
+  list: (runtimeId?: string, provider?: string) =>
+    [...imageKeys.all(), 'list', runtimeId ?? null, provider ?? null] as const,
 };
 
-export function useImages(runtimeId?: string): UseQueryResult<ImageManifestDto[]> {
+export function useImages(
+  runtimeId?: string,
+  provider?: string,
+): UseQueryResult<ImageManifestDto[]> {
   return useQuery({
-    queryKey: imageKeys.list(runtimeId),
-    queryFn: () => listImages(runtimeId),
+    queryKey: imageKeys.list(runtimeId, provider),
+    queryFn: () => listImages(runtimeId, provider),
     staleTime: 60_000,
   });
 }
@@ -71,13 +81,13 @@ export type ImageStatusFilter = 'all' | ImageValidationStatus;
 const STATUS_FILTERS: readonly string[] = ['all', 'valid', 'warning', 'invalid'];
 
 /**
- * 深链初值。**刻意读 `window.location` 而不是 `useSearchParams()`**：后者在 Next 15 里会把
- * 整棵子树逼进 Suspense 边界（否则 `next build` 直接报错），而这里要的只是一个挂载时的初值，
- * 之后再没人观察它。读不到（SSR/测试环境无 location）就回落到 `'all'`。
+ * 深链过滤初值，由首次 commit 后读到的参数派生。Next 客户端导航先渲染目标页面，
+ * 再在 HistoryUpdater 的 insertion effect 提交 URL；render 中读 window 会拿到旧页面 query。
+ * 仅消费一次，不订阅后续 query，也不需要静态页面的 useSearchParams / Suspense 边界。
  */
-function initialStatusFilter(): ImageStatusFilter {
-  if (typeof window === 'undefined') return 'all';
-  const raw = new URLSearchParams(window.location.search).get('filter');
+function initialStatusFilter(params: URLSearchParams): ImageStatusFilter {
+  const raw = params.get('filter');
+  if (params.has('fromTask')) return 'all';
   if (raw === null || !STATUS_FILTERS.includes(raw)) return 'all';
   return raw === 'all'
     ? 'all'
@@ -102,6 +112,7 @@ export interface ImageCardViewModel {
   revalidating: boolean;
   checkingUpdate: boolean;
   toggling: boolean;
+  switchingId?: string;
 }
 
 /** 对比弹层：新旧 digest + 新版本三级结论 + 采纳方式。 */
@@ -120,7 +131,9 @@ export interface ImageCompareState {
    *    把新 digest 那一行插进来，再 activate 它。
    * 两条路都不是"改旧行"（I-IMG-7：manifest 行不可变）。
    */
-  adopt: { kind: 'activate'; manifestId: string } | { kind: 'register'; ref: string };
+  adopt:
+    | { kind: 'activate'; manifestId: string }
+    | { kind: 'register'; ref: string; copyConfigFromId: string };
 }
 
 /** 环境变量编辑草稿（受控，07 §3 规则 2：草稿只活在这里，不进 store）。 */
@@ -139,9 +152,29 @@ export interface PendingImageDelete {
   manifestId: string;
   imageName: string;
   version: string;
+  reference: string;
+  isActive: boolean;
+  envCount: number;
+  secretCount: number;
 }
 
 export interface ImagesManager {
+  presetDownload: ReturnType<typeof usePresetImageDownload>;
+  loadFailed: boolean;
+  retryLoad: () => void;
+  taskSource: {
+    taskId: string;
+    taskName: string;
+    symptom: string;
+    projectId?: string;
+    imageId?: string;
+    imageRef?: string;
+  } | null;
+  dismissTaskSource: () => void;
+  pendingBuiltinDisable: { manifestId: string; reference: string; version: string } | null;
+  confirmBuiltinDisable: () => void;
+  cancelBuiltinDisable: () => void;
+  disablingBuiltin: boolean;
   loading: boolean;
   /** 过滤后的卡片；`isEmpty` 区分"一张都没注册"与"过滤后为空"。 */
   cards: ImageCardViewModel[];
@@ -152,6 +185,7 @@ export interface ImagesManager {
   setStatusFilter: (f: ImageStatusFilter) => void;
   /** [定位到该镜像] 后高亮的那张卡。 */
   highlightedImageId: string | null;
+  taskSourceImageId: string | null;
 
   // —— 注册弹窗（`currentModal === 'registerImage'`，真 overlay）——
   registerOpen: boolean;
@@ -164,6 +198,8 @@ export interface ImagesManager {
   saving: boolean;
   validationResult?: ImageValidationResultData;
   conclusionInvalidated: boolean;
+  requestFailure?: ReturnType<typeof imageRequestFailure>;
+  retryRegistration: () => void;
   duplicate?: { message: string };
   validate: () => void;
   save: () => void;
@@ -176,6 +212,11 @@ export interface ImagesManager {
   activateVersion: (manifestId: string) => void;
   requestDelete: (manifestId: string) => void;
   pendingDelete: PendingImageDelete | null;
+  deletionPreview?: Awaited<ReturnType<typeof getImageDeletionPreview>>;
+  deletionLoading: boolean;
+  deletionError?: string;
+  retryDeletionPreview: () => void;
+  disableInsteadOfDelete: () => void;
   confirmDelete: () => void;
   cancelDelete: () => void;
   deleting: boolean;
@@ -208,7 +249,7 @@ export interface ImagesManager {
 }
 
 function issuesToText(issues: readonly ValidationIssueDto[]): string[] {
-  return issues.map((i) => i.message);
+  return issues.map((i) => imageIssueCopy(i));
 }
 
 /**
@@ -223,7 +264,7 @@ function issuesToText(issues: readonly ValidationIssueDto[]): string[] {
  * 刷一万次都不会变，而后端每一条 message 里都写着真正的下一步 —— 所以这里把它原样交出去，
  * 只在它为空时才给一句不撒谎的兜底。
  */
-const IMAGE_INVALID_STATE_TITLE = '⚠️ 这一步现在做不了';
+const IMAGE_INVALID_STATE_TITLE = '这一步现在做不了';
 const IMAGE_INVALID_STATE_FALLBACK =
   '平台拒绝了这次操作，但没有给出原因。刷新页面不一定有用 —— 到系统状态页看看，或联系管理员。';
 
@@ -284,8 +325,37 @@ export function useImageManager(): ImagesManager {
   // 而 localStorage 天生跨刷新，半实现出来的东西会在刷新后把上次的搜索词又填回去——
   // 与需求正好相反。要做就得连"离开设置区即清"的守卫一起做（`PendingCloneReturnGuard` 那种形态）。
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ImageStatusFilter>(initialStatusFilter);
-  const [highlightedImageId, setHighlightedImageId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<ImageStatusFilter>('all');
+  const [explicitHighlightedImageId, setHighlightedImageId] = useState<string | null>(null);
+  const [pendingBuiltinDisable, setPendingBuiltinDisable] =
+    useState<ImagesManager['pendingBuiltinDisable']>(null);
+  const [taskSource, setTaskSource] = useState<ImagesManager['taskSource']>(null);
+  const deepLinkConsumed = useRef(false);
+  useEffect(() => {
+    // StrictMode 重跑 effect 时 URL 已清理，不能重新消费并覆盖第一次捕获的来源/过滤。
+    if (deepLinkConsumed.current) return;
+    deepLinkConsumed.current = true;
+    const params = new URLSearchParams(window.location.search);
+    setStatusFilter(initialStatusFilter(params));
+    const taskId = params.get('fromTask');
+    if (taskId === null) return;
+    setTaskSource({
+      taskId,
+      taskName: params.get('taskName') ?? '未命名任务',
+      symptom: params.get('symptom') ?? '任务启动失败',
+      ...(params.get('project') === null ? {} : { projectId: params.get('project') ?? undefined }),
+      ...(params.get('image') === null ? {} : { imageId: params.get('image') ?? undefined }),
+      ...(params.get('imageRef') === null ? {} : { imageRef: params.get('imageRef') ?? undefined }),
+    });
+    const url = new URL(window.location.href);
+    for (const key of ['fromTask', 'taskName', 'symptom', 'project', 'image', 'imageRef'])
+      url.searchParams.delete(key);
+    window.history.replaceState(window.history.state, '', url);
+  }, []);
+  const dismissTaskSource = useCallback(() => {
+    setTaskSource(null);
+    setHighlightedImageId(null);
+  }, []);
 
   const [uri, setUri] = useState('');
   /**
@@ -300,6 +370,9 @@ export function useImageManager(): ImagesManager {
     undefined,
   );
   const [conclusionInvalidated, setConclusionInvalidated] = useState(false);
+  const [requestFailure, setRequestFailure] = useState<
+    ReturnType<typeof imageRequestFailure> | undefined
+  >();
   const [duplicate, setDuplicate] = useState<{ message: string; imageId: string } | undefined>(
     undefined,
   );
@@ -307,6 +380,18 @@ export function useImageManager(): ImagesManager {
   const [upstreamByManifest, setUpstreamByManifest] = useState<Record<string, string>>({});
   const [compare, setCompare] = useState<ImageCompareState | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingImageDelete | null>(null);
+  const [deletionError, setDeletionError] = useState<string>();
+  const deletionPreview = useQuery({
+    queryKey: [...imageKeys.all(), 'deletion-preview', pendingDelete?.manifestId],
+    enabled: pendingDelete !== null,
+    queryFn: () => getImageDeletionPreview(pendingDelete?.manifestId ?? ''),
+    retry: false,
+    staleTime: 0,
+  });
+  const retryDeletionPreview = useCallback(() => {
+    setDeletionError(undefined);
+    void deletionPreview.refetch();
+  }, [deletionPreview]);
   const [envDraft, setEnvDraft] = useState<{
     manifestId: string;
     rows: EnvVarRowModel[];
@@ -317,7 +402,15 @@ export function useImageManager(): ImagesManager {
   } | null>(null);
 
   const manifests = useMemo(() => query.data ?? [], [query.data]);
+  const presetDownload = usePresetImageDownload(manifests.some((manifest) => manifest.isBuiltin));
   const groups = useMemo(() => groupManifestsByImage(manifests), [manifests]);
+  const sourceManifest =
+    taskSource === null
+      ? undefined
+      : taskSource.imageId === undefined
+        ? manifests.find((manifest) => manifest.isBuiltin)
+        : manifests.find((manifest) => manifest.id === taskSource.imageId);
+  const highlightedImageId = explicitHighlightedImageId ?? sourceManifest?.imageId ?? null;
 
   const cards = useMemo<ImageCardViewModel[]>(() => {
     const now = Date.now();
@@ -355,8 +448,16 @@ export function useImageManager(): ImagesManager {
   );
 
   const decoratedCards = useMemo(
-    () => cards.map((card) => ({ ...card, ...cardBusy(card.manifestId) })),
-    [cards, cardBusy],
+    () =>
+      cards.map((card) => ({
+        ...card,
+        ...cardBusy(card.manifestId),
+        ...(activateMutation.isPending &&
+        card.history.some((row) => row.id === activateMutation.variables)
+          ? { switchingId: activateMutation.variables }
+          : {}),
+      })),
+    [cards, cardBusy, activateMutation.isPending, activateMutation.variables],
   );
 
   const findManifest = useCallback(
@@ -374,6 +475,7 @@ export function useImageManager(): ImagesManager {
     setValidationResult(undefined);
     setConclusionInvalidated(false);
     setDuplicate(undefined);
+    setRequestFailure(undefined);
   }, [setCurrentModal]);
 
   const openRegister = useCallback(() => {
@@ -382,6 +484,7 @@ export function useImageManager(): ImagesManager {
     setValidationResult(undefined);
     setConclusionInvalidated(false);
     setDuplicate(undefined);
+    setRequestFailure(undefined);
     setCurrentModal('registerImage');
   }, [setCurrentModal]);
 
@@ -400,6 +503,7 @@ export function useImageManager(): ImagesManager {
   const onUriChange = useCallback((next: string) => {
     setUri(next);
     setDuplicate(undefined);
+    setRequestFailure(undefined);
     const previous = validatedUriRef.current;
     if (previous === null || next.trim() === previous) return;
     validatedUriRef.current = null;
@@ -412,75 +516,146 @@ export function useImageManager(): ImagesManager {
     if (raw === '') return undefined;
     // 与后端 `INVALID_IMAGE_REFERENCE`（空白/控制字符）同口径的**即时**提示；
     // 最终判定仍在后端，前端只提前说一声，**永不放宽**（07 §8.3.1 纪律 3）。
-    return /\s/.test(raw) ? '镜像地址不能包含空格、换行或不可见字符。' : undefined;
+    return /\s/.test(raw) ||
+      Array.from(raw).some((char) => (char.codePointAt(0) ?? 0) < 32 || char.codePointAt(0) === 127)
+      ? '镜像地址不能包含空格、换行或不可见字符。'
+      : undefined;
   }, [uri]);
 
   const validate = useCallback(() => {
+    if (validateMutation.isPending || registerMutation.isPending) return;
+    setRequestFailure(undefined);
+    setValidationResult(undefined);
     const ref = uri.trim();
     if (ref === '') return;
     validateMutation.mutate(ref, {
       onSuccess: (outcome) => {
         validatedUriRef.current = ref;
         setConclusionInvalidated(false);
-        // ⚠️ **这里回显不了 digest**：P21-4 §6 要求「并回显本次解析出的 digest」，而
-        // `ValidationOutcomeResponseDto` 契约里只有 `{status, errors, warnings}`——没有 digest。
-        // 于是 `pinnedDigestShort` 缺席。**不编一个**：预检阶段编出来的短哈希会被读成"已钉定"，
-        // 而这一步后端明确什么都没落库。缺口登记在此，等契约补 digest 字段。
         setValidationResult({
           status: cardValidationStatus(outcome.status),
-          warnings: issuesToText(outcome.warnings),
-          errors: issuesToText(outcome.errors),
+          ...(outcome.digest === undefined
+            ? {}
+            : { pinnedDigestShort: shortenDigest(outcome.digest) }),
+          warnings: outcome.warnings.map((i) =>
+            imageIssueCopy(
+              i,
+              manifests.filter((m) => m.isBuiltin && m.isActive).map((m) => m.ref),
+            ),
+          ),
+          errors: outcome.errors.map((i) =>
+            imageIssueCopy(
+              i,
+              manifests.filter((m) => m.isBuiltin && m.isActive).map((m) => m.ref),
+            ),
+          ),
+          unknownCodes: [...outcome.errors, ...outcome.warnings]
+            .filter((i) => !KNOWN_IMAGE_ISSUE_CODES.has(i.code))
+            .map((i) => i.code),
         });
       },
       onError: (error) => {
-        imageErrorToast(error, '验证失败，请稍后重试。');
+        setRequestFailure(
+          imageRequestFailure(
+            error instanceof ApiErrorException ? error.envelope : error,
+            'validate',
+          ),
+        );
       },
     });
-  }, [uri, validateMutation]);
+  }, [uri, validateMutation, registerMutation.isPending, manifests]);
 
   const save = useCallback(() => {
+    if (
+      registerMutation.isPending ||
+      validateMutation.isPending ||
+      validationResult === undefined ||
+      validationResult.status === 'invalid'
+    )
+      return;
+    setRequestFailure(undefined);
     const ref = uri.trim();
     if (ref === '') return;
-    registerMutation.mutate(ref, {
-      onSuccess: (result) => {
-        if (!result.created) {
-          // 重复注册**不当错误吓唬用户**（P21-4 §6）：就地提示 + [定位到该镜像]。
-          setDuplicate({
-            message: `该镜像已注册（${result.manifest.ref}，锁定在 ${shortenDigest(result.manifest.digest)}）。`,
-            imageId: result.manifest.imageId,
-          });
-          return;
-        }
-        if (!result.manifest.isActive) {
-          // 同一个 tag 解出了**新的** digest：后端插了一行、但没有替用户换镜像。
-          // 这正是 [检查更新] 那条路的终点，于是直接复用同一个对比弹层（P21-4 §6）。
-          const live = manifests.find((m) => m.imageId === result.manifest.imageId && m.isActive);
+    const previousVersion = manifests.find((manifest) => manifest.ref === ref && manifest.isActive);
+    registerMutation.mutate(
+      { ref, ...(previousVersion === undefined ? {} : { copyConfigFromId: previousVersion.id }) },
+      {
+        onSuccess: (result) => {
+          if (!result.created) {
+            // 重复注册**不当错误吓唬用户**（P21-4 §6）：就地提示 + [定位到该镜像]。
+            setDuplicate({
+              message: `该镜像已注册（${result.manifest.ref}，锁定在 ${shortenDigest(result.manifest.digest)}）。`,
+              imageId: result.manifest.imageId,
+            });
+            return;
+          }
+          if (!result.manifest.isActive) {
+            // 同一个 tag 解出了**新的** digest：后端插了一行、但没有替用户换镜像。
+            // 这正是 [检查更新] 那条路的终点，于是直接复用同一个对比弹层（P21-4 §6）。
+            const live = manifests.find((m) => m.imageId === result.manifest.imageId && m.isActive);
+            closeRegister();
+            setCompare({
+              imageName: result.manifest.imageName,
+              refDisplay: result.manifest.ref,
+              currentDigestShort: live === undefined ? '（未知）' : shortenDigest(live.digest),
+              upstreamDigestShort: shortenDigest(result.manifest.digest),
+              upstreamValidation: {
+                status: cardValidationStatus(result.validation.status),
+                warnings: issuesToText(result.validation.warnings),
+                errors: issuesToText(result.validation.errors),
+              },
+              adopt: { kind: 'activate', manifestId: result.manifest.id },
+            });
+            return;
+          }
           closeRegister();
-          setCompare({
-            imageName: result.manifest.imageName,
-            refDisplay: result.manifest.ref,
-            currentDigestShort: live === undefined ? '（未知）' : shortenDigest(live.digest),
-            upstreamDigestShort: shortenDigest(result.manifest.digest),
-            upstreamValidation: {
-              status: cardValidationStatus(result.validation.status),
-              warnings: issuesToText(result.validation.warnings),
-              errors: issuesToText(result.validation.errors),
-            },
-            adopt: { kind: 'activate', manifestId: result.manifest.id },
-          });
-          return;
-        }
-        closeRegister();
-        toast.success(`已注册，锁定在 ${shortenDigest(result.manifest.digest)}`);
+          toast.success(`已注册，锁定在 ${shortenDigest(result.manifest.digest)}`);
+        },
+        onError: (error) => {
+          if (error instanceof ApiErrorException && error.envelope.code === 'MANIFEST_INVALID') {
+            const details = error.envelope.details ?? [];
+            const findings = details.map((i) => ({
+              code: typeof i['code'] === 'string' ? i['code'] : 'MANIFEST_INVALID',
+              path: typeof i['path'] === 'string' ? i['path'] : undefined,
+            }));
+            setValidationResult({
+              status: 'invalid',
+              errors:
+                findings.length === 0
+                  ? ['镜像不符合平台约定，请查看镜像要求后重新构建。']
+                  : findings.map((i) =>
+                      imageIssueCopy(
+                        i,
+                        manifests.filter((m) => m.isBuiltin && m.isActive).map((m) => m.ref),
+                      ),
+                    ),
+              unknownCodes: findings
+                .filter((i) => !KNOWN_IMAGE_ISSUE_CODES.has(i.code))
+                .map((i) => i.code),
+            });
+          } else
+            setRequestFailure(
+              imageRequestFailure(
+                error instanceof ApiErrorException ? error.envelope : error,
+                'save',
+              ),
+            );
+        },
       },
-      onError: (error) => {
-        imageErrorToast(error, '注册失败，请稍后重试。');
-      },
-    });
-  }, [uri, registerMutation, manifests, closeRegister]);
+    );
+  }, [
+    uri,
+    registerMutation,
+    manifests,
+    closeRegister,
+    validateMutation.isPending,
+    validationResult,
+  ]);
 
   const locateExisting = useCallback(() => {
     if (duplicate !== undefined) setHighlightedImageId(duplicate.imageId);
+    setSearch('');
+    setStatusFilter('all');
     closeRegister();
   }, [duplicate, closeRegister]);
 
@@ -546,7 +721,7 @@ export function useImageManager(): ImagesManager {
               errors: issuesToText(result.upstream.validation.errors),
             },
             // [检查更新] 只探测、什么都没写 ⇒ 采纳时要先把新行 INSERT 出来再 activate。
-            adopt: { kind: 'register', ref: manifest.ref },
+            adopt: { kind: 'register', ref: manifest.ref, copyConfigFromId: manifest.id },
           });
         },
         onError: (error) => {
@@ -561,7 +736,9 @@ export function useImageManager(): ImagesManager {
     (manifestId: string) => {
       activateMutation.mutate(manifestId, {
         onSuccess: () => {
-          toast.success('已切换到该版本。');
+          toast.success('已切换到该版本。', {
+            description: '只影响之后新建的任务；已有任务仍用原来锁定的那一版。',
+          });
         },
         onError: (error) => {
           imageErrorToast(error, '切换版本失败，请稍后重试。');
@@ -580,52 +757,122 @@ export function useImageManager(): ImagesManager {
   const toggle = useCallback(
     (manifestId: string, next: boolean) => {
       if (next) {
-        activateVersion(manifestId);
+        activateMutation.mutate(manifestId, {
+          onSuccess: () => {
+            toast.success('已启用', { description: '新任务又可以选用这张镜像了。' });
+          },
+          onError: (error) => {
+            imageErrorToast(error, '启用失败，请稍后重试。');
+          },
+        });
+        return;
+      }
+      const manifest = findManifest(manifestId);
+      if (manifest?.isBuiltin === true) {
+        setPendingBuiltinDisable({
+          manifestId,
+          reference: manifest.ref,
+          version: shortenDigest(manifest.digest),
+        });
         return;
       }
       disableMutation.mutate(manifestId, {
         onSuccess: () => {
-          toast.success('已禁用，向导下拉里不再出现这张镜像。');
+          toast.success('已禁用', {
+            description: '新任务不能再选用这张镜像；已经在用它的任务不受影响。',
+          });
         },
         onError: (error) => {
           imageErrorToast(error, '禁用失败，已回滚。');
         },
       });
     },
-    [activateVersion, disableMutation],
+    [activateMutation, disableMutation, findManifest],
   );
+
+  const confirmBuiltinDisable = useCallback(() => {
+    if (pendingBuiltinDisable === null || disableMutation.isPending) return;
+    disableMutation.mutate(pendingBuiltinDisable.manifestId, {
+      onSuccess: () => {
+        setPendingBuiltinDisable(null);
+        toast.success('已禁用', {
+          description:
+            '新任务默认用它，自动化到点发起的也用它；要接着发任务，请重新启用或换一张镜像。在跑的任务不受影响。',
+        });
+      },
+      onError: (error) => {
+        imageErrorToast(error, '禁用失败，已回滚。');
+      },
+    });
+  }, [pendingBuiltinDisable, disableMutation]);
+  const cancelBuiltinDisable = useCallback(() => {
+    if (!disableMutation.isPending) setPendingBuiltinDisable(null);
+  }, [disableMutation.isPending]);
 
   const requestDelete = useCallback(
     (manifestId: string) => {
       const manifest = findManifest(manifestId);
-      if (manifest === undefined) return;
+      if (manifest === undefined || manifest.isBuiltin) return;
+      setDeletionError(undefined);
       setPendingDelete({
         manifestId,
         imageName: manifest.imageName,
-        version: manifest.version,
+        version: shortenDigest(manifest.digest),
+        reference: manifest.ref,
+        isActive: manifest.isActive,
+        envCount: manifest.imageConfig?.env.length ?? 0,
+        secretCount: manifest.imageConfig?.env.filter((env) => env.secret).length ?? 0,
       });
     },
     [findManifest],
   );
 
   const confirmDelete = useCallback(() => {
-    if (pendingDelete === null) return;
+    if (
+      pendingDelete === null ||
+      deleteMutation.isPending ||
+      disableMutation.isPending ||
+      deletionPreview.isFetching ||
+      deletionPreview.isError ||
+      deletionPreview.data?.canDelete !== true
+    )
+      return;
+    setDeletionError(undefined);
     deleteMutation.mutate(pendingDelete.manifestId, {
       onSuccess: () => {
         setPendingDelete(null);
         toast.success('已删除。');
       },
       onError: (error) => {
-        // 被引用 / 预置镜像 → 后端 409 `INVALID_STATE`，message 里带着"被 N 个 Task 引用"。
-        // 弹层**留在原地**，用户读完那句话自己决定改成禁用。
-        imageErrorToast(error, '删除失败，请稍后重试。');
+        setDeletionError(
+          error instanceof ApiErrorException && error.envelope.code === 'INVALID_STATE'
+            ? '任务引用发生了变化，请查看更新后的清单。'
+            : '删除失败，请稍后重试。',
+        );
+        void deletionPreview.refetch();
       },
     });
-  }, [pendingDelete, deleteMutation]);
+  }, [pendingDelete, deleteMutation, disableMutation.isPending, deletionPreview]);
 
   const cancelDelete = useCallback(() => {
+    if (deleteMutation.isPending || disableMutation.isPending) return;
     setPendingDelete(null);
-  }, []);
+    setDeletionError(undefined);
+  }, [deleteMutation.isPending, disableMutation.isPending]);
+  const disableInsteadOfDelete = useCallback(() => {
+    if (pendingDelete === null || disableMutation.isPending || deleteMutation.isPending) return;
+    disableMutation.mutate(pendingDelete.manifestId, {
+      onSuccess: () => {
+        setPendingDelete(null);
+        toast.success('已禁用', {
+          description: '新任务不能再选用这张镜像；已经在用它的任务不受影响。',
+        });
+      },
+      onError: () => {
+        setDeletionError('禁用失败，已回滚。请重试。');
+      },
+    });
+  }, [pendingDelete, disableMutation, deleteMutation.isPending]);
 
   // ——— 对比弹层 ———
 
@@ -641,7 +888,9 @@ export function useImageManager(): ImagesManager {
       activateMutation.mutate(manifestId, {
         onSuccess: () => {
           setCompare(null);
-          toast.success('已更新到新版本。');
+          toast.success(`已更新到新版本（${compare.upstreamDigestShort}）。`, {
+            description: '只影响之后新建的任务；已有任务仍用原来锁定的那一版。',
+          });
         },
         onError: (error) => {
           imageErrorToast(error, '更新失败，请稍后重试。');
@@ -650,24 +899,29 @@ export function useImageManager(): ImagesManager {
       return;
     }
     const ref = compare.adopt.ref;
-    registerMutation.mutate(ref, {
-      onSuccess: (result) => {
-        // 注册把新 digest 那一行插了进来（或者发现它已经在库里），再把指针挪过去。
-        // **两步都不是"改旧行"**：旧行原样留着，历史 Task 的镜像溯源不受影响（I-IMG-7）。
-        activateMutation.mutate(result.manifest.id, {
-          onSuccess: () => {
-            setCompare(null);
-            toast.success(`已更新到新版本（${shortenDigest(result.manifest.digest)}）。`);
-          },
-          onError: (error) => {
-            imageErrorToast(error, '更新失败，请稍后重试。');
-          },
-        });
+    registerMutation.mutate(
+      { ref, copyConfigFromId: compare.adopt.copyConfigFromId },
+      {
+        onSuccess: (result) => {
+          // 注册把新 digest 那一行插了进来（或者发现它已经在库里），再把指针挪过去。
+          // **两步都不是"改旧行"**：旧行原样留着，历史 Task 的镜像溯源不受影响（I-IMG-7）。
+          activateMutation.mutate(result.manifest.id, {
+            onSuccess: () => {
+              setCompare(null);
+              toast.success(`已更新到新版本（${shortenDigest(result.manifest.digest)}）。`, {
+                description: '只影响之后新建的任务；已有任务仍用原来锁定的那一版。',
+              });
+            },
+            onError: (error) => {
+              imageErrorToast(error, '更新失败，请稍后重试。');
+            },
+          });
+        },
+        onError: (error) => {
+          imageErrorToast(error, '更新失败，请稍后重试。');
+        },
       },
-      onError: (error) => {
-        imageErrorToast(error, '更新失败，请稍后重试。');
-      },
-    });
+    );
   }, [compare, activateMutation, registerMutation]);
 
   /**
@@ -844,7 +1098,11 @@ export function useImageManager(): ImagesManager {
     if (envDraft === null || localEnv === null) return;
     if (localEnv.errors.length > 0) {
       // 前端预检没过就不发请求：后端会拿同样的四个码拒回来，白跑一趟网络。
-      toast.error('运行参数还有未修正的问题，请按行内提示改完再保存。');
+      setEnvDraft((prev) =>
+        prev === null
+          ? null
+          : { ...prev, generalError: '运行参数还有未修正的问题，请按行内提示改完再保存。' },
+      );
       return;
     }
     const imageConfig: ImageConfigInput = {
@@ -864,7 +1122,9 @@ export function useImageManager(): ImagesManager {
         },
         onError: (error) => {
           if (!(error instanceof ApiErrorException)) {
-            toast.error('保存失败，请稍后重试。');
+            setEnvDraft((prev) =>
+              prev === null ? null : { ...prev, generalError: '保存失败，请稍后重试。' },
+            );
             return;
           }
           // 后端 400 按 `details[].path` **逐行归位**，不整表报错（F21-4 §5）。
@@ -891,14 +1151,26 @@ export function useImageManager(): ImagesManager {
   }, [envDraft, localEnv, saveConfigMutation]);
 
   return {
+    presetDownload,
     loading: query.isPending,
+    loadFailed: query.isError,
+    retryLoad: () => {
+      void query.refetch();
+    },
+    taskSource,
+    dismissTaskSource,
+    pendingBuiltinDisable,
+    confirmBuiltinDisable,
+    cancelBuiltinDisable,
+    disablingBuiltin: disableMutation.isPending,
     cards: decoratedCards,
-    noImagesAtAll: !query.isPending && manifests.length === 0,
+    noImagesAtAll: !query.isPending && !query.isError && manifests.length === 0,
     search,
     setSearch,
     statusFilter,
     setStatusFilter,
     highlightedImageId,
+    taskSourceImageId: sourceManifest?.imageId ?? null,
 
     registerOpen: currentModal === 'registerImage',
     openRegister,
@@ -910,6 +1182,8 @@ export function useImageManager(): ImagesManager {
     saving: registerMutation.isPending,
     ...(validationResult === undefined ? {} : { validationResult }),
     conclusionInvalidated,
+    requestFailure,
+    retryRegistration: requestFailure?.operation === 'save' ? save : validate,
     ...(duplicate === undefined ? {} : { duplicate: { message: duplicate.message } }),
     validate,
     save,
@@ -921,9 +1195,14 @@ export function useImageManager(): ImagesManager {
     activateVersion,
     requestDelete,
     pendingDelete,
+    deletionPreview: deletionPreview.data,
+    deletionLoading: pendingDelete !== null && deletionPreview.isFetching,
+    deletionError: deletionPreview.isError ? '清单读不到，请重试。' : deletionError,
+    retryDeletionPreview,
+    disableInsteadOfDelete,
     confirmDelete,
     cancelDelete,
-    deleting: deleteMutation.isPending,
+    deleting: deleteMutation.isPending || (pendingDelete !== null && disableMutation.isPending),
 
     compare,
     adoptNewVersion,

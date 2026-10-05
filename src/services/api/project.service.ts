@@ -3,6 +3,7 @@
 import { apiClient } from '@/services/api/client';
 import { ApiErrorException, toApiError } from '@/services/api/apiError';
 import type { CreateProjectInput, ProjectDto } from '@/types/project';
+import type { components } from '@/types/generated/openapi';
 
 /** GET /api/projects → ProjectResponseDto[]（含 cloneStatus 与基线四字段，见 types/project）。 */
 export async function listProjects(): Promise<ProjectDto[]> {
@@ -110,4 +111,15 @@ export async function syncProject(id: string): Promise<void> {
   if (!response.ok) {
     throw new ApiErrorException(toApiError(error, response.status), response.status);
   }
+}
+
+/** Authoritative guard and consequence counts, refreshed on opening deletion. */
+export type ProjectDeletionPreview = components['schemas']['ProjectDeletionPreviewResponseDto'];
+export async function getProjectDeletionPreview(id: string): Promise<ProjectDeletionPreview> {
+  const { data, error, response } = await apiClient.GET('/api/projects/{id}/deletion-preview', {
+    params: { path: { id } },
+  });
+  if (!response.ok || data === undefined)
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
+  return data;
 }

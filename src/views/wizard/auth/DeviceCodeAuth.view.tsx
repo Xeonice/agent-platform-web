@@ -5,6 +5,7 @@
 // ⚠️ **`window.open` 不在这里调**（那是副作用）：本视图只把点击原样交给 `onOpenAuthPage`，
 //    由容器同步执行。⛔ 但那一层的同步性靠的是**这里直接把 handler 挂在 onClick 上** ——
 //    中间任何一次 await / setTimeout 都会让它失去用户手势、被浏览器拦掉。
+import { Copy, ExternalLink, Loader2, Timer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export interface DeviceCodeAuthProps {
@@ -33,6 +34,7 @@ export interface DeviceCodeAuthProps {
   expiredReason?: 'expired' | 'gave-up';
   onCopy?: () => void;
   onRefetchChallenge: () => void;
+  onRetryPoll?: () => void;
   /**
    * [打开授权页] —— 开新标签页 + 把设备码复制进剪贴板。
    * ⚠️ 容器里必须**同步**执行 `window.open`（F07 §6.2a ①）。
@@ -65,14 +67,15 @@ export function DeviceCodeAuthView({
   expiredReason,
   onCopy,
   onRefetchChallenge,
+  onRetryPoll,
   onOpenAuthPage,
   popupBlocked,
   codeCopied,
 }: DeviceCodeAuthProps) {
   const countdownColor = expired
-    ? 'text-red-400'
+    ? 'text-[var(--v2-status-fail-fg)]'
     : secondsLeft !== null && secondsLeft <= WARN_THRESHOLD_SEC
-      ? 'text-amber-400'
+      ? 'text-[var(--v2-status-warn-fg)]'
       : 'text-muted-foreground';
   const gaveUp = expiredReason === 'gave-up';
 
@@ -80,10 +83,15 @@ export function DeviceCodeAuthView({
     <div className="flex flex-col gap-3">
       {/* ① 主动作：开新标签页。⚠️ handler 直接挂 onClick，中间不许有 await（见文件头）。 */}
       <div className="flex flex-col gap-1">
-        <Button type="button" onClick={onOpenAuthPage} data-testid="open-auth-page">
-          打开授权页 ↗
+        <Button
+          type="button"
+          className="w-full"
+          onClick={onOpenAuthPage}
+          data-testid="open-auth-page"
+        >
+          打开授权页 <ExternalLink aria-hidden="true" />
         </Button>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-[13px] text-muted-foreground">
           会打开一个新标签页；本页留在这里等结果，授权完成后会自己变。
         </span>
       </div>
@@ -107,14 +115,15 @@ export function DeviceCodeAuthView({
         <span className="text-xs text-muted-foreground">
           在新标签页粘贴这串设备码{codeCopied === true ? '（已复制到剪贴板）' : ''}：
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <code
             aria-label="设备码"
-            className="select-all rounded-md bg-muted px-3 py-2 font-mono text-2xl tracking-widest"
+            className="max-w-full select-all break-all rounded-md bg-muted px-3 py-2 font-mono text-2xl font-medium leading-8 tracking-[.12em]"
           >
             {userCode}
           </code>
           <Button type="button" variant="outline" size="sm" onClick={onCopy}>
+            <Copy aria-hidden="true" />
             复制
           </Button>
         </div>
@@ -126,7 +135,12 @@ export function DeviceCodeAuthView({
       {/* ⚠️ 没有到期时间就**不画表盘** —— 画一个 00:00 出来是凭空捏造的确定性。 */}
       {secondsLeft !== null && (
         <div className="flex flex-wrap items-center gap-3">
-          <span aria-label="倒计时" className={'font-mono text-sm ' + countdownColor}>
+          <Timer aria-hidden="true" className={'size-4 ' + countdownColor} />
+          <span
+            role="timer"
+            aria-label="倒计时"
+            className={'text-sm tabular-nums ' + countdownColor}
+          >
             {formatCountdown(secondsLeft)}
           </span>
         </div>
@@ -134,7 +148,13 @@ export function DeviceCodeAuthView({
 
       {expired ? (
         <div className="flex flex-col gap-1">
-          <p role="alert" className={'text-xs ' + (gaveUp ? 'text-amber-400' : 'text-red-400')}>
+          <p
+            role="alert"
+            className={
+              'text-[13px] ' +
+              (gaveUp ? 'text-[var(--v2-status-warn-fg)]' : 'text-[var(--v2-status-fail-fg)]')
+            }
+          >
             {gaveUp
               ? '等了 10 分钟还没等到授权结果，这边先停下了 —— 这串码可能还有效，' +
                 '如果你刚在浏览器里点完，可以先换一串重来。'
@@ -148,16 +168,17 @@ export function DeviceCodeAuthView({
         </div>
       ) : pollError ? (
         <div className="flex items-center gap-2">
-          <p role="alert" className="text-xs text-amber-400">
+          <p role="alert" className="text-[13px] text-[var(--v2-status-warn-fg)]">
             网络异常，正在重试…
           </p>
-          <Button type="button" variant="ghost" size="sm" onClick={onRefetchChallenge}>
+          <Button type="button" variant="ghost" size="sm" onClick={onRetryPoll}>
             重试
           </Button>
         </div>
       ) : (
         polling && (
-          <p role="status" className="text-xs text-muted-foreground">
+          <p role="status" className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
             等待授权中…
           </p>
         )

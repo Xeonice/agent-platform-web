@@ -14,7 +14,7 @@
 //
 // ⛔ 不要拿它替换 `BlockingDialog`：那个是**不可关闭**的向导壳（三个守卫恒 preventDefault
 // 且不接 `onOpenChange`），本组件是可关闭弹层，两者语义相反。见 `blocking-dialog.tsx`。
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/dialog';
@@ -29,6 +29,8 @@ export interface AppDialogProps {
    * `busy` 为真时**不触发**——创建中被误关会留下一个用户以为没发生过的请求。
    */
   onClose: () => void;
+  onOpenAutoFocus?: (event: Event) => void;
+  onCloseAutoFocus?: (event: Event) => void;
   busy?: boolean;
   /** 便于测试与 e2e 定位具体是哪一个弹层（形态一致，靠它区分）。 */
   testId: string;
@@ -39,10 +41,13 @@ export function AppDialogView({
   title,
   subtitle,
   onClose,
+  onCloseAutoFocus,
+  onOpenAutoFocus,
   busy = false,
   testId,
   children,
 }: AppDialogProps) {
+  const [scrolled, setScrolled] = useState(false);
   return (
     <Dialog
       open
@@ -61,7 +66,10 @@ export function AppDialogView({
            * ⛔ 不能指望换个组件就白拿（`SandboxTerminalContainer` 的同类弹层踩过同一处）。
            */
           aria-modal="true"
-          className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-lg border border-border bg-background focus:outline-none"
+          {...(subtitle ? {} : { 'aria-describedby': undefined })}
+          onCloseAutoFocus={onCloseAutoFocus}
+          onOpenAutoFocus={onOpenAutoFocus}
+          className="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[var(--v2-radius-xl)] border border-[var(--v2-border)] bg-[var(--v2-surface)] shadow-[var(--v2-shadow-modal)] focus:outline-none"
           // busy 时 Esc 与点遮罩都不关（见文件头：这是守卫，不是样式）。
           onEscapeKeyDown={(e) => {
             if (busy) e.preventDefault();
@@ -70,7 +78,9 @@ export function AppDialogView({
             if (busy) e.preventDefault();
           }}
         >
-          <div className="flex items-start gap-3 border-b border-border px-5 py-3">
+          <div
+            className={`flex shrink-0 items-start gap-3 border-b px-5 py-3 ${scrolled ? 'border-border' : 'border-transparent'}`}
+          >
             <div className="min-w-0 flex-1 text-left">
               <DialogPrimitive.Title className="text-base font-semibold">
                 {title}
@@ -86,7 +96,14 @@ export function AppDialogView({
               )}
             </div>
           </div>
-          {children}
+          <div
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+            onScrollCapture={(event) => {
+              if (event.target instanceof HTMLElement) setScrolled(event.target.scrollTop > 0);
+            }}
+          >
+            {children}
+          </div>
           {/*
             ⚠️ **不用共享 `DialogContent` 的内置关闭按钮**：它的无障碍名是英文 "Close"，
             而全仓（含 e2e）按 `{ name: '关闭' }` 找它。手写 `DialogPrimitive.Close` 保住中文名。

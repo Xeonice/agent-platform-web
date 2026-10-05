@@ -1,31 +1,39 @@
 'use client';
-// 全局解锁门（11 §3.1）：唯一 view↔hook 粘合点。锁定时在应用之上浮出解锁表单，
-// 解锁成功由 hook 清锁并 invalidate 查询触发重试；未启用口令（dev）时零渲染开销。
 import type { ReactNode } from 'react';
 import { useAccessGate } from '@/hooks/access/useAccessGate';
 import { UnlockFormView } from '@/views/access/UnlockForm.view';
 
-export function AccessGateContainer({ children }: { children: ReactNode }) {
-  const { locked, reason, submitting, errorMessage, submit } = useAccessGate();
-
+export function AccessGateContainer({
+  children,
+  forceLocked = false,
+}: {
+  children?: ReactNode;
+  forceLocked?: boolean;
+}) {
+  const { locked, submitting, errorMessage, lockedForMinutes, submit } = useAccessGate();
+  if (!locked && !forceLocked) return <>{children}</>;
   return (
-    <>
-      {children}
-      {locked && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="访问口令"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background p-6 text-foreground">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <span
+          aria-hidden="true"
+          className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground"
         >
-          <UnlockFormView
-            reason={reason}
-            submitting={submitting}
-            errorMessage={errorMessage}
-            onSubmit={submit}
-          />
-        </div>
-      )}
-    </>
+          A
+        </span>
+        Agent 管理平台{' '}
+        <span className="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">
+          本机
+        </span>
+      </div>
+      <div role="dialog" aria-modal="true" aria-label="访问口令" className="w-full max-w-sm">
+        <UnlockFormView
+          submitting={submitting}
+          errorMessage={errorMessage}
+          lockedForMinutes={lockedForMinutes}
+          onSubmit={submit}
+        />
+      </div>
+    </main>
   );
 }

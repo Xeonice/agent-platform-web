@@ -246,7 +246,8 @@ export const TimedOut: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const row = canvas.getByTestId('diagnostic-item-outbound-network');
-    await expect(row).toHaveTextContent('未得出结论');
+    await expect(row).toHaveTextContent('超时未响应');
+    await expect(row).toHaveTextContent('10 秒内没有结果');
     await expect(row).not.toHaveTextContent('失败');
   },
 };

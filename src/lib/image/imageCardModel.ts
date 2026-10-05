@@ -141,6 +141,7 @@ export function imageCardModel(input: ImageCardInput, now: number = Date.now()):
     // ⚠️ **恒存在**：缺席那一行读起来就是"这张镜像没有来源"，而三档里有一档恰恰是"不知道"。
     lineage: imageLineage(input),
     validationStatus: input.validationStatus,
+    unknownCodes: input.unknownCodes,
     warnings: input.warnings ?? [],
     errors: input.errors ?? [],
     supportedRuntimes: input.supportedRuntimes,

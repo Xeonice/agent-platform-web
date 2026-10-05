@@ -1,4 +1,5 @@
 // 规则列表（F21-7 §3 主视图）。纯展示、props 驱动。
+import { AlertTriangle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AutomationEmptyStateView } from '@/views/project/AutomationEmptyState.view';
 import { AutomationListItemView } from '@/views/project/AutomationListItem.view';
@@ -15,6 +16,7 @@ export interface AutomationListProps {
   /** 规则数已达 20（P21-7 §3.2）→ [+ 新建规则] 置灰 + 上限提示。 */
   atLimit: boolean;
   onCreate: () => void;
+  onRetry?: () => void;
   onSelect: (id: string) => void;
   onToggle: (id: string, next: boolean) => void;
   onShowFailure: (id: string) => void;
@@ -29,63 +31,93 @@ export function AutomationListView({
   togglingId = null,
   atLimit,
   onCreate,
+  onRetry,
   onSelect,
   onToggle,
   onShowFailure,
 }: AutomationListProps) {
   return (
-    <div className="flex flex-col gap-3 px-5 py-4 text-sm" data-testid="automation-list">
-      {loading && (
-        <p className="text-xs text-muted-foreground" data-testid="automation-loading">
-          正在读取自动化规则…
-        </p>
-      )}
+    <div
+      className="flex max-h-[calc(85dvh-64px)] min-h-0 flex-col text-sm"
+      data-testid="automation-list"
+    >
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4"
+        aria-busy={loading}
+      >
+        {loading && (
+          <p className="text-xs text-muted-foreground" data-testid="automation-loading">
+            正在读取自动化规则…
+          </p>
+        )}
 
-      {/* ⚠️ 「取不回来」与「取回来是空的」必须是两个分支：一次 500 被空态盖住，
+        {/* ⚠️ 「取不回来」与「取回来是空的」必须是两个分支：一次 500 被空态盖住，
           用户会以为自己从来没建过规则（useAuditStream ⑥ 同一条教训）。 */}
-      {loadErrorMessage !== undefined && loadErrorMessage !== '' && (
-        <p role="alert" className="text-xs text-red-400" data-testid="automation-load-error">
-          {loadErrorMessage}
-        </p>
-      )}
-
-      {actionErrorMessage !== undefined && actionErrorMessage !== '' && (
-        <p role="alert" className="text-xs text-red-400" data-testid="automation-action-error">
-          {actionErrorMessage}
-        </p>
-      )}
-
-      {!loading && loadErrorMessage === undefined && rows.length === 0 && (
-        <AutomationEmptyStateView onCreate={onCreate} />
-      )}
-
-      {rows.length > 0 && (
-        <>
-          <ul className="flex flex-col gap-2">
-            {rows.map((row) => (
-              <AutomationListItemView
-                key={row.id}
-                row={row}
-                selected={row.id === selectedId}
-                busy={row.id === togglingId}
-                onSelect={onSelect}
-                onToggle={onToggle}
-                onShowFailure={onShowFailure}
-              />
-            ))}
-          </ul>
-
-          <div className="flex items-center gap-2">
-            <Button size="sm" disabled={atLimit} onClick={onCreate} data-testid="automation-create">
-              + 新建规则
+        {loadErrorMessage !== undefined && loadErrorMessage !== '' && (
+          <p role="alert" className="text-xs text-red-400" data-testid="automation-load-error">
+            {loadErrorMessage}
+            <Button variant="outline" size="sm" disabled={loading} onClick={onRetry}>
+              重试
             </Button>
-            {atLimit && (
-              <span className="text-xs text-amber-500" data-testid="automation-limit-note">
-                每个项目最多 {AUTOMATION_RULE_LIMIT} 条规则，先删一条再建。
-              </span>
-            )}
-          </div>
-        </>
+          </p>
+        )}
+
+        {actionErrorMessage !== undefined && actionErrorMessage !== '' && (
+          <p role="alert" className="text-xs text-red-400" data-testid="automation-action-error">
+            {actionErrorMessage}
+          </p>
+        )}
+
+        {!loading && loadErrorMessage === undefined && rows.length === 0 && (
+          <AutomationEmptyStateView onCreate={onCreate} />
+        )}
+
+        {!loading && loadErrorMessage === undefined && rows.length > 0 && (
+          <>
+            <ul className="flex flex-col gap-2">
+              {rows.map((row) => (
+                <AutomationListItemView
+                  key={row.id}
+                  row={row}
+                  selected={row.id === selectedId}
+                  busy={row.id === togglingId}
+                  onSelect={onSelect}
+                  onToggle={onToggle}
+                  onShowFailure={onShowFailure}
+                />
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+      {!loading && loadErrorMessage === undefined && rows.length > 0 && (
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border px-5 py-3">
+          {atLimit ? (
+            <span
+              id="automation-limit-reason"
+              className="text-xs text-warning"
+              data-testid="automation-limit-note"
+            >
+              <AlertTriangle aria-hidden="true" className="mr-1 inline h-3.5 w-3.5" />
+              每个项目最多 {AUTOMATION_RULE_LIMIT} 条规则，先删一条再建。
+            </span>
+          ) : (
+            <span />
+          )}
+          <Button
+            size="sm"
+            className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+            aria-disabled={atLimit}
+            aria-describedby={atLimit ? 'automation-limit-reason' : undefined}
+            onClick={() => {
+              if (!atLimit) onCreate();
+            }}
+            data-testid="automation-create"
+          >
+            <Plus aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
+            新建规则
+          </Button>
+        </footer>
       )}
     </div>
   );

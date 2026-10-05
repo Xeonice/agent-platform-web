@@ -46,10 +46,40 @@ export function describeCreateProjectError(error: unknown): string | undefined {
   return projectErrorMessage(error.envelope.code, error.envelope.traceId, '创建失败，请稍后重试。');
 }
 
+function knownCloneErrorCode(code: string | undefined): ProjectDto['cloneErrorCode'] {
+  switch (code) {
+    case 'CLONE_FAILED_PERMISSION':
+    case 'CLONE_FAILED_NOT_FOUND':
+    case 'CLONE_FAILED_NETWORK':
+    case 'TIMEOUT':
+    case 'INTERRUPTED':
+    case 'DISK_INSUFFICIENT':
+      return code;
+    default:
+      return null;
+  }
+}
+
 export function useProjects(): UseQueryResult<ProjectDto[]> {
+  const clones = useAppStore((state) => state.projectClones);
   return useQuery({
     queryKey: projectKeys.all(),
     queryFn: listProjects,
+    select: (projects) =>
+      projects.map((project) => {
+        const clone = clones[project.id];
+        return clone === undefined
+          ? project
+          : {
+              ...project,
+              cloneStatus:
+                clone.phase === 'done' ? 'ready' : clone.phase === 'failed' ? 'failed' : 'cloning',
+              cloneErrorCode:
+                clone.phase === 'failed'
+                  ? (knownCloneErrorCode(clone.errorCode) ?? project.cloneErrorCode)
+                  : null,
+            };
+      }),
     staleTime: 30_000,
   });
 }
@@ -58,7 +88,11 @@ export function useCreateProject(): UseMutationResult<ProjectDto, Error, CreateP
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createProject,
-    onSuccess: () => {
+    onSuccess: (project) => {
+      queryClient.setQueryData<ProjectDto[]>(projectKeys.all(), (rows) => [
+        ...(rows ?? []),
+        project,
+      ]);
       void queryClient.invalidateQueries({ queryKey: projectKeys.all() });
     },
   });
@@ -68,6 +102,17 @@ export function useRetryClone(): UseMutationResult<ProjectDto, Error, string> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: retryClone,
+    onMutate: (id) => {
+      useAppStore.getState().setCloneProgress(id, { phase: 'cloning' });
+    },
+    onError: (_error, id) => {
+      const project = queryClient
+        .getQueryData<ProjectDto[]>(projectKeys.all())
+        ?.find((row) => row.id === id);
+      useAppStore
+        .getState()
+        .setCloneProgress(id, { phase: 'failed', errorCode: project?.cloneErrorCode ?? undefined });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: projectKeys.all() });
     },
@@ -78,7 +123,11 @@ export function useConvertToEmpty(): UseMutationResult<ProjectDto, Error, string
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: convertToEmpty,
-    onSuccess: () => {
+    onSuccess: (project) => {
+      useAppStore.getState().clearCloneProgress(project.id);
+      queryClient.setQueryData<ProjectDto[]>(projectKeys.all(), (rows) =>
+        rows?.map((row) => (row.id === project.id ? project : row)),
+      );
       void queryClient.invalidateQueries({ queryKey: projectKeys.all() });
     },
   });
@@ -92,7 +141,7 @@ export function useConvertToEmpty(): UseMutationResult<ProjectDto, Error, string
  * 树里那一项还在，用户会以为是刷新问题。
  */
 export function describeProjectActionError(error: unknown): string {
-  if (!(error instanceof ApiErrorException)) return '网络不通，请稍后再试。';
+  if (!(error instanceof ApiErrorException)) return '没能删除项目：连不上平台（网络不通）。';
   return projectErrorMessage(
     error.envelope.code,
     error.envelope.traceId,
@@ -149,4 +198,13 @@ export function useDeleteProject(): UseMutationResult<void, Error, string> {
       void queryClient.invalidateQueries({ queryKey: sandboxListKeys.list() });
     },
   });
+}
+
+export function describeCancelCloneError(error: unknown): string {
+  if (!(error instanceof ApiErrorException)) return '网络不通，请稍后再试。';
+  return projectErrorMessage(
+    error.envelope.code,
+    error.envelope.traceId,
+    '取消克隆失败，请稍后重试。',
+  );
 }

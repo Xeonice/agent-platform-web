@@ -11,7 +11,7 @@
 //
 // ⚠️ **[重新检测] 是一次跳转，不是一次探测**：理由写在 `useSystemStatus` 里那段
 //    「全局横幅的 [重新检测] 落地点」。这里只做 意图位 + `router.push` 两件事。
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useGlobalBanner } from '@/hooks/system/useGlobalBanner';
 import { useAppStore } from '@/stores';
 import { BannerStackView } from '@/views/banner/BannerStack.view';
@@ -23,27 +23,50 @@ const WORKBENCH_ROUTE = '/';
 
 export function GlobalBannerContainer() {
   const router = useRouter();
-  const { model, dismiss, requestRecheck } = useGlobalBanner();
-  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
+  const pathname = usePathname();
+  const { model, dismiss, requestRecheck, automationProjectId } = useGlobalBanner(pathname);
   const setSelectedProjectForMenu = useAppStore((s) => s.setSelectedProjectForMenu);
   const setCurrentModal = useAppStore((s) => s.setCurrentModal);
 
   return (
     <BannerStackView
-      model={model}
+      model={{
+        banners: model.banners.map((banner) => {
+          if (banner.id !== 'platform-state-unknown' || pathname !== SYSTEM_STATUS_ROUTE) {
+            return banner;
+          }
+          return {
+            id: banner.id,
+            severity: banner.severity,
+            title: banner.title,
+            description: banner.description,
+          };
+        }),
+      }}
       onDismiss={dismiss}
       onAction={(id) => {
         // ⚠️ 「查看这些规则」跳的不是系统状态页——自动化面板只挂在工作台的
         //    `WorkbenchContainer`（组头「⋯」→ 项目菜单）里，`/settings/system` 上没有它。
         //    走同一套 `currentModal`/`selectedProjectForMenu` 是因为两者本来就是同一份
         //    全局 store 状态：`WorkbenchContainer` 的 `overlaySlot` 已经在读它们。
+        if (id === 'disk-pressure' || id === 'retained-pressure') {
+          setSelectedProjectForMenu(null);
+          useAppStore.getState().setRetainedVolumeFocusSandboxId(null);
+          setCurrentModal('retainedVolumes');
+          router.push(WORKBENCH_ROUTE);
+          return;
+        }
+        if (id.startsWith('credential-login:')) {
+          router.push(
+            `/settings/credentials?runtime=${encodeURIComponent(id.slice('credential-login:'.length))}&reauth=account`,
+          );
+          return;
+        }
         if (id === 'automation-needs-attention') {
-          // ⚠️ 只有真的拿到了 projectId 才动这两位状态——理论上到这一步它必然有值
-          // （横幅本身就是拿这个 projectId 的缓存判出来的），这里只是防御性收窄类型。
-          if (selectedProjectId !== null) {
-            setSelectedProjectForMenu(selectedProjectId);
-            setCurrentModal('automations');
-          }
+          // The first named rule may belong to another project; only the modal target changes.
+          if (automationProjectId === undefined) return;
+          setSelectedProjectForMenu(automationProjectId);
+          setCurrentModal('automations');
           router.push(WORKBENCH_ROUTE);
           return;
         }

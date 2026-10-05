@@ -67,7 +67,8 @@ const config: Config = {
         xl: 'var(--radius-xl)',
       },
       fontFamily: {
-        mono: ['JetBrains Mono', 'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'monospace'],
+        sans: ['var(--v2-font-sans)'],
+        mono: ['var(--v2-font-mono)'],
       },
       keyframes: {
         'accordion-down': {

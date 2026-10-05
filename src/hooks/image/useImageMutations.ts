@@ -52,7 +52,11 @@ export function useValidateImageRef(): UseMutationResult<ValidationOutcomeDto, E
 }
 
 /** `POST /api/images` —— 注册。`created` 由 HTTP 状态位承载（见 service）。 */
-export function useRegisterImage(): UseMutationResult<RegisterImageResult, Error, string> {
+export function useRegisterImage(): UseMutationResult<
+  RegisterImageResult,
+  Error,
+  Parameters<typeof registerImage>[0]
+> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: registerImage,

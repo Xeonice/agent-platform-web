@@ -1,78 +1,29 @@
+@import './design-tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/*
- * Design token 全集（design/design-notes.md §2，逐字照抄，不许自行调整 L 值——
- * 每个色相都逐一跑过 WCAG AA 对比度，见该文档「WCAG AA 对比度实测」表）。
- *
- * 产品规定「全局默认暗色」（docs/product/21 §「全局默认暗色（shadcn OKLCH 定制）」）：
- * 设计稿原样是亮色在 :root、暗色在 [data-theme="dark"]；本项目沿用既有的
- * `darkMode: 'class'` 策略（设计稿文末已注明这种替换是等价的），把暗色选择器换成
- * `.dark`。默认仍是暗色靠 `<html className="dark">`（src/app/layout.tsx）保证——
- * 亮色 :root 只是"新增可用"，不是新默认。
- */
+/* Approved v2 palette; HSL aliases preserve Tailwind opacity modifiers. */
 :root {
-  --background: 0 0% 100%;
-  --background-elevated: 0 0% 98%;
-  --background-subtle: 0 0% 95%;
-  --foreground: 0 0% 4%;
-  --foreground-muted: 0 0% 32%;
-  --foreground-subtle: 0 0% 40%; /* v2：45%→40%，见设计稿对比度表 */
-  --border: 0 0% 90%;
-  --border-strong: 0 0% 83%;
-
-  --primary: 0 0% 4%;
+  --background: 0 0% 98.0392%;
+  --background-elevated: 0 0% 100%;
+  --background-subtle: 0 0% 94.902%;
+  --foreground: 0 0% 9.0196%;
+  --foreground-muted: 0 0% 30.1961%;
+  --foreground-subtle: 0 0% 40%;
+  --border: 0 0% 90.1961%;
+  --border-strong: 0 0% 78.8235%;
+  --primary: 0 0% 9.0196%;
   --primary-foreground: 0 0% 100%;
-  --accent: 212 100% 48%; /* 焦点环 / 链接，唯一的中性强调色 */
-
-  /*
-   * ⚠️ 与上面的 --accent 是**两件事**，别按名字合并。
-   * --accent 是高饱和强调蓝（焦点环 / 链接）；这一对是「当前项」的**低对比底色**
-   * ——菜单项键盘焦点、悬停高亮之类。shadcn 组件里 `bg-accent` / `text-accent-foreground`
-   * 指的是后者，tailwind.config.ts 的 accent 因此映射到这里，⛔ 不映射到 --accent。
-   * 取值是量出来的，⛔ 不是拍的。菜单浮在 --popover(= elevated, 暗色 7%) 之上，
-   * 候选值逐个实测「焦点底 vs 菜单底」的区分度与「底 vs 字」的文字对比度：
-   *   16% → 区分度 1.29 / 文字 12.43    20% → 1.48 / 10.79
-   *   24% → 1.72 / 9.28                 28% → 2.02 / 7.94   ← 采用
-   * 取 28%：区分度比 --background-subtle(11%) 那档翻倍，文字仍有 7.94（AA 要 4.5、
-   * AAA 要 7，两头都过）。⛔ 不为机械凑满 WCAG 1.4.11 的 3:1 再往上推 —— 那要 38% 灰，
-   * 在这套暗色终端风里会重得像选中块，而「整行换底」的面积效应本来就比小控件边界好认。
-   * ⚠️ 亮色那套（78%）按同样思路取，但本仓**全局默认暗色且没有切换入口**，未经实测。
-   */
-  --accent-surface: 0 0% 78%;
-  --accent-surface-foreground: var(--foreground);
-
-  /* v2：L 值全部下调，逐色跑过 WCAG AA，语义分配不变 */
-  --success: 142 76% 26%;
-  --warning: 32 95% 30%;
-  --error: 0 74% 44%;
-  --info: 201 96% 32%;
-  --timeout: 263 83% 56%; /* 与 error 独立的色相：超时 ≠ 失败 */
-
-  --radius-sm: 4px; /* 徽标 / pill */
-  --radius-md: 6px; /* 按钮 / 输入框 */
-  --radius-lg: 10px; /* 卡片 */
-  --radius-xl: 16px; /* 大容器 / 向导壳 */
-  --radius: var(--radius-md); /* shadcn CLI 生成的组件按 --radius 取圆角 */
-
-  --terminal-bg: #000000; /* 画布恒黑，两套主题都不能碰 */
-  --terminal-chrome: #e7e7ea; /* 仪表壳跟随主题，这是亮色的值 */
-  --terminal-chrome-border: #d3d3d7;
-  --terminal-fg: #e4e4e7;
-  --terminal-fg-dim: #8a8a90;
-
-  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.1);
-
-  /*
-   * 以下几个变量不是设计稿 token 清单里的条目，是 shadcn CLI 生成的组件模板
-   * （card/dialog/input/switch 等）里引用到、而设计稿没有单独定义的"结构性别名"——
-   * 全部映射到上面已定案的 token，不引入 shadcn 默认的 OKLCH 调色板：
-   * `card`/`popover` 用 elevated 背景（卡片本来就应该比页面背景亮一档）；
-   * `input`/`ring` 分别对应边框与焦点环（accent，设计稿里唯一的强调色）；
-   * `secondary` 对应 subtle 背景；`destructive` 直接复用 `error`（语义等价，
-   * 8 态色板里"确定坏了"就是 error）。
-   */
+  --accent: 212.0816 100% 48.0392%;
+  --accent-surface: 0 0% 93.3333%;
+  --accent-surface-foreground: 0 0% 9.0196%;
+  --success: 132.5926 49.6933% 31.9608%;
+  --warning: 30.184 100% 31.9608%;
+  --error: 358.1366 65.7143% 48.0392%;
+  --info: 210.8411 100% 41.9608%;
+  --timeout: 273.8462 70.9091% 43.1373%;
   --card: var(--background-elevated);
   --card-foreground: var(--foreground);
   --popover: var(--background-elevated);
@@ -80,40 +31,41 @@
   --secondary: var(--background-subtle);
   --secondary-foreground: var(--foreground);
   --destructive: var(--error);
-  --destructive-foreground: 0 0% 100%;
   --input: var(--border);
   --ring: var(--accent);
+  --destructive-foreground: 0 0% 100%;
+  --radius-sm: var(--v2-radius-sm);
+  --radius-md: var(--v2-radius-md);
+  --radius-lg: var(--v2-radius-lg);
+  --radius-xl: var(--v2-radius-xl);
+  --radius: var(--radius-md);
+  --terminal-bg: #000000;
+  --terminal-fg: #ededed;
+  --terminal-fg-dim: #8f8f8f;
+  --terminal-chrome: var(--v2-canvas);
+  --terminal-chrome-border: var(--v2-border-subtle);
+  --shadow-pop: var(--v2-shadow-menu);
 }
 
 .dark {
-  --background: 0 0% 4%;
-  --background-elevated: 0 0% 7%;
-  --background-subtle: 0 0% 11%;
-  --foreground: 0 0% 93%;
-  --foreground-muted: 0 0% 63%;
-  --foreground-subtle: 0 0% 50%; /* v2：45%→50% */
-  --border: 0 0% 16%;
-  --border-strong: 0 0% 24%;
-
-  --primary: 0 0% 93%;
-  --primary-foreground: 0 0% 4%;
-  --accent: 217 91% 63%;
-  --accent-surface: 0 0% 28%;
-  --accent-surface-foreground: var(--foreground);
-
-  --success: 142 71% 45%;
-  --warning: 38 92% 55%;
-  --error: 0 84% 63%;
-  --info: 199 89% 62%;
-  --timeout: 258 90% 71%;
-
-  --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.45);
-
-  /* 暗色下仪表壳维持原状——这套深色就是照「终端区纯黑底」的要求定的 */
-  --terminal-chrome: #111214;
-  --terminal-chrome-border: #2a2b2e;
-  --terminal-fg-dim: #6b6b70;
-
+  --background: 0 0% 0%;
+  --background-elevated: 0 0% 3.9216%;
+  --background-subtle: 0 0% 10.1961%;
+  --foreground: 0 0% 92.9412%;
+  --foreground-muted: 0 0% 63.1373%;
+  --foreground-subtle: 0 0% 56.0784%;
+  --border: 0 0% 16.0784%;
+  --border-strong: 0 0% 27.0588%;
+  --primary: 0 0% 92.9412%;
+  --primary-foreground: 0 0% 3.9216%;
+  --accent: 210.1734 100% 66.0784%;
+  --accent-surface: 0 0% 12.1569%;
+  --accent-surface-foreground: 0 0% 92.9412%;
+  --success: 130.8511 42.7273% 56.8627%;
+  --warning: 39.0393 89.8039% 50%;
+  --error: 358.1013 100% 69.0196%;
+  --info: 210.1734 100% 66.0784%;
+  --timeout: 275.0847 79.7297% 70.9804%;
   --card: var(--background-elevated);
   --card-foreground: var(--foreground);
   --popover: var(--background-elevated);
@@ -121,21 +73,22 @@
   --secondary: var(--background-subtle);
   --secondary-foreground: var(--foreground);
   --destructive: var(--error);
-  --destructive-foreground: 0 0% 4%;
   --input: var(--border);
   --ring: var(--accent);
+  --destructive-foreground: 0 0% 100%;
+  --radius-sm: var(--v2-radius-sm);
+  --radius-md: var(--v2-radius-md);
+  --radius-lg: var(--v2-radius-lg);
+  --radius-xl: var(--v2-radius-xl);
+  --radius: var(--radius-md);
+  --terminal-bg: #000000;
+  --terminal-fg: #ededed;
+  --terminal-fg-dim: #8f8f8f;
+  --terminal-chrome: var(--v2-canvas);
+  --terminal-chrome-border: var(--v2-border-subtle);
+  --shadow-pop: var(--v2-shadow-menu);
 }
 
-/*
- * ⚠️ shadcn 标准 globals.css 必有的一行，本仓此前**漏了**（2026-09-14 补）。
- * Tailwind preflight 给所有元素兜了 `border-color: rgb(229 231 235)`（gray-200），
- * 而 shadcn 组件大量使用**不带颜色的裸 `border` 类**（dropdown-menu / dialog / card /
- * input / separator / badge / radio-group …）—— 少了这条覆盖，它们在暗色界面上会描出
- * 一道浅灰亮边。实测下拉菜单的边框就是 `rgb(229, 231, 235)` 压在 `#121212` 的菜单底上，
- * 这也是"我们的菜单和 shadcn 官方示例长得不一样"最直观的那处差别。
- * ⛔ 不要改成给每个组件挨个补 `border-border`：漏一个就又是一道亮边，而且以后
- * `shadcn add` 进来的新组件照样带着裸 `border`。
- */
 @layer base {
   * {
     @apply border-border;
@@ -184,4 +137,22 @@ body {
 body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
+}
+
+@layer base {
+  body {
+    font-family: var(--v2-font-sans);
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .lucide {
+    stroke-width: 1.5;
+  }
+}
+
+@layer base {
+  :where(button, a, [role='button']):focus-visible {
+    outline: none;
+    box-shadow: var(--v2-focus-ring);
+  }
 }

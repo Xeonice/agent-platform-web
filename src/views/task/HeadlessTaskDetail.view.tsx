@@ -21,6 +21,7 @@ export interface HeadlessTaskDetailProps {
    * 形状直接用生成物 DTO：后端加字段 → codegen → 这里编译期可见。
    */
   task?: AgentTaskDto;
+  imageLabel?: string;
   /** 打开发起入口（**同一沙箱内的下一个任务**，不是新建沙箱）。 */
   onNewTask: () => void;
   /** 回到这条任务的输出面板（产物下载与终态卡都在那儿；本视图保持只读）。 */
@@ -62,6 +63,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 export function HeadlessTaskDetailView({
   task,
+  imageLabel,
   onNewTask,
   onOpenTask,
   disabledReason,
@@ -86,6 +88,10 @@ export function HeadlessTaskDetailView({
             : '只读；同一个运行环境里可以跑多次无头运行'}
         </p>
       </div>
+
+      {imageLabel !== undefined && (
+        <p className="break-all text-xs text-muted-foreground">镜像：{imageLabel}</p>
+      )}
 
       {task !== undefined && (
         <div className="flex flex-col gap-1 rounded border border-border p-3">

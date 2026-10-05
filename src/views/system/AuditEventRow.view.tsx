@@ -39,13 +39,15 @@ const OUTCOME_TEXT: Record<'ok' | 'failed' | 'skipped', string> = {
 export interface AuditEventRowProps {
   row: AuditRowModel;
   expanded?: boolean;
+  timelineFiltered?: boolean;
   onToggleDetail: (seq: number) => void;
-  onOpenTimeline: (subjectId: string) => void;
+  onOpenTimeline: (subjectId: string, subjectName?: string) => void;
 }
 
 export function AuditEventRowView({
   row,
   expanded = false,
+  timelineFiltered = false,
   onToggleDetail,
   onOpenTimeline,
 }: AuditEventRowProps) {
@@ -97,14 +99,15 @@ export function AuditEventRowView({
         ) : (
           <div className="flex min-w-0 flex-1 items-center gap-2 px-1">{header}</div>
         )}
-        {row.subjectLink !== undefined && (
+        {row.subjectLink !== undefined && !timelineFiltered && (
           <Button
             type="button"
             size="sm"
             variant="ghost"
             className="shrink-0"
             onClick={() => {
-              if (row.subjectLink !== undefined) onOpenTimeline(row.subjectLink.subjectId);
+              if (row.subjectLink !== undefined)
+                onOpenTimeline(row.subjectLink.subjectId, row.subjectLink.subjectName);
             }}
           >
             {row.subjectLink.label}

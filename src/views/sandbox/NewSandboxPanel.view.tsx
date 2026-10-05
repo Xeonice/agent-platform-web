@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react';
 // 新建任务弹窗的内容（F21-2 §N.1「单弹窗一屏」）：runtime / provider / **分支** / 指令 + [创建]。
 // 纯展示、props 驱动、零副作用；外壳（overlay + 标题 + [✕]）由 `ModalShell.view` 提供。
 //
@@ -21,8 +22,22 @@ import type { RuntimeDto } from '@/types/runtimeCredential';
 import type { SandboxProviderDto } from '@/types/sandbox';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
 import { Button } from '@/components/ui/button';
+import type { LaunchImageOption } from '@/types/image';
 
 export interface NewSandboxPanelProps {
+  projects?: readonly { id: string; label: string; disabled: boolean }[];
+  selectedProjectId?: string;
+  onSelectProject?: (id: string) => void;
+  relaunchNotice?: string;
+  branchNotice?: string;
+  images?: readonly LaunchImageOption[];
+  image?: string;
+  onSelectImage?: (value: string) => void;
+  loadingImages?: boolean;
+  imagesErrorMessage?: string;
+  imageDisabledReason?: string;
+  imageWarning?: string;
+  defaultImageLabel?: string;
   /**
    * 服务端 registry 下发的可选 runtime（`GET /api/runtimes`，扁平数组；空数组 = 后端没注册 runtime）。
    * 视图不挑默认值，**container 也不挑**：平台没有「默认 runtime」概念（04 §8）。
@@ -101,6 +116,7 @@ export interface NewSandboxPanelProps {
    * 而平台从头到尾没提示过一句。这正是本轮修掉的那条链路。
    */
   authGateSlot?: ReactNode;
+  authGateBlocked?: boolean;
   /**
    * 闸门拦的是**哪个 Agent**（后端下发的 `displayName`）。
    *
@@ -119,6 +135,7 @@ export interface NewSandboxPanelProps {
    * 没有任务被创建 ⇒ 这里只提示改选，**不出现任何"重试/重新创建"入口**。
    */
   rejectionMessage?: string;
+  onViewProjectStatus?: () => void;
 
   // —— 任务指令（P20 §3.2 / P21-2 §6）——
   /** 当前输入值（container 局部 state；绝不来自 store）。 */
@@ -135,6 +152,19 @@ export interface NewSandboxPanelProps {
 }
 
 export function NewSandboxPanelView({
+  projects,
+  selectedProjectId,
+  onSelectProject,
+  relaunchNotice,
+  branchNotice,
+  images,
+  image = '',
+  onSelectImage,
+  loadingImages = false,
+  imagesErrorMessage,
+  imageDisabledReason,
+  imageWarning,
+  defaultImageLabel = '平台预制镜像（默认）',
   runtimes,
   runtime,
   onSelectRuntime,
@@ -157,10 +187,12 @@ export function NewSandboxPanelView({
   projectName,
   onCancel,
   authGateSlot,
+  authGateBlocked = authGateSlot !== undefined,
   authGateRuntimeName,
   runtimeIdentityNotice,
   errorMessage,
   rejectionMessage,
+  onViewProjectStatus,
   initialPrompt,
   onInitialPromptChange,
   promptNotice,
@@ -176,7 +208,7 @@ export function NewSandboxPanelView({
   const runtimeUnchosen =
     !loadingRuntimes && !runtimesLoadFailed && runtimes.length > 0 && runtime === '';
   // 用 Array.from 数码点，与后端 8000 的口径（UTF-8 码点）一致，emoji 不被算成两个。
-  const promptLength = Array.from(initialPrompt).length;
+  const promptLength = Array.from(initialPrompt.trim()).length;
   const promptTooLong = promptLength > INITIAL_PROMPT_MAX_LENGTH;
   const createDisabled =
     creating ||
@@ -191,108 +223,168 @@ export function NewSandboxPanelView({
     runtime === '' ||
     promptTooLong ||
     // 分支②/③：该 runtime 没有可注入的凭证 ⇒ 先过闸门,再谈发起。
-    authGateSlot !== undefined ||
-    createDisabledReason !== undefined;
+    authGateBlocked ||
+    createDisabledReason !== undefined ||
+    imageDisabledReason !== undefined ||
+    (projects !== undefined && !projects.some((p) => p.id === selectedProjectId && !p.disabled));
+
+  const disabledReasonId =
+    imageDisabledReason !== undefined ? 'sandbox-image-reason' : 'sandbox-create-reason';
+  const disabledReason =
+    createDisabledReason ??
+    (authGateBlocked
+      ? `先完成上面的 ${authGateRuntimeName ?? '这个 Agent'} 登录，才能发起任务。`
+      : promptTooLong
+        ? `任务指令超过 ${String(INITIAL_PROMPT_MAX_LENGTH)} 字，请缩短后再发起。`
+        : runtimeUnchosen
+          ? '先选择一个 Agent，才能发起任务。'
+          : projects !== undefined &&
+              !projects.some((p) => p.id === selectedProjectId && !p.disabled)
+            ? '先选择一个就绪的项目，才能发起任务。'
+            : noRuntimes
+              ? '平台上一个 Agent 都没有注册，现在发不了任务。'
+              : noProviders
+                ? '这台机器没有可用的沙箱环境。'
+                : loadFailed || runtimesLoadFailed
+                  ? '列表暂时读不到，请重试加载。'
+                  : undefined);
+  const loading = loadingProviders || loadingRuntimes;
 
   return (
     <div
       data-testid="new-sandbox-panel"
-      className="flex flex-col items-center gap-5 p-6 text-center"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden text-left"
     >
-      <div>
-        {/* 终端不再是"开工开关"：agent 会话由后端在 provision 的「启动实例」阶段起好（03 §4.3），
+      <div className="flex min-h-0 flex-1 flex-col items-stretch gap-5 overflow-y-auto p-6">
+        {relaunchNotice !== undefined && (
+          <p role="status" className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+            {relaunchNotice}
+          </p>
+        )}
+        {projects !== undefined && (
+          <div className="w-full text-left">
+            <label htmlFor="sandbox-project" className="text-sm font-medium">
+              项目
+            </label>
+            <select
+              id="sandbox-project"
+              value={selectedProjectId ?? ''}
+              disabled={creating}
+              onChange={(event) => onSelectProject?.(event.target.value)}
+              className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">请选择项目</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id} disabled={project.disabled}>
+                  {project.label}
+                </option>
+              ))}
+            </select>
+            {selectedProjectId === '' && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                先选择一个就绪的项目，才能发起任务。
+              </p>
+            )}
+          </div>
+        )}
+        <div>
+          {/* 终端不再是"开工开关"：agent 会话由后端在 provision 的「启动实例」阶段起好（03 §4.3），
             打开终端只是 attach 已存在的会话——文案据此改写（S5 裁决 T-2）。 */}
-        {/* ⚠️ P21-1 §9：界面上不出现「沙箱 / 容器」措辞 —— 用户这边它就叫「任务」。 */}
-        <p className="text-sm text-muted-foreground">
-          {projectName === undefined || projectName === ''
-            ? '发起一个任务，让 agent 去跑'
-            : `在「${projectName}」中发起一个任务，让 agent 去跑`}
-          ；填了任务指令，agent <strong>启动时就开始执行</strong>，不必等你打开终端
-        </p>
-      </div>
+          {/* ⚠️ P21-1 §9：界面上不出现「沙箱 / 容器」措辞 —— 用户这边它就叫「任务」。 */}
+          <p className="text-sm text-muted-foreground">
+            {projectName === undefined || projectName === ''
+              ? '发起一个任务，让 agent 去跑'
+              : `在「${projectName}」中发起一个任务，让 agent 去跑`}
+            ；填了任务指令，agent <strong>启动时就开始执行</strong>，不必等你打开终端
+          </p>
+        </div>
 
-      {/* runtime 是开放注册表：跑哪个 agent CLI（codex / claude-code / 第三方注册的）由服务端下发。
+        {/* runtime 是开放注册表：跑哪个 agent CLI（codex / claude-code / 第三方注册的）由服务端下发。
           ⚠️ 曾经与它并列的还有一组「运行档位 (provider)」单选——**已删**：跑在哪种沙箱上
           是宿主平台的事实，不是用户的偏好（详见下面那段注释）。 */}
-      <fieldset className="flex flex-col gap-2" disabled={creating}>
-        {/* ⚠️ 上屏词是「Agent」；`runtime` 是内部词，只留在括号里给排障的人对号入座。 */}
-        <legend className="mb-1 text-xs text-muted-foreground">Agent（runtime）· 必选</legend>
+        <fieldset className="flex flex-col gap-2" disabled={creating}>
+          {/* ⚠️ 上屏词是「Agent」；`runtime` 是内部词，只留在括号里给排障的人对号入座。 */}
+          <legend className="mb-1 text-sm font-medium">Agent · 必选</legend>
 
-        {loadingRuntimes && (
-          <div
-            aria-busy="true"
-            aria-label="正在加载可选 Agent"
-            data-testid="runtimes-skeleton"
-            className="flex flex-col gap-2"
-          >
-            <span className="h-4 w-40 animate-pulse rounded bg-muted" />
-            <span className="h-4 w-40 animate-pulse rounded bg-muted" />
-          </div>
-        )}
-
-        {runtimesLoadFailed && (
-          <div className="flex flex-col items-start gap-2">
-            <p role="alert" className="text-sm text-red-400">
-              Agent 列表加载失败：{runtimesErrorMessage}
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                onRetryRuntimes();
-              }}
+          {loadingRuntimes && (
+            <div
+              aria-busy="true"
+              role="status"
+              aria-label="正在加载可选 Agent"
+              data-testid="runtimes-skeleton"
+              className="flex flex-col gap-2"
             >
-              重试加载 Agent
-            </Button>
+              <span className="h-4 w-40 animate-pulse rounded bg-muted" />
+              <span className="h-4 w-40 animate-pulse rounded bg-muted" />
+            </div>
+          )}
+
+          {runtimesLoadFailed && (
+            <div className="flex flex-col items-start gap-2">
+              <p role="alert" className="text-sm text-red-400">
+                Agent 列表没读出来：{runtimesErrorMessage}。
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  onRetryRuntimes();
+                }}
+              >
+                重试加载 Agent
+              </Button>
+            </div>
+          )}
+
+          {noRuntimes && (
+            <p role="alert" className="text-sm text-muted-foreground">
+              平台上一个 Agent 都没有注册，现在发不了任务。
+            </p>
+          )}
+
+          {!loadingRuntimes &&
+            !runtimesLoadFailed &&
+            runtimes.map((rt) => (
+              <label
+                key={rt.id}
+                className="flex items-center gap-2 rounded-md border border-border p-3 text-sm"
+              >
+                <input
+                  type="radio"
+                  name="sandbox-runtime"
+                  value={rt.id}
+                  checked={runtime === rt.id}
+                  onChange={() => {
+                    onSelectRuntime(rt.id);
+                  }}
+                />
+                <span className="font-mono">{rt.id}</span>
+                <span className="text-muted-foreground">
+                  — {rt.displayName}（{rt.vendor}）
+                </span>
+              </label>
+            ))}
+
+          {/* 首屏就会出现（runtime 不预选）⇒ 这是**待办提示**而不是错误，故不挂 role="alert"：
+            一进面板就朝屏幕阅读器喊一句 alert，等于把"正常的下一步"报成了故障。 */}
+          {runtimeUnchosen && (
+            <p className="text-xs text-muted-foreground">
+              请选择一个 Agent —— 平台没有默认 Agent，必须你来指定
+            </p>
+          )}
+        </fieldset>
+
+        {runtimeIdentityNotice !== undefined && (
+          <p data-testid="runtime-identity" className="text-xs text-muted-foreground">
+            {runtimeIdentityNotice}
+          </p>
+        )}
+
+        {authGateSlot !== undefined && (
+          <div data-testid="auth-gate" className="w-full max-w-md text-left">
+            {authGateSlot}
           </div>
         )}
-
-        {noRuntimes && (
-          <p role="alert" className="text-sm text-muted-foreground">
-            平台上一个 Agent 都没有注册，现在发不了任务。
-          </p>
-        )}
-
-        {!loadingRuntimes &&
-          !runtimesLoadFailed &&
-          runtimes.map((rt) => (
-            <label key={rt.id} className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="sandbox-runtime"
-                value={rt.id}
-                checked={runtime === rt.id}
-                onChange={() => {
-                  onSelectRuntime(rt.id);
-                }}
-              />
-              <span className="font-mono">{rt.id}</span>
-              <span className="text-muted-foreground">
-                — {rt.displayName}（{rt.vendor}）
-              </span>
-            </label>
-          ))}
-
-        {/* 首屏就会出现（runtime 不预选）⇒ 这是**待办提示**而不是错误，故不挂 role="alert"：
-            一进面板就朝屏幕阅读器喊一句 alert，等于把"正常的下一步"报成了故障。 */}
-        {runtimeUnchosen && (
-          <p className="text-xs text-muted-foreground">
-            请选择一个 Agent —— 平台没有默认 Agent，必须你来指定
-          </p>
-        )}
-      </fieldset>
-
-      {runtimeIdentityNotice !== undefined && (
-        <p data-testid="runtime-identity" className="text-xs text-muted-foreground">
-          {runtimeIdentityNotice}
-        </p>
-      )}
-
-      {authGateSlot !== undefined && (
-        <div data-testid="auth-gate" className="w-full max-w-md text-left">
-          {authGateSlot}
-        </div>
-      )}
-      {/*
+        {/*
         ⚠️ **这里曾经是「运行档位 (provider)」单选组，现在故意什么都不渲染。**
 
         aio 是 docker 容器（`AioSandboxProvider extends DockerContainerBackend`），
@@ -304,148 +396,215 @@ export function NewSandboxPanelView({
         ⚠️ 但**异常态仍然要说话**：加载中 / 失败 / 后端一个 provider 都没注册时，
         创建按钮是禁着的——禁着却不给理由，是最难查的那种 UI。
       */}
-      {(loadingProviders || loadFailed || noProviders) && (
-        <div className="flex flex-col items-center gap-2 text-sm">
-          {loadingProviders && (
-            <span
-              aria-busy="true"
-              aria-label="正在确认这台机器的沙箱环境"
-              data-testid="providers-skeleton"
-              className="h-4 w-40 animate-pulse rounded bg-muted"
-            />
-          )}
+        {(loadingProviders || loadFailed || noProviders) && (
+          <div className="flex flex-col items-center gap-2 text-sm">
+            {loadingProviders && (
+              <span
+                aria-busy="true"
+                role="status"
+                aria-label="正在确认这台机器的沙箱环境"
+                data-testid="providers-skeleton"
+                className="h-4 w-40 animate-pulse rounded bg-muted"
+              />
+            )}
 
-          {loadFailed && (
-            <div className="flex flex-col items-center gap-2">
-              <p role="alert" className="text-red-400">
-                没能确认这台机器的沙箱环境：{providersErrorMessage}
+            {loadFailed && (
+              <div className="flex flex-col items-center gap-2">
+                <p role="alert" className="text-red-400">
+                  没能确认这台机器的沙箱环境：{providersErrorMessage}。
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    onRetryProviders();
+                  }}
+                >
+                  重试
+                </Button>
+              </div>
+            )}
+
+            {noProviders && (
+              <p role="alert" className="text-muted-foreground">
+                平台上一个沙箱环境都没有注册，现在发不了任务。
               </p>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  onRetryProviders();
-                }}
-              >
-                重试
-              </Button>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {noProviders && (
-            <p role="alert" className="text-muted-foreground">
-              平台上一个沙箱环境都没有注册，现在发不了任务。
-            </p>
-          )}
-        </div>
-      )}
-
-      {/*
+        {/*
         分支选择器（F21-2 §N.1）。三条否定性语义都在这一块里：
          · **空项目整块不渲染**（没有 git，谈不上分支）——`showBranchPicker` 为假时连 DOM 都没有；
          · **缺省 = 基线当前分支**：默认选项的 value 是 `''`，container 据此不带 `branch` 字段；
          · **不触网**：选项来自后端读本地引用（`git branch -r`），没有"配 Git 凭证"这条分支。
         加载失败也**不禁用创建**：分支是可选覆盖，缺省永远在。
       */}
-      {showBranchPicker && (
-        <div className="w-full max-w-sm text-left" data-testid="branch-picker">
-          <label htmlFor="sandbox-branch" className="text-xs text-muted-foreground">
-            分支（可选）
-          </label>
-          {loadingBranches ? (
-            <div
-              aria-busy="true"
-              aria-label="正在加载可选分支"
-              data-testid="branches-skeleton"
-              className="mt-1 h-8 w-full animate-pulse rounded bg-muted"
-            />
-          ) : (
+        {showBranchPicker && (
+          <div className="w-full text-left" data-testid="branch-picker">
+            <label htmlFor="sandbox-branch" className="text-xs text-muted-foreground">
+              分支（可选）
+            </label>
+            {loadingBranches ? (
+              <div
+                aria-busy="true"
+                role="status"
+                aria-label="正在加载可选分支"
+                data-testid="branches-skeleton"
+                className="mt-1 h-8 w-full animate-pulse rounded bg-muted"
+              />
+            ) : (
+              <select
+                id="sandbox-branch"
+                value={branch}
+                disabled={creating}
+                onChange={(e) => {
+                  onSelectBranch(e.target.value);
+                }}
+                className="mt-1 w-full rounded border border-input bg-background px-2 py-1.5 text-sm"
+              >
+                <option value="">跟随项目当前的分支（默认）</option>
+                {branches.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            )}
+            {branchesErrorMessage !== undefined && branchesErrorMessage !== '' && (
+              <p role="status" className="mt-1 text-xs text-muted-foreground">
+                分支列表暂时取不到（{branchesErrorMessage}），这次会用项目当前的分支。
+              </p>
+            )}
+          </div>
+        )}
+
+        {showBranchPicker && branchNotice !== undefined && (
+          <p className="text-xs text-muted-foreground">{branchNotice}</p>
+        )}
+
+        {images !== undefined && (
+          <div className="w-full text-left" data-testid="image-picker">
+            <label htmlFor="sandbox-image" className="text-sm font-medium">
+              镜像（可选）
+            </label>
             <select
-              id="sandbox-branch"
-              value={branch}
-              disabled={creating}
-              onChange={(e) => {
-                onSelectBranch(e.target.value);
-              }}
-              className="mt-1 w-full rounded border border-input bg-background px-2 py-1.5 text-sm"
+              id="sandbox-image"
+              value={image}
+              disabled={creating || loadingImages}
+              aria-describedby={
+                imageDisabledReason === undefined ? undefined : 'sandbox-image-reason'
+              }
+              onChange={(event) => onSelectImage?.(event.target.value)}
+              className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
-              <option value="">跟随项目当前的分支（默认）</option>
-              {branches.map((b) => (
-                <option key={b} value={b}>
-                  {b}
+              <option value="">{defaultImageLabel}</option>
+              {images.map((option) => (
+                <option key={option.value} value={option.value} disabled={option.disabled}>
+                  {option.label}
                 </option>
               ))}
             </select>
-          )}
-          {branchesErrorMessage !== undefined && branchesErrorMessage !== '' && (
-            <p role="status" className="mt-1 text-xs text-muted-foreground">
-              分支列表暂时取不到（{branchesErrorMessage}），这次会用项目当前的分支。
+            {loadingImages && (
+              <p role="status" className="mt-1 text-xs text-muted-foreground">
+                正在加载可选镜像…
+              </p>
+            )}
+            {imagesErrorMessage !== undefined && (
+              <p role="status" className="mt-1 text-xs text-muted-foreground">
+                {imagesErrorMessage}
+              </p>
+            )}
+            {imageDisabledReason !== undefined && (
+              <p
+                role="status"
+                id="sandbox-image-reason"
+                className="mt-1 text-xs text-muted-foreground"
+              >
+                {imageDisabledReason}
+              </p>
+            )}
+            {imageWarning !== undefined && (
+              <p role="status" className="mt-1 text-xs text-muted-foreground">
+                {imageWarning}。
+              </p>
+            )}
+            <p className="mt-1 text-xs text-muted-foreground">
+              置灰的镜像不能选：到「镜像管理」里处理好再回来。
+            </p>
+          </div>
+        )}
+
+        <div className="w-full text-left">
+          <label htmlFor="initial-prompt" className="text-xs text-muted-foreground">
+            任务指令（可选）
+          </label>
+          <textarea
+            id="initial-prompt"
+            value={initialPrompt}
+            onChange={(e) => {
+              onInitialPromptChange(e.target.value);
+            }}
+            disabled={creating}
+            rows={3}
+            aria-invalid={promptTooLong}
+            aria-describedby="initial-prompt-counter"
+            placeholder="分析这个仓库的架构并输出摘要…（可选；填了则 agent 启动时即执行）"
+            className="mt-1 w-full resize-y rounded border border-input bg-background p-2 text-sm"
+          />
+          <p
+            id="initial-prompt-counter"
+            {...(promptTooLong ? { role: 'alert' as const } : {})}
+            className={
+              promptTooLong ? 'mt-1 text-xs text-red-400' : 'mt-1 text-xs text-muted-foreground'
+            }
+          >
+            {String(promptLength)}/{String(INITIAL_PROMPT_MAX_LENGTH)}
+            {promptTooLong ? ' —— 已超出上限，请精简后再发起' : ''}
+          </p>
+          {/* 深链进入时的一行灰字（见 prop 注释）。`role="status"` 而非 `alert`：
+            这是一句说明，不是错误——它不该打断屏幕阅读器正在念的东西。 */}
+          {promptNotice !== undefined && promptNotice !== '' && (
+            <p
+              data-testid="prompt-deeplink-notice"
+              role="status"
+              className="mt-1 text-xs text-muted-foreground"
+            >
+              {promptNotice}
             </p>
           )}
         </div>
-      )}
 
-      <div className="w-full max-w-sm text-left">
-        <label htmlFor="initial-prompt" className="text-xs text-muted-foreground">
-          任务指令（可选）
-        </label>
-        <textarea
-          id="initial-prompt"
-          value={initialPrompt}
-          onChange={(e) => {
-            onInitialPromptChange(e.target.value);
-          }}
-          disabled={creating}
-          rows={3}
-          aria-invalid={promptTooLong}
-          aria-describedby="initial-prompt-counter"
-          placeholder="分析这个仓库的架构并输出摘要…（可选；填了则 agent 启动时即执行）"
-          className="mt-1 w-full resize-y rounded border border-input bg-background p-2 text-sm"
-        />
-        <p
-          id="initial-prompt-counter"
-          {...(promptTooLong ? { role: 'alert' as const } : {})}
-          className={
-            promptTooLong ? 'mt-1 text-xs text-red-400' : 'mt-1 text-xs text-muted-foreground'
-          }
-        >
-          {String(promptLength)}/{String(INITIAL_PROMPT_MAX_LENGTH)}
-          {promptTooLong ? ' —— 已超出上限，请精简后再发起' : ''}
-        </p>
-        {/* 深链进入时的一行灰字（见 prop 注释）。`role="status"` 而非 `alert`：
-            这是一句说明，不是错误——它不该打断屏幕阅读器正在念的东西。 */}
-        {promptNotice !== undefined && promptNotice !== '' && (
-          <p
-            data-testid="prompt-deeplink-notice"
-            role="status"
-            className="mt-1 text-xs text-muted-foreground"
-          >
-            {promptNotice}
-          </p>
-        )}
-      </div>
-
-      {/* ⚠️ 这两条**语义相反**（"确定没落库" vs "不知道有没有落库"），却渲染成同一种节点，
+        {/* ⚠️ 这两条**语义相反**（"确定没落库" vs "不知道有没有落库"），却渲染成同一种节点，
           此前只差一个颜色 class——测试想区分它们就只能去匹配文案，于是文案一改测试就红，
           而链路根本没变。挂上 testid 让"走了哪条路"成为可断言的结构事实。 */}
-      {rejectionMessage !== undefined && rejectionMessage !== '' && (
-        <p data-testid="create-rejection" role="alert" className="max-w-sm text-sm text-amber-400">
-          {rejectionMessage}
-        </p>
-      )}
+        {rejectionMessage !== undefined && rejectionMessage !== '' && (
+          <p
+            data-testid="create-rejection"
+            role="alert"
+            className="max-w-sm text-sm text-amber-400"
+          >
+            {rejectionMessage}
+            {onViewProjectStatus && (
+              <Button className="mt-2" variant="outline" size="sm" onClick={onViewProjectStatus}>
+                去项目页查看状态
+              </Button>
+            )}
+          </p>
+        )}
 
-      {errorMessage !== undefined && errorMessage !== '' && (
-        <p data-testid="create-failure" role="alert" className="max-w-sm text-sm text-red-400">
-          {errorMessage}
-        </p>
-      )}
+        {errorMessage !== undefined && errorMessage !== '' && (
+          <p data-testid="create-failure" role="alert" className="max-w-sm text-sm text-red-400">
+            {errorMessage}
+          </p>
+        )}
 
-      {createDisabledReason !== undefined && (
-        <p role="alert" className="max-w-sm text-sm text-amber-400">
-          {createDisabledReason}
-        </p>
-      )}
+        {createDisabledReason !== undefined && (
+          <p id="sandbox-create-reason" role="alert" className="max-w-sm text-sm text-amber-400">
+            {createDisabledReason}
+          </p>
+        )}
 
-      {/*
+        {/*
         ⚠️ **闸门拦住时也要给一句话。**
 
         `authGateSlot !== undefined` 是 `createDisabled` 的一个分项，而
@@ -456,13 +615,27 @@ export function NewSandboxPanelView({
         这正是这份面板自己在 provider 那三档上明令禁止的事（「禁着却不给理由，
         是最难查的那种 UI」），只是漏在了鉴权这一支。
       */}
-      {authGateSlot !== undefined && (
-        <p data-testid="auth-gate-disabled-reason" className="max-w-sm text-sm text-amber-400">
-          先完成上面的 {authGateRuntimeName ?? '这个 Agent'} 登录，才能发起任务。
-        </p>
-      )}
+        {authGateBlocked && createDisabledReason === undefined && (
+          <p
+            id="sandbox-create-reason"
+            data-testid="auth-gate-disabled-reason"
+            className="max-w-sm text-sm text-amber-400"
+          >
+            先完成上面的 {authGateRuntimeName ?? '这个 Agent'} 登录，才能发起任务。
+          </p>
+        )}
+        {!loading &&
+          imageDisabledReason === undefined &&
+          createDisabledReason === undefined &&
+          !authGateBlocked &&
+          disabledReason !== undefined && (
+            <p id="sandbox-create-reason" className="sr-only">
+              {disabledReason}
+            </p>
+          )}
+      </div>
 
-      <div className="flex gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border bg-background px-6 py-4">
         {onCancel !== undefined && (
           <Button
             type="button"
@@ -476,11 +649,18 @@ export function NewSandboxPanelView({
           </Button>
         )}
         <Button
+          className="ml-auto"
+          aria-describedby={!loading && createDisabled ? disabledReasonId : undefined}
+          aria-disabled={createDisabled}
+          title={loading ? undefined : (imageDisabledReason ?? disabledReason)}
+          data-testid="launch-task-submit"
           onClick={() => {
-            onCreate();
+            if (!createDisabled) onCreate();
           }}
-          disabled={createDisabled}
+          disabled={creating || loading}
+          style={createDisabled ? { opacity: 0.5 } : undefined}
         >
+          {creating && <Loader2 aria-hidden="true" className="size-4 animate-spin" />}
           {creating ? '创建中…' : '发起任务并打开终端'}
         </Button>
       </div>

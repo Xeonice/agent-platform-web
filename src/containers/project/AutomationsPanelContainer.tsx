@@ -1,14 +1,17 @@
 'use client';
 // 自动化面板容器（F21-7 §2/§3）：hook ↔ view 的唯一粘合点（07 §2）。
 //
-// ★ **列表 ⇄ 详情 ⇄ 表单是同一面板内的视图切换，不是三层弹层**（F21-7 §2 / P20 §8.4）。
-//   本容器整个活在 `WorkbenchContainer` 的一层 `ModalShell` 里，`view` 只是它的内部状态。
-//   `containers/project/__tests__` 里有一条断言钉住"全程只有一个 role=dialog"。
+// 列表、详情、表单、删除确认在容器拥有的同一个 AppDialog 内切换（REQ-AUT-002）。
+// 未提供 onClose 时只渲染正文，供独立视图故事与已有测试宿主使用。
 //
 // ⚠️ 本容器自己不做任何判断（文案 / 状态判定 / payload 构造全在 `lib/automation/*`，经 hook 转接）——
 //   container 被 boundaries 禁止 import `lib/`。
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useAutomations } from '@/hooks/automation/useAutomations';
+import { useAutomationRunFocus } from '@/hooks/automation/useAutomationRunFocus';
+import { useAutomationDeletionPreview } from '@/hooks/automation/useAutomationDeletionPreview';
+import { AppDialogView } from '@/views/common/AppDialog.view';
+import { DeleteAutomationConfirmView } from '@/views/project/DeleteAutomationConfirm.view';
 import { useAutomationRuns } from '@/hooks/automation/useAutomationRuns';
 import { draftFromDto, emptyDraft, useAutomationForm } from '@/hooks/automation/useAutomationForm';
 import { useAutomationPresentation } from '@/hooks/automation/useAutomationPresentation';
@@ -18,12 +21,18 @@ import { AutomationDetailView } from '@/views/project/AutomationDetail.view';
 import { AutomationFormView } from '@/views/project/AutomationForm.view';
 import type { AutomationDraft } from '@/hooks/automation/useAutomationForm';
 
-export type AutomationPanelView = 'list' | 'detail' | 'form';
+export type AutomationPanelView = 'list' | 'detail' | 'form' | 'confirm';
 
 export interface AutomationsPanelContainerProps {
   projectId: string;
   /** 关面板 + 在工作台选中该 Task（F21-7 §5「[打开 Task]」）。缺席则历史行不渲染该按钮。 */
   onOpenTask?: (sandboxId: string) => void;
+  onViewArtifacts?: (sandboxId: string) => void;
+  onClose?: () => void;
+  onCloseAutoFocus?: (event: Event) => void;
+  projectName?: string;
+  /** 任务来源入口定位规则；规则已删除时仍落到列表。 */
+  focusRuleId?: string;
   /** 供 story / 测试指定初始视图；生产恒为 'list'。 */
   initialView?: AutomationPanelView;
 }
@@ -31,13 +40,25 @@ export interface AutomationsPanelContainerProps {
 export function AutomationsPanelContainer({
   projectId,
   onOpenTask,
+  onViewArtifacts,
+  onClose,
+  onCloseAutoFocus,
+  projectName,
+  focusRuleId,
   initialView = 'list',
 }: AutomationsPanelContainerProps) {
-  const automations = useAutomations(projectId);
   const runtimes = useRuntimes();
+  const runtimeNames = useMemo(
+    () =>
+      Object.fromEntries((runtimes.data ?? []).map((runtime) => [runtime.id, runtime.displayName])),
+    [runtimes.data],
+  );
+  const automations = useAutomations(projectId, runtimeNames);
 
-  const [view, setView] = useState<AutomationPanelView>(initialView);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<AutomationPanelView>(
+    focusRuleId === undefined ? initialView : 'detail',
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(focusRuleId ?? null);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   /**
    * 这一次进详情是不是从 [查看原因] 来的。为真 ⇒ 运行历史自动展开最近一次算失败的那条。
@@ -61,11 +82,13 @@ export function AutomationsPanelContainer({
   );
 
   const runs = useAutomationRuns(
-    view === 'detail' && selectedDto !== undefined ? selectedDto.id : null,
+    (view === 'detail' || view === 'confirm') && selectedDto !== undefined ? selectedDto.id : null,
     selectedDto?.timezone ?? 'UTC',
   );
 
-  const presentation = useAutomationPresentation(selectedDto);
+  const presentation = useAutomationPresentation(selectedDto, runtimeNames);
+  const focusRegionRef = useAutomationRunFocus(runs.rows, view === 'detail' && focusLatestFailure);
+  const deletionPreview = useAutomationDeletionPreview(view === 'confirm' ? selectedId : null);
 
   const handleNewRule = useCallback(() => {
     const seed = emptyDraft();
@@ -146,14 +169,57 @@ export function AutomationsPanelContainer({
     [runtimes.data],
   );
 
+  const title =
+    view === 'confirm' ? `删除自动化规则「${selectedDto?.name ?? ''}」？` : '自动化规则';
+  const wrap = (content: ReactNode) =>
+    onClose === undefined ? (
+      content
+    ) : (
+      <AppDialogView
+        title={title}
+        {...(projectName === undefined ? {} : { subtitle: `在 ${projectName} 中` })}
+        testId="automations-modal"
+        busy={automations.saving}
+        {...(onCloseAutoFocus === undefined ? {} : { onCloseAutoFocus })}
+        onClose={() => {
+          if (view === 'confirm') setView('detail');
+          else onClose();
+        }}
+      >
+        {content}
+      </AppDialogView>
+    );
+  if (view === 'confirm' && selectedDto !== undefined)
+    return wrap(
+      <DeleteAutomationConfirmView
+        name={selectedDto.name}
+        {...(selectedRow?.nextTriggerText === undefined
+          ? {}
+          : { nextTriggerText: selectedRow.nextTriggerText })}
+        {...(deletionPreview.isError || deletionPreview.data === undefined
+          ? {}
+          : { preview: deletionPreview.data })}
+        busy={automations.saving}
+        {...(automations.actionErrorMessage === undefined
+          ? {}
+          : { errorMessage: automations.actionErrorMessage })}
+        onCancel={() => {
+          setView('detail');
+        }}
+        onDelete={() => {
+          handleDelete(selectedDto.id);
+        }}
+      />,
+    );
+
   if (view === 'form') {
-    return (
+    return wrap(
       <AutomationFormView
         mode={formMode}
         draft={form.draft}
         errors={form.errors}
         canSave={form.canSave}
-        saving={automations.savingId !== null}
+        saving={automations.saving}
         promptCount={form.promptCount}
         schedulePreview={form.schedulePreview}
         runtimeOptions={runtimeOptions}
@@ -167,6 +233,7 @@ export function AutomationsPanelContainer({
           ? {}
           : { saveErrorMessage: automations.actionErrorMessage })}
         onPatch={form.patch}
+        onBlurField={form.touch}
         onTimeZoneChange={form.setTimeZone}
         onTestWebhook={() => {
           void automations.sendWebhookTest(form.draft.webhookUrl).catch(() => {
@@ -176,16 +243,19 @@ export function AutomationsPanelContainer({
         onSave={handleSave}
         onCancel={() => {
           automations.resetWebhookTest();
-          setView(selectedId === null ? 'list' : 'detail');
+          setView(formMode === 'create' ? 'list' : 'detail');
         }}
-      />
+      />,
     );
   }
 
   if (view === 'detail' && selectedRow !== undefined && selectedDto !== undefined) {
-    return (
+    return wrap(
       <AutomationDetailView
         row={selectedRow}
+        focusRegionRef={focusRegionRef}
+        onRetryRuns={runs.refresh}
+        {...(onViewArtifacts === undefined ? {} : { onViewArtifacts })}
         focusLatestFailure={focusLatestFailure}
         configLines={presentation.configLines}
         promptPreview={presentation.promptPreview}
@@ -208,14 +278,16 @@ export function AutomationsPanelContainer({
         }}
         onEdit={handleEdit}
         onToggle={automations.toggle}
-        onDelete={handleDelete}
+        onDelete={() => {
+          setView('confirm');
+        }}
         onLoadMoreRuns={runs.loadMore}
         {...(onOpenTask === undefined ? {} : { onOpenTask })}
-      />
+      />,
     );
   }
 
-  return (
+  return wrap(
     <AutomationListView
       rows={automations.rows}
       loading={automations.loading}
@@ -229,9 +301,10 @@ export function AutomationsPanelContainer({
       togglingId={automations.togglingId}
       atLimit={automations.atLimit}
       onCreate={handleNewRule}
+      onRetry={automations.refresh}
       onSelect={handleSelectRule}
       onToggle={automations.toggle}
       onShowFailure={handleShowFailure}
-    />
+    />,
   );
 }

@@ -9,6 +9,7 @@
 // ⚠️ **安全红线（P21-4 §10.2）**：已存 secret 的值**永远不进 DOM**。
 // 本组件对 `secretStored` 的行做**兜底掩码**——即便容器不小心把原值传了下来，输入框也渲染空串。
 // 这不是重复防护，是最后一道：泄漏一次就没法收回。
+import { useId } from 'react';
 import { Button } from '@/components/ui/button';
 import type { EnvVarRowModel, EnvVarValidationError, EnvVarErrorCode } from '@/types/image';
 
@@ -74,6 +75,7 @@ export function EnvVarEditorView({
   onAddRow,
   disabled = false,
 }: EnvVarEditorProps) {
+  const editorId = useId();
   const tableErrors = errors.filter((e) => e.field === 'rows');
 
   return (
@@ -99,9 +101,15 @@ export function EnvVarEditorView({
               <input
                 type="text"
                 aria-label={`变量名 ${String(index + 1)}`}
+                aria-invalid={keyErrors.length > 0}
+                aria-describedby={
+                  keyErrors.length === 0
+                    ? undefined
+                    : keyErrors.map((e) => `${editorId}-${row.id}-${e.field}-${e.code}`).join(' ')
+                }
                 placeholder="LOG_LEVEL"
                 disabled={disabled}
-                className={`w-48 rounded-md border bg-transparent px-2 py-1 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                className={`w-full max-w-full sm:w-48 rounded-md border bg-transparent px-2 py-1 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   keyErrors.length > 0 ? 'border-red-500' : 'border-border'
                 }`}
                 value={row.key}
@@ -112,10 +120,16 @@ export function EnvVarEditorView({
               <input
                 type={row.secret ? 'password' : 'text'}
                 aria-label={`变量值 ${String(index + 1)}`}
+                aria-invalid={valueErrors.length > 0}
+                aria-describedby={
+                  valueErrors.length === 0
+                    ? undefined
+                    : valueErrors.map((e) => `${editorId}-${row.id}-${e.field}-${e.code}`).join(' ')
+                }
                 // 已存 secret：值渲染为空 + 「保持不变，输入即覆盖」（P21-4 §10.2）。
                 placeholder={masked ? '（保持不变，输入即覆盖）' : 'info'}
                 disabled={disabled}
-                className={`w-64 rounded-md border bg-transparent px-2 py-1 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                className={`w-full max-w-full sm:w-64 rounded-md border bg-transparent px-2 py-1 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   valueErrors.length > 0 ? 'border-red-500' : 'border-border'
                 }`}
                 value={masked ? '' : row.value}
@@ -157,6 +171,7 @@ export function EnvVarEditorView({
             {rowErrors.map((e) => (
               <p
                 key={`${e.field}-${e.code}`}
+                id={`${editorId}-${row.id}-${e.field}-${e.code}`}
                 role="alert"
                 data-testid="env-var-row-error"
                 data-code={e.code}
@@ -180,11 +195,20 @@ export function EnvVarEditorView({
           type="button"
           variant="outline"
           size="sm"
-          disabled={disabled || !canAddRow}
-          onClick={onAddRow}
+          disabled={disabled}
+          aria-disabled={!canAddRow}
+          aria-describedby={canAddRow ? undefined : `${editorId}-limit`}
+          onClick={() => {
+            if (canAddRow && !disabled) onAddRow();
+          }}
         >
           + 添加变量
         </Button>
+        {!canAddRow ? (
+          <span id={`${editorId}-limit`} className="ml-2 text-xs text-muted-foreground">
+            每张镜像最多 50 条
+          </span>
+        ) : null}
       </div>
     </div>
   );

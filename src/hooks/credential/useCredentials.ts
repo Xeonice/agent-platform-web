@@ -27,12 +27,13 @@ import {
 } from '@/lib/credential/runtimeCredential';
 import { matchesRuntimeSearch } from '@/lib/credential/maskAccount';
 import { useAffectedTasks } from '@/hooks/credential/useAffectedTasks';
+import { useCredentialLocation } from '@/hooks/credential/useCredentialLocation';
 import type { AffectedTasksResult } from '@/lib/credential/affectedTasks';
-import { ApiErrorException } from '@/services/api/apiError';
 import type {
   RuntimeCredentialCardModel,
   RuntimeAuthMethod,
   RuntimeAuthMode,
+  AffectedTaskItem,
 } from '@/types/runtimeCredential';
 
 /**
@@ -45,6 +46,7 @@ export type ExpandedAuthPanel = RuntimeAuthPanelTarget;
 
 /** 切「当前使用」确认弹层状态。 */
 export interface PendingModeSwitch {
+  subtitle?: string;
   runtimeId: string;
   mode: RuntimeAuthMode;
   /** 弹层标题（术语表：不说「切换生效模式」，说「切换到 X」）。 */
@@ -56,6 +58,9 @@ export interface PendingModeSwitch {
 
 /** 删除确认弹层状态（受影响的正在跑的任务 + P0-4 文案）。 */
 export interface PendingRevoke {
+  preparing: AffectedTaskItem[];
+  retryPreview: () => void;
+  otherModeLabel?: string;
   runtimeId: string;
   runtimeName: string;
   mode: RuntimeAuthMode;
@@ -136,15 +141,8 @@ export interface CredentialsRuntimeManager {
   isRowBusy: (runtimeId: string, mode: RuntimeAuthMode) => boolean;
 }
 
-function errorMessageOf(error: unknown, fallback: string): string {
-  return error instanceof ApiErrorException && error.envelope.message !== ''
-    ? error.envelope.message
-    : fallback;
-}
-
 export function useCredentials(): CredentialsRuntimeManager {
   const runtimes = useRuntimes();
-  const affectedTasks = useAffectedTasks();
   const setAuthModeMutation = useSetAuthMode();
   const revokeMutation = useRevokeRuntimeCredential();
 
@@ -152,6 +150,7 @@ export function useCredentials(): CredentialsRuntimeManager {
   const authPanel = useRuntimeAuthPanel();
   const [pendingSwitch, setPendingSwitch] = useState<PendingModeSwitch | null>(null);
   const [pendingRevoke, setPendingRevoke] = useState<PendingRevokeIdentity | null>(null);
+  const affectedTasks = useAffectedTasks(pendingRevoke);
 
   const allCards = useMemo<RuntimeCredentialCardModel[]>(
     () => (runtimes.data ?? []).map((rt) => runtimeCardModel(rt)),
@@ -190,6 +189,7 @@ export function useCredentials(): CredentialsRuntimeManager {
     },
     [openPanel],
   );
+  useCredentialLocation(cards, reauth);
 
   const closePanel = authPanel.close;
 
@@ -205,12 +205,13 @@ export function useCredentials(): CredentialsRuntimeManager {
       if (decision === null) return null;
       if (decision.kind === 'needs-setup') {
         // 切到未配置模式：不报错，就地展开该模式配置面板（F21-3 §5）。
-        openPanel(runtimeId, decision.method);
+        openPanel(runtimeId, decision.method, true);
       } else {
         setPendingSwitch({
           runtimeId,
           mode,
           title: switchModeTitle(mode),
+          subtitle: `${card.displayName} · 当前使用：${authModeLabel(card.rows.find((row) => row.active)?.mode ?? 'account')}`,
           message: switchModeConfirmText(mode),
           confirmLabel: '切换',
         });
@@ -227,11 +228,11 @@ export function useCredentials(): CredentialsRuntimeManager {
       { runtimeId, method: mode },
       {
         onSuccess: () => {
-          toast.success(`已切换到${authModeLabel(mode)}`);
+          toast.success(`已切换到 ${authModeLabel(mode)}`);
           setPendingSwitch(null);
         },
-        onError: (error) => {
-          toast.error(errorMessageOf(error, '切换失败，请稍后重试。'));
+        onError: () => {
+          toast.error('切换失败，请稍后重试。');
           setPendingSwitch(null);
         },
       },
@@ -275,8 +276,13 @@ export function useCredentials(): CredentialsRuntimeManager {
       credentialId: pendingRevoke.credentialId,
       warnActiveMode: pendingRevoke.warnActiveMode,
       otherModeConfigured: pendingRevoke.otherModeConfigured,
-      affected: affectedTasks.affectedFor(pendingRevoke.runtimeId),
+      affected: affectedTasks.affected,
       affectedKnown: affectedTasks.known,
+      preparing: affectedTasks.preparing,
+      retryPreview: affectedTasks.retry,
+      ...(pendingRevoke.otherMode === null
+        ? {}
+        : { otherModeLabel: authModeLabel(pendingRevoke.otherMode) }),
       warningText: RUNTIME_REVOKE_WARNING,
       followUpText: RUNTIME_REVOKE_FOLLOW_UP,
     };
@@ -303,8 +309,8 @@ export function useCredentials(): CredentialsRuntimeManager {
             });
           }
         },
-        onError: (error) => {
-          toast.error(errorMessageOf(error, '删除失败，请稍后重试。'));
+        onError: () => {
+          toast.error('删除失败，请稍后重试。');
           setPendingRevoke(null);
         },
       },

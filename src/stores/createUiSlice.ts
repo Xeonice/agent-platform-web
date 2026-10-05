@@ -17,6 +17,7 @@
 // 承载任务指令的字段，它现在被删掉不是"放宽"，恰恰相反 —— 指令只活在 container 的
 // 局部 state（15 §3.5 安全红线），store 上连一个能装它的位置都不该有。
 import type { StateCreator } from 'zustand';
+import type { TaskStatusFilter } from '@/types/domain';
 
 /**
  * Git 凭证回程载体（15 §3.1.1）：clone 权限失败 → 跳凭证页配置 → 配完回创建处 [重试克隆]。
@@ -31,6 +32,16 @@ export interface PendingProjectCreate {
 }
 
 export interface UiSlice {
+  automationFocusRuleId: string | null;
+  setAutomationFocusRuleId: (id: string | null) => void;
+  retainedVolumeFocusSandboxId: string | null;
+  setRetainedVolumeFocusSandboxId: (id: string | null) => void;
+  taskStatusFilter: TaskStatusFilter;
+  taskSearch: string;
+  workbenchNotice: { message: string; description?: string; retainedProjectId?: string } | null;
+  setTaskStatusFilter: (value: TaskStatusFilter) => void;
+  setTaskSearch: (value: string) => void;
+  setWorkbenchNotice: (notice: UiSlice['workbenchNotice']) => void;
   // —— 选中上下文（persist）——
   selectedSandboxId: string | null;
   selectedProjectId: string | null;
@@ -162,6 +173,15 @@ export interface UiSlice {
     | 'projectMenu'
     | null;
   setCurrentModal: (modal: UiSlice['currentModal']) => void;
+  projectCreateSource: 'git' | 'empty' | null;
+  setProjectCreateSource: (source: UiSlice['projectCreateSource']) => void;
+  projectMenuDeleteRequested: boolean;
+  setProjectMenuDeleteRequested: (value: boolean) => void;
+  visibleTerminal: { sandboxId: string; sessionId: string } | null;
+  setVisibleTerminal: (terminal: UiSlice['visibleTerminal']) => void;
+  terminalClearRequest: { sandboxId: string } | null;
+  requestTerminalClear: (sandboxId: string) => void;
+  consumeTerminalClear: () => void;
 
   // —— Git 凭证回程暂存（不 persist）——
   pendingProjectCreate: PendingProjectCreate | null;
@@ -189,6 +209,26 @@ export interface UiSlice {
 }
 
 export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
+  automationFocusRuleId: null,
+  setAutomationFocusRuleId: (id) => {
+    set({ automationFocusRuleId: id });
+  },
+  retainedVolumeFocusSandboxId: null,
+  setRetainedVolumeFocusSandboxId: (id) => {
+    set({ retainedVolumeFocusSandboxId: id });
+  },
+  taskStatusFilter: 'all',
+  taskSearch: '',
+  workbenchNotice: null,
+  setTaskStatusFilter: (taskStatusFilter): void => {
+    set({ taskStatusFilter });
+  },
+  setTaskSearch: (taskSearch): void => {
+    set({ taskSearch });
+  },
+  setWorkbenchNotice: (workbenchNotice): void => {
+    set({ workbenchNotice });
+  },
   selectedSandboxId: null,
   selectedProjectId: null,
   selectedTaskId: null,
@@ -204,7 +244,7 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
     );
   },
   setSelectedProjectId: (id): void => {
-    set({ selectedProjectId: id });
+    set({ selectedProjectId: id, ...(id !== null ? { workbenchNotice: null } : {}) });
   },
   setSelectedTaskId: (id): void => {
     set({ selectedTaskId: id });
@@ -252,6 +292,25 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
     set({ selectedProjectForMenu: projectId });
   },
   currentModal: null,
+  projectCreateSource: null,
+  setProjectCreateSource: (source): void => {
+    set({ projectCreateSource: source });
+  },
+  projectMenuDeleteRequested: false,
+  setProjectMenuDeleteRequested: (value): void => {
+    set({ projectMenuDeleteRequested: value });
+  },
+  visibleTerminal: null,
+  setVisibleTerminal: (terminal): void => {
+    set({ visibleTerminal: terminal });
+  },
+  terminalClearRequest: null,
+  requestTerminalClear: (sandboxId): void => {
+    set({ terminalClearRequest: { sandboxId } });
+  },
+  consumeTerminalClear: (): void => {
+    set({ terminalClearRequest: null });
+  },
   setCurrentModal: (modal): void => {
     set({ currentModal: modal });
   },

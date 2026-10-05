@@ -52,6 +52,7 @@ export interface TerminalTabBarProps {
    * 在沙箱里，而界面在暗示"你只有这一个"。⇒ 就地说出来，并且说清这只是**查不到**。
    */
   inventoryUnavailable?: boolean;
+  disabledReason?: string;
 }
 
 export function TerminalTabBarView({
@@ -62,6 +63,7 @@ export function TerminalTabBarView({
   onNewTerminal,
   launchOptions = [],
   inventoryUnavailable = false,
+  disabledReason,
 }: TerminalTabBarProps) {
   // 只有"纯终端"一项时不值得给一个菜单（多一次点击换不到任何选择）。
   const runtimeChoices = launchOptions.filter((o) => o.runtimeId !== undefined);
@@ -128,7 +130,20 @@ export function TerminalTabBarView({
         —— 它是"按下去直接开一个纯终端"的普通按钮，⛔ 不许挂 `aria-haspopup`，也不该有
         下拉。给一个只有一项的菜单等于凭空多要一次点击（见 `launchOptions` 注释）。
       */}
-      {hasChoice ? (
+      {disabledReason !== undefined ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-disabled
+          aria-describedby="terminal-new-disabled"
+          onClick={() => undefined}
+        >
+          + 新终端
+          <span id="terminal-new-disabled" className="sr-only">
+            {disabledReason}
+          </span>
+        </Button>
+      ) : hasChoice ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

@@ -4,7 +4,7 @@
 //   投递超时 **10 秒**、失败重试 **2 次**、退避 **5s / 25s**（⛔ 不是常见的 1s→2s→4s）。
 //   F21-7 §9.1 #12 专门点了这一条。文案取自 `lib/automation/validateWebhookUrl` 的常量，
 //   不在这里另写一份 —— 抄第二份就会漂。
-import { Check, X } from 'lucide-react';
+import { CircleCheck, CircleX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TRIGGER_ON_OPTIONS, type TriggerOn } from '@/types/automation';
 
@@ -68,10 +68,18 @@ export function WebhookSectionView({
             onChange={(e) => {
               onUrlChange(e.target.value);
             }}
+            aria-label="Webhook URL"
+            aria-invalid={errorMessage !== undefined}
+            aria-describedby={errorMessage === undefined ? undefined : 'webhook-url-error'}
             data-testid="webhook-url"
           />
 
-          <div className="flex flex-wrap gap-3 text-xs" data-testid="webhook-trigger-on">
+          <div
+            className="flex flex-wrap gap-3 text-xs"
+            role="radiogroup"
+            aria-label="什么时候发通知"
+            data-testid="webhook-trigger-on"
+          >
             {TRIGGER_ON_OPTIONS.map((option) => (
               <label key={option} className="flex items-center gap-1.5">
                 <input
@@ -100,20 +108,21 @@ export function WebhookSectionView({
             </Button>
             {testPhase === 'ok' && (
               <span
-                className="flex items-center gap-1 text-xs text-emerald-500"
+                role="status"
+                className="flex items-center gap-1 text-xs text-foreground"
                 data-testid="webhook-test-ok"
               >
-                <Check aria-hidden="true" className="h-3 w-3 shrink-0" />
+                <CircleCheck aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-success" />
                 测试消息已经送到了
               </span>
             )}
             {testPhase === 'error' && (
               <span
                 role="alert"
-                className="flex items-center gap-1 text-xs text-red-400"
+                className="flex items-center gap-1 text-xs text-foreground"
                 data-testid="webhook-test-error"
               >
-                <X aria-hidden="true" className="h-3 w-3 shrink-0" />
+                <CircleX aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-error" />
                 {testErrorMessage ?? '测试失败'}
               </span>
             )}
@@ -124,7 +133,12 @@ export function WebhookSectionView({
           </p>
 
           {errorMessage !== undefined && errorMessage !== '' && (
-            <p role="alert" className="text-xs text-red-400" data-testid="webhook-error">
+            <p
+              role="alert"
+              className="text-xs text-red-400"
+              id="webhook-url-error"
+              data-testid="webhook-error"
+            >
               {errorMessage}
             </p>
           )}

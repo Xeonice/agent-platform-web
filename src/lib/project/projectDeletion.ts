@@ -17,6 +17,7 @@ const RUNNING_STATUSES: ReadonlySet<SandboxStatus> = new Set<SandboxStatus>([
   'preparing',
   'running',
   'waiting-input',
+  'stopping',
 ]);
 
 export function isRunningTask(status: SandboxStatus): boolean {

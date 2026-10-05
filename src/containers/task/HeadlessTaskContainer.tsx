@@ -29,6 +29,7 @@ import {
   useCancelAgentTask,
   useRefetchTaskList,
   useRunAgentTask,
+  useRememberAgentTaskSelection,
   useTaskArtifactDownload,
   useTaskErrorMessage,
 } from '@/hooks/task/useAgentTask';
@@ -51,6 +52,8 @@ import {
   type TaskTimeoutMinutes,
 } from '@/types/task';
 import type { TaskSocketFactory } from '@/types/taskSocket';
+import type { TaskImageSnapshot } from '@/types/image';
+import { useTaskImageView } from '@/hooks/image/useTaskImageView';
 
 /** 默认档位：2 小时（与自动化规则的默认硬超时同口径，P21-7 §4）。 */
 const DEFAULT_TIMEOUT: TaskTimeoutMinutes = 120;
@@ -88,6 +91,7 @@ function TaskDeadlineCountdown({
 }
 
 export interface HeadlessTaskContainerProps {
+  image?: TaskImageSnapshot;
   sandboxId: string;
   /** 任务跑在哪个 runtime 上（POST 路径里的 `:rt`）——取沙箱自己的 runtime，前端不另造选择器。 */
   runtime: string;
@@ -116,8 +120,10 @@ export function HeadlessTaskContainer({
   wsBaseUrl,
   headlessTaskSupported,
   socketFactory,
+  image,
 }: HeadlessTaskContainerProps) {
   // ⚠️ 安全红线（15 §3.5）：指令**只在本容器的局部 state**，绝不写进 store / persist。
+  const imageView = useTaskImageView(image);
   const [prompt, setPrompt] = useState('');
   const [timeoutMinutes, setTimeoutMinutes] = useState<TaskTimeoutMinutes>(DEFAULT_TIMEOUT);
   const [verbose, setVerbose] = useState(false);
@@ -162,6 +168,7 @@ export function HeadlessTaskContainer({
   const reconciled = reconcileTaskId(persistedTaskId, taskList.tasks);
   const taskId = reconciled === dismissedTaskId ? null : reconciled;
   const task = taskList.tasks.find((t) => t.id === taskId);
+  useRememberAgentTaskSelection(taskId);
 
   const onExit = useCallback((): void => {
     // 终态才有完整产物列表 ⇒ 收到 exit 帧再取一次列表。**事件驱动，不是轮询**：
@@ -233,7 +240,7 @@ export function HeadlessTaskContainer({
    */
   const cancelBelongsToCurrent = taskId !== null && cancel.variables === taskId;
   const cancelPhase: TaskCancelPhase =
-    cancelBelongsToCurrent && cancel.isPending
+    cancelBelongsToCurrent && (cancel.isPending || (cancel.isSuccess && running))
       ? 'canceling'
       : confirmingTaskId !== null && confirmingTaskId === taskId
         ? 'confirming'
@@ -371,6 +378,7 @@ export function HeadlessTaskContainer({
     const latest = taskList.tasks[0];
     return (
       <HeadlessTaskDetailView
+        imageLabel={imageView.label}
         {...(latest === undefined ? {} : { task: latest })}
         onNewTask={handleOpenComposer}
         {...(latest === undefined
@@ -412,6 +420,9 @@ export function HeadlessTaskContainer({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-border">
+      {image !== undefined && (
+        <p className="break-all px-4 py-2 text-xs text-muted-foreground">镜像：{imageView.label}</p>
+      )}
       <TaskOutputPaneView
         items={stream.items}
         droppedCount={stream.droppedItems}

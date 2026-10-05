@@ -106,12 +106,18 @@ export const NoDetailNoArrow: Story = {
 
 export const WithSandboxTimelineLink: Story = {
   args: {
-    row: row({ subjectLink: { subjectId: 'sb-1', label: '查看该沙箱完整时间线' } }),
+    row: row({
+      subjectLink: {
+        subjectId: 'sb-1',
+        label: '查看该任务完整时间线',
+        subjectName: '迁移构建脚本',
+      },
+    }),
   },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole('button', { name: '查看该沙箱完整时间线' }));
-    await expect(args.onOpenTimeline).toHaveBeenCalledWith('sb-1');
+    await userEvent.click(canvas.getByRole('button', { name: '查看该任务完整时间线' }));
+    await expect(args.onOpenTimeline).toHaveBeenCalledWith('sb-1', '迁移构建脚本');
   },
 };
 

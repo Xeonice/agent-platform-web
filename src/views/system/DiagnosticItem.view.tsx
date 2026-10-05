@@ -40,6 +40,7 @@ import { Button } from '@/components/ui/button';
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { DiagnoseStatus } from '@/types/sse-protocol';
 import type { DiagnosticItemModel } from '@/types/system';
+import Link from 'next/link';
 
 const STATUS_TEXT: Readonly<Record<DiagnoseStatus, string>> = {
   ok: '正常',
@@ -48,15 +49,11 @@ const STATUS_TEXT: Readonly<Record<DiagnoseStatus, string>> = {
   warn: '警告',
   fail: '失败',
   // ⚠️ 「未得出结论」而不是「失败」：它没说这一项是坏的。
-  timeout: '未得出结论',
+  timeout: '超时未响应',
 };
 
-/**
- * ①–⑧：固定顺序的序号圆标（design/prototype.html `'①②③④⑤⑥⑦⑧'[d.id-1]`）。⚠️ 八项
- * 的展示顺序恒来自服务端首帧（`DiagnosticsCardModel.items`），这里只是把"它在这一次
- * 首帧里排第几"翻成一个圆圈数字，⛔ 不是把某个 check id 写死绑定到某个序号。
- */
-const ORDINAL_GLYPHS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'];
+/** 序号跟随首帧顺序；现有圆标之外仍显示数字，不丢掉新增检查的序号。 */
+const ORDINAL_GLYPHS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
 
 export interface DiagnosticItemProps {
   item: DiagnosticItemModel;
@@ -72,34 +69,26 @@ export interface DiagnosticItemProps {
 }
 
 export function DiagnosticItemView({ item, ordinal, expanded, onCopyHint }: DiagnosticItemProps) {
-  const pending = item.status === undefined;
-  const pillStatus: StatusPillStatus = item.status ?? 'pending';
+  const pending = item.status === undefined && !item.notReturned;
+  const pillStatus: StatusPillStatus = item.notReturned ? 'unknown' : (item.status ?? 'pending');
   const hasMore =
     item.detailText !== undefined || item.nextStep !== undefined || item.command !== undefined;
-  const ordinalGlyph = ORDINAL_GLYPHS[ordinal - 1];
+  const ordinalGlyph = ORDINAL_GLYPHS[ordinal - 1] ?? String(ordinal);
 
   return (
     <AccordionItem
       value={item.id}
       data-testid={`diagnostic-item-${item.id}`}
-      data-status={item.status ?? 'pending'}
+      data-status={item.notReturned ? 'not-returned' : (item.status ?? 'pending')}
       data-expanded={expanded ? 'true' : 'false'}
       className="flex flex-col gap-1 rounded-md border border-b border-border/60 px-3 py-2 text-sm"
     >
       <span className="flex flex-wrap items-center gap-2">
-        {/* 序号圆标（design/design-notes.md §4 Phase 1：诊断项 ①–⑧），紧跟展开箭头之后、
-            状态 pill 之前——与 design/prototype.html 的顺序一致。`ordinal` 超出 8 项时
-            （契约扩容/schema 不匹配的边角）宁可不画，也不许显示 `undefined`。 */}
-        {ordinalGlyph === undefined ? null : (
-          <span
-            aria-hidden="true"
-            className="w-4 flex-none font-mono text-xs text-muted-foreground"
-          >
-            {ordinalGlyph}
-          </span>
-        )}
-        <StatusPill status={pillStatus}>
-          {pending ? '检查中…' : STATUS_TEXT[item.status ?? 'ok']}
+        <span aria-hidden="true" className="w-4 flex-none font-mono text-xs text-muted-foreground">
+          {ordinalGlyph}
+        </span>
+        <StatusPill status={pillStatus} className={item.notReturned ? 'border-dashed' : undefined}>
+          {item.notReturned ? '未返回' : pending ? '检查中…' : STATUS_TEXT[item.status ?? 'ok']}
         </StatusPill>
         {/* `flex-1` 让 label 占满中间空间，把耗时推到行尾右对齐
             （design/prototype.html：`flex-1 truncate` 在 label 上，耗时是最后一个 flex 子项）。 */}
@@ -176,6 +165,14 @@ export function DiagnosticItemView({ item, ordinal, expanded, onCopyHint }: Diag
             >
               {item.nextStep}
             </span>
+          )}
+          {item.imageManagementHref === undefined ? null : (
+            <Link
+              href={item.imageManagementHref}
+              className="inline-flex text-sm underline underline-offset-4"
+            >
+              去镜像管理
+            </Link>
           )}
 
           {/* 第二层 ③：真正可粘贴执行的命令 —— 只有它配等宽 + [复制]。 */}

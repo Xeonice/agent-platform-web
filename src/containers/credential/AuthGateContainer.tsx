@@ -2,7 +2,10 @@
 // 鉴权拦截面板容器（07 §6.4）：向导拦截面板与凭证页卡片内嵌**共用**。方式切换 Tab + 按分支渲染
 // Device/SetupToken/ApiKey 面板。**粘贴的 code / API key 只作为本层 useState，提交即清空、不进全局 store、
 // 不进 persist（15 §3.5 安全红线）**——切 Tab / 卸载即随组件 key 重挂而丢弃。
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { useRuntimeAuthCompletion } from '@/hooks/credential/useRuntimeAuthCompletion';
 import { Check } from 'lucide-react';
 import { useRuntimeAuthFlow, type AuthSuccess } from '@/hooks/credential/useRuntimeAuthFlow';
 import {
@@ -17,6 +20,7 @@ import type { RuntimeAuthMethod } from '@/types/runtimeCredential';
 import { useOpenAuthPage } from '@/hooks/credential/useOpenAuthPage';
 
 export interface AuthGateContainerProps {
+  activateOnSuccess?: boolean;
   runtimeId: string;
   runtimeName: string;
   /**
@@ -46,6 +50,7 @@ export interface AuthGateContainerProps {
   onOpenCredentials?: () => void;
   /** 配置成功回调（掩码帐号）。 */
   onSuccess?: (result: AuthSuccess) => void;
+  inWizard?: boolean;
 }
 
 const ACCOUNT_METHODS: RuntimeAuthMethod[] = ['oauth-device', 'setup-token'];
@@ -64,6 +69,8 @@ export function AuthGateContainer({
   showOneTimeNotice,
   onOpenCredentials,
   onSuccess,
+  inWizard = false,
+  activateOnSuccess = false,
 }: AuthGateContainerProps) {
   const accountMethod = methods.find((m) => ACCOUNT_METHODS.includes(m)) ?? null;
   const hasApiKey = methods.includes('api-key');
@@ -110,17 +117,21 @@ export function AuthGateContainer({
         vendor={vendor}
         apiKeyPrefix={apiKeyPrefix}
         onSuccess={onSuccess}
+        inWizard={inWizard}
+        activateOnSuccess={activateOnSuccess}
       />
     </AuthGatePanelView>
   );
 }
 
 interface AuthBranchSlotProps {
+  activateOnSuccess?: boolean;
   runtimeId: string;
   method: RuntimeAuthMethod;
   vendor?: string;
   apiKeyPrefix?: string;
   onSuccess?: (result: AuthSuccess) => void;
+  inWizard?: boolean;
 }
 
 function AuthBranchSlot({
@@ -129,16 +140,17 @@ function AuthBranchSlot({
   vendor,
   apiKeyPrefix,
   onSuccess,
+  inWizard = false,
+  activateOnSuccess = false,
 }: AuthBranchSlotProps) {
-  const flow = useRuntimeAuthFlow({ runtimeId, method, apiKeyPrefix, onSuccess });
+  const completion = useRuntimeAuthCompletion(runtimeId, method, activateOnSuccess, onSuccess);
+  const flow = useRuntimeAuthFlow({
+    runtimeId,
+    method,
+    apiKeyPrefix,
+    onSuccess: completion.complete,
+  });
   const { state } = flow;
-
-  // 帐号授权类（device-code / setup-token）：进入即发起挑战（无前置，07 §6.2）。
-  useEffect(() => {
-    if (state.branch !== 'api-key' && state.phase === 'idle') flow.begin();
-    // 只在挂载/分支就绪时触发一次；begin 幂等于 idle→starting。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.branch]);
 
   // —— 凭证明文只在本层局部 state（提交即清空，绝不进 store/persist）——
   const [pasteCode, setPasteCode] = useState('');
@@ -148,10 +160,40 @@ function AuthBranchSlot({
 
   if (state.phase === 'success') {
     return (
-      <p className="flex items-center gap-1 text-xs text-green-400" data-testid="auth-gate-success">
-        <Check aria-hidden="true" className="h-3 w-3 shrink-0" />
-        已连上
-      </p>
+      <div className="flex flex-col gap-2">
+        <p
+          role="status"
+          className="flex items-center gap-1.5 text-sm font-medium text-[var(--v2-status-ok-fg)]"
+          data-testid="auth-gate-success"
+        >
+          <Check aria-hidden="true" className="h-4 w-4 shrink-0" />
+          已连上
+        </p>
+        {completion.refreshError && (
+          <RetryNotice
+            message="凭证已保存，切换或状态刷新还没完成，请重试。"
+            onRetry={completion.retryRefresh}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (state.phase === 'idle' && state.branch !== 'api-key') {
+    return (
+      <div className="flex flex-col gap-2">
+        <Button type="button" className="w-full" onClick={flow.begin}>
+          开始帐号登录
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          {state.branch === 'device-code'
+            ? `点了才开始：平台这时才向 ${vendor ?? '签发它的厂商'} 申请一串设备码，再带你去授权页。`
+            : `点了才开始：平台这时才去准备 ${runtimeId === 'claude-code' ? 'Claude Code' : 'Agent'} 的登录链接。`}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          登录开始后，切到 API Key、点「收起」{inWizard ? '' : '或关掉弹层'}，这次登录都会取消。
+        </p>
+      </div>
     );
   }
 
@@ -229,6 +271,7 @@ function AuthBranchSlot({
         pollError={state.phase === 'polling' && state.pollError}
         expired={state.phase === 'expired'}
         {...(state.phase === 'expired' ? { expiredReason: state.reason } : {})}
+        onRetryPoll={flow.retryPoll}
         onCopy={() => {
           void navigator.clipboard.writeText(userCode);
         }}
@@ -267,6 +310,9 @@ function RetryNotice({ message, onRetry }: { message: string; onRetry: () => voi
       >
         重试
       </button>
+      <Link href="/settings/system?diagnose=1" className="text-xs underline">
+        去系统状态诊断
+      </Link>
     </div>
   );
 }

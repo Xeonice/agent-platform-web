@@ -1,3 +1,4 @@
+import { formatVolumeBytes } from '@/lib/project/retainedVolumeModel';
 // 全局横幅的判定与文案（F21-8 §4「离线模式的跨页影响」/ 07 §8.4 / P21-8 §5 状态矩阵）。
 //
 // ⚠️ **三条纪律，每一条都对应一个"页面看起来完全正常"的写法：**
@@ -33,20 +34,12 @@ import type {
  */
 export const OFFLINE_ACTION_DISABLED_REASON = '离线模式：需连接网络才能发起任务';
 
-/**
- * 渲染顺序。**`platform-state-unknown` 在前**：它否定的是"这一屏的判定作不作数"，
- * 排在离线之下时，用户会先读到一个可能根本不成立的结论。
- *
- * ⚠️ 排序同时编码了**优先级分层**（design-notes.md §4 Phase 3 第 3 条：阻断 > 治理 > 提示）：
- * 两条 blocking（0、1）排在 `automation-needs-attention` 这条 warning（2）之前。今天只有
- * 三个生产方、每个 id 至多出现一条，靠这张表的先后顺序就足够表达"阻断压过治理"，不需要
- * 另起一个按 `severity` 分组再排序的通用比较器——等哪天同一档出现第二个生产方、需要按
- * 到达顺序或时间戳再决出同档内的先后时，再在这里升级排序逻辑（不要为了这一天还没到的
- * 需求先搭一个通用框架）。
- */
-const BANNER_RANK: Readonly<Record<BannerId, number>> = {
+/** 阻断提示先显示；治理提示由宿主记录的首次出现顺序稳定排序（REQ-WB-011）。 */
+const BANNER_RANK: Readonly<Record<string, number>> = {
   'platform-state-unknown': 0,
   offline: 1,
+  'disk-pressure': 2,
+  'retained-pressure': 2,
   'automation-needs-attention': 2,
 };
 
@@ -108,6 +101,38 @@ export function globalBanners(input: GlobalBannerInput): GlobalBannerModel[] {
     });
   }
 
+  const resources = input.resources;
+  if (resources !== undefined && resources.disk.level !== 'ok')
+    out.push({
+      id: 'disk-pressure',
+      severity: 'warning',
+      title: resources.disk.level === 'critical' ? '磁盘已满' : '磁盘快满了',
+      description: `已用 ${String(resources.disk.usedPercent)}%，还剩 ${formatVolumeBytes(resources.disk.availableBytes)}`,
+      actionLabel: '去清理',
+    });
+  if (resources !== undefined && resources.retainedVolumes.level !== 'ok')
+    out.push({
+      id: 'retained-pressure',
+      severity: 'warning',
+      title: `保留下来的成果占了数据目录的 ${String(resources.retainedVolumes.percentOfDisk)}%`,
+      description: `共 ${String(resources.retainedVolumes.count)} 份，占用 ${formatVolumeBytes(resources.retainedVolumes.totalBytes)}。下载需要的成果，再清理腾出空间。`,
+      actionLabel: '去清理',
+    });
+  for (const runtime of input.runtimes ?? []) {
+    if (runtime.credentialStatus !== 'expiring' && runtime.credentialStatus !== 'expired') continue;
+    const expires = runtime.expiresAt === undefined ? undefined : Date.parse(runtime.expiresAt);
+    const days =
+      expires === undefined || Number.isNaN(expires) || input.now === undefined
+        ? undefined
+        : Math.max(0, Math.floor((expires - input.now) / 86_400_000));
+    out.push({
+      id: `credential-login:${runtime.id}`,
+      severity: 'warning',
+      title: `${runtime.displayName} 的帐号登录${runtime.credentialStatus === 'expired' ? '已过期' : days === undefined ? '即将过期' : ` ${String(days)} 天后过期`}`,
+      description: '重新登录后，新发起的任务会使用更新后的帐号凭证。',
+      actionLabel: '重新登录',
+    });
+  }
   return out;
 }
 
@@ -143,12 +168,17 @@ export function isDismissedToday(
 export function bannerStackModel(
   banners: readonly GlobalBannerModel[],
   dismissedIds: readonly BannerId[],
+  appearanceOrder: readonly BannerId[] = banners.map((banner) => banner.id),
 ): BannerStackModel {
   return {
     banners: banners
       .filter((b) => !dismissedIds.includes(b.id))
       .slice()
-      .sort((a, b) => BANNER_RANK[a.id] - BANNER_RANK[b.id]),
+      .sort(
+        (a, b) =>
+          (BANNER_RANK[a.id] ?? 2) - (BANNER_RANK[b.id] ?? 2) ||
+          appearanceOrder.indexOf(a.id) - appearanceOrder.indexOf(b.id),
+      ),
   };
 }
 

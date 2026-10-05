@@ -111,7 +111,7 @@ export const DiskOnlyCritical: Story = {
     await expect(canvas.getByText('资源耗尽，无法创建新 Task')).toBeInTheDocument();
     await expect(canvas.queryByText('资源充足')).not.toBeInTheDocument();
     // 磁盘触发时要有它**自己的**出路：停 Task 不释放保留卷。
-    await expect(canvas.getByRole('button', { name: '清理保留卷' })).toBeInTheDocument();
+    await expect(canvas.getByRole('button', { name: '清理成果' })).toBeInTheDocument();
     // ⭐ design/design-notes.md §4 Phase 1：`critical` 映射到 `StatusPill` 的 `fail`
     // （红），不是 `warn`（琥珀）——磁盘/CPU/内存耗尽与"确定坏了"共用同一套视觉严重度。
     // MUTATION：把 `ResourcePoolCard.view.tsx` 里 `LEVEL_PILL_STATUS.critical` 从

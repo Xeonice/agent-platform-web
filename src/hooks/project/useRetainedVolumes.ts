@@ -45,6 +45,7 @@ export function describeRetainedVolumeError(error: unknown): string | undefined 
 export interface UseRetainedVolumesResult {
   rows: RetainedVolumeRow[];
   totals: RetainedVolumeTotals;
+  groupTotals: Record<string, RetainedVolumeTotals>;
   loading: boolean;
   /** 列表本身取不回来（与"取回来是空的"是两回事，view 各有分支）。 */
   loadErrorMessage?: string;
@@ -52,7 +53,9 @@ export interface UseRetainedVolumesResult {
   actionErrorMessage?: string;
   /** 正在删除的那一条 id（逐行禁用，不是整面板禁用）。 */
   deletingId: string | null;
-  remove: (id: string) => void;
+  remove: (id: string) => Promise<void>;
+  retry: () => void;
+  retrying: boolean;
   /** `<a href download>` 用的地址。⛔ 不要拿它去 fetch，见 service 里的长注释。 */
   archiveUrl: (id: string) => string;
 }
@@ -62,9 +65,8 @@ export function useRetainedVolumes(projectId: string | null): UseRetainedVolumes
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const query = useQuery({
-    queryKey: retainedVolumeKeys.list(projectId ?? ''),
-    queryFn: () => listRetainedVolumes(projectId ?? ''),
-    enabled: projectId !== null,
+    queryKey: retainedVolumeKeys.list(projectId ?? 'all'),
+    queryFn: () => listRetainedVolumes(projectId),
     staleTime: 30_000,
   });
 
@@ -74,9 +76,9 @@ export function useRetainedVolumes(projectId: string | null): UseRetainedVolumes
       setDeletingId(null);
       // ⚠️ 失败也 invalidate：404 = 那条记录真的没了，列表必须跟着更新，
       //    否则用户会对着一条已经不存在的记录反复点删除。
-      if (projectId !== null) {
-        void queryClient.invalidateQueries({ queryKey: retainedVolumeKeys.list(projectId) });
-      }
+      void queryClient.invalidateQueries({ queryKey: retainedVolumeKeys.all() });
+      void queryClient.invalidateQueries({ queryKey: ['system'] });
+      void queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
   });
 
@@ -85,12 +87,20 @@ export function useRetainedVolumes(projectId: string | null): UseRetainedVolumes
   const data = query.data;
   const rows = useMemo(() => retainedVolumeRows(data ?? [], new Date()), [data]);
   const totals = useMemo(() => retainedVolumeTotals(data ?? []), [data]);
+  const groupTotals = useMemo(() => {
+    const groups: Record<string, RetainedVolumeTotals> = {};
+    for (const dto of data ?? [])
+      groups[dto.projectId] = retainedVolumeTotals(
+        (data ?? []).filter((item) => item.projectId === dto.projectId),
+      );
+    return groups;
+  }, [data]);
 
-  const removeMutate = remove.mutate;
+  const removeMutate = remove.mutateAsync;
   const doRemove = useCallback(
     (id: string) => {
       setDeletingId(id);
-      removeMutate(id);
+      return removeMutate(id);
     },
     [removeMutate],
   );
@@ -101,7 +111,12 @@ export function useRetainedVolumes(projectId: string | null): UseRetainedVolumes
   return {
     rows,
     totals,
-    loading: query.isPending && projectId !== null,
+    groupTotals,
+    loading: query.isPending,
+    retry: () => {
+      void query.refetch();
+    },
+    retrying: query.isFetching,
     ...(loadErrorMessage === undefined ? {} : { loadErrorMessage }),
     ...(actionErrorMessage === undefined ? {} : { actionErrorMessage }),
     deletingId,

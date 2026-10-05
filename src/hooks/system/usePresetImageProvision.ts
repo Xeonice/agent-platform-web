@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ApiErrorException } from '@/services/api/apiError';
 import { provisionPresetImage } from '@/services/api/system.service';
 import type { ProvisionStageFrame } from '@/types/sse-protocol';
 
@@ -24,6 +25,8 @@ const STAGE_LABEL: Readonly<Record<ProvisionStageFrame['stage'], string>> = {
 
 export interface UsePresetImageProvisionResult {
   isProvisioning: boolean;
+  notice?: string;
+  disabledReason?: string;
   /** 当前阶段的一句话。⛔ **失败在哪一步必须说得出**（五阶段的下一步各不相同）。 */
   statusText: string | undefined;
   error: string | undefined;
@@ -62,11 +65,17 @@ export function usePresetImageProvision(
   const [error, setError] = useState<string | undefined>(undefined);
   const [progress, setProgress] = useState<number | null | undefined>(undefined);
   const [elapsedSeconds, setElapsedSeconds] = useState<number | undefined>(undefined);
+  const [notice, setNotice] = useState<string>();
+  const [disabledReason, setDisabledReason] = useState<string>();
+  const activeRunRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   /** 自动只开一次。⛔ 不是 state：它不该触发重渲染，也不该被重置。 */
   const autoStartedRef = useRef(false);
 
   const start = useCallback(() => {
+    if (activeRunRef.current || disabledReason !== undefined) return;
+    activeRunRef.current = true;
+    setNotice(undefined);
     // ⚠️ 掐掉上一条流（连点）—— 与诊断同一条重入保护。⛔ 后端也有并发闸，但那会返 409；
     //    在这里先掐掉，用户看到的就不是一条报错而是"重新开始"。
     abortRef.current?.abort();
@@ -82,18 +91,18 @@ export function usePresetImageProvision(
       {
         onStage: (f) => {
           if (controller.signal.aborted) return;
-          const pct = f.progress === null ? '' : ` · ${String(Math.round(f.progress * 100))}%`;
           // ⚠️ `skipped` 要说出来。把没发生的步骤悄悄跳过，用户会以为校验做过了。
           const mark = f.status === 'skipped' ? '（跳过）' : '';
-          setStatusText(`${STAGE_LABEL[f.stage]}${mark}：${f.message}${pct}`);
+          setStatusText(`${STAGE_LABEL[f.stage]}${mark}：${f.message}`);
           // ⚠️ 原样转发，⛔ 不做二次判断——`null` 与数字都是合法取值，见类型上的注释。
           setProgress(f.progress);
         },
         onDone: (f) => {
           if (controller.signal.aborted) return;
+          activeRunRef.current = false;
           setProvisioning(false);
           if (f.ok) {
-            setStatusText('已放到位，正在重新检测…');
+            setStatusText('已下载到本机，正在重新检测…');
             onFinished();
           } else {
             // ⛔ 失败时**保留最后一条阶段文案**：它说的是失败在哪一步，而那正是下一步的依据。
@@ -104,10 +113,23 @@ export function usePresetImageProvision(
       controller.signal,
     ).catch((e: unknown) => {
       if (controller.signal.aborted) return;
+      activeRunRef.current = false;
       setProvisioning(false);
-      setError(e instanceof Error ? e.message : '准备镜像失败');
+      if (
+        e instanceof ApiErrorException &&
+        e.envelope.code === 'PRESET_IMAGE_PROVISION_IN_FLIGHT'
+      ) {
+        setNotice('已经在下载了（之前发起的那一次还没结束），稍后回来看。');
+        setStatusText(undefined);
+      } else if (
+        e instanceof ApiErrorException &&
+        e.envelope.code === 'PRESET_IMAGE_NOT_PROVISIONABLE'
+      ) {
+        setDisabledReason(e.envelope.message);
+        setError(e.envelope.message);
+      } else setError(e instanceof Error ? e.message : '准备镜像失败');
     });
-  }, [onFinished]);
+  }, [onFinished, disabledReason]);
 
   // ⚠️ **真实挂钟时间，不是估算**：`Date.now()` 差值，每秒刷新一次。只在这一轮搬运真的
   //    在跑的时候递增——结束（成功/失败）或还没开始过都是 `undefined`，⛔ 不假装还在计时。
@@ -138,5 +160,14 @@ export function usePresetImageProvision(
     start();
   }, [autoStart, start]);
 
-  return { isProvisioning, statusText, error, progress, elapsedSeconds, start };
+  return {
+    isProvisioning,
+    statusText,
+    error,
+    progress,
+    elapsedSeconds,
+    notice,
+    disabledReason,
+    start,
+  };
 }

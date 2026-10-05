@@ -72,7 +72,9 @@ export const TestOk: Story = {
     const el = within(canvasElement).getByTestId('webhook-test-ok');
     await expect(el).toBeInTheDocument();
     // MUTATION：把 `<Check>` 换回 ✅ 字符或换成另一个图标 ⇒ 这条先红。
-    await expect(el.querySelector('svg.lucide-check')).not.toBeNull();
+    await expect(el).toHaveAttribute('role', 'status');
+    await expect(el).toHaveTextContent('测试消息已经送到了');
+    await expect(el.querySelector('svg.lucide-circle-check')).not.toBeNull();
   },
 };
 
@@ -81,7 +83,8 @@ export const TestFailed: Story = {
   play: async ({ canvasElement }) => {
     const el = within(canvasElement).getByTestId('webhook-test-error');
     await expect(el).toHaveTextContent('目标地址不可达');
-    await expect(el.querySelector('svg.lucide-x')).not.toBeNull();
+    await expect(el).toHaveAttribute('role', 'alert');
+    await expect(el.querySelector('svg.lucide-circle-x')).not.toBeNull();
   },
 };
 

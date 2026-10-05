@@ -112,6 +112,11 @@ export interface AutomationScheduleConfig {
 }
 
 export type AutomationDto = components['schemas']['AutomationResponseDto'];
+export type AutomationDeletionPreviewDto =
+  components['schemas']['AutomationDeletionPreviewResponseDto'];
+
+/** Cross-project attention overview, emitted from the API's Zod contract. */
+export type AutomationAttentionItem = components['schemas']['AutomationAttentionItemResponseDto'];
 
 export type AutomationRunDto = components['schemas']['AutomationRunResponseDto'];
 
@@ -281,4 +286,6 @@ export interface AutomationAttention {
   description?: string;
   /** 动作按钮文案；点了应当打开该项目的自动化面板。 */
   actionLabel?: string;
+  /** Project of the first named rule; opening it must not change the workbench selection. */
+  projectId?: string;
 }

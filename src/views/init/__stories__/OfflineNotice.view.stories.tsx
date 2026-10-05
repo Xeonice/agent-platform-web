@@ -32,8 +32,8 @@ export const Offline: Story = {
     const button = canvas.getByRole('button', { name: '我知道，继续' });
     await expect(button).toBeEnabled();
     // 说清是**物理约束**而不是"请检查网络设置"——后者会让用户在一台确实没外网的机器上一直找自己的错。
-    await expect(canvas.getByTestId('offline-notice')).toHaveTextContent('物理约束');
-    await expect(canvas.getByTestId('offline-notice')).toHaveTextContent('其余功能');
+    await expect(canvas.getByTestId('offline-notice')).toHaveTextContent('网络恢复后无需重装');
+    await expect(canvas.getByTestId('offline-notice')).toHaveTextContent('Agent 不可用');
     // ⛔ 不点名具体 runtime：runtime 是开放注册表，点名的那句在装了第三方 runtime 的
     //    平台上是错的（判定与文案都在 lib，本页只负责把它原样说出来）。
     await expect(canvas.getByTestId('offline-notice')).not.toHaveTextContent(/codex|claude/i);

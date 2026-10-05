@@ -47,17 +47,17 @@ const STATUS_PILL_ICONS: Record<StatusPillStatus, LucideIcon> = {
 };
 
 export const statusPillVariants = cva(
-  'inline-flex h-[22px] items-center gap-[5px] whitespace-nowrap rounded-sm border px-2 text-xs font-medium leading-none',
+  'inline-flex h-5 items-center gap-[5px] whitespace-nowrap rounded-full border border-transparent px-2 text-xs font-medium leading-none',
   {
     variants: {
       status: {
-        ok: 'border-[hsl(var(--success)/0.28)] bg-[hsl(var(--success)/0.12)] text-success',
-        info: 'border-[hsl(var(--info)/0.28)] bg-[hsl(var(--info)/0.12)] text-info',
-        warn: 'border-[hsl(var(--warning)/0.3)] bg-[hsl(var(--warning)/0.14)] text-warning',
-        fail: 'border-[hsl(var(--error)/0.28)] bg-[hsl(var(--error)/0.12)] text-error',
-        timeout: 'border-[hsl(var(--timeout)/0.3)] bg-[hsl(var(--timeout)/0.13)] text-timeout',
+        ok: 'bg-[var(--v2-status-ok-subtle-bg)] text-[var(--v2-status-ok-fg)]',
+        info: 'bg-[var(--v2-status-info-subtle-bg)] text-[var(--v2-status-info-fg)]',
+        warn: 'bg-[var(--v2-status-warn-subtle-bg)] text-[var(--v2-status-warn-fg)]',
+        fail: 'bg-[var(--v2-status-fail-subtle-bg)] text-[var(--v2-status-fail-fg)]',
+        timeout: 'bg-[var(--v2-status-timeout-subtle-bg)] text-[var(--v2-status-timeout-fg)]',
         // pending：灰底，无边框强调（视觉手法列的原话）——边框用 --border 但不着色。
-        pending: 'border-border bg-[hsl(var(--foreground)/0.05)] text-foreground-muted',
+        pending: 'bg-[var(--v2-status-neutral-subtle-bg)] text-foreground-muted',
         // skipped/unknown：透明底 + 虚线边框，区别于其余六态的实心浅底。
         skipped: 'border-dashed border-[hsl(var(--warning)/0.55)] bg-transparent text-warning',
         unknown:

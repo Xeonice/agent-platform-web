@@ -26,8 +26,8 @@ const LEVEL_ORDER: readonly ResourceLevel[] = ['ok', 'warn', 'critical'];
 const OVERALL_TEXT: Readonly<Record<ResourceLevel, string>> = {
   ok: '资源充足',
   // 三档各自一句，且**这一句要说出下一步动作**——"资源警告"四个字用户读完不知道要干嘛。
-  warn: '资源紧张，建议停掉一些任务',
-  critical: '资源耗尽，现在建不了新任务',
+  warn: '资源紧张',
+  critical: '资源耗尽',
 };
 
 /**
@@ -105,6 +105,9 @@ function retainedModel(dto: SystemResourcesDto, now: Date): RetainedVolumeModel 
     // ⚠️ 「DATA_ROOT」是运维方在 `.env` 里写的名字，界面上说「数据目录」；
     //    括号里保留一次原名做桥接 —— 去掉它，看着界面找 `.env` 里那一行的人就断线了。
     shareText: `占数据目录（DATA_ROOT）的 ${String(r.percentOfDisk)}%`,
+    ...(r.level === 'ok'
+      ? {}
+      : { warningText: `保留下来的成果已占数据目录的 ${String(r.percentOfDisk)}%，建议手动清理` }),
     ...(countdown === undefined ? {} : { countdownText: countdown }),
     truncated: r.truncated,
   };
@@ -139,11 +142,36 @@ export function resourcePoolModel(dto: SystemResourcesDto, now: Date): ResourceP
   ];
 
   const overallLevel = overallResourceLevel(gauges.map((g) => g.level));
+  const capacity = dto.capacity;
 
   return {
     gauges,
     overallLevel,
     overallText: OVERALL_TEXT[overallLevel],
+    ...(capacity === undefined
+      ? {}
+      : {
+          capacityText: `还能再发 ${String(capacity.remainingTasks)} 个任务`,
+          capacityLevel:
+            capacity.remainingTasks === 0
+              ? 'critical'
+              : capacity.remainingTasks === 1
+                ? 'warn'
+                : 'ok',
+          capacityHint: `${capacity.remainingTasks === 0 ? `新任务会被拒绝：${capacity.basis}。` : ''}已登记 ${String(capacity.registeredTasks)} 个任务（含已停止的），本机最多 ${String(capacity.maxTasks)} 个。`,
+        }),
+    nextSteps: [
+      ...(dto.ram.level !== 'ok'
+        ? ['内存吃紧：停掉一些任务，释放内存。']
+        : dto.cpu.level !== 'ok'
+          ? ['CPU 占用较高：停掉一些任务。']
+          : []),
+      ...(dto.disk.level === 'ok'
+        ? []
+        : [
+            `${dto.disk.level === 'critical' ? '磁盘满了' : '磁盘快满了'}：清理成果或删掉不用的项目。`,
+          ]),
+    ],
     activeTasks: dto.activeTasks,
     reservedPercent: dto.disk.reservedPercent,
     retained: retainedModel(dto, now),

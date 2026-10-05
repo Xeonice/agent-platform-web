@@ -7,9 +7,11 @@
 // ⚠️ **整体那一行说的是最差维度，不是平均**：`{cpu:10%, ram:20%, disk:98%}` 要显示
 // 「资源耗尽，无法创建新 Task」。判定在 lib，但这一行的存在本身是产品要求——把三条水位条
 // 摆出来让用户自己看，等于把"还能不能再发一个 Task"这个唯一的问题留给他自己算。
-import { AlertTriangle, Clock, Gift, XCircle } from 'lucide-react';
+import { AlertTriangle, CircleX, Clock, Gift, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
+import type { Ref } from 'react';
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { ResourceGaugeModel, ResourceLevel, ResourcePoolCardModel } from '@/types/system';
 
@@ -54,6 +56,7 @@ export interface ResourcePoolCardProps {
   onRefresh: () => void;
   /** [清理保留卷] → 保留卷管理（停 Task 不释放保留卷，所以磁盘告警要有它自己的出路）。 */
   onCleanupRetained: () => void;
+  cleanupTriggerRef?: Ref<HTMLButtonElement> | undefined;
 }
 
 function Gauge({ gauge }: { gauge: ResourceGaugeModel }) {
@@ -101,11 +104,13 @@ export function ResourcePoolCardView({
   isRefreshing,
   onRefresh,
   onCleanupRetained,
+  cleanupTriggerRef,
 }: ResourcePoolCardProps) {
   return (
     <section
       aria-labelledby="resource-pool-heading"
-      className="flex flex-col gap-3 rounded-lg border border-border p-4"
+      aria-busy={!isError && model === null}
+      className="flex flex-col gap-3 rounded-lg border border-border p-4 [container-type:inline-size]"
     >
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="resource-pool-heading" className="text-base font-semibold">
@@ -130,29 +135,81 @@ export function ResourcePoolCardView({
           本机资源读取失败，当前数字不可用 —— 请点 [刷新] 重试
         </p>
       ) : model === null ? (
-        <p className="text-sm text-muted-foreground">读取中…</p>
+        <div>
+          <p role="status" className="sr-only">
+            本机资源读取中…
+          </p>
+          <div aria-hidden="true" className="space-y-3" data-testid="resources-skeleton">
+            <div className="space-y-1">
+              <Skeleton className="h-7 w-48" />
+              <Skeleton className="h-8 w-full [@container(min-width:300px)]:h-4" />
+            </div>
+            {['cpu', 'ram', 'disk'].map((id) => (
+              <div key={id} className="space-y-1">
+                <div className="flex justify-between">
+                  <Skeleton className="h-5 w-28" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+                {id === 'disk' && <Skeleton className="h-4 w-32" />}
+                <Skeleton className="h-1.5 w-full" />
+              </div>
+            ))}
+            <div className="space-y-1">
+              <Skeleton className="h-5 w-48" />
+              <Skeleton className="h-8 w-full [@container(min-width:400px)]:h-4" />
+            </div>
+            <Skeleton className="h-[72px] w-full [@container(min-width:400px)]:h-[34px]" />
+          </div>
+        </div>
       ) : (
         <>
+          {model.capacityText === undefined ? null : (
+            <div className="space-y-1" data-testid="resource-capacity">
+              <p className="flex items-center gap-2 text-xl font-semibold">
+                {model.capacityLevel === 'critical' ? (
+                  <CircleX aria-hidden="true" className="h-5 w-5 text-destructive" />
+                ) : model.capacityLevel === 'warn' ? (
+                  <AlertTriangle aria-hidden="true" className="h-5 w-5 text-warning" />
+                ) : null}
+                <span
+                  className={
+                    model.capacityLevel === 'critical' ? 'text-destructive' : 'text-foreground'
+                  }
+                >
+                  {model.capacityText}
+                </span>
+              </p>
+              <p className="min-h-8 text-xs text-muted-foreground sm:min-h-4">
+                {model.capacityHint}
+              </p>
+            </div>
+          )}
           <ul className="flex flex-col gap-3">
             {model.gauges.map((gauge) => (
               <Gauge key={gauge.id} gauge={gauge} />
             ))}
           </ul>
-
-          <p data-testid="resource-overall" className="flex flex-wrap items-center gap-2 text-sm">
-            {/* ⚠️ pill 文字跟着 `overallLevel` 走（正常/警告/严重），⛔ 不是原型里那个
+          <div data-testid="resource-overall" className="space-y-1">
+            <p className="flex flex-wrap items-center gap-2 text-sm">
+              {/* ⚠️ pill 文字跟着 `overallLevel` 走（正常/警告/严重），⛔ 不是原型里那个
                 永远 `ok`/「就绪」的静态演示样例——那份原型数据没有覆盖 critical 场景，
                 原样照抄会在资源耗尽时显示一枚绿色的「就绪」，与旁边「无法创建新 Task」
                 自相矛盾。 */}
-            <StatusPill status={LEVEL_PILL_STATUS[model.overallLevel]}>
-              {LEVEL_TEXT[model.overallLevel]}
-            </StatusPill>
-            <span className="font-medium">{model.overallText}</span>
-            <span className="text-muted-foreground">
-              · 当前活跃任务：{model.activeTasks} · 留出 {model.reservedPercent}%
-              不拿去跑任务（上面的进度条分母仍然是总容量）
-            </span>
-          </p>
+              <StatusPill status={LEVEL_PILL_STATUS[model.overallLevel]}>
+                {LEVEL_TEXT[model.overallLevel]}
+              </StatusPill>
+              <span className="font-medium">{model.overallText}</span>
+            </p>
+            <p className="min-h-8 text-xs text-muted-foreground sm:min-h-4">
+              {model.capacityText === undefined ? <>· 当前活跃任务：{model.activeTasks} </> : null}·
+              留出 {model.reservedPercent}% 不拿去跑任务（上面的进度条分母仍然是总容量）
+            </p>
+          </div>
+          {model.nextSteps?.map((step) => (
+            <p key={step} className="text-sm">
+              {step}
+            </p>
+          ))}
 
           <div
             data-testid="retained-volumes"
@@ -160,7 +217,7 @@ export function ResourcePoolCardView({
           >
             <Gift aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
             <span>
-              保留卷占用 {model.retained.sizeText}（{model.retained.count} 个 ·{' '}
+              成果占用 {model.retained.sizeText}（{model.retained.count} 个 ·{' '}
               {model.retained.shareText}）
             </span>
             {model.retained.countdownText === undefined ? null : (
@@ -176,9 +233,21 @@ export function ResourcePoolCardView({
                 目录过多，统计已截断 —— 实际占用不小于这个数
               </span>
             ) : null}
+            {model.retained.level === 'ok' ? null : (
+              <p role="status" className="flex w-full flex-wrap items-center gap-2">
+                <StatusPill status="warn">警告</StatusPill>
+                {model.retained.warningText}
+              </p>
+            )}
             {model.showCleanupRetained ? (
-              <Button type="button" size="sm" variant="outline" onClick={onCleanupRetained}>
-                清理保留卷
+              <Button
+                ref={cleanupTriggerRef}
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onCleanupRetained}
+              >
+                清理成果
               </Button>
             ) : null}
           </div>

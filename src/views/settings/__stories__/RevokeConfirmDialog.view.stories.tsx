@@ -3,10 +3,8 @@ import { expect, within } from 'storybook/test';
 import { RevokeConfirmDialogView } from '@/views/settings/RevokeConfirmDialog.view';
 
 // P0-4 文案（与 lib/runtimeCredential 的两条常量同源；story 不可 import lib，故就地内联）。
-const RUNTIME_REVOKE_WARNING =
-  '删除会重启正在用这份凭证跑的任务；已经被带出沙箱的 token，平台这边删不掉。';
-const RUNTIME_REVOKE_FOLLOW_UP =
-  '担心已经外流的话，去签发这串凭证的厂商后台把它作废，那边才是唯一能真正吊销它的地方。';
+const RUNTIME_REVOKE_WARNING = '已经从任务里带出去的 token，平台删不掉。';
+const RUNTIME_REVOKE_FOLLOW_UP = '去签发这串凭证的厂商后台把它作废，只有那边能让它真正失效。';
 
 const noop = (): void => undefined;
 
@@ -39,10 +37,10 @@ type Story = StoryObj<typeof RevokeConfirmDialogView>;
 /** 确实查过了、确实没有任务在跑。 */
 export const NoAffected: Story = {
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await expect(canvas.getByText(/现在没有任务在用这份凭证/)).toBeVisible();
     // P0-4 的断言必现，且**必须带着能做的那件事**一起出现。
-    await expect(canvas.getByText(/平台这边删不掉/)).toBeVisible();
+    await expect(canvas.getByText(RUNTIME_REVOKE_WARNING)).toBeVisible();
     await expect(canvas.getByText(/厂商后台/)).toBeVisible();
   },
 };
@@ -50,12 +48,12 @@ export const NoAffected: Story = {
 /**
  * ⛔ **清单查不到**：绝不能渲染成「没有任务在跑」。
  * 这一条钉的正是那个 bug —— 上游恒传空数组时，用户看到的是一句确定的「没有」，
- * 然后按下删除，正在跑的 10 个任务全被重启。
+ * 然后按下删除，正在用这份凭证的任务都会被销毁。
  */
 export const AffectedUnknown: Story = {
   args: { affectedKnown: false },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body);
     await expect(canvas.getByTestId('affected-unknown')).toBeVisible();
     await expect(canvas.queryByText(/现在没有任务在用这份凭证/)).toBeNull();
   },

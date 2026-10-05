@@ -54,6 +54,7 @@ export function ProjectGroupHeaderView({
   return (
     <div
       data-testid="project-group-header"
+      data-project-group={projectId}
       data-variant={failed ? 'cloneFailed' : 'normal'}
       className="relative flex items-center gap-1"
     >
@@ -75,8 +76,10 @@ export function ProjectGroupHeaderView({
         aria-expanded={!collapsed}
         data-testid="project-group-toggle"
         className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        aria-disabled={cloneStatus !== 'ready'}
+        aria-describedby={cloneStatus !== 'ready' ? `project-fold-reason-${projectId}` : undefined}
         onClick={() => {
-          onToggleCollapse(projectId);
+          if (cloneStatus === 'ready') onToggleCollapse(projectId);
         }}
       >
         <ChevronDown
@@ -84,11 +87,20 @@ export function ProjectGroupHeaderView({
           className={'h-3.5 w-3.5 transition-transform' + (collapsed ? ' -rotate-90' : '')}
         />
       </button>
+      {cloneStatus !== 'ready' && (
+        <span className="sr-only" id={`project-fold-reason-${projectId}`}>
+          {cloneStatus === 'cloning'
+            ? '项目正在克隆，任务列表暂不能展开'
+            : '项目克隆失败，先重试克隆或改为空项目'}
+        </span>
+      )}
       <button
         type="button"
         aria-current={selected || undefined}
+        aria-live="polite"
+        aria-label={`${projectName}${cloneStatus === 'cloning' ? '，克隆中' : failed ? '，克隆失败' : ''}，${String(taskCount)} 个任务`}
         className={
-          'flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted ' +
+          'flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left text-sm font-medium text-muted-foreground hover:bg-muted ' +
           (selected ? 'bg-muted text-foreground' : '')
         }
         onClick={() => {
@@ -103,18 +115,18 @@ export function ProjectGroupHeaderView({
         <span className="min-w-0 flex-1 truncate">{projectName}</span>
         {/* 计数徽标**右对齐**（原型 `renderTaskTree()`：`<span class="text-xs ...">${g.tasks.length}</span>`
             单独一格，不再拼进名字后面的「· N」——名字长时两者会挤在一起不可读。 */}
-        <span className="shrink-0 text-xs text-muted-foreground" data-testid="project-group-count">
-          {taskCount}
-        </span>
         {cloneStatus === 'cloning' && (
-          <span className="rounded bg-yellow-500/15 px-1 text-[10px] text-yellow-300">克隆中</span>
+          <span className="rounded bg-yellow-500/15 px-1 text-xs text-yellow-300">克隆中</span>
         )}
         {failed && (
-          <span className="flex items-center gap-0.5 rounded bg-red-500/15 px-1 text-[10px] text-red-300">
+          <span className="flex items-center gap-0.5 rounded bg-red-500/15 px-1 text-xs text-red-300">
             <AlertTriangle aria-hidden="true" className="h-2.5 w-2.5" />
             克隆失败
           </span>
         )}
+        <span className="shrink-0 text-xs text-muted-foreground" data-testid="project-group-count">
+          {taskCount}
+        </span>
       </button>
 
       {/*

@@ -15,9 +15,23 @@
 // 删除按钮混在一个面板里。现在两个跳转入口提到了 ⋯ 菜单（一级直达），删除入口也只留
 // 菜单那一个，本容器只剩**详情**与**删除确认**两个视图。
 // ⛔ 不要在详情视图里再加 [删除项目…]：那正是拆分前的病（同一个不可逆动作两个入口）。
+import {
+  focusDestructiveCancel,
+  revealProjectTasks,
+} from '@/hooks/workbench/useWorkbenchObjectFocus';
 import { useState } from 'react';
-import { useDeleteProject, describeProjectActionError } from '@/hooks/project/useProjects';
-import { useProjectRunningTasks } from '@/hooks/project/useProjectRunningTasks';
+import {
+  useDeleteProject,
+  useCancelClone,
+  useProjects,
+  describeProjectActionError,
+  describeCancelCloneError,
+} from '@/hooks/project/useProjects';
+import { useProjectDeletionPreview } from '@/hooks/project/useProjectDeletionPreview';
+import { useSandboxes } from '@/hooks/sandbox/useSandboxes';
+import { useProjectClone } from '@/hooks/project/useProjectClone';
+import { useAppStore } from '@/stores';
+import { AppDialogView } from '@/views/common/AppDialog.view';
 import { useRetainedVolumes } from '@/hooks/project/useRetainedVolumes';
 import { useAutomations } from '@/hooks/automation/useAutomations';
 import { ProjectDetailPanelView } from '@/views/project/ProjectDetailPanel.view';
@@ -25,6 +39,8 @@ import { DeleteProjectConfirmView } from '@/views/project/DeleteProjectConfirm.v
 import type { ProjectCloneStatus } from '@/types/project';
 
 export interface ProjectMenuContainerProps {
+  ownDialog?: boolean;
+  onCloseAutoFocus?: (event: Event) => void;
   projectId: string;
   projectName: string;
   cloneStatus: ProjectCloneStatus;
@@ -40,6 +56,8 @@ export interface ProjectMenuContainerProps {
 
 export function ProjectMenuContainer({
   projectId,
+  ownDialog = false,
+  onCloseAutoFocus,
   projectName,
   cloneStatus,
   taskCount,
@@ -50,7 +68,21 @@ export function ProjectMenuContainer({
 }: ProjectMenuContainerProps) {
   const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | undefined>(undefined);
   const deleteProject = useDeleteProject();
-  const runningTaskCount = useProjectRunningTasks(projectId);
+  const projects = useProjects();
+  const project = projects.data?.find((item) => item.id === projectId);
+  const preview = useProjectDeletionPreview(
+    projectId,
+    initialConfirmingDelete,
+    project?.baselineSizeBytes,
+  );
+  const tasks = useSandboxes();
+  const clone = useProjectClone(projectId);
+  const cancelClone = useCancelClone();
+  const activeTasks = (preview.data?.activeTasks ?? []).map((task) => ({
+    ...task,
+    statusLabel: tasks.data?.find((item) => item.id === task.id)?.phaseLabel,
+  }));
+  const runningTaskCount = activeTasks.length;
 
   /*
    * 摘要计数。⚠️ 只在**详情视图**要，删除确认视图不需要 —— 但 hook 不能条件调用，
@@ -65,6 +97,7 @@ export function ProjectMenuContainer({
     setDeleteErrorMessage(undefined);
     deleteProject.mutate(projectId, {
       onSuccess: () => {
+        useAppStore.getState().setWorkbenchNotice({ message: `已删除项目「${projectName}」` });
         onDeleted(projectId);
       },
       onError: (error) => {
@@ -74,14 +107,66 @@ export function ProjectMenuContainer({
     });
   };
 
+  const wrap = (body: React.ReactNode) =>
+    ownDialog ? (
+      <AppDialogView
+        title={initialConfirmingDelete ? `删除项目「${projectName}」？` : '项目详情'}
+        subtitle={projectName}
+        onClose={onClose}
+        onCloseAutoFocus={onCloseAutoFocus}
+        onOpenAutoFocus={initialConfirmingDelete ? focusDestructiveCancel : undefined}
+        busy={deleteProject.isPending || cancelClone.isPending}
+        testId="modal-project-menu"
+      >
+        {body}
+      </AppDialogView>
+    ) : (
+      body
+    );
   if (initialConfirmingDelete) {
-    return (
+    return wrap(
       <DeleteProjectConfirmView
         projectName={projectName}
-        taskCount={taskCount}
+        taskCount={preview.data?.taskCount ?? taskCount}
+        loading={preview.isPending}
+        loadError={preview.isError}
+        activeTasks={activeTasks}
+        taskNames={(tasks.data ?? [])
+          .filter((task) => task.projectId === projectId)
+          .map((task) => task.name)}
+        allTasksStopped={(tasks.data ?? [])
+          .filter((task) => task.projectId === projectId)
+          .every((task) => task.status === 'stopped')}
+        retainedCount={preview.data?.retainedVolumeCount ?? retained.rows.length}
+        retainedNames={retained.rows.map((row) => row.originText)}
+        automationCount={preview.data?.automationCount ?? 0}
+        baselineText={preview.baselineText}
+        cloneDownloadedText={clone.downloadedText}
+        onRetryPreview={() => {
+          void preview.refetch();
+        }}
+        onGoTasks={() => {
+          revealProjectTasks(projectId);
+          onClose();
+        }}
+        onGoRetained={() => {
+          const state = useAppStore.getState();
+          state.setSelectedProjectForMenu(projectId);
+          state.setCurrentModal('retainedVolumes');
+        }}
+        onCancelClone={() => {
+          cancelClone.mutate(projectId, {
+            onSuccess: () => {
+              onClose();
+            },
+            onError: (error) => {
+              setDeleteErrorMessage(describeCancelCloneError(error));
+            },
+          });
+        }}
         runningTaskCount={runningTaskCount}
         cloning={cloneStatus === 'cloning'}
-        busy={deleteProject.isPending}
+        busy={deleteProject.isPending || cancelClone.isPending}
         {...(deleteErrorMessage === undefined ? {} : { errorMessage: deleteErrorMessage })}
         onConfirm={handleConfirmDelete}
         onCancel={() => {
@@ -89,17 +174,21 @@ export function ProjectMenuContainer({
           // 把他丢进一个没点过的详情页是答非所问。
           onClose();
         }}
-      />
+      />,
     );
   }
 
-  return (
+  return wrap(
     <ProjectDetailPanelView
       cloneStatus={cloneStatus}
       taskCount={taskCount}
       createdAt={createdAt}
-      {...(retained.loading ? {} : { retainedCount: retained.rows.length })}
-      {...(automations.loading ? {} : { automationCount: automations.dtos.length })}
-    />
+      {...(retained.loading || retained.loadErrorMessage
+        ? {}
+        : { retainedCount: retained.rows.length })}
+      {...(automations.loading || automations.loadErrorMessage
+        ? {}
+        : { automationCount: automations.dtos.length })}
+    />,
   );
 }

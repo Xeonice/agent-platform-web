@@ -36,7 +36,7 @@ export interface ProjectCloneState {
   /** 接收速率；卡住时先归零，比百分比停住更早暴露。 */
   bytesPerSecond?: number;
   errorCode?: string;
-  /** 本地记的起始时刻（epoch ms），用于"已用 x:xx"。不来自后端。 */
+  /** 后端克隆开始时刻（epoch ms），用于"已用 x:xx"；没有真实锚点时缺席。 */
   startedAt?: number;
 }
 

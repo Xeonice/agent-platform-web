@@ -13,9 +13,15 @@ export interface InitErrorPanelProps {
   message: string;
   isRetrying: boolean;
   onRetry: () => void;
+  onReviewConnectivity?: () => void;
 }
 
-export function InitErrorPanelView({ message, isRetrying, onRetry }: InitErrorPanelProps) {
+export function InitErrorPanelView({
+  message,
+  isRetrying,
+  onRetry,
+  onReviewConnectivity,
+}: InitErrorPanelProps) {
   return (
     <section
       role="alert"
@@ -25,8 +31,13 @@ export function InitErrorPanelView({ message, isRetrying, onRetry }: InitErrorPa
       <p className="font-medium text-red-500">初始化没有完成</p>
       <p className="whitespace-pre-wrap break-words text-muted-foreground">{message}</p>
       <div>
-        <Button type="button" variant="outline" disabled={isRetrying} onClick={onRetry}>
-          {isRetrying ? '重试中…' : '重试'}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={isRetrying}
+          onClick={onReviewConnectivity ?? onRetry}
+        >
+          {isRetrying ? '重试中…' : onReviewConnectivity === undefined ? '重试' : '回到联网检查'}
         </Button>
       </div>
     </section>

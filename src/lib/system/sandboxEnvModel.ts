@@ -28,10 +28,14 @@ const ERROR_RATE = 0.1;
  * 10.1% 是 error；恰好 1% / 10% 落在下一档的"不越线"侧（与后端 `rate <= 0.1 ⇒ healthy`
  * 同向，两边不会在 10.0% 这个点上给出相反结论）。
  */
-export function sandboxEnvHealthLevel(p: ProviderHealthDto): ProviderHealthLevel {
+export function sandboxEnvHealthLevel(
+  p: ProviderHealthDto,
+  warnRate = WARN_RATE,
+  errorRate = ERROR_RATE,
+): ProviderHealthLevel {
   if (p.recentFailureRate === undefined) return 'no-sample';
-  if (p.recentFailureRate > ERROR_RATE) return 'error';
-  if (p.recentFailureRate > WARN_RATE) return 'warning';
+  if (p.recentFailureRate > errorRate) return 'error';
+  if (p.recentFailureRate > warnRate) return 'warning';
   return 'ok';
 }
 
@@ -58,7 +62,7 @@ export function sandboxEnvFailureText(p: ProviderHealthDto): string {
  */
 const CAPABILITY_LABEL: Readonly<Record<string, string>> = {
   spawnTty: '交互式终端',
-  volumeMount: '挂载工作区目录',
+  volumeMount: '挂载代码副本',
   updateResources: '运行中调整资源',
   pauseResume: '暂停 / 恢复',
   snapshot: '快照',
@@ -102,12 +106,16 @@ export function sandboxEnvDisplayName(id: string): string {
   return SANDBOX_ENV_LABEL[id] ?? id;
 }
 
-function sandboxEnvRow(p: ProviderHealthDto): SandboxEnvRowModel {
+function sandboxEnvRow(
+  p: ProviderHealthDto,
+  warnRate: number,
+  errorRate: number,
+): SandboxEnvRowModel {
   return {
     id: p.id,
     displayName: sandboxEnvDisplayName(p.id),
     isDefault: p.isDefault,
-    level: sandboxEnvHealthLevel(p),
+    level: sandboxEnvHealthLevel(p, warnRate, errorRate),
     failureText: sandboxEnvFailureText(p),
     capabilityText: capabilityText(p.capabilities),
   };
@@ -134,9 +142,10 @@ export function healthWindowText(ms: number): string {
 
 export function sandboxEnvStatusModel(dto: SystemProvidersDto): SandboxEnvStatusCardModel {
   return {
-    providers: dto.providers.map(sandboxEnvRow),
+    providers: dto.providers.map((p) => sandboxEnvRow(p, dto.healthWarnRate, dto.healthErrorRate)),
     runtimes: dto.runtimes.map(runtimeRow),
     imageSpecs: dto.imageSpecs.map((s) => ({ id: s.id, isDefault: s.isDefault })),
     windowText: healthWindowText(dto.healthWindowMs),
+    thresholdText: `阈值 >${percentText(dto.healthWarnRate)} 警告 · >${percentText(dto.healthErrorRate)} 故障`,
   };
 }

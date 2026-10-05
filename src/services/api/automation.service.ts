@@ -1,15 +1,11 @@
-// 自动化 REST（10 §6.5 的 7 条 + webhook-test）。
-//
-// ⚠️ **本文件不走 typed `apiClient`，与 `retainedVolume.service.ts` 上一轮同一处境**：
-// `openapi.json` 里还没有 `/api/projects/:id/automations` 与 `/api/automations/*`
-// （后端并行实现中），`createClient<paths>` 连路径字面量都不接受。
-// services/ 是全站唯一允许 `fetch` 的层（07 §3 规则 5），退到裸 fetch 是合法的；
-// 代价是丢了编译期形状保护，由 `types/automation.ts` 的 zod schema 在运行时补回来。
-// ⏳ 后端重导 openapi 之后：把这些函数改回 `apiClient`，zod 校验保留。
-import { API_BASE_URL } from '@/services/api/client';
+// Automation REST. The attention overview uses the typed client; existing CRUD keeps its fetch path.
+// Every response is validated by Zod against the generated DTO shape before entering the UI.
+import { API_BASE_URL, apiClient } from '@/services/api/client';
 import { ApiErrorException, toApiError } from '@/services/api/apiError';
 import {
+  AutomationAttentionListSchema,
   AutomationDtoSchema,
+  AutomationDeletionPreviewSchema,
   AutomationListSchema,
   AutomationRunDtoSchema,
   AutomationRunPageSchema,
@@ -17,6 +13,7 @@ import {
 } from '@/types/automation.schema';
 import { RUNS_PAGE_SIZE } from '@/types/automation';
 import type {
+  AutomationAttentionItem,
   AutomationDto,
   AutomationRunDto,
   AutomationRunPage,
@@ -76,6 +73,19 @@ export async function listAutomations(projectId: string): Promise<AutomationDto[
   );
   await ensureOk(response);
   return parseOrThrow(response, AutomationListSchema);
+}
+
+/** All attention rules in one read; independent of project selection and panel caches. */
+export async function listAutomationAttention(): Promise<AutomationAttentionItem[]> {
+  const { data, error, response } = await apiClient.GET('/api/automations/attention');
+  if (!response.ok) {
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
+  }
+  const parsed = AutomationAttentionListSchema.safeParse(data);
+  if (!parsed.success) {
+    throw new ApiErrorException(toApiError(undefined, response.status), response.status);
+  }
+  return parsed.data;
 }
 
 /** `POST /api/projects/:id/automations`。请求体**必带 `timezone`**（创建即快照，23 I-AUT-9）。 */
@@ -202,4 +212,13 @@ export async function testWebhook(url: string): Promise<void> {
       200,
     );
   }
+}
+
+export async function getAutomationDeletionPreview(id: string) {
+  const response = await fetch(
+    `${apiOrigin()}/api/automations/${encodeURIComponent(id)}/deletion-preview`,
+    { credentials: CREDENTIALS },
+  );
+  await ensureOk(response);
+  return parseOrThrow(response, AutomationDeletionPreviewSchema);
 }

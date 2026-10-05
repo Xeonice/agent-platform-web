@@ -37,16 +37,15 @@ export const NoRunningTasks: Story = {
     const cascade = canvas.getByTestId('delete-cascade-copy');
     await expect(cascade).toHaveTextContent('会删掉');
     await expect(cascade).toHaveTextContent('5 个任务');
-    await expect(cascade).toHaveTextContent('会留下');
+    await expect(cascade).toHaveTextContent('不受影响');
     await expect(cascade).toHaveTextContent('远端 Git 仓库不受影响');
     await expect(cascade).toHaveTextContent('删掉之后');
     await expect(cascade).toHaveTextContent('拿不回来');
     // ⛔ 界面上别处没有的词不许出现在这里（用户没法把「成果卷」和菜单里那一项对上）。
     await expect(cascade.textContent).not.toContain('成果卷');
     await expect(cascade.textContent).not.toContain('数据卷');
-    await expect(canvas.getByTestId('delete-running-warning')).toHaveTextContent(
-      '当前没有运行中的任务',
-    );
+    await expect(canvas.queryByTestId('delete-running-warning')).not.toBeInTheDocument();
+    await expect(canvas.getByTestId('delete-confirm')).toBeEnabled();
     // 非 cloning ⇒ 不出现「先取消克隆」那句（两项文案不能像，§10.6 第 2 条）。
     await expect(canvas.queryByTestId('delete-cloning-note')).not.toBeInTheDocument();
   },
@@ -58,8 +57,9 @@ export const TwoRunningTasks: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const warning = canvas.getByTestId('delete-running-warning');
-    await expect(warning).toHaveTextContent('其中 2 个任务正在跑，会被强制停下');
-    await expect(warning).toHaveAttribute('role', 'alert');
+    await expect(warning).toHaveTextContent('请先停止或销毁 2 个还在活动的任务');
+    await expect(canvas.getByTestId('delete-confirm')).toHaveAttribute('aria-disabled', 'true');
+    await expect(canvas.getByRole('button', { name: '去停止或销毁' })).toBeInTheDocument();
   },
 };
 

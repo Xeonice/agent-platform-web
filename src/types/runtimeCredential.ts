@@ -5,6 +5,8 @@ import type { components } from '@/types/generated/openapi';
 
 /** GET /api/runtimes 聚合项：卡片元数据 + 凭证状态 + **逐模式已配置明细**（主数据源，F21-3 §4）。 */
 export type RuntimeDto = components['schemas']['RuntimeResponseDto'];
+export type RuntimeCredentialDeletionPreview =
+  components['schemas']['RuntimeCredentialDeletionPreviewResponseDto'];
 
 /** 逐模式已配置凭证摘要（RuntimeResponseDto.credentials[] 的一项；未配置的模式不在数组里）。 */
 export type RuntimeCredentialSummary = RuntimeDto['credentials'][number];
@@ -76,6 +78,7 @@ export interface AuthModeRow {
 
 /** runtime 凭证卡片视图模型（lib/runtimeCredential 派生）。 */
 export interface RuntimeCredentialCardModel {
+  pendingTeardownCount?: number;
   runtimeId: string;
   displayName: string;
   vendor: string;
@@ -106,6 +109,9 @@ export interface AffectedTaskInput {
 export interface AffectedTaskItem {
   id: string;
   name: string;
+  runtime?: string;
+  status?: string;
+  headless?: boolean;
 }
 
 /** 受影响运行中 Task 派生结果（前 10 + restCount + total）。 */

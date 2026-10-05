@@ -17,11 +17,10 @@ export const Ok: Story = {
   args: { result: { ok: true, message: '' } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByText('连接成功')).toBeInTheDocument();
-    // MUTATION：把 `<Check>` 换回 ✅ 字符或换成 `<X>` ⇒ 这条先红——只锁文案
-    // 锁不住"真的换成了成功图标"。
+    await expect(canvas.getByRole('status')).toBeInTheDocument();
+    // 成功状态使用设计稿的 CircleCheck SVG。
     await expect(
-      canvas.getByTestId('test-connection-icon').classList.contains('lucide-check'),
+      canvas.getByTestId('test-connection-icon').classList.contains('lucide-circle-check'),
     ).toBe(true);
   },
 };
@@ -32,9 +31,9 @@ export const Failed: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByText(/认证失败/)).toBeInTheDocument();
-    await expect(canvas.getByTestId('test-connection-icon').classList.contains('lucide-x')).toBe(
-      true,
-    );
+    await expect(canvas.getByRole('alert')).toBeInTheDocument();
+    await expect(
+      canvas.getByTestId('test-connection-icon').classList.contains('lucide-circle-x'),
+    ).toBe(true);
   },
 };

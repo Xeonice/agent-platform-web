@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { expect, within } from 'storybook/test';
+import { expect, fn, userEvent, within } from 'storybook/test';
 import { EnvVarEditorView } from '@/views/image/EnvVarEditor.view';
 import type { EnvVarRowModel } from '@/types/image';
 
@@ -172,10 +172,16 @@ export const AtRowLimit: Story = {
     })),
     valueByteCounts: Array.from({ length: 50 }, () => 1),
     canAddRow: false,
+    onAddRow: fn(),
   },
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByRole('button', { name: '+ 添加变量' })).toBeDisabled();
+    const add = canvas.getByRole('button', { name: '+ 添加变量' });
+    await expect(add).toHaveAttribute('aria-disabled', 'true');
+    await expect(add).toHaveAccessibleDescription('每张镜像最多 50 条');
+    await userEvent.click(add);
+    await expect(add).toHaveFocus();
+    await expect(args.onAddRow).not.toHaveBeenCalled();
   },
 };
 

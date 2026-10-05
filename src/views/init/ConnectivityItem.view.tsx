@@ -29,16 +29,18 @@ export function ConnectivityItemView({ row, pending = false }: ConnectivityItemP
       data-ok={row.ok ? 'true' : 'false'}
       data-timed-out={row.timedOut === true ? 'true' : 'false'}
       data-model-api={row.modelApi ? 'true' : 'false'}
-      className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
+      className="flex flex-col gap-2 px-4 py-3 text-sm"
     >
       <span className="flex flex-wrap items-center gap-2">
-        <StatusPill status={status}>{statusText}</StatusPill>
         <span className="font-medium">{row.target}</span>
         <span
           data-testid={`connectivity-kind-${row.id}`}
           className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
         >
           {row.kindText}
+        </span>
+        <span className="ml-auto">
+          <StatusPill status={status}>{statusText}</StatusPill>
         </span>
       </span>
       {row.hint === undefined || pending ? null : (

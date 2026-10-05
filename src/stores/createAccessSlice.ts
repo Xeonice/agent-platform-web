@@ -8,8 +8,9 @@ export interface AccessSlice {
   accessLocked: boolean;
   /** 锁定原因文案（来自后端错误信封 message，可空）。 */
   accessLockReason: string | null;
+  accessLockUntil: number;
   /** 置为锁定（幂等）；reason 用于解锁门展示。 */
-  lockAccess: (reason?: string | null) => void;
+  lockAccess: (reason?: string | null, retryAfterSec?: number) => void;
   /** 解锁成功后复位。 */
   clearAccessLock: () => void;
 }
@@ -17,10 +18,16 @@ export interface AccessSlice {
 export const createAccessSlice: StateCreator<AccessSlice, [], [], AccessSlice> = (set) => ({
   accessLocked: false,
   accessLockReason: null,
-  lockAccess: (reason = null): void => {
-    set({ accessLocked: true, accessLockReason: reason });
+  accessLockUntil: 0,
+  lockAccess: (reason = null, retryAfterSec): void => {
+    set((state) => ({
+      accessLocked: true,
+      accessLockReason: reason,
+      accessLockUntil:
+        retryAfterSec === undefined ? state.accessLockUntil : Date.now() + retryAfterSec * 1000,
+    }));
   },
   clearAccessLock: (): void => {
-    set({ accessLocked: false, accessLockReason: null });
+    set({ accessLocked: false, accessLockReason: null, accessLockUntil: 0 });
   },
 });
