@@ -7,11 +7,11 @@ import type { paths } from '@/types/generated/openapi';
  * 后端 NestJS `setGlobalPrefix('api')`，故生成的 openapi.json 路径键已自带 `/api` 前缀（如 `/api/health`），
  * baseUrl 只放 origin，避免与路径里的前缀重复。
  *
- * ⚠️ **兜底是空串 —— 空串就是「同源相对路径」，而那是唯一在真浏览器里跑得通的默认。**
- * 后端没有 CORS（preflight 404、响应无 `Access-Control-*`），任何跨源 origin 都会被浏览器
- * 拦下，连请求都发不出去；`/api/*` 由 `next.config.mjs` 的 rewrites 转给后端（见那里的长注释）。
- * 兜底值曾经是 `http://localhost:3001`，于是**没配 env 的人拿到的是一条必然失败的默认路**
- * ——「默认值的作用是让『没配』这件事被看见」在这里正好反了：它让没配**看起来像配好了**。
+ * 空串使用同源 `/api/*`，由 next.config.mjs 的 rewrites 转发，供本地开发与 Docker 使用。
+ * Vercel 前端连接独立 API 时配置 HTTPS origin，并将 NEXT_PUBLIC_WS_BASE_URL 配成同一
+ * API origin，让解锁 cookie、REST/SSE 与 WebSocket 属于同一个 API host。
+ * 后端必须允许前端 origin 的 credentialed CORS。NEXT_PUBLIC_* 在 build 时写入浏览器产物，
+ * 调整部署环境的值后需要重新 build；单独 promote 旧产物不会替换其中的地址。
  *
  * ⚠️ 测试与 Storybook **不跑在 Next 下**，没有 rewrites，而 node 的 `fetch` 不接受相对路径。
  * 它们由 `src/acceptance/setup.ts` 显式把这个 env 设成绝对地址，让 MSW 有个确定的 origin 可拦。

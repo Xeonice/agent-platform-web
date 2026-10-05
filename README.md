@@ -10,12 +10,33 @@
 pnpm install
 pnpm generate:api        # 从 openapi.json 生成 src/types/generated/openapi.d.ts（后端权威生成物）
 cp .env.example .env      # 填占位即可；.env 已 gitignore，禁止提交真实值
-pnpm dev                 # http://localhost:3000（默认**直连真后端**）
+pnpm dev                 # http://localhost:3000（默认经 Next 同源代理连接真后端）
 NEXT_PUBLIC_API_MOCK=1 pnpm dev   # 需要浏览器 mock 时才开（此前 dev 无条件起 MSW 且关不掉）
 pnpm storybook           # http://localhost:6006 看全部视图的形态与交互
 ```
 
 首次或 CI 首拉需 `pnpm exec msw init public/`（生成 MSW worker 文件，dev 浏览器 mock 用）。
+
+## Vercel 前端与 Mac mini API
+
+Vercel 项目使用仓库根目录、Next.js preset、Node `22.x`、`pnpm@9.15.0`，安装命令 `pnpm install --frozen-lockfile`，构建命令 `pnpm build`，输出目录使用 Next 默认值。`ENABLE_EXPERIMENTAL_COREPACK=1` 使安装版本遵循 `packageManager`。
+
+Production 配置：
+
+| 环境变量                   | 值                                  |
+| -------------------------- | ----------------------------------- |
+| `NEXT_PUBLIC_API_BASE_URL` | `https://agent-api.douglasdong.com` |
+| `NEXT_PUBLIC_WS_BASE_URL`  | `https://agent-api.douglasdong.com` |
+| `API_ORIGIN`               | `https://agent-api.douglasdong.com` |
+| `NEXT_PUBLIC_API_MOCK`     | `0`                                 |
+
+Web 使用 `https://agent.douglasdong.com`。浏览器的 REST、解锁、诊断/镜像 SSE、下载与三个 Socket.IO 通道均直接连接 API；请求携带凭证，`ap_session` 为 API 域的 HttpOnly cookie。API 必须精确允许 Web origin 的 credentialed CORS 与 WebSocket Origin，并启用 Secure cookie。前端不保存或读取会话 cookie。
+
+本地开发和 Docker 仍可把两个 public base 留空，经 Next rewrites 同源代理；API_ORIGIN 指向可达后端。不要混合“Web 域解锁 / REST 代理”和“API 域 WebSocket”，否则 host-only cookie 的归属不同。
+
+`NEXT_PUBLIC_*` 在构建时写入浏览器产物；改变环境变量需要重新构建。将已构建的 STAGED Production 产物提升到生产域名不会重新写入这些值。仓库 `vercel.json` 的 `git.deploymentEnabled=false` 暂停 Git 自动部署，发布由部署流程显式控制；`gitProviderOptions.createDeployments` 只控制 GitHub 部署通知。
+
+Preview 暂时关闭。准备隔离后端后，使用同站点的 `agent-preview.douglasdong.com` 与 `agent-api-preview.douglasdong.com`，Preview 的 REST/WS/rewrite 三项均指向 Preview API。默认 `*.vercel.app` 预览域不加入生产 Origin 白名单。
 
 ## 目录怎么找东西
 

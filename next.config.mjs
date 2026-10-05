@@ -33,42 +33,17 @@ const nextConfig = {
     ignoreBuildErrors: false,
   },
   /**
-   * ★ 把 `/api/*` 转给后端，让浏览器**只跟 Next 同源通信**。
+   * 本地开发与 Docker 同源模式：浏览器的 API/WS public base 留空，
+   * `/api/*` 和 `/socket.io` 由 Next 转发到 API_ORIGIN。
    *
-   * ── 它修的是什么 ─────────────────────────────────────────────────────────
-   * 后端**完全没有 CORS**：带 `Origin` 的响应里一个 `Access-Control-*` 头都没有，
-   * preflight `OPTIONS /api/projects` 直接 404。而 `ap_session` 是 HttpOnly cookie，
-   * 跨源必须 `credentials: 'include'` + 精确 origin 白名单——两样后端都没有。
-   * 于是「前端 :3000 直连后端 :3001」这条路**在真浏览器里从来跑不通**，
-   * 表现是建项目时一句「网络错误，请稍后重试」（fetch 被浏览器拦下，请求都没发出去）。
+   * Vercel + 外部 API 模式：NEXT_PUBLIC_API_BASE_URL 与 NEXT_PUBLIC_WS_BASE_URL
+   * 同时设为同一个 HTTPS API origin。REST、SSE、解锁与 Socket.IO 全部直接访问 API，
+   * API 负责精确的 Origin 白名单与 credentialed CORS；host-only ap_session 留在 API 域。
+   * 两种模式的 cookie 归属必须一致，不能只将 WS 直连、却通过 Web 域解锁。
    *
-   * ⚠️ 而 773 条单测全绿：MSW 替身让前端与它自己的替身完全自洽，
-   * **真浏览器打真后端这条路没人走过**（LIVE-RUN-FINDINGS 共性 2 的又一例）。
-   * 上一轮撞见时是拿一个临时 `proxy.mjs` 糊过去的——那是脚手架，进程一没就复发。
-   *
-   * ── 为什么是这条路而不是后端开 CORS ────────────────────────────────────
-   * 后端一行不改，继续 loopback-only、不放开任何跨源（shared/11 §3）。
-   * 开 CORS 等于允许指定的本机页面直接打后端，那是**放宽**攻击面来换开发便利。
-   *
-   * ── WebSocket 也走这里（2026-08-30 实测改） ──────────────────────────────
-   * 此处**曾经**写着「rewrites 只处理 HTTP，不代理 upgrade，所以 WS 用绝对地址直连
-   * 后端」。在 Next 15.5.23 上实测**不成立**：加上下面三条 `/socket.io` 规则后，
-   * polling 与 websocket 两种 transport 都能经 Next 转到后端，浏览器里真终端的
-   * 上下行数据流也通（从局域网 IP 打开验证，不是 localhost 巧合）。
-   *
-   * ⇒ `NEXT_PUBLIC_WS_BASE_URL` **留空走同源**。这消掉的不只是一行配置：
-   *   · 绝对地址是**构建期**烤进 bundle 的，而它该填什么取决于**运行时**访问者用的
-   *     host —— 一个构建期常量根本回答不了这个问题。烤 `ws://localhost:3100`，
-   *     同事从局域网打开时它就去连**同事自己机器**的 3100。换 host = 重新 build。
-   *   · `ap_session` 是 host-only cookie（`Set-Cookie` 不带 `Domain`），**只认 host、
-   *     不区分端口**。同源之后 host 必然一致，这条约束自动消失 —— 此前它是靠人肉
-   *     纪律维持的，填错的症状是握手被 `EventsGateway` 拒然后无限重连。
-   *   · socket.io 从 `location.protocol` 推 ws/wss ⇒ https 部署自动对，而写死的
-   *     `ws://` 在 https 页面下会被浏览器当 mixed content 拦掉。
-   *
-   * ⚠️ 三条规则不能合并成一条 `/socket.io/:path*`：`:path*` 匹配空串时，Next 拼
-   * destination 会把尾斜杠**吃掉**，后端收到 `/socket.io?EIO=4…`（少一个 `/`）⇒ 404。
-   * 空 path 那两条必须把尾斜杠写死在 destination 里。
+   * 三条 `/socket.io` 规则保留本地 Next 的 upgrade 转发；Vercel 的外部 API 模式
+   * 使用直连 WebSocket。空 path 必须写死尾斜杠，避免 Next 吃掉 `/socket.io/` 的 `/`。
+   * API_ORIGIN 是构建时生成 rewrite 的目标，NEXT_PUBLIC_* 也在构建时写入浏览器产物。
    */
   async rewrites() {
     return [
