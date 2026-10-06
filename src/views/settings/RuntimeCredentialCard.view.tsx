@@ -14,6 +14,7 @@ export interface RuntimeCredentialCardProps {
   model: RuntimeCredentialCardModel;
   /** 就地展开的授权面板（容器按 expandedPanel 定位渲染 AuthGateContainer）。 */
   expandedSlot?: ReactNode;
+  expandedMode?: RuntimeAuthMode;
   onSwitch: (mode: RuntimeAuthMode) => void;
   onNeedSetup: (mode: RuntimeAuthMode) => void;
   onReauth: (method: RuntimeAuthMethod) => void;
@@ -30,13 +31,7 @@ const STATUS_LABEL: Record<RuntimeCredentialCardModel['status'], string> = {
   expired: '已过期',
 };
 
-/**
- * 卡片状态 → `StatusPill` 八态（design/prototype.html #credentials + design-notes.md
- * Phase 6 映射表）。
- *
- * ⚠️ `none` 映射到 `skipped`（虚线框），⛔ **不是 `fail`**——「未配置」不是错误，是
- * 「这一路没走」。只配了 API Key 没配帐号登录的用户，看见红色会以为自己弄坏了什么。
- */
+/** 凭证 none 映射为 skipped，未配置不等于错误；其它状态沿用 StatusPill 语义。 */
 const STATUS_PILL_STATUS: Record<RuntimeCredentialCardModel['status'], StatusPillStatus> = {
   none: 'skipped',
   active: 'ok',
@@ -47,6 +42,7 @@ const STATUS_PILL_STATUS: Record<RuntimeCredentialCardModel['status'], StatusPil
 export function RuntimeCredentialCardView({
   model,
   expandedSlot,
+  expandedMode,
   onSwitch,
   onNeedSetup,
   onReauth,
@@ -55,10 +51,16 @@ export function RuntimeCredentialCardView({
   rowBusy,
 }: RuntimeCredentialCardProps) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-      <header className="flex items-center justify-between gap-2">
-        <div className="flex flex-col">
-          <h3 className="text-sm font-semibold">{model.displayName}</h3>
+    <div
+      role="group"
+      aria-label={model.displayName}
+      className="overflow-hidden rounded-lg border border-border bg-card"
+    >
+      <header className="flex min-h-14 items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h3 id={`runtime-card-${model.runtimeId}`} className="text-sm font-semibold">
+            {model.displayName}
+          </h3>
           <span className="text-xs text-muted-foreground">{model.vendor}</span>
         </div>
         <StatusPill status={STATUS_PILL_STATUS[model.status]} data-testid="credential-status-pill">
@@ -66,15 +68,22 @@ export function RuntimeCredentialCardView({
         </StatusPill>
       </header>
 
-      {/* ⭐ 分隔线代替卡中卡：外层已经是一张卡（`rounded-lg border`），帐号登录 / API Key
-          两法不再各自套一层边框，改成 `divide-y` 分隔线（design/prototype.html #credentials
-          `border-t border-border divide-y`；design-notes.md Phase 6 ③）——此前是
-          `card > bordered-row` 两层边框，「哪个是一张卡」变得含糊。 */}
-      <div className="flex flex-col divide-y divide-border border-t border-border">
+      {/* 外层卡片内用分隔线组织帐号登录与 API Key，避免重复嵌套边框。 */}
+      <div
+        role="radiogroup"
+        aria-labelledby={`runtime-card-${model.runtimeId}`}
+        className="divide-y divide-border"
+      >
         {model.rows.map((row) => (
           <AuthMethodRadioRowView
             key={row.mode}
             row={row}
+            runtimeId={model.runtimeId}
+            panelExpanded={
+              expandedSlot !== undefined &&
+              expandedSlot !== null &&
+              (expandedMode === undefined || expandedMode === row.mode)
+            }
             busy={rowBusy?.(row.mode) ?? false}
             onSwitch={() => {
               onSwitch(row.mode);
@@ -93,7 +102,18 @@ export function RuntimeCredentialCardView({
         ))}
       </div>
 
-      {expandedSlot}
+      <div
+        id={`runtime-auth-panel-${model.runtimeId}`}
+        className={expandedSlot == null ? undefined : 'border-t border-border p-5'}
+      >
+        {expandedSlot}
+      </div>
+      {(model.pendingTeardownCount ?? 0) > 0 && (
+        <p role="status" className="px-5 py-3 text-[13px] text-[var(--v2-status-warn-fg)]">
+          这份凭证已删除，还有 {model.pendingTeardownCount}{' '}
+          个任务正在清理；平台会继续重试，代码副本会保留为成果。
+        </p>
+      )}
     </div>
   );
 }

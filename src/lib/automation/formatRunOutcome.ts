@@ -32,7 +32,7 @@ import {
 
 /** 两种 skipped 的原因文案。**必须不同** —— 一个要用户去重新授权，另一个什么都不用做。 */
 const SKIP_DETAIL: Record<string, string> = {
-  AUTH_EXPIRED: '这个 Agent 的凭证已过期或被吊销，本次没有触发。重新授权后会按原来的时间表继续。',
+  AUTH_EXPIRED: '这个 Agent 的凭证已过期或被删除，本次没有触发。重新授权后会按原来的时间表继续。',
   PREVIOUS_RUNNING: '上一次触发的任务当时还在跑，按「跳过」的策略这次没有再起一个。',
 };
 

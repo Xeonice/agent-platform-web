@@ -46,7 +46,7 @@ export type DiagnoseCheckId = z.infer<typeof DiagnoseCheckIdSchema>;
  * 第一个 Task 会慢几分钟（实测 13GB 镜像 190 秒）。渲染成 ⚠️ 会让用户去修一个不需要
  * 修的东西 —— 而他能想到的「修法」是删了重推，那会让情况更糟（P21-5 §9A 第 5 步）。
  *
- * ⚠️ **`timeout` 与 `fail` 分开**：`fail` 是「查出来是坏的」，`timeout` 是「5s 内没查
+ * ⚠️ **`timeout` 与 `fail` 分开**：`fail` 是「查出来是坏的」，`timeout` 是「PARAM.DIAG_ITEM_TIMEOUT_MS 内没查
  * 出来」。后者在「系统好像坏了」的场景里恰恰最常见，而它**不构成**「这一项是坏的」
  * 的结论 —— 一项卡住不阻塞整轮（技术 02 §5.3）。
  */
@@ -151,7 +151,7 @@ export const DiagnoseDoneFrameSchema = z.object({
   warnCount: z.number().int().nonnegative(),
   /** ⚠️ 含 `timeout` 项：对整轮结论而言「答不上来」与「答坏了」都不是「好的」。 */
   failCount: z.number().int().nonnegative(),
-  /** 整轮墙钟耗时。**并行**，所以 ≈ 最慢那项（≈5s），不是各项之和（技术 02 §5.3）。 */
+  /** 整轮墙钟耗时。**并行**，所以 ≈ 最慢那项（上限 PARAM.DIAG_ITEM_TIMEOUT_MS），不是各项之和（技术 02 §5.3）。 */
   totalMs: z.number().int().nonnegative(),
 });
 export type DiagnoseDoneFrame = z.infer<typeof DiagnoseDoneFrameSchema>;

@@ -9,6 +9,7 @@
 //    就会以红色 errors 的形态出现在一张"可正常使用"的卡上；
 //  · **一张卡 = 同一个 `imageId` 的多行**（P21-4 §5 ★：更新 = INSERT 新行 + 旧行下线），
 //    列表是逐行返回的，聚合只能在这里做。
+import { imageIssueCopy, KNOWN_IMAGE_ISSUE_CODES } from '@/lib/image/imageIssueCopy';
 import { shortenDigest } from '@/lib/image/imageCardModel';
 import type {
   EnvVarRowModel,
@@ -86,7 +87,7 @@ export function manifestToCardInput(dto: ImageManifestDto): ImageCardInput {
   const status = cardValidationStatus(dto.validationStatus);
   // ⚠️ `validationErrors` 装的是「当前档位的 findings」而不是「errors」：
   // 后端 `storedFindings()` 在 invalid 档给 errors、warning 档给 **warnings**、其余给 null。
-  const findings = (dto.validationErrors ?? []).map((f) => f.message);
+  const findings = (dto.validationErrors ?? []).map((f) => imageIssueCopy(f));
   const warnings = dto.validationStatus === 'warning' ? findings : [];
   const errors =
     dto.validationStatus === 'invalid'
@@ -112,6 +113,9 @@ export function manifestToCardInput(dto: ImageManifestDto): ImageCardInput {
     derivedFromDigest: dto.derivedFromDigest,
     warnings,
     errors,
+    unknownCodes: (dto.validationErrors ?? [])
+      .filter((issue) => !KNOWN_IMAGE_ISSUE_CODES.has(issue.code))
+      .map((issue) => issue.code),
   };
 }
 

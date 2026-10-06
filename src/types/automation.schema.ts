@@ -13,7 +13,9 @@
 //   这里的每个 schema 后面挂 `satisfies z.ZodType<AutomationDto>` 把两者锁死。
 import { z } from 'zod';
 import type {
+  AutomationAttentionItem,
   AutomationDto,
+  AutomationDeletionPreviewDto,
   AutomationRunDto,
   AutomationRunPage,
   AutomationScheduleConfig,
@@ -80,6 +82,17 @@ export const AutomationDtoSchema = z.object({
 
 export const AutomationListSchema = z.array(AutomationDtoSchema);
 
+export const AutomationAttentionItemSchema = z.object({
+  projectId: z.string(),
+  projectName: z.string(),
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(['autoDisabled', 'degraded']),
+  consecutiveFailures: z.number().int().nonnegative(),
+}) satisfies z.ZodType<AutomationAttentionItem>;
+
+export const AutomationAttentionListSchema = z.array(AutomationAttentionItemSchema);
+
 export const AutomationRunDtoSchema = z.object({
   id: z.string(),
   automationId: z.string(),
@@ -141,10 +154,21 @@ type AssertScheduleConfig = Exact<
 type AssertAutomation = Exact<z.infer<typeof AutomationDtoSchema>, AutomationDto>;
 type AssertRun = Exact<z.infer<typeof AutomationRunDtoSchema>, AutomationRunDto>;
 type AssertPage = Exact<z.infer<typeof AutomationRunPageSchema>, AutomationRunPage>;
+type AssertAttention = Exact<
+  z.infer<typeof AutomationAttentionItemSchema>,
+  AutomationAttentionItem
+>;
 
 /* eslint-disable @typescript-eslint/no-unused-vars -- 编译期断言，只为让漂移在 tsc 就红 */
 const _assertScheduleConfig: AssertScheduleConfig = true;
 const _assertAutomation: AssertAutomation = true;
 const _assertRun: AssertRun = true;
 const _assertPage: AssertPage = true;
+const _assertAttention: AssertAttention = true;
 /* eslint-enable @typescript-eslint/no-unused-vars */
+
+export const AutomationDeletionPreviewSchema = z.object({
+  runCount: z.number().int().nonnegative(),
+  artifactCount: z.number().int().nonnegative(),
+  runningTasks: z.array(z.object({ id: z.string(), name: z.string() })),
+}) satisfies z.ZodType<AutomationDeletionPreviewDto>;

@@ -5,6 +5,7 @@ import { useGitCredentialManager } from '@/hooks/credential/useGitCredentialMana
 import { GitCredentialsSectionView } from '@/views/settings/GitCredentialsSection.view';
 import { SshKeyFormView } from '@/views/settings/SshKeyForm.view';
 import { HttpsTokenFormView } from '@/views/settings/HttpsTokenForm.view';
+import { DeleteGitCredentialConfirmView } from '@/views/settings/DeleteGitCredentialConfirm.view';
 
 export function GitCredentialsContainer() {
   const m = useGitCredentialManager();
@@ -51,30 +52,41 @@ export function GitCredentialsContainer() {
   })();
 
   return (
-    <GitCredentialsSectionView
-      loading={m.loading}
-      loadError={m.loadError}
-      onRetryLoad={m.retryLoad}
-      cards={m.cards}
-      missingTypes={m.missingTypes}
-      guidanceText={m.guidanceText}
-      formSlot={formSlot}
-      pendingRetry={
-        m.pendingRetry !== null
-          ? {
-              name: m.pendingRetry.name,
-              retrying: m.pendingRetry.retrying,
-              onRetry: m.retryClone,
-              onDiscard: m.discardPending,
-            }
-          : null
-      }
-      busy={m.busy}
-      onConfigureSsh={m.openSshForm}
-      onConfigureHttps={m.openHttpsForm}
-      onReplace={m.replace}
-      onTest={m.testCard}
-      onRevoke={m.revoke}
-    />
+    <>
+      <GitCredentialsSectionView
+        loading={m.loading}
+        loadError={m.loadError}
+        onRetryLoad={m.retryLoad}
+        cards={m.cards}
+        missingTypes={m.missingTypes}
+        guidanceText={m.guidanceText}
+        formSlot={formSlot}
+        pendingRetry={
+          m.pendingRetry !== null
+            ? {
+                name: m.pendingRetry.name,
+                retrying: m.pendingRetry.retrying,
+                onRetry: m.retryClone,
+                onDiscard: m.discardPending,
+              }
+            : null
+        }
+        busy={m.busy}
+        onConfigureSsh={m.openSshForm}
+        onConfigureHttps={m.openHttpsForm}
+        onReplace={m.replace}
+        onTest={m.testCard}
+        onRevoke={m.revoke}
+      />
+      {m.pendingRevoke !== null && (
+        <DeleteGitCredentialConfirmView
+          model={m.pendingRevoke}
+          busy={m.busy}
+          onConfirm={m.confirmRevoke}
+          onCancel={m.cancelRevoke}
+          onRetryProjects={m.retryRevokeProjects}
+        />
+      )}
+    </>
   );
 }

@@ -41,10 +41,10 @@ const REQUIREMENTS: readonly Requirement[] = [
   {
     id: 'entrypoint',
     blocking: true,
-    title: '② 必须有启动命令与工作目录',
+    title: '② 必须有启动命令',
     body:
-      '镜像要有 Entrypoint 或 Cmd（两者有其一即可），并且要有 WorkingDir。' +
-      '少了启动命令，平台不知道怎么把它跑起来；少了工作目录，代码不知道该放哪儿。',
+      '镜像要有 Entrypoint 或 Cmd（两者有其一即可），WorkingDir 未声明时使用默认目录 /。' +
+      '少了启动命令，平台不知道怎么把它跑起来。',
   },
   {
     id: 'tmux',

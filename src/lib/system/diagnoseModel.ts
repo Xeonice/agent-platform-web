@@ -92,7 +92,7 @@ export function isKnownPresetImageCode(code: string): boolean {
  * 点下 [重新诊断] 的那一刻。
  *
  * ⚠️ **保留上一轮的 `checks` 做占位**（它同样来自服务端的 `start` 帧，不是本地常量）：
- * 否则每次重新诊断，八行会先整体消失再一次性长出来，用户看到的是一次闪烁而不是"重跑"。
+ * 否则每次重新诊断，所有检查行会先整体消失再一次性长出来，用户看到的是一次闪烁而不是"重跑"。
  * 首次运行时 `checks` 为空 —— 那时界面上还没有任何服务端说过的清单，只能显示"正在连接"。
  */
 export function beginDiagnose(prev: DiagnoseRunState | undefined): DiagnoseRunState {
@@ -140,12 +140,7 @@ export function markDiagnoseAborted(state: DiagnoseRunState): DiagnoseRunState {
 
 const IDLE_MODEL: DiagnosticsCardModel = { phase: 'idle', items: [] };
 
-/**
- * 只有第 ⑤ 项（联网检查）配这句——**数值来自服务端首帧 `start.timeoutMs`**，
- * ⛔ 不许写死字面量秒数（design/prototype.html 那份静态原型里的 `10s` 只是示例数据，
- * 前车之鉴见 `web/src/mocks/handlers.ts` 里 `DIAGNOSE_TIMEOUT_MS` 的那条注释）。
- * `timeoutMs <= 0` 时（还没收到 `start` 帧）不产出——那时候没有配置可读，说了也是编的。
- */
+/** 联网检查的超时时限取自服务端首帧 start.timeoutMs；尚未收到有效配置时不产出文案。 */
 function timeoutTextFor(checkId: DiagnoseCheckId, timeoutMs: number): string | undefined {
   if (checkId !== 'outbound-network' || timeoutMs <= 0) return undefined;
   return `超时时限 ${formatDurationMs(timeoutMs)}`;
@@ -155,21 +150,32 @@ function itemFor(
   check: { id: DiagnoseCheckId; label: string },
   frame: DiagnoseCheckFrame | undefined,
   timeoutMs: number,
+  aborted: boolean,
 ): DiagnosticItemModel {
   const timeoutText = timeoutTextFor(check.id, timeoutMs);
   if (frame === undefined) {
     return {
       id: check.id,
       label: check.label,
+      ...(aborted ? { notReturned: true } : {}),
       ...(timeoutText === undefined ? {} : { timeoutText }),
     };
   }
+  const provision = frame.detail?.['provision'];
+  const canPrepareImage =
+    check.id === 'preset-image' &&
+    (frame.step === 'registry' || frame.step === 'staged') &&
+    typeof provision === 'object' &&
+    provision !== null &&
+    'provisionable' in provision &&
+    provision.provisionable === true;
   return {
     id: check.id,
     // 标签以**结论帧**为准（两帧的 label 同源，但结论帧是这一项自己最后说的那一次）。
     label: frame.label,
     status: frame.status,
     headline: frame.headline,
+    ...(canPrepareImage ? { imageManagementHref: '/settings/images' } : {}),
     // ⚠️ 三层各归各位：headline 默认可见，detailText / nextStep / command 收进展开层。
     //    ⛔ 不许在这里把它们拼回一句 —— 那正是被拆开的那个字段。
     ...(frame.detailText === undefined ? {} : { detailText: frame.detailText }),
@@ -184,47 +190,42 @@ function itemFor(
   };
 }
 
-/**
- * 汇总那一行。
- *
- * ⛔ **为零的那几档不写出来。** 全绿时上一版渲染的是「8 项正常 · 0 项提示 · 0 项警告 ·
- * 0 项失败（含超时）」—— 三个零占掉大半句话，而它们对用户的下一个动作没有任何区别。
- * 判据是那条通用的：这个数字看完之后会做的下一件事有区别吗？没有就别占位置。
- *
- * ⚠️ **「含超时」四个字在有失败时不许省**：`failCount` 里混着 `timeout`（后端刻意的 ——
- * 对整轮结论而言「答不上来」与「答坏了」都不是「好的」）。不写出来，用户会拿这个数字
- * 跟逐项图标对不上。⇒ 它跟着 `failCount` 一起出现、一起消失。
- */
-function summaryTextOf(done: DiagnoseDoneFrame): string {
+/** 汇总各档；契约 failCount 包含超时，按逐项结果拆开，零值不占位置。 */
+function summaryTextOf(done: DiagnoseDoneFrame, results: DiagnoseRunState['results']): string {
   // ⚠️ 各项**并行**，所以整轮 ≈ 最慢那项，不是各项之和。
   const elapsed = `整轮 ${formatDurationMs(done.totalMs)}`;
+  const timeoutCount = Object.values(results).filter((frame) => frame.status === 'timeout').length;
+  const failCount = Math.max(0, done.failCount - timeoutCount);
   const bad = [
     done.infoCount > 0 ? `${String(done.infoCount)} 项提示` : null,
     done.warnCount > 0 ? `${String(done.warnCount)} 项警告` : null,
-    done.failCount > 0 ? `${String(done.failCount)} 项失败（含超时）` : null,
+    failCount > 0 ? `${String(failCount)} 项失败` : null,
+    timeoutCount > 0 ? `${String(timeoutCount)} 项超时未响应` : null,
   ].filter((x): x is string => x !== null);
   if (bad.length === 0) {
     return `${String(done.okCount)} 项全部正常 · ${elapsed}`;
   }
-  return `${String(done.okCount)} 项正常 · ${bad.join(' · ')} · ${elapsed}`;
+  return [...(done.okCount > 0 ? [`${String(done.okCount)} 项正常`] : []), ...bad, elapsed].join(
+    ' · ',
+  );
 }
 
 export function diagnosticsCardModel(state: DiagnoseRunState | undefined): DiagnosticsCardModel {
   if (state === undefined) return IDLE_MODEL;
   const items = state.checks.map((check) =>
-    itemFor(check, state.results[check.id], state.timeoutMs),
+    itemFor(check, state.results[check.id], state.timeoutMs, state.phase === 'aborted'),
   );
   const arrived = items.filter((i) => i.status !== undefined).length;
   return {
     phase: state.phase,
     items,
-    ...(state.done === undefined ? {} : { summaryText: summaryTextOf(state.done) }),
+    ...(state.done === undefined ? {} : { summaryText: summaryTextOf(state.done, state.results) }),
     ...(state.phase === 'aborted'
       ? {
           abortedText:
             items.length === 0
-              ? '诊断中断：连接在拿到检查清单之前就断了'
-              : `诊断中断：${String(arrived)}/${String(items.length)} 项已返回，其余项没有结论`,
+              ? '诊断中断：连接在拿到检查清单之前就断了 —— 可点 [重新诊断] 重跑'
+              : `诊断中断：${String(arrived)}/${String(items.length)} 项已返回，其余项没有结论 —— 已到达的结果保留在下方，可点 [重新诊断] 重跑`,
         }
       : {}),
   };

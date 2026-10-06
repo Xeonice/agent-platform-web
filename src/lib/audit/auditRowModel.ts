@@ -19,6 +19,52 @@ import type { AuditEventDto, AuditRowModel } from '@/types/audit';
 
 const SECOND_MS = 1000;
 const MINUTE_MS = 60 * SECOND_MS;
+const TASK_STATUS_TEXT: Readonly<Record<string, string>> = {
+  pending: '等待调度',
+  scheduling: '调度中',
+  'preparing-workspace': '准备工作区',
+  creating: '创建中',
+  starting: '准备中',
+  running: '运行中',
+  idle: '空闲',
+  stopping: '停止中',
+  stopped: '已停止',
+  failed: '异常',
+  destroying: '销毁中',
+  destroyed: '已销毁',
+};
+
+/** 已落库的旧摘要也按当前上屏称呼展示；未知事件仍保留服务端摘要。 */
+export function formatAuditSummary(event: AuditEventDto): string {
+  if (event.type === 'sandbox.state_changed') {
+    const from = event.detail?.['from'];
+    const to = event.detail?.['to'];
+    if (
+      typeof from === 'string' &&
+      typeof to === 'string' &&
+      TASK_STATUS_TEXT[from] !== undefined &&
+      TASK_STATUS_TEXT[to] !== undefined
+    ) {
+      return `任务状态 ${TASK_STATUS_TEXT[from]} → ${TASK_STATUS_TEXT[to]}`;
+    }
+  }
+  if (event.type === 'sandbox.created') {
+    const name = event.detail?.['name'];
+    if (typeof name === 'string') return `创建任务「${name}」`;
+    if (event.summary.startsWith('创建沙箱 '))
+      return `创建任务「${event.summary.slice('创建沙箱 '.length)}」`;
+  }
+  if (event.type === 'image.validated') {
+    return event.summary
+      .replace(/：warning$/, '：有警告')
+      .replace(/：invalid$/, '：未通过')
+      .replace(/：valid$/, '：通过');
+  }
+  if (event.subjectType === 'retained_volume') {
+    return event.summary.replace('保留工作区卷', '保留成果').replaceAll('保留卷', '保留下来的成果');
+  }
+  return event.summary;
+}
 
 /**
  * `actor` 的中文名。**这是"已知会被写出来的全集"，不是闭集**。
@@ -42,12 +88,12 @@ const ACTOR_LABELS: Readonly<Record<string, string>> = {
   reaper: '回收器',
   user: '用户',
   'health-check': '健康检查',
-  'provider-event': 'Provider 事件',
+  'provider-event': '沙箱环境事件',
   system: '系统',
 };
 
 /** 只有沙箱类事件才给时间线入口（P21-5 §10.2）。 */
-export const SANDBOX_TIMELINE_LABEL = '查看该沙箱完整时间线';
+export const SANDBOX_TIMELINE_LABEL = '查看该任务完整时间线';
 
 function pad(n: number, width: number): string {
   return String(n).padStart(width, '0');
@@ -105,15 +151,25 @@ export function auditRowModel(event: AuditEventDto, now: number): AuditRowModel 
     seq: event.seq,
     timeText: formatAuditTime(event.at, now),
     severity: event.severity,
-    summary: event.summary,
+    summary: formatAuditSummary(event),
     actorText: formatActor(event.actor),
   };
   if (durationText !== undefined) model.durationText = durationText;
   if (event.outcome !== undefined) model.outcome = event.outcome;
   if (event.errorCode !== undefined) model.errorCode = event.errorCode;
   if (detailText !== undefined) model.detailText = detailText;
-  if (event.subjectType === 'sandbox' && event.subjectId !== undefined) {
-    model.subjectLink = { subjectId: event.subjectId, label: SANDBOX_TIMELINE_LABEL };
+  const taskId =
+    event.subjectType === 'sandbox'
+      ? event.subjectId
+      : event.subjectType === 'retained_volume' && typeof event.detail?.['sandboxId'] === 'string'
+        ? event.detail['sandboxId']
+        : undefined;
+  if (taskId !== undefined) {
+    model.subjectLink = {
+      subjectId: taskId,
+      label: SANDBOX_TIMELINE_LABEL,
+      ...(typeof event.detail?.['name'] === 'string' ? { subjectName: event.detail['name'] } : {}),
+    };
   }
   return model;
 }

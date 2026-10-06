@@ -134,7 +134,10 @@ export function presetImageChainModel(input: PresetImageChainInput): PresetImage
     // ⛔ **能自己搬时不再给命令。** 两个都给等于让用户在「点按钮」和「敲命令」之间选，
     //    而正确答案只有一个 —— 而且那条命令里的 `docker build` 会让他重新构建一遍
     //    字节已经在本机的东西（2026-09-05 实测，P21-8 §2 ⇒ 新判据）。
-    const fix = offer === undefined ? fixCommandFor(step, frame) : undefined;
+    const fix =
+      reportedState === 'pass' || reportedState === 'info' || offer !== undefined
+        ? undefined
+        : fixCommandFor(step, frame);
     return {
       ...base,
       state: reportedState,
@@ -150,7 +153,9 @@ export function presetImageChainModel(input: PresetImageChainInput): PresetImage
       //    说了「平台自己拉一次即可，不必等到第一个任务」，而写死的那句说的是「不需要任何
       //    操作，第一个任务会自动铺开」—— 同屏两句互相否定（真机截图逮到）。这与紧邻下面
       //    那条「能自己搬时不再给命令」是同一条纪律：**平台能做的时候，别再教用户等**。
-      ...(reportedState === 'pass' || offer !== undefined ? {} : { action: STEP_ACTION[step] }),
+      ...(reportedState === 'pass' || reportedState === 'info' || offer !== undefined
+        ? {}
+        : { action: STEP_ACTION[step] }),
       ...(fix === undefined ? {} : { fixCommand: fix }),
       ...(offer === undefined ? {} : { provision: offer }),
       ...(frame.errorCode === undefined ? {} : { errorCode: frame.errorCode }),
@@ -186,7 +191,7 @@ export function autoStageOffer(
   model: PresetImageChainModel,
 ): PresetImageProvisionOffer | undefined {
   if (model.phase !== 'done') return undefined;
-  const staged = model.steps.find((s) => s.step === 'staged');
+  const staged = model.steps.find((s) => s.provision !== undefined);
   if (staged === undefined || staged.state === 'pass' || staged.state === 'pending') {
     return undefined;
   }

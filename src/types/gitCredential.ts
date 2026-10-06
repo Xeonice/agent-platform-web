@@ -36,3 +36,13 @@ export interface GitCredentialCardModel {
   testing?: boolean;
   testResult?: GitCredentialTestOutcome | null;
 }
+export interface GitCredentialDeletionModel {
+  title: string;
+  subtitle: string;
+  subject: string;
+  hosts: string;
+  provider: string;
+  ssh: boolean;
+  projectNames: string[];
+  projectsKnown: boolean;
+}

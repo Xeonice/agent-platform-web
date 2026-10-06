@@ -45,7 +45,7 @@ export const Healthy: Story = {
     await expect(canvas.getByTestId('resource-reserved')).toHaveTextContent('总容量的 15%');
     await expect(canvas.getByTestId('resource-row-disk')).toHaveTextContent('镜像缓存');
     await expect(canvas.queryByTestId('resource-low')).toBeNull();
-    // ⚠️ 状态用 `StatusPill`（design/design-notes.md §2）：不偏低 ⇒ `ok`。
+    // 资源不偏低时，StatusPill 状态为 ok。
     await expect(
       canvas.getByTestId('resource-row-cpu').querySelector('[data-status="ok"]'),
     ).not.toBeNull();
@@ -63,7 +63,7 @@ export const FinishHintIsNotADatabaseDescription: Story = {
     const section = canvas.getByTestId('resource-confirm');
     await expect(section).not.toHaveTextContent('初始化完成标记');
     await expect(section).toHaveTextContent('点它才算装完');
-    await expect(section).toHaveTextContent('设置 → 系统状态');
+    await expect(section).toHaveTextContent('之后要改任何配置都在「系统状态」里');
   },
 };
 

@@ -42,6 +42,7 @@ import type {
 import type {
   InitRequestDto,
   InitStatusDto,
+  ProviderLogsDto,
   SystemProvidersDto,
   SystemResourcesDto,
   SystemSettingsDto,
@@ -176,6 +177,14 @@ export async function getResources(): Promise<SystemResourcesDto> {
  */
 export async function getProviders(): Promise<SystemProvidersDto> {
   const { data, error, response } = await apiClient.GET('/api/system/providers');
+  return unwrap(data, error, response);
+}
+
+/** 只读已脱敏运行日志；与结构化审计流独立。 */
+export async function getProviderLogs(id: string): Promise<ProviderLogsDto> {
+  const { data, error, response } = await apiClient.GET('/api/system/providers/{id}/logs', {
+    params: { path: { id } },
+  });
   return unwrap(data, error, response);
 }
 

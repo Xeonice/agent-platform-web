@@ -28,7 +28,7 @@ export interface OfflineNoticeProps {
   onContinue: () => void;
 }
 
-export function OfflineNoticeView({ verdictText, acknowledged, onContinue }: OfflineNoticeProps) {
+export function OfflineNoticeView({ acknowledged, onContinue }: OfflineNoticeProps) {
   return (
     <section
       data-testid="offline-notice"
@@ -38,7 +38,7 @@ export function OfflineNoticeView({ verdictText, acknowledged, onContinue }: Off
     >
       <p className="flex items-center gap-1.5 font-medium text-red-500">
         <X aria-hidden="true" className="h-4 w-4 shrink-0" />
-        {verdictText}
+        以离线模式继续
       </p>
       {/* 只有这一句是本页独有的：它回答"那我现在装了，以后网通了怎么办"。 */}
       <p className="text-muted-foreground">网络恢复后无需重装，回系统状态页重新检测即可。</p>

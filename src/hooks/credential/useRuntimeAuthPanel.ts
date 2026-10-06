@@ -26,6 +26,7 @@ import type { RuntimeAuthMethod } from '@/types/runtimeCredential';
 
 /** 就地展开的授权面板定位（哪个 runtime，可选哪个方式）。 */
 export interface RuntimeAuthPanelTarget {
+  activateOnSuccess?: boolean;
   runtimeId: string;
   /**
    * 指定方式打开 —— 凭证页按「行」展开需要它（帐号授权行 / API Key 行各自对应一个 tab）。
@@ -40,7 +41,7 @@ export interface RuntimeAuthPanel {
   /** 这个 runtime 的面板是否展开着（宿主按 runtime 渲染时用）。 */
   isOpenFor: (runtimeId: string) => boolean;
   /** 用户要求展开（点「配置」/「重新授权」/「开始登录」）。 */
-  open: (runtimeId: string, method?: RuntimeAuthMethod) => void;
+  open: (runtimeId: string, method?: RuntimeAuthMethod, activateOnSuccess?: boolean) => void;
   /** 收起（点「收起」/「取消」/切走 runtime）。 */
   close: () => void;
   /**
@@ -59,21 +60,33 @@ export function useRuntimeAuthPanel(successMessage?: string): RuntimeAuthPanel {
   const queryClient = useQueryClient();
   const [target, setTarget] = useState<RuntimeAuthPanelTarget | null>(null);
 
-  const open = useCallback((runtimeId: string, method?: RuntimeAuthMethod): void => {
-    // ⚠️ 不写 `{ runtimeId, method }` —— 仓库开着 `exactOptionalPropertyTypes`，
-    //    显式的 `method: undefined` 与「没有 method」不是一回事。
-    setTarget(method === undefined ? { runtimeId } : { runtimeId, method });
-  }, []);
+  const open = useCallback(
+    (runtimeId: string, method?: RuntimeAuthMethod, activateOnSuccess?: boolean): void => {
+      // ⚠️ 不写 `{ runtimeId, method }` —— 仓库开着 `exactOptionalPropertyTypes`，
+      //    显式的 `method: undefined` 与「没有 method」不是一回事。
+      setTarget({
+        runtimeId,
+        ...(method === undefined ? {} : { method }),
+        ...(activateOnSuccess === undefined ? {} : { activateOnSuccess }),
+      });
+    },
+    [],
+  );
 
   const close = useCallback((): void => {
     setTarget(null);
   }, []);
 
   const handleSuccess = useCallback((): void => {
-    if (successMessage === undefined) notifyRuntimeAuthConfigured(queryClient);
+    if (target?.activateOnSuccess)
+      notifyRuntimeAuthConfigured(
+        queryClient,
+        `已切换到 ${target.method === 'api-key' ? 'API Key' : '帐号登录'}`,
+      );
+    else if (successMessage === undefined) notifyRuntimeAuthConfigured(queryClient);
     else notifyRuntimeAuthConfigured(queryClient, successMessage);
     setTarget(null);
-  }, [queryClient, successMessage]);
+  }, [queryClient, successMessage, target]);
 
   const isOpenFor = useCallback(
     (runtimeId: string): boolean => target?.runtimeId === runtimeId,

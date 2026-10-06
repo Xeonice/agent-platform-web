@@ -1,21 +1,7 @@
-// 全局横幅栈（07 §8.4 / F21-8 §4 / design-notes.md §4 Phase 3 第 3 条）。纯展示、props 驱动、
-// 零副作用。
-//
-// ⚠️ **本 view 不做任何优先级判断、不认识"离线"/"治理"这些具体事实**：它收到的数组已经
-// 排好序、已经剔除了被关闭的那几条（07 §8.4「BannerStack.view 只接收已排好序的数组」）。
-// 判定住在 `lib/system/globalBanner.ts`，那里可以被纯函数测到；写进这里就只能靠渲染测。
-// 本层只做**按 severity 分层的三色视觉**（原型 `.banner-blocking`/`.banner-governance`/
-// `.banner-info` 三条 CSS 规则的落地），⛔ `info` 那一档目前没有生产方（`types/banner.ts`
-// 文件头），`SEVERITY_*` 表因此只有 `blocking`/`warning` 两个键——加一个没人产出的键，
-// 只会造成"三色都做好了"的错觉。
-//
-// ⚠️ **一条都没有时返回 `null`，⛔ 不返回一个空的容器 `<div>`。** 全局布局把它放在
-// `{children}` 之上，一个高度为 0 但仍然存在的盒子会在 flex 列里留下 gap/border 的痕迹 ——
-// 表现是"每一页顶上多了一条一像素的线"，而没人会想到去横幅这里找。
-//
-// ⚠️ 图标不是唯一线索（a11y）：每条同时带一个文字等级前缀（`sr-only`），且整块是
-// `role="alert"`——图标本身恒 `aria-hidden`。
-import { AlertTriangle, OctagonAlert, type LucideIcon } from 'lucide-react';
+// Ordered banners are supplied by the model; only disclosure state lives in this view.
+import { useId, useState } from 'react';
+import { AlertTriangle, ChevronDown, OctagonAlert, X, type LucideIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { BannerSeverity, BannerStackModel, GlobalBannerModel } from '@/types/banner';
 
 const SEVERITY_ICON: Readonly<Record<BannerSeverity, LucideIcon>> = {
@@ -26,86 +12,106 @@ const SEVERITY_TEXT: Readonly<Record<BannerSeverity, string>> = {
   blocking: '阻断',
   warning: '治理',
 };
-
-/**
- * 三色分层的视觉 token（数值取自 design/prototype.html 的 `.banner-blocking`/
- * `.banner-governance`，语义色沿用已经跑过 WCAG AA 的 `--error`/`--warning`）。
- * ⚠️ **阻断类保留原先的 `red-*` 具名色**（不是改用 `--error` 变量）：这条不在本轮改动
- * 范围内的既有断言（颜色回归截图/story）绑定的就是这几个类名，贸然换成变量在视觉上
- * 等价、但会打红一批断言不了什么问题的既有用例（P21-1 §9 之外的历史legacy 决策，
- * 留给专门的 token 收敛 PR 处理）。
- */
-const SEVERITY_STYLES: Readonly<
-  Record<BannerSeverity, { wrapper: string; description: string; action: string; dismiss: string }>
-> = {
+const SEVERITY_STYLES: Readonly<Record<BannerSeverity, { wrapper: string; foreground: string }>> = {
   blocking: {
-    wrapper: 'border-b border-red-500/40 bg-red-500/10 text-red-200',
-    description: 'text-red-200/80',
-    action: 'border-red-400/50 hover:bg-red-500/20',
-    dismiss: 'text-red-200/70 hover:bg-red-500/20',
+    wrapper: 'border-[var(--v2-status-fail-subtle-border)] bg-[var(--v2-status-fail-subtle-bg)]',
+    foreground: 'text-[var(--v2-status-fail-fg)]',
   },
   warning: {
-    wrapper: 'border-b border-[hsl(var(--warning)/0.4)] bg-[hsl(var(--warning)/0.12)] text-warning',
-    description: 'text-warning/80',
-    action: 'border-[hsl(var(--warning)/0.5)] hover:bg-[hsl(var(--warning)/0.18)]',
-    dismiss: 'text-warning/70 hover:bg-[hsl(var(--warning)/0.18)]',
+    wrapper: 'border-[var(--v2-status-warn-subtle-border)] bg-[var(--v2-status-warn-subtle-bg)]',
+    foreground: 'text-[var(--v2-status-warn-fg)]',
   },
 };
 
 export interface BannerStackProps {
   model: BannerStackModel;
-  /** 动作按钮（`actionLabel` 存在时才渲染）。 */
   onAction?: (id: GlobalBannerModel['id']) => void;
-  /**
-   * [关闭]。🔴 阻断类**不自动收起**，只有这一条路（07 §8.4）；⚠️ 治理类关闭后当天不再弹
-   * （语义分岔在 `useGlobalBanner` 的 `dismiss` 里，本层只负责转发点击）。
-   */
   onDismiss?: (id: GlobalBannerModel['id']) => void;
 }
 
 export function BannerStackView({ model, onAction, onDismiss }: BannerStackProps) {
+  const [expanded, setExpanded] = useState(false);
+  const stackId = useId();
   if (model.banners.length === 0) return null;
+  const remaining = model.banners.slice(2);
+  const visible = expanded ? model.banners : model.banners.slice(0, 2);
   return (
-    <div data-testid="banner-stack" className="flex shrink-0 flex-col">
-      {model.banners.map((banner) => {
-        const style = SEVERITY_STYLES[banner.severity];
-        const Icon = SEVERITY_ICON[banner.severity];
-        return (
-          <div
-            key={banner.id}
-            role="alert"
-            data-testid={`banner-${banner.id}`}
-            data-severity={banner.severity}
-            className={`flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-2 text-sm ${style.wrapper}`}
-          >
-            <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-            <span className="sr-only">{SEVERITY_TEXT[banner.severity]}</span>
-            <span className="font-semibold">{banner.title}</span>
-            <span className={`min-w-0 flex-1 text-xs ${style.description}`}>
-              {banner.description}
-            </span>
-            {banner.actionLabel === undefined ? null : (
-              <button
-                type="button"
-                data-testid={`banner-action-${banner.id}`}
-                className={`rounded border px-2 py-0.5 text-xs ${style.action}`}
-                onClick={() => onAction?.(banner.id)}
-              >
-                {banner.actionLabel}
-              </button>
-            )}
-            <button
-              type="button"
-              aria-label={`关闭「${banner.title}」提示`}
-              data-testid={`banner-dismiss-${banner.id}`}
-              className={`rounded px-2 py-0.5 text-xs ${style.dismiss}`}
-              onClick={() => onDismiss?.(banner.id)}
+    <div data-testid="banner-stack" className="flex min-w-0 shrink-0 flex-col">
+      <div id={stackId}>
+        {visible.map((banner) => {
+          const style = SEVERITY_STYLES[banner.severity];
+          const Icon = SEVERITY_ICON[banner.severity];
+          const governance = banner.severity === 'warning';
+          return (
+            <div
+              key={banner.id}
+              role="alert"
+              data-testid={`banner-${banner.id}`}
+              data-severity={banner.severity}
+              className={`flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1 border-b px-4 py-2 text-sm text-foreground sm:flex-nowrap ${style.wrapper}`}
             >
-              关闭
-            </button>
-          </div>
-        );
-      })}
+              <Icon aria-hidden="true" className={`mt-2 h-4 w-4 shrink-0 ${style.foreground}`} />
+              <span className="sr-only">{SEVERITY_TEXT[banner.severity]}</span>
+              <p className="min-w-0 flex-1 basis-[calc(100%_-_24px)] py-1.5 leading-5 sm:basis-auto">
+                <span className={`mr-2 font-medium ${style.foreground}`}>{banner.title}</span>
+                <span>{banner.description}</span>
+              </p>
+              <div className="ml-6 flex min-h-8 shrink-0 items-center gap-2 sm:ml-auto">
+                {banner.actionLabel === undefined ? null : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid={`banner-action-${banner.id}`}
+                    className="bg-[var(--v2-surface)] text-foreground"
+                    onClick={() => {
+                      onAction?.(banner.id);
+                    }}
+                  >
+                    {banner.actionLabel}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size={governance ? 'sm' : 'icon'}
+                  aria-label={
+                    governance ? `今天不再提示「${banner.title}」` : `关闭「${banner.title}」提示`
+                  }
+                  data-testid={`banner-dismiss-${banner.id}`}
+                  className={governance ? 'text-foreground' : 'h-8 w-8 text-muted-foreground'}
+                  onClick={() => {
+                    onDismiss?.(banner.id);
+                  }}
+                >
+                  {governance ? '今天不再提示' : <X aria-hidden="true" />}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {remaining.length === 0 ? null : (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={stackId}
+          data-testid="banner-stack-more"
+          className="flex h-8 min-w-0 items-center gap-2 border-b border-border bg-background px-4 text-left text-[13px] text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:shadow-[shadow:var(--v2-focus-ring-inset)]"
+          onClick={() => {
+            setExpanded((previous) => !previous);
+          }}
+        >
+          <ChevronDown
+            aria-hidden="true"
+            className={`h-3.5 w-3.5 shrink-0 ${expanded ? 'rotate-180' : ''}`}
+          />
+          <span className="shrink-0">还有 {remaining.length} 条提示</span>
+          <span className="truncate text-[var(--v2-foreground-subtle)]">
+            {remaining.map((banner) => banner.title).join('、')}
+          </span>
+        </button>
+      )}
     </div>
   );
 }

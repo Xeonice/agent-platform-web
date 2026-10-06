@@ -48,9 +48,12 @@ export function UpdateCompareDialogView({
       role="dialog"
       aria-modal="true"
       aria-label={`${imageName} 的上游更新`}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !updating) onDismiss();
+      }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
     >
-      <div className="flex w-full max-w-xl flex-col gap-3 rounded-lg border border-border bg-background p-5">
+      <div className="flex max-h-[90dvh] w-full max-w-xl overflow-y-auto flex-col gap-3 rounded-lg border border-border bg-background p-5">
         <h3 className="flex items-center gap-1.5 text-base font-semibold">
           <RefreshCw aria-hidden="true" className="h-4 w-4" />
           上游有新版本
@@ -75,6 +78,10 @@ export function UpdateCompareDialogView({
           {...upstreamValidation}
           {...(onViewRequirements === undefined ? {} : { onViewRequirements })}
         />
+
+        <p className="text-xs text-muted-foreground">
+          新登记的版本会继承当前版本的运行参数。只影响之后新建的任务，已经在跑的任务仍用原来锁定的那一版。
+        </p>
 
         {!upstreamUsable && (
           <p className="text-xs text-muted-foreground" data-testid="kept-current-version">

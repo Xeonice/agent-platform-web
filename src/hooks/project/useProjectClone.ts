@@ -21,6 +21,7 @@ export interface ProjectCloneView {
   detailLabel?: string;
   /** "已用 1:23"；长克隆里最便宜的"我还活着"信号。 */
   elapsedLabel?: string;
+  downloadedText?: string;
   isCloning: boolean;
   isSlow: boolean;
   isDone: boolean;
@@ -77,6 +78,7 @@ export function useProjectClone(projectId: string | null): ProjectCloneView {
         percent: null,
         detailLabel: undefined,
         elapsedLabel: undefined,
+        downloadedText: undefined,
         isCloning: false,
         isSlow: false,
         isDone: false,
@@ -89,6 +91,8 @@ export function useProjectClone(projectId: string | null): ProjectCloneView {
       state,
       percent,
       detailLabel: buildDetailLabel(state),
+      downloadedText:
+        state.receivedBytes === undefined ? undefined : formatBytes(state.receivedBytes),
       elapsedLabel:
         state.startedAt === undefined || state.phase === 'done' || state.phase === 'failed'
           ? undefined

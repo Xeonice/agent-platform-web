@@ -33,7 +33,7 @@ export function ProjectRecoveryContainer({
   // 权限类失败 → 携 pendingProjectCreate 跳凭证页（工作台选中失败项目路径；无 repoUrl，项目已落库）。
   const handleConfigureCredentials = (): void => {
     setPendingProjectCreate({ projectId, name: projectName, source: 'git' });
-    router.push('/settings/credentials');
+    router.push('/settings/credentials?section=git');
   };
 
   return (
@@ -46,8 +46,12 @@ export function ProjectRecoveryContainer({
       needsCredentials={guidance.needsCredentials}
       actionError={actionError ?? undefined}
       busy={busy}
-      onRetry={retry}
-      onConvertToEmpty={convertToEmpty}
+      onRetry={() => {
+        retry();
+      }}
+      onConvertToEmpty={() => {
+        convertToEmpty();
+      }}
       onConfigureCredentials={handleConfigureCredentials}
     />
   );

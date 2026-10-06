@@ -45,6 +45,7 @@ export interface AutomationDraft {
 
 export interface DraftErrors {
   name?: string;
+  description?: string;
   prompt?: string;
   runtime?: string;
   schedule?: string;
@@ -59,6 +60,8 @@ export function promptLength(prompt: string): number {
 export function validateDraft(draft: AutomationDraft): DraftErrors {
   const errors: DraftErrors = {};
   if (draft.name.trim() === '') errors.name = '请填写规则名称。';
+  else if (Array.from(draft.name).length > 60) errors.name = '规则名称最多 60 个字。';
+  if (Array.from(draft.description).length > 500) errors.description = '描述最多 500 个字。';
 
   const len = promptLength(draft.prompt);
   if (len === 0) errors.prompt = '请填写任务内容。';

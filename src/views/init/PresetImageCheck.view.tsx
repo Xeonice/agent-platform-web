@@ -31,12 +31,8 @@ const STATE_TEXT: Readonly<Record<PresetImageStepState, string>> = {
 };
 
 /**
- * `PresetImageStepState` → `StatusPill` 八态。
- *
- * ⚠️ **`pending` 分两支**（design/design-notes.md §2）：正在整轮检查中的那些用会转的
- * `pending`（灰底 + loader）；链已经停下、这几步压根没被检查到的用 `unknown`（虚线灰边框，
- * 语义"无样本/未知，≠ 失败"）——两者的产品事实不同：前者"马上有结论"，后者"这一轮结论
- * 没有覆盖到这里"，⛔ 不能用同一个视觉表达两件不同的事。
+ * 检查中的步骤用 pending；整轮已停止且未检查到的步骤用 unknown。
+ * 未覆盖到的结论不等于失败，也不应继续表现为检查中。
  */
 function statusPillStatusFor(state: PresetImageStepState, isChecking: boolean): StatusPillStatus {
   if (state === 'pass') return 'ok';
@@ -120,20 +116,29 @@ export function PresetImageCheckView({
         </p>
       )}
 
-      <ol className="flex flex-col gap-2">
+      <ol className="divide-y divide-border overflow-hidden rounded-lg border border-border">
         {model.steps.map((s) => (
           <li
             key={s.step}
             data-testid={`preset-step-${s.step}`}
             data-state={s.state}
-            className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
+            className="flex flex-col gap-2 px-4 py-3 text-sm"
           >
             <span className="flex flex-wrap items-center gap-2">
-              <StatusPill status={statusPillStatusFor(s.state, isChecking)}>
-                {isChecking && s.state === 'pending' ? '检查中…' : STATE_TEXT[s.state]}
+              <StatusPill
+                status={statusPillStatusFor(
+                  s.state,
+                  isChecking && model.steps.every((step) => step.state === 'pending'),
+                )}
+              >
+                {model.steps.every((step) => step.state === 'pending') &&
+                isChecking &&
+                s.state === 'pending'
+                  ? '检查中…'
+                  : STATE_TEXT[s.state]}
               </StatusPill>
               <span className="font-medium">
-                第 {String(s.ordinal)} 步（共 {String(model.steps.length)} 步） · {s.label}
+                第 {String(s.ordinal)} 项（共 {String(model.steps.length)} 项） · {s.label}
               </span>
             </span>
 
@@ -148,15 +153,6 @@ export function PresetImageCheckView({
                 className="whitespace-pre-wrap break-words text-xs text-muted-foreground"
               >
                 {s.detail}
-              </span>
-            )}
-
-            {s.errorCode === undefined ? null : (
-              <span
-                data-testid={`preset-step-code-${s.step}`}
-                className="text-xs text-muted-foreground"
-              >
-                错误码 {s.errorCode}
               </span>
             )}
 
@@ -176,13 +172,7 @@ export function PresetImageCheckView({
             {s.provision === undefined ? null : (
               <span
                 data-testid={`preset-step-provision-${s.step}`}
-                // ⚠️ **`--info` token，不是硬编码 emerald**：这一块说的是"平台自己能搬"，
-                // 语义与第 5 步本身渲染 `info`（提示，不是警告/错误）是同一件事——
-                // design/prototype.html 的 provision 区块同样直接取
-                // `hsl(var(--info)/.3)` / `hsl(var(--info)/.06)`，这里逐值抄过来，不让
-                // 两处颜色各自漂移。用 `[hsl(var(--info)/…)]` 而不是 `info/30` 修饰符写法，
-                // 与 `components/ui/status-pill.tsx` 已经在用的写法一致（该文件同样发现过
-                // 类修饰符对 CSS 变量颜色不总是可靠）。
+                // 预制镜像搬运提示与诊断信息共用 --info token，避免硬编码颜色漂移。
                 className="flex flex-col gap-2 rounded-md border border-[hsl(var(--info)/0.3)] bg-[hsl(var(--info)/0.06)] p-2"
               >
                 <span className="text-xs text-muted-foreground">{s.provision.why}</span>
@@ -190,6 +180,7 @@ export function PresetImageCheckView({
                   <Button
                     type="button"
                     size="sm"
+                    variant="outline"
                     disabled={isProvisioning}
                     onClick={onProvision}
                     data-testid="preset-provision-button"
@@ -205,11 +196,7 @@ export function PresetImageCheckView({
                       : ` · 约 ${String(Math.round(s.provision.sizeBytes / 1024 / 1024))} MB`}
                   </span>
                 </span>
-                {/* ⚠️ **只在真的在跑时画这一块**——数据源是真实的 provision 事件流
-                    （`usePresetImageProvision`），⛔ 不是原型里那个自转的 `setInterval` 演示。
-                    进度百分比与已用时长是**两个独立的、各自跳动的数字**：字节分数长时间不变
-                    时，仍在走的用时才是"没有卡死，正在写盘"的证据（design/design-notes.md
-                    §1 问题 3）。 */}
+                {/* 只在真实 provision 运行时显示进度与挂钟用时，两者独立计算。 */}
                 {isProvisioning ? (
                   <span data-testid="preset-provision-progress" className="flex flex-col gap-1">
                     {provisionProgress === null || provisionProgress === undefined ? (
@@ -220,13 +207,18 @@ export function PresetImageCheckView({
                       </span>
                     ) : (
                       <>
-                        <span
-                          data-testid="preset-provision-percent"
-                          className="font-mono text-sm font-medium"
-                        >
-                          {String(Math.round(provisionProgress * 100))}%
+                        <span className="flex items-center gap-3">
+                          <Progress
+                            className="flex-1"
+                            value={Math.round(provisionProgress * 100)}
+                          />
+                          <span
+                            data-testid="preset-provision-percent"
+                            className="text-xs tabular-nums text-muted-foreground"
+                          >
+                            {String(Math.round(provisionProgress * 100))}%
+                          </span>
                         </span>
-                        <Progress value={Math.round(provisionProgress * 100)} />
                       </>
                     )}
                     {provisionElapsedSeconds === undefined ? null : (
@@ -268,9 +260,8 @@ export function PresetImageCheckView({
                       data-testid="preset-provision-error-hint"
                       className="text-xs text-muted-foreground"
                     >
-                      多半是网速：镜像下载源够得着、但拉得太慢，中途就断了。
-                      回上一步「代理配置」填一个代理再试；初始化完成后也能在「设置 → 系统状态 →
-                      出网代理」里改。
+                      多半是网速：镜像下载源够得着、但拉得太慢，中途就断了。 换个网络环境后再点
+                      [准备镜像] 重试；也可以先点 [下一步]，初始化完成后在「镜像管理」里再下载。
                     </span>
                   </span>
                 )}
@@ -294,6 +285,14 @@ export function PresetImageCheckView({
                 </Button>
               </span>
             )}
+            {s.errorCode === undefined ? null : (
+              <span
+                data-testid={`preset-step-code-${s.step}`}
+                className="text-xs text-muted-foreground"
+              >
+                错误码 {s.errorCode}
+              </span>
+            )}
           </li>
         ))}
       </ol>
@@ -302,6 +301,7 @@ export function PresetImageCheckView({
       {model.blockedText === undefined ? null : (
         <p
           role="alert"
+          id="preset-image-blocked"
           data-testid="preset-image-blocked"
           className="flex items-start gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-amber-600"
         >

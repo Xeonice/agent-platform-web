@@ -25,8 +25,8 @@ export interface TerminalContainerProps {
   onShells?: (shells: TerminalShellSummary[] | null) => void;
   /** 把 send 交给装配层，供它代发 `close_shell`（见 TerminalMount 的注释）。 */
   registerSend?: (send: ((frame: TerminalClientFrame) => boolean) | null) => void;
-  /** 终端仪表壳工具栏的面包屑（design-notes.md §4 Phase 3），原样透传给 `TerminalMount`。 */
-  breadcrumb?: string;
+  /** 共享终端栏中当前会话工具的挂载点。 */
+  toolbarTarget?: HTMLDivElement | null;
 }
 
 export function TerminalContainer({
@@ -37,7 +37,7 @@ export function TerminalContainer({
   onShellId,
   onShells,
   registerSend,
-  breadcrumb,
+  toolbarTarget,
 }: TerminalContainerProps) {
   return (
     <TerminalMount
@@ -48,7 +48,7 @@ export function TerminalContainer({
       {...(onShellId === undefined ? {} : { onShellId })}
       {...(onShells === undefined ? {} : { onShells })}
       {...(registerSend === undefined ? {} : { registerSend })}
-      {...(breadcrumb === undefined ? {} : { breadcrumb })}
+      {...(toolbarTarget === undefined ? {} : { toolbarTarget })}
     />
   );
 }

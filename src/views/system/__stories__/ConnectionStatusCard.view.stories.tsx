@@ -26,9 +26,7 @@ export const AllGreen: Story = {
     const canvas = within(canvasElement);
     const row = canvas.getByTestId('connection-row-events');
     await expect(row).toHaveTextContent('15ms');
-    // ⭐ Phase 1：`ok` 状态换成 `StatusPill`（design-notes §4）——钉住底层 variant 是
-    //    `ok`，不是只钉文字（文字「正常」与 pill variant 是两件独立的事，只测文字
-    //    抓不住"映射表被改错但文案凑巧还对"这种改法，见 `RestDown` 故事的反例）。
+    // 同时验证正常文案和 ok 语义状态，避免文字正确但状态映射错误。
     await expect(row.querySelector('[data-status]')).toHaveAttribute('data-status', 'ok');
   },
 };

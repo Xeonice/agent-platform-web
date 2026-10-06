@@ -18,7 +18,7 @@
 import { useCallback, useMemo } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { listAutomationRuns } from '@/services/api/automation.service';
-import { automationKeys, describeAutomationError } from '@/hooks/automation/useAutomations';
+import { automationKeys, describeAutomationReadError } from '@/hooks/automation/useAutomations';
 import { runRows } from '@/lib/automation/automationModel';
 import { RUNS_PAGE_SIZE, RUNS_PREVIEW_COUNT, type RunRow } from '@/types/automation';
 
@@ -77,12 +77,14 @@ export function useAutomationRuns(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [automationId, queryClient]);
 
-  const loadErrorMessage = query.isError ? describeAutomationError(query.error) : undefined;
+  const loadErrorMessage =
+    query.isError && !query.isFetching ? describeAutomationReadError(query.error) : undefined;
 
   return {
     rows,
     previewRows,
-    loading: query.isPending && automationId !== null,
+    loading:
+      (query.isPending || (query.isFetching && !query.isFetchingNextPage)) && automationId !== null,
     ...(loadErrorMessage === undefined ? {} : { loadErrorMessage }),
     hasMore: query.hasNextPage,
     loadingMore: query.isFetchingNextPage,

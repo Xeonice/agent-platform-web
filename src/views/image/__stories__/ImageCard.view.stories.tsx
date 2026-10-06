@@ -198,7 +198,11 @@ export const Disabled: Story = {
     // MUTATION：把「已禁用」的 pill 换成 `fail`（或换回 `⚪`/`🟢` 拼文案）⇒ 这条先红——
     // 禁用是用户主动做的，不是坏了，⛔ 不该跟"无效"共用红色；锁的是 `data-status`
     // 而不是某个具体的图标类名，emoji 写法与图标写法下都不该绿，除非真的按 isActive 切色。
-    await expect(canvas.getByTestId('enable-state')).toHaveAttribute('data-status', 'pending');
+    const badge = canvas.getByTestId('enable-state');
+    await expect(badge.querySelector('svg.lucide-square')).not.toBeNull();
+    await expect(badge.querySelector('[class*="animate-spin"]')).toBeNull();
+    await expect(badge.className).toContain('neutral');
+    await expect(canvas.getByTestId('image-card').className).not.toContain('opacity-');
   },
 };
 

@@ -202,7 +202,7 @@ const TaskStreamRow = memo(function TaskStreamRow({
         <pre className="overflow-x-auto whitespace-pre text-muted-foreground">{item.detail}</pre>
       )}
       {item.kind === 'error' && item.code !== undefined && (
-        <span className="text-[10px] text-muted-foreground">诊断码：{item.code}</span>
+        <span className="text-xs text-muted-foreground">诊断码：{item.code}</span>
       )}
     </li>
   );

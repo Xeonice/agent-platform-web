@@ -54,13 +54,18 @@ export interface SandboxRuntimeState {
    * 每来一次就归零的话，网络一抖计时就从头开始。
    */
   observedAt?: number;
+  lastProgressAt?: number;
+  restarting?: boolean;
+  failureOperation?: string;
 }
 
 /** REST DTO / WS 帧归一化后的一次写入。 */
 export interface SandboxStatusPatch {
+  restarting?: boolean;
   phase?: string;
   failureCode?: string;
   failureMessage?: string;
+  failureOperation?: string;
 }
 
 export interface SandboxStatusSlice {
@@ -95,6 +100,8 @@ export interface SandboxStatusSlice {
   applySandboxEvent: (event: SandboxEvent) => void;
   /** 移除条目（沙箱销毁/重试复位）。 */
   clearSandboxStatus: (sandboxId: string) => void;
+  continueSandboxWaiting: (sandboxId: string) => void;
+  markSandboxRestart: (sandboxId: string) => void;
 }
 
 export const createSandboxStatusSlice: StateCreator<
@@ -104,6 +111,32 @@ export const createSandboxStatusSlice: StateCreator<
   SandboxStatusSlice
 > = (set) => ({
   sandboxStatuses: {},
+  continueSandboxWaiting: (id): void => {
+    set((s) => ({
+      sandboxStatuses: {
+        ...s.sandboxStatuses,
+        [id]: {
+          ...s.sandboxStatuses[id],
+          status: s.sandboxStatuses[id]?.status ?? 'pending',
+          lastProgressAt: Date.now(),
+        },
+      },
+    }));
+  },
+  markSandboxRestart: (id): void => {
+    set((s) => ({
+      sandboxStatuses: {
+        ...s.sandboxStatuses,
+        [id]: {
+          ...s.sandboxStatuses[id],
+          status: 'starting',
+          restarting: true,
+          observedAt: Date.now(),
+          lastProgressAt: Date.now(),
+        },
+      },
+    }));
+  },
   runtimeInstalls: {},
   instanceStartups: {},
   setSandboxStatus: (sandboxId, status, patch): void => {
@@ -115,6 +148,13 @@ export const createSandboxStatusSlice: StateCreator<
           phase: patch?.phase,
           failureCode: patch?.failureCode,
           failureMessage: patch?.failureMessage,
+          failureOperation:
+            patch?.failureOperation ?? s.sandboxStatuses[sandboxId]?.failureOperation,
+          restarting: patch?.restarting ?? s.sandboxStatuses[sandboxId]?.restarting,
+          lastProgressAt:
+            s.sandboxStatuses[sandboxId]?.status === status
+              ? (s.sandboxStatuses[sandboxId].lastProgressAt ?? Date.now())
+              : Date.now(),
           // 只**保留**已有锚点（同一个 status 的刷新恢复），从不**新造**一个：
           // REST 说不出"这个状态是什么时候进的"，见 observedAt 的注释。
           observedAt:
@@ -141,6 +181,13 @@ export const createSandboxStatusSlice: StateCreator<
             [event.sandboxId]: {
               status: event.status,
               phase: event.phase,
+              restarting: s.sandboxStatuses[event.sandboxId]?.restarting,
+              failureOperation: s.sandboxStatuses[event.sandboxId]?.failureOperation,
+              lastProgressAt:
+                s.sandboxStatuses[event.sandboxId]?.status === event.status &&
+                s.sandboxStatuses[event.sandboxId]?.phase === event.phase
+                  ? (s.sandboxStatuses[event.sandboxId]?.lastProgressAt ?? Date.now())
+                  : Date.now(),
               // 计时锚点：**收到这一帧的此刻**。重连重放同一个 status 时沿用旧锚点，
               // 否则网络一抖「已等待」就归零。
               observedAt:
@@ -169,6 +216,20 @@ export const createSandboxStatusSlice: StateCreator<
         // ⚠️ `imageStaged` 缺席时写 undefined 是对的：**「provider 说不出」不能被记成
         // 「本机没有」**，文案层据此退回中性说法。
         set((s) => ({
+          sandboxStatuses:
+            s.sandboxStatuses[event.sandboxId] === undefined
+              ? s.sandboxStatuses
+              : {
+                  ...s.sandboxStatuses,
+                  [event.sandboxId]: {
+                    ...s.sandboxStatuses[event.sandboxId],
+                    status: s.sandboxStatuses[event.sandboxId]?.status ?? 'starting',
+                    lastProgressAt:
+                      s.instanceStartups[event.sandboxId]?.phase === event.phase
+                        ? s.sandboxStatuses[event.sandboxId]?.lastProgressAt
+                        : Date.now(),
+                  },
+                },
           instanceStartups: {
             ...s.instanceStartups,
             [event.sandboxId]: { phase: event.phase, imageStaged: event.imageStaged },

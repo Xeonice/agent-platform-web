@@ -1,31 +1,19 @@
-// 项目只读条（F21-6 §9.2）：主区**顶部**一条只读信息 —— 仓库地址 / 分支 / 代码体积 / 最后拉取。
-//
-// ⚠️ 屏上用词：内部叫「远端 / 基线 / 同步」，界面上分别是「仓库 / 项目当前代码 / 拉取最新代码」。
-// 「同步」尤其要避开 —— 它双向暧昧，而这条路**只拉不推**，用户会以为按一下会把本地改动推上去。
-// 纯展示、props 驱动、零副作用。
-//
-// **它不是详情页**：工作台主区在"没选任务"时本来就是空的，为四个字段开一个页面不成比例。
-//
-// ⚠️ **只读**：改仓库地址、切默认分支、重新 clone 都**不在这条上**。它回答的是
-// "我在拿什么代码干活"，不是项目管理。唯一的动作是 [拉取最新代码]（§9.3，仅 `ready` 态）。
-//
-// ★ 2026-09-01（F21-6 §10.2 C）：[🎁 已保留卷] / [⚙️ 自动化规则] 两个入口**已搬进
-// `ProjectMenuPanel`**（组头「⋯」→ 项目菜单）。它们当初挂在这条上是 `ProjectMenuPanel`
-// 不存在时的权宜之计（两处 ⏳ 注释随之删除）。这条自此**回到纯只读 + 一个 [拉取最新代码]**。
-// ⛔ 别再往这儿加项目级管理入口——那正是"只读条慢慢长成项目菜单"的第一步。
-//
-// ⚠️ 一个曾经"有意识留下"的缺口（§9.3）：拉取只更新**项目里的这份代码**，已经建好的任务
-// 工作区一律不动（它们是当时的写时复制副本）。于是同一项目下的两个任务可能跑在不同代码上。
-//
-// ★ **那个缺口的"看不出来"这一半，本轮补上了。** 原注释把它整条记成了缺口，但其中
-//   "界面上没说过这件事"纯粹是**文案层就能补**的：给 [拉取最新代码] 挂一句
-//   `SYNC_SCOPE_NOTE`，用户按之前就知道这一下不会动已有任务。剩下那一半（同项目下两个
-//   任务跑在不同代码上，界面上区分不出来）确实要数据支撑，仍然是缺口。
-//   ⛔ 不要因为"这是已知缺口"就把这句 tooltip 删掉 —— 缺的是数据，不是这句话。
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { GitBranch, Info, Loader2, MoreHorizontal } from 'lucide-react';
 import type { ProjectSourceType } from '@/types/project';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 
 export interface ProjectInfoBarProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  openWithoutFocus?: boolean;
+  syncSucceeded?: boolean;
   projectName: string;
   sourceType: ProjectSourceType;
   /** 仓库地址（`ProjectDto.repoUrl`）；空项目没有 ⇒ 整条降级为"空项目"。 */
@@ -82,15 +70,6 @@ function formatTime(iso: string): string {
   return Number.isNaN(at.getTime()) ? iso : at.toLocaleString();
 }
 
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <span className="flex min-w-0 items-baseline gap-1">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="truncate font-mono">{value}</span>
-    </span>
-  );
-}
-
 export function ProjectInfoBarView({
   projectName,
   sourceType,
@@ -105,68 +84,154 @@ export function ProjectInfoBarView({
   syncNeedsCredentials = false,
   onConfigureCredentials,
   onSync,
+  open,
+  onOpenChange,
+  openWithoutFocus = false,
+  syncSucceeded = false,
 }: ProjectInfoBarProps) {
-  const isEmptyProject = sourceType === 'empty';
-  // 空项目「最后拉取」显示的是**创建时间**（§9.2 表格最后一行）：它从来没拉取过，
-  // 显示一个空格子会让人以为"拉过但没记下来"。
-  const stamp = isEmptyProject ? createdAt : (updatedAt ?? createdAt);
-
+  const empty = sourceType === 'empty';
+  const label = empty ? '空项目' : (repoBranch ?? '远端默认分支');
+  const stamp = empty ? createdAt : (updatedAt ?? createdAt);
   return (
-    <div
-      data-testid="project-info-bar"
-      className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-xs"
-    >
-      <span className="font-semibold">{projectName}</span>
-
-      {isEmptyProject ? (
-        <span className="text-muted-foreground">空项目（没有关联仓库）</span>
-      ) : (
-        <>
-          <Field label="仓库" value={repoUrl ?? '—'} />
-          <Field label="分支" value={repoBranch ?? '—'} />
-          <Field
-            label="代码体积"
-            value={baselineSizeBytes === undefined ? '—' : formatBytes(baselineSizeBytes)}
-          />
-        </>
-      )}
-
-      <Field label={isEmptyProject ? '创建于' : '最后拉取'} value={formatTime(stamp)} />
-
-      {canSync && !isEmptyProject && (
+    <div className="relative flex shrink-0 items-center gap-2" data-testid="project-info-bar">
+      <DialogPrimitive.Root modal={false} open={open} onOpenChange={onOpenChange}>
+        <DialogPrimitive.Trigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="project-info-trigger"
+            title={`${label} · 最后拉取 ${syncSucceeded ? '刚刚' : formatTime(stamp)}`}
+            aria-label={`项目信息：${label}`}
+            className="max-w-40 data-[state=open]:bg-muted"
+          >
+            <GitBranch aria-hidden="true" className="hidden size-3.5 min-[1280px]:block" />
+            <span className="hidden truncate min-[1280px]:inline">{label}</span>
+            <Info aria-hidden="true" className="size-4 min-[1280px]:hidden" />
+          </Button>
+        </DialogPrimitive.Trigger>
+        <DialogPrimitive.Content
+          tabIndex={-1}
+          aria-describedby="project-info-description"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(360px,calc(100vw-2rem))] rounded-lg border border-border bg-card p-4 text-sm shadow-lg focus:outline-none"
+          onOpenAutoFocus={(event) => {
+            if (openWithoutFocus) event.preventDefault();
+          }}
+        >
+          <DialogPrimitive.Title className="font-semibold">{projectName}</DialogPrimitive.Title>
+          <DialogPrimitive.Description
+            id="project-info-description"
+            className="mt-1 text-xs text-muted-foreground"
+          >
+            项目信息
+          </DialogPrimitive.Description>
+          <dl className="my-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 text-xs">
+            <dt className="text-muted-foreground">仓库</dt>
+            <dd className="break-all font-mono">
+              {empty ? '空项目（没有关联仓库）' : (repoUrl ?? '—')}
+            </dd>
+            {!empty && (
+              <>
+                <dt className="text-muted-foreground">分支</dt>
+                <dd className="font-mono">{label}</dd>
+                <dt className="text-muted-foreground">代码体积</dt>
+                <dd className="font-mono">
+                  {baselineSizeBytes === undefined ? '—' : formatBytes(baselineSizeBytes)}
+                </dd>
+              </>
+            )}
+            <dt className="text-muted-foreground">{empty ? '创建于' : '最后拉取'}</dt>
+            <dd title={formatTime(stamp)}>
+              {!empty && syncSucceeded ? '刚刚' : formatTime(stamp)}
+            </dd>
+          </dl>
+          {syncErrorMessage && (
+            <div role="alert" className="mb-3 text-xs text-error">
+              <p>{syncErrorMessage}</p>
+              {syncNeedsCredentials && (
+                <Button
+                  className="mt-2"
+                  size="sm"
+                  variant="outline"
+                  onClick={onConfigureCredentials}
+                >
+                  配置 Git 凭证
+                </Button>
+              )}
+            </div>
+          )}
+          {syncing && (
+            <p role="status" className="mb-3 text-xs text-muted-foreground">
+              正在拉取 {projectName} 的最新代码…
+            </p>
+          )}
+          {syncSucceeded && (
+            <p role="status" className="mb-3 text-xs text-muted-foreground">
+              已更新到最新；已建好的任务不受影响
+            </p>
+          )}
+          {canSync && !empty && (
+            <div className="border-t border-border pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={syncing}
+                aria-label={syncing ? '正在拉取最新代码' : '拉取最新代码'}
+                aria-describedby="project-sync-scope"
+                data-testid="project-sync"
+                onClick={onSync}
+              >
+                {syncing && <Loader2 aria-hidden="true" className="size-4 animate-spin" />}
+                {syncing ? '正在拉取…' : '拉取最新代码'}
+              </Button>
+              <p
+                id="project-sync-scope"
+                className="mt-2 text-xs leading-relaxed text-muted-foreground"
+              >
+                {SYNC_SCOPE_NOTE}
+              </p>
+            </div>
+          )}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Root>
+      {canSync && !empty && (
         <Button
-          type="button"
-          variant="outline"
+          className="hidden min-[1120px]:inline-flex"
+          variant="ghost"
           size="sm"
           disabled={syncing}
           title={SYNC_SCOPE_NOTE}
-          aria-label={`拉取最新代码。${SYNC_SCOPE_NOTE}`}
-          data-testid="project-sync"
-          onClick={() => {
-            onSync();
-          }}
+          aria-label={syncing ? '正在拉取最新代码' : '拉取最新代码'}
+          onClick={onSync}
         >
+          {syncing && <Loader2 aria-hidden="true" className="size-4 animate-spin" />}
           {syncing ? '正在拉取…' : '拉取最新代码'}
         </Button>
       )}
-
-      {syncErrorMessage !== undefined && syncErrorMessage !== '' && (
-        <span className="flex items-center gap-2">
-          <span role="alert" className="text-red-400">
-            {syncErrorMessage}
-          </span>
-          {/* 权限类失败的出路不在这条只读条上——直接把用户送到凭证页，
-              与克隆失败那条路同款（F21-3 §10.2）。 */}
-          {syncNeedsCredentials && onConfigureCredentials !== undefined && (
-            <button
-              type="button"
-              className="shrink-0 underline hover:text-foreground"
-              onClick={onConfigureCredentials}
+      {canSync && !empty && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              className="min-[1120px]:hidden"
+              variant="ghost"
+              size="icon"
+              aria-label="更多项目操作"
             >
-              配置 Git 凭证
-            </button>
-          )}
-        </span>
+              <MoreHorizontal aria-hidden="true" className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem disabled={syncing} onSelect={onSync}>
+              {syncing && <Loader2 aria-hidden="true" className="size-4 animate-spin" />}
+              {syncing ? '正在拉取…' : '拉取最新代码'}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      {syncSucceeded && !open && (
+        <p role="status" className="sr-only">
+          已更新到最新；已建好的任务不受影响
+        </p>
       )}
     </div>
   );

@@ -1,45 +1,12 @@
-// 单项诊断结果（F21-5 §3 · P21-5 §9A/§9B · design/design-notes.md §4 Phase 1）。
-// 纯展示、props 驱动、零副作用。
-//
-// ⚠️ **`info` 渲染 `Info` 图标，不是 `AlertTriangle`。** 这是本文件存在的头号理由。
-// 预制镜像那一项的第 5 步（镜像已就绪但还没下载到本机）常态就是 `info`：镜像是好的，
-// 只是首个任务要多等几分钟。渲染成警告色会让用户去修一个不需要修的东西，而他能想到的
-// "修法"是删了重推——那会让情况更糟。⇒ `StatusPill` 的八态 variant 已经把 `info`/`warn`
-// 分成两套独立颜色 + 独立图标（design-notes §1 问题 2），这里只管把 `item.status` 原样
-// 交给它，⛔ 不许在这个文件里再长出一份自己的图标/颜色查表。
-//
-// ⚠️ **`timeout` 也有自己的图标（`Clock`，`StatusPill` 已定）。** 「没查出来」不是
-// 「查出来是坏的」：前者常见于「系统好像坏了」的场景，而它**不构成**这一项坏了的结论。
-//
-// ── 三层信息，三种渲染（2026-09-11 拆的）──────────────────────────────────────
-//
-// ⚠️ **第一层 `headline` 恒可见**：一句结论 + 挡不挡我干活，≤ 20 字。
-//
-// ⚠️ **第二层 `detailText` / `nextStep` 收进展开层**。证据（哪个端口、被谁占、还剩多少
-// GB）一个字都不许丢 —— 端口那一项的全部价值就在那句话里（P21-5 §9B）—— 但它不该跟
-// 结论抢第一行：上一版把整段证据顶在图标旁边，用户要读完三行才知道这一项到底好不好。
-//
-// ⛔ **`nextStep` 用普通字体渲染，没有 [复制] 按钮。** 上一版把整个 `hint` 塞进 `<code>`
-// 等宽框 + [复制]，而后端的 hint 早就演化成散文了（「重跑一次看稳不稳定」）—— **一段
-// 散文顶着一个复制按钮**，复制下来也没地方粘。等宽 + [复制] 只属于 `command`。
-//
-// ⛔ **全链路没有 markdown 渲染器。** 后端上屏文案里一个 `**` 都不许有，否则用户读到的
-// 是带星号的源代码。这条纪律在后端（每项检查的 spec）与这里（下面那条断言不到的地方靠
-// review）两头守；这里能做的是**不给 markdown 任何可乘之机**：纯文本渲染，不解析。
-//
-// ⚠️ **预制镜像那一项的 `stepText` 与 `errorCode` 各自成行**，⛔ 不与结论拼成一句：
-// 五步的下一步动作完全不同，合成一条等于把诊断退化成一个红灯（P21-5 §9A）。
-//
-// ⚠️ **展开状态不再是本地 `useState`。** Phase 1 接入「非 ok/info 默认展开」
-// （design-notes §1 问题 1）：哪几项默认展开由 `DiagnosticsCardView` 的 Accordion
-// 统一算（`lib/system/diagnosticsDisclosure.ts`），本组件只管接一个 `expanded: boolean`
-// 照着画——放回本地 state 会让"结果一到达就该展开"这条规则无从生效（组件早就带着
-// 上一次的展开状态挂在那儿，不会因为 status 从 undefined 变成 fail 而自动打开）。
+// 诊断结果由 StatusPill 表达严重度。info 不表示警告，timeout 不等于确定失败。
+// headline 恒可见，detailText/nextStep 在受控展开层；只有 command 使用等宽文字与复制。
+// 证据、步骤和错误码保持完整，以纯文本展示，不解析 markdown。
 import { AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { DiagnoseStatus } from '@/types/sse-protocol';
 import type { DiagnosticItemModel } from '@/types/system';
+import Link from 'next/link';
 
 const STATUS_TEXT: Readonly<Record<DiagnoseStatus, string>> = {
   ok: '正常',
@@ -48,15 +15,11 @@ const STATUS_TEXT: Readonly<Record<DiagnoseStatus, string>> = {
   warn: '警告',
   fail: '失败',
   // ⚠️ 「未得出结论」而不是「失败」：它没说这一项是坏的。
-  timeout: '未得出结论',
+  timeout: '超时未响应',
 };
 
-/**
- * ①–⑧：固定顺序的序号圆标（design/prototype.html `'①②③④⑤⑥⑦⑧'[d.id-1]`）。⚠️ 八项
- * 的展示顺序恒来自服务端首帧（`DiagnosticsCardModel.items`），这里只是把"它在这一次
- * 首帧里排第几"翻成一个圆圈数字，⛔ 不是把某个 check id 写死绑定到某个序号。
- */
-const ORDINAL_GLYPHS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'];
+/** 序号跟随首帧顺序；现有圆标之外仍显示数字，不丢掉新增检查的序号。 */
+const ORDINAL_GLYPHS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
 
 export interface DiagnosticItemProps {
   item: DiagnosticItemModel;
@@ -72,37 +35,28 @@ export interface DiagnosticItemProps {
 }
 
 export function DiagnosticItemView({ item, ordinal, expanded, onCopyHint }: DiagnosticItemProps) {
-  const pending = item.status === undefined;
-  const pillStatus: StatusPillStatus = item.status ?? 'pending';
+  const pending = item.status === undefined && !item.notReturned;
+  const pillStatus: StatusPillStatus = item.notReturned ? 'unknown' : (item.status ?? 'pending');
   const hasMore =
     item.detailText !== undefined || item.nextStep !== undefined || item.command !== undefined;
-  const ordinalGlyph = ORDINAL_GLYPHS[ordinal - 1];
+  const ordinalGlyph = ORDINAL_GLYPHS[ordinal - 1] ?? String(ordinal);
 
   return (
     <AccordionItem
       value={item.id}
       data-testid={`diagnostic-item-${item.id}`}
-      data-status={item.status ?? 'pending'}
+      data-status={item.notReturned ? 'not-returned' : (item.status ?? 'pending')}
       data-expanded={expanded ? 'true' : 'false'}
       className="flex flex-col gap-1 rounded-md border border-b border-border/60 px-3 py-2 text-sm"
     >
       <span className="flex flex-wrap items-center gap-2">
-        {/* 序号圆标（design/design-notes.md §4 Phase 1：诊断项 ①–⑧），紧跟展开箭头之后、
-            状态 pill 之前——与 design/prototype.html 的顺序一致。`ordinal` 超出 8 项时
-            （契约扩容/schema 不匹配的边角）宁可不画，也不许显示 `undefined`。 */}
-        {ordinalGlyph === undefined ? null : (
-          <span
-            aria-hidden="true"
-            className="w-4 flex-none font-mono text-xs text-muted-foreground"
-          >
-            {ordinalGlyph}
-          </span>
-        )}
-        <StatusPill status={pillStatus}>
-          {pending ? '检查中…' : STATUS_TEXT[item.status ?? 'ok']}
+        <span aria-hidden="true" className="w-4 flex-none font-mono text-xs text-muted-foreground">
+          {ordinalGlyph}
+        </span>
+        <StatusPill status={pillStatus} className={item.notReturned ? 'border-dashed' : undefined}>
+          {item.notReturned ? '未返回' : pending ? '检查中…' : STATUS_TEXT[item.status ?? 'ok']}
         </StatusPill>
-        {/* `flex-1` 让 label 占满中间空间，把耗时推到行尾右对齐
-            （design/prototype.html：`flex-1 truncate` 在 label 上，耗时是最后一个 flex 子项）。 */}
+        {/* label 占满中间空间并截断，将耗时推到行尾右对齐。 */}
         <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
         {item.durationText === undefined ? null : (
           <span className="flex-none text-xs text-muted-foreground">{item.durationText}</span>
@@ -176,6 +130,14 @@ export function DiagnosticItemView({ item, ordinal, expanded, onCopyHint }: Diag
             >
               {item.nextStep}
             </span>
+          )}
+          {item.imageManagementHref === undefined ? null : (
+            <Link
+              href={item.imageManagementHref}
+              className="inline-flex text-sm underline underline-offset-4"
+            >
+              去镜像管理
+            </Link>
           )}
 
           {/* 第二层 ③：真正可粘贴执行的命令 —— 只有它配等宽 + [复制]。 */}

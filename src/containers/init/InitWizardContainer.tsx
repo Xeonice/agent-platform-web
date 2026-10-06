@@ -6,8 +6,6 @@
 //    这是全局 Esc 分层规则（P20 §8.4）的**唯一例外**（F21-8 §2 阻塞语义）：向导是放行卡点，
 //    关掉它之后没有"回到哪里"—— `AppBootGate` 在 `initialized === false` 时压根不挂载工作台，
 //    所以逃逸出去只会得到一张白屏。⇒ 谁要在这里加 Esc/取消，请先回答"关掉之后用户看到什么"。
-import { useCallback } from 'react';
-import { toast } from 'sonner';
 import { useRuntimeAuthPanel } from '@/hooks/credential/useRuntimeAuthPanel';
 import { useInitWizard } from '@/hooks/system/useInitWizard';
 import { usePresetImageProvision } from '@/hooks/system/usePresetImageProvision';
@@ -33,19 +31,6 @@ export function InitWizardContainer() {
   // 展开态与凭证页、任务侧闸门共用同一份（见 `useRuntimeAuthPanel` 的文件头）。
   const authPanel = useRuntimeAuthPanel('凭证已配置');
 
-  // 与 F21-5 诊断项的 [复制] 同一套（§5）。
-  const copyFix = useCallback((command: string) => {
-    void navigator.clipboard.writeText(command).then(
-      () => {
-        toast.success('已复制');
-      },
-      () => {
-        // 静默失败会让用户去粘贴一段**上一次**复制的内容。
-        toast.error('复制失败，请手动选中命令复制');
-      },
-    );
-  }, []);
-
   const offline = w.connectivity.verdict === 'offline';
   // ⚠️ 离线时 [下一步] 需要用户先点过 [继续]（`OfflineNotice`）：那一下是 `acknowledgeOffline`
   //    的唯一来源，⛔ 前端不许替他填（否则一台真的连不上模型 API 的机器会静默通过初始化）。
@@ -60,7 +45,7 @@ export function InitWizardContainer() {
     return (
       <InitWizardShellView
         {...shell}
-        title="第 1 步 · 联网检查"
+        title="联网检查"
         description="平台需要连得上模型 API（Agent 用）与镜像下载源（下载沙箱镜像用）。这里直接显示上次检查的结果，不重跑一轮——需要最新结果时点 [重新检测]。"
         onNext={w.goNext}
         nextDisabled={nextBlockedByOffline}
@@ -89,11 +74,10 @@ export function InitWizardContainer() {
     return (
       <InitWizardShellView
         {...shell}
-        title="第 2 步 · 代理配置"
-        description="上一步有目标连不上。内网环境通常需要配置代理；配好后点 [保存并重新检测]。"
+        title="代理配置"
+        description="需要代理时可以在这里配置。代理会用于联网检查；配好后点 [保存并重新检测]。"
         onNext={w.goNext}
         nextLabel="跳过，下一步"
-        footerNote="保存只写配置，不会结束初始化。"
       >
         <ProxyConfigFormView
           // key 让设置回填到达后表单重新初始化（受控 state 的初值只吃第一次）。
@@ -127,7 +111,7 @@ export function InitWizardContainer() {
     return (
       <InitWizardShellView
         {...shell}
-        title="第 3 步 · 沙箱镜像"
+        title="沙箱镜像"
         // ⚠️ 原文写「镜像体积（约 13GB）」—— 那是**本地 build 产物**的体积，
         //    而发布资产按沙箱环境是 0.43–2.07GB（P21-8 §2 前提②）。写死一个数会在两种
         //    部署里各错一次，⇒ 只说"它是下一步磁盘评估的最大一块"这个不变的事实。
@@ -135,19 +119,19 @@ export function InitWizardContainer() {
         onNext={w.goNext}
         // ⚠️ **不阻塞**：未就绪也让走（§7A ③）。按钮上的字改成 [稍后配置，下一步]，
         //    后果由 footerNote 与卡片里的 ⚠️ 一起说清。
-        nextLabel={w.presetImage.ready ? '下一步' : '稍后配置，下一步'}
-        footerNote={
-          w.presetImage.ready
-            ? undefined
-            : '⚠️ 跳过后平台能进、项目能建，但在镜像备齐之前无法发起任何任务。'
+        nextLabel={!w.presetHasConclusion || w.presetImage.ready ? '下一步' : '稍后配置，下一步'}
+        nextDisabled={!w.presetHasConclusion}
+        nextDescribedBy={
+          w.presetHasConclusion && !w.presetImage.ready ? 'preset-image-blocked' : undefined
         }
+        footerNote={!w.presetHasConclusion ? '镜像检查完成后才能继续。' : undefined}
       >
         <PresetImageCheckView
           model={w.presetImage}
           isChecking={w.isChecking}
           cooldownSec={w.recheckCooldownSec}
           onRecheck={w.recheck}
-          onCopyFix={copyFix}
+          onCopyFix={w.copyFix}
           onProvision={provision.start}
           isProvisioning={provision.isProvisioning}
           {...(provision.statusText === undefined
@@ -168,16 +152,12 @@ export function InitWizardContainer() {
     return (
       <InitWizardShellView
         {...shell}
-        title="第 4 步 · 模型帐号"
+        title="模型帐号"
         description="Agent 用你自己的模型帐号跑。这一步排在最后一个准备项，是因为它是整个向导里唯一需要你离开本页去别处操作的一步 —— 而设备码只有 15 分钟。"
         onNext={w.goNext}
         // ⚠️ **不阻塞**（与 Step 3 同一条口径）：它们挡住的是同一件事——发起任务。
         nextLabel={model?.ready === true ? '下一步' : '稍后配置，下一步'}
-        footerNote={
-          model?.ready === true
-            ? undefined
-            : '⚠️ 跳过后平台能进、项目能建，但在配好至少一个模型帐号之前无法发起任何任务。'
-        }
+        nextDescribedBy={model?.blockedText === undefined ? undefined : 'subscription-blocked'}
       >
         {w.subscriptionError ? (
           <p role="alert" className="text-sm text-red-500">
@@ -199,8 +179,10 @@ export function InitWizardContainer() {
             //    成功」迟早对不上，而其中一份还管着运行期的凭证过期判定。
             renderAuthPanel={(r) => (
               <AuthGateContainer
+                inWizard
                 runtimeId={r.id}
                 runtimeName={r.displayName}
+                vendor={r.vendor}
                 methods={r.methods}
                 apiKeyPrefix={r.apiKeyPrefix}
                 // ⛔ **三件事，缺一件用户就看不到自己成功了**（2026-09-07 实测）：刷新
@@ -224,11 +206,16 @@ export function InitWizardContainer() {
   return (
     <InitWizardShellView
       {...shell}
-      title="第 5 步 · 本机资源"
+      title="本机资源"
       // ⛔ **这一句以前硬编码了「预留 15%」**，而同一屏的 `reservedText` 取的是后端下发的
       //    `dto.disk.reservedPercent` —— 后端一改这个值，标题这句当场变成假话。
       //    ⇒ 这里根本不该出现具体百分比，具体数字由下方那一行如实说。
-      description="确认这台机器的资源规模。平台会留出一部分容量不拿去跑任务（具体比例见下方），进度条的分母仍然是总容量。"
+      description="确认这台机器的资源规模。平台会留出一部分容量不拿去跑任务（具体比例见下方）。"
+      onNext={w.finish}
+      nextLabel={w.isFinishing ? '正在完成…' : '确认，开始使用'}
+      nextDisabled={w.isFinishing}
+      nextBusy={w.isFinishing}
+      footerNote="点它才算装完 —— 这一步只做一次，之后要改任何配置都在「系统状态」里。"
       // 最后一步的动作按钮在内容区里（[确认，开始使用]），壳上不再给 [下一步]。
     >
       <ResourceConfirmView
@@ -236,10 +223,16 @@ export function InitWizardContainer() {
         isError={w.resourceError}
         isFinishing={w.isFinishing}
         onFinish={w.finish}
+        hideFinishAction
       />
       {/* ⚠️ 失败**停在向导**，不放行（阻塞语义的另一半）。 */}
       {w.finishError === null ? null : (
-        <InitErrorPanelView message={w.finishError} isRetrying={w.isFinishing} onRetry={w.finish} />
+        <InitErrorPanelView
+          message={w.finishError}
+          isRetrying={w.isFinishing}
+          onRetry={w.finish}
+          onReviewConnectivity={w.finishNeedsOfflineReview ? w.returnToConnectivity : undefined}
+        />
       )}
     </InitWizardShellView>
   );

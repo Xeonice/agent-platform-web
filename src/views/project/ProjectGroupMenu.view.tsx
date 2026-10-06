@@ -47,8 +47,12 @@ export interface ProjectGroupMenuProps {
   /** 受控开合：container 要靠它决定给哪个项目加载 recovery / cancel 的 hook。 */
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onCloseAutoFocus?: (event: Event) => void;
   /** 恢复动作在途（retry / convert / cancel），期间禁用避免重复发。 */
   busy?: boolean;
+  canRetry?: boolean;
+  needsCredentials?: boolean;
+  onConfigureCredentials?: () => void;
   /** 恢复动作的可见错误（container 从 `useProjectRecovery` / cancel mutation 取）。 */
   actionError?: string;
   onOpenDetail: () => void;
@@ -66,7 +70,11 @@ export function ProjectGroupMenuView({
   cloneStatus,
   open,
   onOpenChange,
+  onCloseAutoFocus,
   busy = false,
+  canRetry = true,
+  needsCredentials = false,
+  onConfigureCredentials,
   actionError,
   onOpenDetail,
   onOpenRetainedVolumes,
@@ -92,13 +100,19 @@ export function ProjectGroupMenuView({
           title={`${projectName} 的项目菜单`}
           data-testid="project-group-menu-trigger"
           data-project-id={projectId}
+          data-project-menu-trigger={projectId}
           className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
         >
           <MoreHorizontal aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-56" data-testid="project-group-menu">
+      <DropdownMenuContent
+        onCloseAutoFocus={onCloseAutoFocus}
+        align="end"
+        className="w-56"
+        data-testid="project-group-menu"
+      >
         {/* 菜单归属哪个项目 —— 旧版靠「项目菜单…」那一项旁边的名字交代，现在由 Label 承担。 */}
         <DropdownMenuLabel className="truncate">{projectName}</DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -120,13 +134,20 @@ export function ProjectGroupMenuView({
         {cloneStatus === 'failed' && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              data-testid="group-menu-retry-clone"
-              disabled={busy}
-              onSelect={onRetryClone}
-            >
-              重试克隆
-            </DropdownMenuItem>
+            {needsCredentials && (
+              <DropdownMenuItem disabled={busy} onSelect={onConfigureCredentials}>
+                配置 Git 凭证
+              </DropdownMenuItem>
+            )}
+            {canRetry && (
+              <DropdownMenuItem
+                data-testid="group-menu-retry-clone"
+                disabled={busy}
+                onSelect={onRetryClone}
+              >
+                重试克隆
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               data-testid="group-menu-convert-to-empty"
               disabled={busy}
@@ -146,7 +167,7 @@ export function ProjectGroupMenuView({
                  把"回不去"写死是替产品下裁决，写"以后可以"则是撒谎 —— 两个都不行。
                  已列进交付报告等裁决；⛔ 在裁决之前不要往这句里加"不可逆"或"以后可以改回"。
             */}
-            <p className="px-2 py-1 text-[10px] leading-relaxed text-muted-foreground">
+            <p className="px-2 py-1 text-xs leading-relaxed text-muted-foreground">
               [改为空项目]：项目和它下面已有的任务都留着，只是工作区从空的开始，不再关联这个仓库。
             </p>
           </>
@@ -163,6 +184,9 @@ export function ProjectGroupMenuView({
             >
               取消克隆（保留项目）
             </DropdownMenuItem>
+            <p className="px-2 py-1 text-xs text-muted-foreground">
+              只停下这次克隆，项目留着；之后可以重试克隆或改为空项目。
+            </p>
           </>
         )}
 
@@ -181,7 +205,7 @@ export function ProjectGroupMenuView({
           <p
             role="alert"
             data-testid="group-menu-action-error"
-            className="px-2 py-1 text-[10px] leading-relaxed text-destructive"
+            className="px-2 py-1 text-xs leading-relaxed text-destructive"
           >
             {actionError}
           </p>

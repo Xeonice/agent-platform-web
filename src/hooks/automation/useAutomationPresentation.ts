@@ -21,7 +21,10 @@ const TRIGGER_TEXT: Record<string, string> = {
   all: '每次都发',
 };
 
-export function useAutomationPresentation(dto: AutomationDto | undefined): AutomationPresentation {
+export function useAutomationPresentation(
+  dto: AutomationDto | undefined,
+  runtimeNames: Readonly<Record<string, string>> = {},
+): AutomationPresentation {
   return useMemo(() => {
     if (dto === undefined) {
       return { configLines: [], promptPreview: '', webhookDeliveryNote: WEBHOOK_DELIVERY_NOTE };
@@ -32,7 +35,13 @@ export function useAutomationPresentation(dto: AutomationDto | undefined): Autom
         : `${String(dto.timeoutMinutes / 60)} 小时`;
     const lines: { label: string; value: string }[] = [
       // 屏上叫 Agent；`runtime` 是内部词（10 §6.5 的字段名），⛔ 不上屏。
-      { label: 'Agent', value: dto.runtime },
+      {
+        label: 'Agent',
+        value:
+          runtimeNames[dto.runtime] ??
+          { codex: 'Codex', 'claude-code': 'Claude Code' }[dto.runtime] ??
+          '未识别的 Agent',
+      },
       { label: '什么时候跑', value: describeSchedule(dto.scheduleKind, dto.scheduleConfig) },
       // ★ 时区单独一行，且注明它是**建规则时定下的**——用户才知道这个值为什么不跟着
       //   自己的机器变。⛔ 这一行不许折叠、不许省略（时区必须说清是哪个时区）。
@@ -63,5 +72,5 @@ export function useAutomationPresentation(dto: AutomationDto | undefined): Autom
       promptPreview: prompt,
       webhookDeliveryNote: WEBHOOK_DELIVERY_NOTE,
     };
-  }, [dto]);
+  }, [dto, runtimeNames]);
 }

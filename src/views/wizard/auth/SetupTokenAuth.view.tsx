@@ -2,6 +2,7 @@
 // [展开查看] 纯前端切换）→ [提交]。粘贴值受控于容器局部 state（提交即清空，绝不落 localStorage，15 §3.5）。
 // 纯展示、props 驱动、零副作用。
 import { useState } from 'react';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export interface SetupTokenAuthProps {
@@ -37,16 +38,16 @@ export function SetupTokenAuthView({
       }}
     >
       {instructions !== undefined && instructions !== '' && (
-        <p className="text-xs text-muted-foreground">{instructions}</p>
+        <p className="text-sm text-muted-foreground">{instructions}</p>
       )}
 
       <a
         href={verificationUrl}
         target="_blank"
-        rel="noreferrer"
-        className="text-sm text-primary underline-offset-2 hover:underline"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-sm underline underline-offset-2"
       >
-        打开授权链接 ↗
+        打开授权链接 <ExternalLink aria-hidden="true" className="size-4" />
       </a>
 
       {/*
@@ -55,12 +56,15 @@ export function SetupTokenAuthView({
         **不给码**。此前这里只有一个粘贴框，用户在浏览器里翻遍了也找不到码。
         ⇒ 先说清楚「通常不用管下面」，再把粘贴框留成远端部署的退路。
       */}
-      <p className="text-xs text-muted-foreground" aria-live="polite">
-        ⏳ 正在等浏览器把授权送回 —— <strong>通常不需要你做别的</strong>，完成后这里会自己变。
+      <p className="flex items-start gap-1.5 text-[13px] text-muted-foreground" role="status">
+        <Loader2 aria-hidden="true" className="mt-0.5 size-4 shrink-0 animate-spin" />
+        <span>
+          正在等浏览器把授权送回 —— <strong>通常不需要你做别的</strong>，完成后这里会自己变。
+        </span>
       </p>
 
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">
+        <span className="font-medium">
           页面<strong>显示了授权码</strong>时才需要粘贴（浏览器与平台不在同一台机器时才会这样）
         </span>
         <div className="flex gap-2">
@@ -69,7 +73,7 @@ export function SetupTokenAuthView({
             name="setup-token-code"
             autoComplete="off"
             placeholder="页面没给码就不用填"
-            className="flex-1 rounded-md border border-border bg-transparent px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-[13px] focus-visible:outline-none focus-visible:shadow-[shadow:var(--v2-focus-input)]"
             value={code}
             disabled={submitting}
             onChange={(e) => {
@@ -90,7 +94,10 @@ export function SetupTokenAuthView({
       </label>
 
       {error !== undefined && error !== '' && (
-        <p role="alert" className="text-xs text-red-400">
+        <p
+          role="alert"
+          className="rounded-md border border-[var(--v2-status-fail-subtle-border)] bg-[var(--v2-status-fail-subtle-bg)] p-3 text-sm text-destructive"
+        >
           {error}
         </p>
       )}

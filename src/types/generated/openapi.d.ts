@@ -224,6 +224,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read authoritative project deletion blockers and consequence counts */
+        get: operations["ProjectController_deletionPreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/retained-volumes": {
         parameters: {
             query?: never;
@@ -583,6 +600,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runtimes/{rt}/auth/sessions/{challengeRef}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Cancel an interactive login and reclaim its helper process and temporary files */
+        delete: operations["RuntimeController_cancelAuth"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runtimes/{rt}/auth/status": {
         parameters: {
             query?: never;
@@ -651,6 +685,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runtimes/{rt}/credentials/{credentialId}/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List tasks actually bound to this credential and tasks still preparing, without decrypting secrets */
+        get: operations["RuntimeController_deletionPreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runtimes/{rt}/credentials/{credentialId}": {
         parameters: {
             query?: never;
@@ -675,7 +726,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List image manifests. `runtimeId` filters to the wizard-selectable set (is_active ∧ not invalid ∧ supports that runtime); without it the management page gets history too. */
+        /** List image manifests. `runtimeId` alone returns selectable versions. `provider` returns history with compatibility and the configured default, including disabled and invalid versions for the task-image selector. */
         get: operations["ImageController_list"];
         put?: never;
         /** Register an image: resolve → validate → freeze the digest */
@@ -697,6 +748,23 @@ export interface paths {
         put?: never;
         /** Pre-flight validate a reference — never persists a manifest */
         post: operations["ImageController_validate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{id}/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read versions and non-destroyed task references before deleting one image manifest */
+        get: operations["ImageController_deletionPreview"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -784,6 +852,40 @@ export interface paths {
         put?: never;
         /** Create an automation rule (timezone is snapshotted here) */
         post: operations["ProjectAutomationController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/automations/{id}/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read authoritative run, artifact and active task deletion consequences */
+        get: operations["AutomationController_deletionPreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/automations/attention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List degraded and automatically disabled rules across all projects */
+        get: operations["AutomationController_listAttention"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -988,7 +1090,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** 启用 / 重新生成 / 关闭访问口令。enable+regenerate 一次性返回 16 位明文，此后只存 hash；重新生成不影响已通过的 session */
+        /** 启用 / 重新生成 / 关闭访问口令。enable+regenerate 一次性返回 16 位明文，此后只存 hash；重新生成默认保留会话，invalidateSessions=true 使旧会话失效并为发起浏览器签发新会话 */
         put: operations["SystemController_setAccessPasscode"];
         post?: never;
         delete?: never;
@@ -1048,6 +1150,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/providers/{id}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取指定沙箱环境最近20行运行日志；不可用时返回原因 */
+        get: operations["SystemController_getProviderLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/diagnose": {
         parameters: {
             query?: never;
@@ -1057,7 +1176,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 逐项诊断，SSE 流式（帧类型手写于两仓 sse-protocol.ts）。各项并行、单项超时 5s，整轮 ≈ 最慢那项；断连即中止剩余检查 */
+        /** 逐项诊断，SSE 流式（帧类型见两仓 sse-protocol.ts）。各项并行、单项时限由 PARAM.DIAG_ITEM_TIMEOUT_MS 与首帧 timeoutMs 给出，整轮约等于最慢那项；断连即中止剩余检查 */
         post: operations["SystemController_diagnose"];
         delete?: never;
         options?: never;
@@ -1076,6 +1195,23 @@ export interface paths {
         put?: never;
         /** 把预制镜像搬到位（只搬不建）：本机 docker 库已有 ⇒ 直接推；发布资产清单命中 ⇒ 校验 sha256 后装载再推。搬不了返 409，已在搬返 409（两个码） */
         post: operations["SystemController_provisionPresetImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deployment/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read-only deployment barrier, idle blockers and DB/SDK/image-registration readiness (no VM probe) */
+        get: operations["DeploymentController_status"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1141,7 +1277,20 @@ export interface components {
         DeleteProjectDto: {
             keepBaseline?: boolean;
         };
+        ProjectDeletionPreviewResponseDto: {
+            activeTasks: {
+                id: string;
+                name: string;
+            }[];
+            retainedVolumeCount: number;
+            automationCount: number;
+            automationRunCount: number;
+            taskCount: number;
+        };
         RetainedVolumeResponseDto: {
+            sandboxName?: string;
+            sourceAutomationId?: string;
+            sourceAutomationName?: string;
             id: string;
             projectId: string;
             sandboxId?: string;
@@ -1177,6 +1326,10 @@ export interface components {
             runtime: string;
             availableRuntimes: string[];
             provider: string;
+            image?: string;
+            imageId?: string;
+            imageDigest?: string;
+            imageIsBuiltin?: boolean;
             name: string;
             /** @enum {string} */
             status: "pending" | "scheduling" | "preparing-workspace" | "creating" | "starting" | "running" | "idle" | "stopping" | "stopped" | "failed" | "destroying" | "destroyed";
@@ -1186,6 +1339,15 @@ export interface components {
             waitingInput: boolean;
             version: number;
             failureCode?: string;
+            /** @enum {string} */
+            failureOperation?: "provision" | "start" | "stop" | "destroy";
+            sourceAutomationId?: string;
+            sourceAutomationName?: string;
+            hasRun?: boolean;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
             failureMessage?: string;
             health?: {
                 /** @enum {string} */
@@ -1314,6 +1476,7 @@ export interface components {
             message?: string;
         };
         RuntimeResponseDto: {
+            pendingTeardownCount?: number;
             id: string;
             displayName: string;
             vendor: string;
@@ -1383,6 +1546,22 @@ export interface components {
             /** @enum {string} */
             activeAuthMethod: "account" | "api-key";
         };
+        RuntimeCredentialDeletionPreviewResponseDto: {
+            affectedTasks: {
+                id: string;
+                name: string;
+                runtime: string;
+                status: string;
+                headless: boolean;
+            }[];
+            preparingTasks: {
+                id: string;
+                name: string;
+                runtime: string;
+                status: string;
+                headless: boolean;
+            }[];
+        };
         ImageManifestResponseDto: {
             id: string;
             imageId: string;
@@ -1398,6 +1577,10 @@ export interface components {
                 healthcheckCmd?: string[];
             };
             supportedRuntimes: string[];
+            providerCompatibility?: {
+                [key: string]: boolean;
+            };
+            isProviderDefault?: boolean;
             resourceDefaults: {
                 cores: number;
                 ramMb: number;
@@ -1428,6 +1611,7 @@ export interface components {
         };
         RegisterImageDto: {
             ref: string;
+            copyConfigFromId?: string;
         };
         RegisterImageResponseDto: {
             manifest: {
@@ -1445,6 +1629,10 @@ export interface components {
                     healthcheckCmd?: string[];
                 };
                 supportedRuntimes: string[];
+                providerCompatibility?: {
+                    [key: string]: boolean;
+                };
+                isProviderDefault?: boolean;
                 resourceDefaults: {
                     cores: number;
                     ramMb: number;
@@ -1474,6 +1662,7 @@ export interface components {
                 resolvedAt: string;
             };
             validation: {
+                digest?: string;
                 /** @enum {string} */
                 status: "pending" | "valid" | "warning" | "invalid";
                 errors: {
@@ -1489,6 +1678,7 @@ export interface components {
             };
         };
         ValidationOutcomeResponseDto: {
+            digest?: string;
             /** @enum {string} */
             status: "pending" | "valid" | "warning" | "invalid";
             errors: {
@@ -1502,7 +1692,24 @@ export interface components {
                 message: string;
             }[];
         };
+        ImageDeletionPreviewResponseDto: {
+            canDelete: boolean;
+            tasks: {
+                id: string;
+                name: string;
+                status: ("pending" | "scheduling" | "preparing-workspace" | "creating" | "starting" | "running" | "idle" | "stopping" | "stopped" | "failed" | "destroying" | "destroyed") | "waiting_input";
+                projectId: string;
+                projectName: string;
+            }[];
+            versions: {
+                id: string;
+                version: string;
+                digest: string;
+                isActive: boolean;
+            }[];
+        };
         RevalidateOutcomeResponseDto: {
+            digest?: string;
             /** @enum {string} */
             status: "pending" | "valid" | "warning" | "invalid";
             errors: {
@@ -1539,6 +1746,7 @@ export interface components {
             upstream: {
                 digest: string;
                 validation: {
+                    digest?: string;
                     /** @enum {string} */
                     status: "pending" | "valid" | "warning" | "invalid";
                     errors: {
@@ -1606,6 +1814,23 @@ export interface components {
             webhookUrl?: string;
             /** @enum {string} */
             triggerOn?: "failure" | "success" | "all";
+        };
+        AutomationDeletionPreviewResponseDto: {
+            runCount: number;
+            artifactCount: number;
+            runningTasks: {
+                id: string;
+                name: string;
+            }[];
+        };
+        AutomationAttentionItemResponseDto: {
+            projectId: string;
+            projectName: string;
+            id: string;
+            name: string;
+            /** @enum {string} */
+            status: "autoDisabled" | "degraded";
+            consecutiveFailures: number;
         };
         WebhookTestRequestDto: {
             url: string;
@@ -1734,12 +1959,19 @@ export interface components {
         AccessPasscodeRequestDto: {
             /** @enum {string} */
             action: "enable" | "regenerate" | "disable";
+            invalidateSessions?: boolean;
         };
         AccessPasscodeResponseDto: {
             enabled: boolean;
             passcode?: string;
         };
         SystemResourcesResponseDto: {
+            capacity?: {
+                remainingTasks: number;
+                registeredTasks: number;
+                maxTasks: number;
+                basis: string;
+            };
             cpu: {
                 cores: number;
                 loadAvg1m: number;
@@ -1812,8 +2044,37 @@ export interface components {
                 isDefault: boolean;
             }[];
             healthWindowMs: number;
+            healthWarnRate: number;
+            healthErrorRate: number;
+        };
+        ProviderLogsResponseDto: {
+            lines: string[];
+            unavailableReason?: string;
+        };
+        DeploymentStatusDto: {
+            ready: boolean;
+            draining: boolean;
+            idle: boolean;
+            readiness: {
+                database: boolean;
+                provider: boolean;
+                image: boolean;
+            };
+            inFlightHTTP: number;
+            activeWS: number;
+            credentialAuth: number;
+            blockers: {
+                sandboxes: number;
+                agentTasks: number;
+                automationRuns: number;
+                enabledAutomations: number;
+                resourceAllocations: number;
+                cloningProjects: number;
+                projectCleanupJobs: number;
+            };
         };
         ErrorEnvelope: {
+            retryAfterSec?: number;
             code: string;
             message: string;
             retryable: boolean;
@@ -2191,6 +2452,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ProjectController_deletionPreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDeletionPreviewResponseDto"];
+                };
             };
         };
     };
@@ -2710,6 +2992,26 @@ export interface operations {
             };
         };
     };
+    RuntimeController_cancelAuth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rt: string;
+                challengeRef: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     RuntimeController_pollStatus: {
         parameters: {
             query: {
@@ -2808,6 +3110,28 @@ export interface operations {
             };
         };
     };
+    RuntimeController_deletionPreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rt: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeCredentialDeletionPreviewResponseDto"];
+                };
+            };
+        };
+    };
     RuntimeController_revoke: {
         parameters: {
             query?: never;
@@ -2831,6 +3155,7 @@ export interface operations {
     ImageController_list: {
         parameters: {
             query?: {
+                provider?: string;
                 runtimeId?: string;
             };
             header?: never;
@@ -2901,6 +3226,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidationOutcomeResponseDto"];
+                };
+            };
+        };
+    };
+    ImageController_deletionPreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageDeletionPreviewResponseDto"];
                 };
             };
         };
@@ -3069,6 +3415,46 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    AutomationController_deletionPreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationDeletionPreviewResponseDto"];
+                };
+            };
+        };
+    };
+    AutomationController_listAttention: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationAttentionItemResponseDto"][];
+                };
             };
         };
     };
@@ -3509,6 +3895,27 @@ export interface operations {
             };
         };
     };
+    SystemController_getProviderLogs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderLogsResponseDto"];
+                };
+            };
+        };
+    };
     SystemController_diagnose: {
         parameters: {
             query?: never;
@@ -3545,6 +3952,25 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+        };
+    };
+    DeploymentController_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeploymentStatusDto"];
                 };
             };
         };

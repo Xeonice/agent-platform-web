@@ -1,70 +1,78 @@
-// 解锁门表单（11 §3.1）：输入 passcode → 提交。纯展示、props 驱动、零副作用。
-// passcode 仅存本地受控 state，提交后不回填、不落 localStorage（安全红线）。
 import { useState } from 'react';
+import { CircleX, Loader2, LockKeyhole } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export interface UnlockFormProps {
-  /** 锁定原因（后端信封 message，可空）。 */
   reason?: string | null;
-  /** 提交进行中。 */
   submitting?: boolean;
-  /** 解锁失败信息（口令错误/锁定）。 */
   errorMessage?: string;
-  /** 提交口令。 */
+  lockedForMinutes?: number;
   onSubmit: (passcode: string) => void;
 }
 
 export function UnlockFormView({
-  reason,
   submitting = false,
   errorMessage,
+  lockedForMinutes = 0,
   onSubmit,
 }: UnlockFormProps) {
   const [passcode, setPasscode] = useState('');
   const trimmed = passcode.trim();
-
+  const blocked = lockedForMinutes > 0;
+  const message = blocked
+    ? `错得太多次，已暂时锁定，约 ${String(lockedForMinutes)} 分钟后再试。`
+    : errorMessage;
   return (
     <form
-      className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border bg-background p-6 shadow-lg"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (trimmed !== '' && !submitting) onSubmit(trimmed);
+      className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border bg-card p-6 shadow-[shadow:var(--v2-shadow-card)]"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (trimmed && !submitting && !blocked) onSubmit(trimmed);
       }}
     >
       <div>
         <h2 className="text-lg font-semibold">需要访问口令</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {reason !== undefined && reason !== null && reason !== ''
-            ? reason
-            : '此环境已启用访问口令，请输入口令后继续。'}
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">这个平台设了访问口令，输入后才能继续。</p>
       </div>
-
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">访问口令</span>
+      <label className="flex flex-col gap-1.5 text-sm">
+        <span>访问口令</span>
         <input
           type="password"
           name="passcode"
           autoComplete="off"
           autoFocus
-          className="rounded-md border border-border bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          aria-invalid={!!message}
+          aria-describedby={message ? 'access-error access-source' : 'access-source'}
+          className={`h-9 rounded-md border bg-background px-3 text-sm focus-visible:outline-none ${message ? 'border-destructive shadow-[shadow:var(--v2-focus-input-error)]' : 'border-border focus-visible:shadow-[shadow:var(--v2-focus-input)]'}`}
           value={passcode}
           disabled={submitting}
-          onChange={(e) => {
-            setPasscode(e.target.value);
+          onChange={(event) => {
+            setPasscode(event.target.value);
           }}
         />
       </label>
-
-      {errorMessage !== undefined && errorMessage !== '' && (
-        <p role="alert" className="text-sm text-red-400">
-          {errorMessage}
+      {message && (
+        <p
+          id="access-error"
+          role="alert"
+          className="flex items-start gap-2 text-sm text-foreground"
+        >
+          {blocked ? (
+            <LockKeyhole aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-destructive" />
+          ) : (
+            <CircleX aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-destructive" />
+          )}
+          {message}
         </p>
       )}
-
-      <Button type="submit" disabled={submitting || trimmed === ''}>
+      <Button type="submit" disabled={submitting || blocked || !trimmed}>
+        {submitting && <Loader2 aria-hidden="true" className="animate-spin" />}
         {submitting ? '验证中…' : '解锁'}
       </Button>
+      <p id="access-source" className="text-xs leading-relaxed text-muted-foreground">
+        口令只在首次启动时输出在服务日志里，可以找部署这台平台的人要；忘了可以用环境变量
+        ACCESS_PASSCODE 重设。
+      </p>
     </form>
   );
 }

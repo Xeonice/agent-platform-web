@@ -31,6 +31,7 @@ export type SystemSettingsDto = components['schemas']['SystemSettingsResponseDto
 export type UpdateSystemSettingsDto = components['schemas']['UpdateSystemSettingsDto'];
 /** `GET /api/system/resources`。 */
 export type SystemResourcesDto = components['schemas']['SystemResourcesResponseDto'];
+export type ProviderLogsDto = components['schemas']['ProviderLogsResponseDto'];
 /** `GET /api/system/providers`（⚠️ 与 `GET /api/providers` 是两个端点）。 */
 export type SystemProvidersDto = components['schemas']['SystemProvidersResponseDto'];
 
@@ -60,12 +61,7 @@ export interface ResourceGaugeModel {
   usedPercent: number;
   /** `'4.2 / 8 核'`、`'5.8 / 16 GB'`、`'150 / 200 GB'`。 */
   amountText: string;
-  /**
-   * 仅磁盘维度有；本机文件系统挂载路径。⚠️ **独立成行，不并进 `label`**——真实路径
-   * （如 `/Users/xxx/Library/Application Support/...`）比 `/data` 长得多，拼进
-   * `磁盘（${path}）` 会把状态行撑到换行，连带把状态 pill 挤成两行（真实布局 bug，
-   * design/design-notes.md §4 Phase 1 收口时发现）。
-   */
+  /** 磁盘挂载路径单独成行，避免真实长路径挤压状态与数值。 */
   pathText?: string;
 }
 
@@ -77,6 +73,7 @@ export interface RetainedVolumeModel {
   sizeText: string;
   /** `'占 DATA_ROOT 的 22.5%'`。 */
   shareText: string;
+  warningText?: string;
   /** `'最早的成果还需 6 天清理'` / `'不足 1 天'`；无保留卷时不产出。 */
   countdownText?: string;
   /**
@@ -95,6 +92,10 @@ export interface ResourcePoolCardModel {
   overallLevel: ResourceLevel;
   /** 三档各自一句（「资源充足」/「建议停止部分 Task」/「无法创建新 Task」）。 */
   overallText: string;
+  nextSteps?: string[];
+  capacityText?: string;
+  capacityHint?: string;
+  capacityLevel?: ResourceLevel;
   activeTasks: number;
   /** 预留比例只影响调度上限，不影响进度条分母（P21-8 §7）。 */
   reservedPercent: number;
@@ -142,6 +143,7 @@ export interface SandboxEnvStatusCardModel {
   imageSpecs: { id: string; isDefault: boolean }[];
   /** `'最近 1 小时'`。 */
   windowText: string;
+  thresholdText?: string;
 }
 
 /** 一行连接状态。`unknown` 是**第三态**，不是「坏的」——见 `ConnectionStatusCardModel`。 */
@@ -153,6 +155,7 @@ export interface ConnectionRowModel {
   state: ConnectionState;
   /** 一行人话，直接上 UI。 */
   valueText: string;
+  showBadge?: boolean;
   /** 为什么是 `unknown` / `down`；`ok` 时通常不给。 */
   hint?: string;
 }
@@ -174,6 +177,10 @@ export interface DiagnosticItemModel {
   label: string;
   /** `undefined` = 这一项还没回来（⏳ 占位，来自首帧 `start`）。 */
   status?: DiagnoseStatus;
+  /** 本轮已中断而未拿到这一项的结果；不再显示运行中的占位。 */
+  notReturned?: boolean;
+  /** 本项允许平台准备镜像时，下一步链接到预制镜像卡。 */
+  imageManagementHref?: string;
   /** 一句话结论（≤ 20 字、不换行）：这一项好不好 + 挡不挡我干活。默认唯一可见的那行。 */
   headline?: string;
   /** 第二层：证据、例外条款、为什么。**默认收进展开层**。 */
@@ -190,13 +197,7 @@ export interface DiagnosticItemModel {
   errorCode?: string;
   /** `'1.2s'`；未返回时不产出。 */
   durationText?: string;
-  /**
-   * 只在第 ⑤ 项（`outbound-network`，联网检查）出现：`'超时时限 10s'`。
-   *
-   * ⚠️ 数值**来自服务端首帧 `start.timeoutMs`**（`diagnosticsCardModel` 里算好），
-   * ⛔ 不许在这里或调用方写死一个字面量秒数——`design/prototype.html` 那份静态原型
-   * 里写的 `10s` 只是示例数据，落地时必须原样跟着配置走（design-notes §4 Phase 1）。
-   */
+  /** 仅联网检查显示超时时限；数值来自服务端首帧 start.timeoutMs，不写死示例秒数。 */
   timeoutText?: string;
 }
 

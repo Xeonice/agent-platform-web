@@ -8,7 +8,7 @@ import type { Project, ProjectGroup, Sandbox, TaskStatusFilter } from '@/types/d
 export interface ProjectTaskTree {
   groups: ProjectGroup[];
   waitingInputCount: number;
-  /** query 非空或 status !== 'all'（design-notes.md §4 Phase 3：搜索 + 筛选 chips）。 */
+  /** query 非空或 status 不为 all 时，存在有效任务筛选。 */
   hasActiveFilter: boolean;
   /**
    * 过滤后一条任务都不剩，且原始树里本来就有任务（区别于"这个人还没建过任务"的空态）。
@@ -40,8 +40,7 @@ export function useProjectTaskTree(
   statusFilter: TaskStatusFilter = 'all',
 ): ProjectTaskTree {
   const { groups, hasActiveFilter, hasNoFilterMatches } = useMemo(() => {
-    // 「活跃于 X 前」是纯展示派生字段（design-notes.md §4 Phase 3），在这里一次性算好
-    // 附到每个任务上——view 层不许 import lib，算晚了没处算。
+    // 活跃时间是纯展示派生字段，在 hook 中计算后作为 props 传给 view。
     const now = Date.now();
     const withActivity = tasks.map((t) => ({
       ...t,

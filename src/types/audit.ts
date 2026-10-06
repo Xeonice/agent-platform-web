@@ -101,7 +101,7 @@ export interface AuditRowModel {
   /** 展开时渲染的已格式化 JSON；**detail 为空时不产出** ⇒ 该行不给展开箭头。 */
   detailText?: string;
   /** [查看该沙箱完整时间线]；只有沙箱类事件才有。 */
-  subjectLink?: { subjectId: string; label: string };
+  subjectLink?: { subjectId: string; label: string; subjectName?: string };
 }
 
 /**

@@ -1,12 +1,8 @@
 // 选中规则的配置详情 + 动作 + 运行历史（F21-7 §3）。纯展示。
 //
-// ⚠️ **删除的二次确认就地展开，不叠第二层弹层**（P20 §8.4 modal 不堆叠 / F21-7 §2）：
-//   本面板自己就活在一层 `ModalShell` 里，再套一个 dialog 就是两层。
-//   与 `RetainedVolumesPanel.view` 的处理一致（那里的删除确认也是就地展开）。
-//   ⇒ F21-7 §3 组件树里的 `DeleteRuleConfirm.view` 因此**没有作为独立弹层组件落地**，
-//     它的职责在本文件内的 `confirming` 分支里，交付报告已列出这处偏离。
-import { useState } from 'react';
-import { AlertTriangle, Check, Pause, X, type LucideIcon } from 'lucide-react';
+// 删除动作由容器切到同一个对话框里的 DeleteAutomationConfirm 视图（REQ-AUT-024）。
+import type { RefObject } from 'react';
+import { AlertTriangle, Check, Square, X, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RunHistoryListView } from '@/views/project/RunHistoryList.view';
 import type { AutomationRow, RunRow } from '@/types/automation';
@@ -26,11 +22,11 @@ const STATUS_ICON_CLASS: Record<'ok' | 'warn' | 'fail', string> = {
 function LifecycleIcon({ status }: { status: AutomationRow['status'] }) {
   if (status === undefined) {
     return (
-      <Pause
+      <Square
         aria-hidden="true"
         data-testid="detail-lifecycle-icon"
         data-lifecycle-status="off"
-        className="h-4 w-4 shrink-0 text-muted-foreground"
+        className="h-4 w-4 shrink-0 fill-current text-muted-foreground"
       />
     );
   }
@@ -47,6 +43,7 @@ function LifecycleIcon({ status }: { status: AutomationRow['status'] }) {
 
 export interface AutomationDetailProps {
   row: AutomationRow;
+  focusRegionRef?: RefObject<HTMLElement | null>;
   /** 配置摘要（runtime / 调度 / 超时 / 保留期 / webhook），由 container 组装好。 */
   configLines: { label: string; value: string }[];
   /** 任务内容预览（前若干字符）。⚠️ 完整 prompt 只在编辑表单里展开。 */
@@ -68,11 +65,14 @@ export interface AutomationDetailProps {
   onToggle: (id: string, next: boolean) => void;
   onDelete: (id: string) => void;
   onLoadMoreRuns: () => void;
+  onRetryRuns?: () => void;
+  onViewArtifacts?: (sandboxId: string) => void;
   onOpenTask?: (sandboxId: string) => void;
 }
 
 export function AutomationDetailView({
   row,
+  focusRegionRef,
   configLines,
   promptPreview,
   busy = false,
@@ -84,13 +84,17 @@ export function AutomationDetailView({
   onToggle,
   onDelete,
   onLoadMoreRuns,
+  onRetryRuns,
+  onViewArtifacts,
   onOpenTask,
 }: AutomationDetailProps) {
-  const [confirming, setConfirming] = useState(false);
   const enabled = row.lifecycle !== 'off' && row.lifecycle !== 'autoDisabled';
 
   return (
-    <div className="flex flex-col gap-4 px-5 py-4 text-sm" data-testid="automation-detail">
+    <div
+      className="max-h-[calc(85dvh-64px)] overflow-y-auto flex flex-col gap-4 px-5 py-4 text-sm"
+      data-testid="automation-detail"
+    >
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={onBack} data-testid="detail-back">
           ← 返回列表
@@ -123,6 +127,9 @@ export function AutomationDetailView({
         <p className="text-xs text-muted-foreground">任务内容</p>
         <pre
           className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-muted px-2 py-1 text-[11px]"
+          tabIndex={0}
+          role="region"
+          aria-label="任务内容预览"
           data-testid="detail-prompt"
         >
           {promptPreview}
@@ -158,54 +165,25 @@ export function AutomationDetailView({
         >
           {row.lifecycle === 'autoDisabled' ? '重新开启' : enabled ? '关掉' : '开启'}
         </Button>
-        {!confirming && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={() => {
-              setConfirming(true);
-            }}
-            data-testid="detail-delete"
-          >
-            删除
-          </Button>
-        )}
-      </div>
-
-      {confirming && (
-        <div
-          className="rounded border border-red-500/40 bg-red-500/5 px-3 py-2 text-xs"
-          data-testid="detail-delete-confirm"
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-error"
+          disabled={busy}
+          onClick={() => {
+            onDelete(row.id);
+          }}
+          data-testid="detail-delete"
         >
-          <p>删除「{row.name}」？这条规则的运行历史会一起删掉，删了拿不回来。</p>
-          <div className="mt-2 flex gap-2">
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                onDelete(row.id);
-              }}
-              data-testid="detail-delete-confirm-yes"
-            >
-              确认删除
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setConfirming(false);
-              }}
-              data-testid="detail-delete-confirm-no"
-            >
-              取消
-            </Button>
-          </div>
-        </div>
-      )}
+          删除
+        </Button>
+      </div>
 
       <RunHistoryListView
         rows={runs.rows}
+        {...(focusRegionRef === undefined ? {} : { focusRegionRef })}
+        {...(onRetryRuns === undefined ? {} : { onRetry: onRetryRuns })}
+        {...(onViewArtifacts === undefined ? {} : { onViewArtifacts })}
         previewRows={runs.previewRows}
         loading={runs.loading}
         {...(runs.loadErrorMessage === undefined

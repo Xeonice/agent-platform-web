@@ -1,10 +1,3 @@
-// F21-6 §7.2：组头两个 variant —— `normal` 与 `cloneFailed`（`● [Folder] 名字 [AlertTriangle] 克隆失败 ⋯`，
-// 前导 `●` 是 StatusDot）。
-//
-// ⚠️ §7.2 原本还要求一条否定性 play：「failed 态点组头 → 只触发 onToggleFold，
-// `onSelectProject` 未被调用」。**本实现刻意不满足它**，理由见 view 文件头：
-// 恢复面板（§10.2 A 裁决"留在原地不动"）正是靠"选中失败项目"渲染出来的，挡掉选中
-// 就把 P0-1 那条通路断了。这条偏离已回填文档。
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { expect, fn, userEvent, within } from 'storybook/test';
 import { ProjectGroupHeaderView } from '@/views/project/ProjectGroupHeader.view';
@@ -28,63 +21,71 @@ export default meta;
 
 type Story = StoryObj<typeof ProjectGroupHeaderView>;
 
-/**
- * 常规组头 `[Folder] ProjectName · N ⋯`。
- * ⭐ **这一期的立论就在这个 `⋯` 上**：在它之前，删除项目在界面上根本够不着（§10.1）。
- */
 export const Normal: Story = {
   args: { menuSlot: <span data-testid="group-menu-slot-probe">⋯</span> },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const header = canvas.getByTestId('project-group-header');
     await expect(header).toHaveAttribute('data-variant', 'normal');
-    // MUTATION：把 `<Folder>` 换回 📁 字符或换成另一个图标 ⇒ 这条先红——只断言
-    // 项目名文本（下面 userEvent 那句）不会因为图标变了而变红，锁不住"真的是 Folder"。
     await expect(header.querySelector('svg.lucide-folder')).not.toBeNull();
-    /*
-     * ⚠️ 组头**不再自己画「⋯」按钮**（2026-09-14）：触发器随菜单一起住在
-     * `ProjectGroupMenu.view`，经 `menuSlot` 摆进这一行的末尾。这里只钉「槽位渲染在行内、
-     * 且在项目名之后」，⛔ 不再断言任何菜单开合回调 —— 那是 Radix 的事，本组件不参与。
-     */
+    await expect(header.getBoundingClientRect().height).toBe(32);
+    await expect(
+      canvas.getByText('acme-web').getBoundingClientRect().left -
+        header.getBoundingClientRect().left,
+    ).toBe(52);
     const slot = canvas.getByTestId('group-menu-slot-probe');
     await expect(header).toContainElement(slot);
   },
 };
 
-export const Selected: Story = { args: { selected: true } };
+export const Selected: Story = {
+  args: { selected: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('button', { name: 'acme-web，3 个任务' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    const marker = getComputedStyle(canvas.getByTestId('project-group-header'), '::before');
+    await expect(marker.width).toBe('2px');
+    await expect(marker.height).toBe('16px');
+    await expect(marker.top).toBe('8px');
+  },
+};
 
 export const Cloning: Story = { args: { cloneStatus: 'cloning' } };
 
-/**
- * `● [Folder] ProjectName [AlertTriangle] 克隆失败 ⋯`（产品 P21-6 §9）。
- * ⭐ 前导徽标是 `StatusDot`（design-notes.md §4 Phase 3 第 2 条），⛔ 不再是手写 emoji——
- * 用 `data-status="fail"` 断言，而不是找一个 emoji 字符（emoji 换成别的视觉表现时这条不该跟着红）。
- * ⚠️ `AlertTriangle` 是 lucide 历史别名，渲染出的 class 是 `lucide-triangle-alert`
- * （不是 `lucide-alert-triangle`）——写错这个名字断言会一直找不到元素。
- */
+/** 失败项目可选中进入恢复面板；折叠按钮保留可访问原因但不执行折叠。 */
 export const CloneFailed: Story = {
   args: { cloneStatus: 'failed', taskCount: 0 },
-  play: async ({ canvasElement }) => {
+  play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     const header = canvas.getByTestId('project-group-header');
     await expect(header).toHaveAttribute('data-variant', 'cloneFailed');
-    // emoji 已从文案里拆出：文字断言只锁「克隆失败」，图标另断言 svg class。
     const badge = canvas.getByText('克隆失败');
     await expect(badge).toBeInTheDocument();
-    await expect(badge.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
-    const dot = header.querySelector('[data-slot="status-dot"]');
-    await expect(dot).not.toBeNull();
-    await expect(dot).toHaveAttribute('data-status', 'fail');
+    await expect(badge.getBoundingClientRect().height).toBe(20);
+    await expect(badge.querySelector('svg')).toBeNull();
+    await expect(header.querySelector('[data-slot="status-dot"]')).toBeNull();
+    const toggle = canvas.getByTestId('project-group-toggle');
+    await expect(toggle).toHaveAttribute('aria-disabled', 'true');
+    await expect(getComputedStyle(toggle).cursor).toBe('not-allowed');
+    await expect(toggle).toHaveAccessibleDescription('项目克隆失败，先重试克隆或改为空项目');
+    await userEvent.click(toggle);
+    await expect(args.onToggleCollapse).not.toHaveBeenCalled();
+    const select = canvas.getByRole('button', { name: 'acme-web，克隆失败，0 个任务' });
+    await expect(select).not.toBeDisabled();
+    await userEvent.click(select);
+    await expect(args.onSelect).toHaveBeenCalledWith('p1');
+    select.focus();
+    await userEvent.keyboard('{Enter}');
+    await expect(args.onSelect).toHaveBeenCalledTimes(2);
   },
 };
 
 /**
- * ⭐ 折叠箭头是**独立按钮**：点它只切折叠，不触发 `onSelect`（design-notes.md §4
- * Phase 3 / 原型的 chevron）。两个动作分开是刻意的——failed 态项目仍然要能被选中
- * 才能触达恢复面板（见文件头注释），把折叠揉进选中按钮会两头不讨好。
- *
- * 变异：把折叠箭头点击处理器改成同时调用 `onSelect` ⇒ 本例最后一句
- * `onSelect` 未被调用的断言变红。
+ * 折叠箭头是独立按钮，只切折叠，不触发 onSelect。
+ * 失败项目仍可选中进入恢复面板；把折叠与选中合并应使此交互断言失败。
  */
 export const ToggleCollapse: Story = {
   play: async ({ args, canvasElement }) => {

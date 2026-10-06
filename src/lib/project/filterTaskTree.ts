@@ -1,17 +1,6 @@
-// 左侧任务树的搜索 + 状态筛选（P21-1 §6 六档口径 + 用户裁决新增的第七档 `stopped`：
-// 全部/准备中/运行中/等待输入/已暂停/异常/已停止）。纯函数，输入已经分好组的
-// `ProjectGroup[]`（`selectProjectTaskTree` 的输出），只做二次过滤，不改分组/排序/折叠。
-//
-// ⚠️ 这两个控件在原型（design-notes.md 四档版本）里是**纯装饰**（静态 HTML，点了没有真
-// 过滤）。硬要求：这一轮必须是真功能——每个 chip 都有落地的过滤谓词，搜索要能说清
-// "搜不到时说什么"（见 `TaskTreeFilterResult.hasActiveFilter` + `matchedTaskCount`，
-// 调用方据此渲染空态文案）。
-//
-// ⚠️ 2026-09-13 用户裁决：`SandboxStatus` 的 6 个值此前只有 5 个有对应 chip——
-// `'stopped'`（已停止）只落进"全部"，五个具体 chip 一个都不命中它。用户不同意这是
-// "产品文档口径本身的取舍"：停掉一个任务之后想找回来，没有入口，这是规格的空白。
-// 现在补了第七档 `stopped`，6 个具体 chip 与 6 个 `SandboxStatus` 一一对应，
-// `__tests__/filterTaskTree.test.ts` 的"命中数之和"用例已按六档改写。
+// 任务树搜索与状态筛选的纯函数：输入 ProjectGroup[]，只过滤，不改变分组、排序或折叠。
+// 每个筛选项都有实际谓词；hasActiveFilter 与 matchedTaskCount 供调用方渲染准确空态。
+// paused 与 stopped 各有独立筛选入口。
 import type { ProjectGroup, Sandbox, TaskStatusFilter } from '@/types/domain';
 
 export interface TaskTreeFilter {
@@ -28,7 +17,7 @@ export interface TaskTreeFilterResult {
   matchedTaskCount: number;
 }
 
-function matchesStatus(task: Sandbox, status: TaskStatusFilter): boolean {
+export function matchesTaskStatus(task: Sandbox, status: TaskStatusFilter): boolean {
   switch (status) {
     case 'preparing':
       return task.status === 'preparing';
@@ -37,7 +26,7 @@ function matchesStatus(task: Sandbox, status: TaskStatusFilter): boolean {
       // （domain.ts 注释），算进「运行中」会让同一条任务同时出现在两个筛选结果里。
       return task.status === 'running' && !task.waitingInput;
     case 'waitingInput':
-      return task.waitingInput;
+      return task.waitingInput && task.status === 'running';
     case 'paused':
       return task.status === 'paused';
     case 'error':
@@ -77,7 +66,7 @@ export function filterProjectGroups(
   for (const group of groups) {
     const tasks = group.tasks.filter(
       (task) =>
-        matchesStatus(task, filter.status) &&
+        matchesTaskStatus(task, filter.status) &&
         (!hasQuery || task.name.toLowerCase().includes(query)),
     );
     if (tasks.length === 0) continue;

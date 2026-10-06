@@ -289,7 +289,7 @@ export function describeTaskDeadline(input: {
   const remainingMs = started + input.timeoutMinutes * 60_000 - input.now;
   if (remainingMs <= 0) {
     return {
-      label: '已超过硬超时预算，平台正在强制终止…',
+      label: '已超过硬超时上限，平台正在强制终止…',
       remainingMs,
       overdue: true,
     };

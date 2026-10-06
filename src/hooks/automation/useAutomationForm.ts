@@ -81,6 +81,7 @@ export interface UseAutomationFormResult {
   /** `每天 08:00（Asia/Shanghai）` —— 时区**永远跟着一起显示**。 */
   schedulePreview: string;
   patch: (patch: Partial<AutomationDraft>) => void;
+  touch: (field: keyof DraftErrors) => void;
   /**
    * 时区的**唯一**改法。走这个口子才会把 `timezoneTouched` 置真。
    * ⛔ 不要用 `patch({ timezone })` —— 那样 PUT 会静默带上 timezone，正是 #32 要防的。
@@ -93,8 +94,23 @@ export interface UseAutomationFormResult {
 
 export function useAutomationForm(initial: AutomationDraft): UseAutomationFormResult {
   const [draft, setDraft] = useState<AutomationDraft>(initial);
+  const [touched, setTouched] = useState<Partial<Record<string, boolean>>>({});
+  const touch = useCallback((field: keyof DraftErrors) => {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+  }, []);
 
   const patch = useCallback((next: Partial<AutomationDraft>) => {
+    setTouched((prev) => ({
+      ...prev,
+      ...(next.name === undefined ? {} : { name: true }),
+      ...(next.description === undefined ? {} : { description: true }),
+      ...(next.runtime === undefined ? {} : { runtime: true }),
+      ...(next.prompt === undefined ? {} : { prompt: true }),
+      ...(next.scheduleKind === undefined && next.scheduleConfig === undefined
+        ? {}
+        : { schedule: true }),
+      ...(next.webhookUrl === undefined ? {} : { webhookUrl: true }),
+    }));
     setDraft((prev) => {
       // ⛔ 从 patch 通道进来的 timezone 一律丢弃：改时区只有 setTimeZone 一条路，
       //    否则 `timezoneTouched` 会与实际值脱节，PUT 就又开始隐式重传了。
@@ -111,14 +127,20 @@ export function useAutomationForm(initial: AutomationDraft): UseAutomationFormRe
 
   const reset = useCallback((next: AutomationDraft) => {
     setDraft(next);
+    setTouched({});
   }, []);
 
-  const errors = useMemo(() => validateDraft(draft), [draft]);
+  const allErrors = useMemo(() => validateDraft(draft), [draft]);
+  const errors = useMemo(
+    () => Object.fromEntries(Object.entries(allErrors).filter(([field]) => touched[field])),
+    [allErrors, touched],
+  );
 
   return {
     draft,
     errors,
-    canSave: !draftHasErrors(errors),
+    canSave: !draftHasErrors(allErrors),
+    touch,
     promptCount: promptLength(draft.prompt),
     schedulePreview: describeScheduleWithZone(
       draft.scheduleKind,

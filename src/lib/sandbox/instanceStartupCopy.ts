@@ -74,7 +74,7 @@ export function startupSubtitle(progress: InstanceStartupProgress | undefined): 
   // ⚠️ `undefined`（provider 说不出）与 `true` 一样不出这句 —— 「不知道为什么慢」
   //    不能拿去当「因为要拉镜像所以慢」的理由（同 `instanceSubCopy` 的三态纪律）。
   if (progress?.imageStaged !== false) return undefined;
-  return '首次使用这个镜像，要先把它拉到本机 —— 整个启动里这一步最久';
+  return '首次使用这个镜像，要先把它下载到本机 —— 整个启动里这一步最久';
 }
 
 /**

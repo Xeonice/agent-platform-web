@@ -8,8 +8,10 @@ export type { ProjectCloneState };
 
 export interface ProjectCloneSlice {
   projectClones: Record<string, ProjectCloneState>;
-  /** 显式种子/写入（create 202 后立即展示 cloning，不等首个事件）。 */
+  /** 显式写入；重试允许从终态重新开始 cloning。 */
   setCloneProgress: (projectId: string, state: ProjectCloneState) => void;
+  /** 创建受理种子仅填空，不覆盖先到的克隆事件或列表快照。 */
+  seedCloneProgress: (projectId: string, state: ProjectCloneState) => void;
   /** 应用一条 /events 事件（仅消费 project.clone_progress，其余忽略）。 */
   applyProjectCloneEvent: (event: SandboxEvent) => void;
   /** 移除条目（完成关闭/复位）。 */
@@ -30,13 +32,23 @@ export const createProjectCloneSlice: StateCreator<ProjectCloneSlice, [], [], Pr
   setCloneProgress: (projectId, state): void => {
     set((s) => ({ projectClones: { ...s.projectClones, [projectId]: state } }));
   },
+  seedCloneProgress: (projectId, state): void => {
+    set((s) =>
+      s.projectClones[projectId] === undefined
+        ? { projectClones: { ...s.projectClones, [projectId]: state } }
+        : s,
+    );
+  },
   applyProjectCloneEvent: (event): void => {
     if (event.event !== 'project.clone_progress') return;
     set((s) => ({
       projectClones: {
         ...s.projectClones,
         [event.projectId]: {
-          phase: event.phase,
+          phase:
+            event.phase === 'cloning' && s.projectClones[event.projectId]?.phase === 'slow'
+              ? 'slow'
+              : event.phase,
           stage: event.stage,
           percent: event.percent,
           objectsDone: event.objectsDone,
@@ -45,7 +57,10 @@ export const createProjectCloneSlice: StateCreator<ProjectCloneSlice, [], [], Pr
           bytesPerSecond: event.bytesPerSecond,
           errorCode: event.errorCode,
           // 起始时刻只认第一次：后续事件不得把它重置，否则"已用"会一直归零。
-          startedAt: s.projectClones[event.projectId]?.startedAt ?? Date.now(),
+          startedAt:
+            event.startedAt !== undefined && Number.isFinite(Date.parse(event.startedAt))
+              ? Date.parse(event.startedAt)
+              : s.projectClones[event.projectId]?.startedAt,
         },
       },
     }));

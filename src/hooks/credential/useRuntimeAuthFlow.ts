@@ -14,6 +14,7 @@ import {
   pollAuthStatus,
   completeAuth,
   saveSecret,
+  cancelAuth,
 } from '@/services/api/runtime.service';
 import { ApiErrorException } from '@/services/api/apiError';
 import type { RuntimeAuthMethod } from '@/types/runtimeCredential';
@@ -69,6 +70,7 @@ export interface RuntimeAuthFlow {
   /** api-key：直存 secret。 */
   submitApiKey: (secret: string) => void;
   reset: () => void;
+  retryPoll: () => void;
 }
 
 function reasonsFromError(error: unknown): string[] {
@@ -82,13 +84,17 @@ function reasonsFromError(error: unknown): string[] {
       if (messages.length > 0) return messages;
     }
   }
-  return ['可能是格式不对、这个 key 没有权限，或者额度用完了。'];
+  return [];
 }
 
 function messageFromError(error: unknown, fallback: string): string {
-  return error instanceof ApiErrorException && error.envelope.message !== ''
-    ? error.envelope.message
-    : fallback;
+  if (error instanceof ApiErrorException) {
+    if (error.envelope.code === 'PROVIDER_UNAVAILABLE')
+      return '本机的登录程序没能启动，暂时没法开始登录。';
+    if (error.envelope.code === 'AUTH_SESSION_CAPACITY')
+      return '同时进行的登录太多了，请先完成或取消另一处登录。';
+  }
+  return fallback;
 }
 
 export function useRuntimeAuthFlow({
@@ -98,6 +104,18 @@ export function useRuntimeAuthFlow({
   onSuccess,
 }: UseRuntimeAuthFlowArgs): RuntimeAuthFlow {
   const branch = branchOfMethod(method);
+  const alive = useRef(true);
+  const starting = useRef(false);
+  const activeChallenge = useRef<string | null>(null);
+  const pollImmediately = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      if (activeChallenge.current)
+        void cancelAuth(runtimeId, activeChallenge.current).catch(() => undefined);
+    };
+  }, [runtimeId]);
   const [state, dispatch] = useReducer(authFlowReducer, branch, initialAuthFlowState);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
@@ -111,18 +129,30 @@ export function useRuntimeAuthFlow({
         ? { type: 'SUCCESS', maskedIdentifier: result.maskedIdentifier }
         : { type: 'SUCCESS' },
     );
-    onSuccessRef.current?.(result);
+    activeChallenge.current = null;
+    if (alive.current) onSuccessRef.current?.(result);
   }, []);
 
   // —— begin（device-code / setup-token）——
   const begin = useCallback((): void => {
-    if (branch === 'api-key') return;
+    if (branch === 'api-key' || starting.current) return;
+    starting.current = true;
+    if (activeChallenge.current)
+      void cancelAuth(runtimeId, activeChallenge.current).catch(() => undefined);
     dispatch({ type: 'BEGIN_START' });
     void beginAuth(runtimeId, branch === 'device-code' ? 'oauth-device' : 'setup-token')
       .then((challenge) => {
+        starting.current = false;
+        if (!alive.current) {
+          void cancelAuth(runtimeId, challenge.challengeRef).catch(() => undefined);
+          return;
+        }
+        activeChallenge.current = challenge.challengeRef;
         dispatch({ type: 'BEGIN_SUCCESS', challenge });
       })
       .catch((error: unknown) => {
+        starting.current = false;
+        if (!alive.current) return;
         dispatch({
           type: 'BEGIN_ERROR',
           message: messageFromError(error, '没能开始登录，请重试。'),
@@ -142,10 +172,10 @@ export function useRuntimeAuthFlow({
         .then((result) => {
           succeed(result);
         })
-        .catch((error: unknown) => {
+        .catch(() => {
           dispatch({
             type: 'PASTE_SUBMIT_ERROR',
-            message: messageFromError(error, '这串授权码不对或已经失效，请重新取一次再粘贴。'),
+            message: '这串授权码不对或已经失效，请重新取一次再粘贴。',
           });
         });
     },
@@ -166,7 +196,7 @@ export function useRuntimeAuthFlow({
         .catch((error: unknown) => {
           dispatch({
             type: 'APIKEY_REJECTED',
-            message: messageFromError(error, '这份凭证没被接受。'),
+            message: '这串 API Key 格式不对，没有保存。',
             reasons: reasonsFromError(error),
           });
         });
@@ -175,8 +205,11 @@ export function useRuntimeAuthFlow({
   );
 
   const reset = useCallback((): void => {
+    const challengeRef = activeChallenge.current;
+    activeChallenge.current = null;
+    if (challengeRef !== null) void cancelAuth(runtimeId, challengeRef).catch(() => undefined);
     dispatch({ type: 'RESET' });
-  }, []);
+  }, [runtimeId]);
 
   // —— 轮询 status：device-code 的 `polling`，以及 setup-token 的 `awaiting-paste` ——
   //
@@ -201,10 +234,15 @@ export function useRuntimeAuthFlow({
   useEffect(() => {
     if (!isPolling || challengeRef === null) return;
     let cancelled = false;
+    let failures = 0;
+    let inFlight = false;
     const poll = (): void => {
+      if (inFlight || cancelled) return;
+      inFlight = true;
       void pollAuthStatus(runtimeId, challengeRef)
         .then((res) => {
           if (cancelled) return;
+          failures = 0;
           if (res.status === 'success') {
             succeed({
               ...(res.maskedIdentifier !== undefined
@@ -233,9 +271,14 @@ export function useRuntimeAuthFlow({
         .catch(() => {
           if (cancelled) return;
           // 网络请求异常（瞬时）只标记，不消耗设备码倒计时、不终止轮询（P22 §2）。
-          dispatch({ type: 'POLL_NETWORK_ERROR' });
+          failures += 1;
+          if (failures >= 3) dispatch({ type: 'POLL_NETWORK_ERROR' });
+        })
+        .finally(() => {
+          inFlight = false;
         });
     };
+    pollImmediately.current = poll;
     const timer = setInterval(poll, POLL_INTERVAL_MS);
     // 硬性兜底：与 expiresAt（非 required）无关的强制上限，防后端漏发 expiresAt → 无限轮询假死（P1-a）。
     const hardStop = setTimeout(() => {
@@ -245,6 +288,7 @@ export function useRuntimeAuthFlow({
     }, MAX_POLL_DURATION_MS);
     return (): void => {
       cancelled = true;
+      pollImmediately.current = null;
       clearInterval(timer);
       clearTimeout(hardStop);
     };
@@ -293,5 +337,6 @@ export function useRuntimeAuthFlow({
     submitPaste,
     submitApiKey,
     reset,
+    retryPoll: () => pollImmediately.current?.(),
   };
 }

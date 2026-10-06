@@ -1,6 +1,6 @@
 // 无头 Task 的 REST 侧（15 §1：服务端资源 → Query；非幂等操作 → mutation，不自动重试）。
 // **本切片零轮询**：任务列表只在三个时刻取——挂载（含刷新恢复）、发起成功、收到 WS exit。
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useMutation,
   useQuery,
@@ -13,6 +13,7 @@ import {
   listAgentTasks,
   runAgentTask,
 } from '@/services/api/task.service';
+import { useAppStore } from '@/stores';
 import { ApiErrorException } from '@/services/api/apiError';
 import { describeDownloadProgress, describeTaskErrorCode } from '@/lib/task/taskOutcome';
 import { isTerminalTaskStatus, type AgentTaskDto, type RunAgentTaskInput } from '@/types/task';
@@ -302,4 +303,12 @@ export function useTaskErrorMessage(error: Error | null, fallback: string): stri
     }
     return error.message === '' ? fallback : error.message;
   }, [error, fallback]);
+}
+
+/** Keep the actual REST-validated running selection when its exit triggers a list refresh. */
+export function useRememberAgentTaskSelection(taskId: string | null): void {
+  useEffect(() => {
+    if (taskId !== null && useAppStore.getState().selectedTaskId !== taskId)
+      useAppStore.getState().setSelectedTaskId(taskId);
+  }, [taskId]);
 }

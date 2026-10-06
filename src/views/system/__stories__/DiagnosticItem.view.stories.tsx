@@ -3,14 +3,8 @@ import { expect, fn, userEvent, within } from 'storybook/test';
 import { Accordion } from '@/components/ui/accordion';
 import { DiagnosticItemView } from '@/views/system/DiagnosticItem.view';
 
-// ⚠️ **`DiagnosticItemView` 是 `AccordionItem`**（Phase 1，design-notes §4）：它必须挂在
-// 一棵 `Accordion` Root 下面才立得住（Radix 靠 context 找 Root，脱离 Root 直接渲染会抛错）。
-// 真实页面里这棵 Root 是 `DiagnosticsCardView` 受控管的（八项共享一份 `openIds`），这里
-// 只是单项故事的最小外壳——`defaultValue` 按 `args.expanded` 摆一次初始态，够这些
-// play 断言用；它不是受控的，所以点一下 Trigger 之后内容照样会真的展开/收起
-// （Radix 自己的状态），只是 `args.expanded` 这个静态值不会跟着回弹——这在真实页面里
-// 不存在（`DiagnosticsCardView` 每次渲染都会重新算 `expanded`），纯粹是"单项故事"这个
-// 隔离环境的产物。
+// DiagnosticItemView 是 AccordionItem，故事必须提供 Accordion Root。
+// 单项故事使用初始展开态；真实页面的受控 openIds 由 DiagnosticsCardView 管理。
 const meta: Meta<typeof DiagnosticItemView> = {
   title: 'System/DiagnosticItem',
   component: DiagnosticItemView,
@@ -50,10 +44,7 @@ export const Ok: Story = {
     const canvas = within(canvasElement);
     const row = canvas.getByTestId('diagnostic-item-container-runtime');
     await expect(row).toHaveAttribute('data-status', 'ok');
-    // ⭐ design/design-notes.md §4 Phase 1「诊断项序号 ①–⑧」：`ordinal: 1` ⇒ 圆标是①。
-    // ⚠️ MUTATION：把 `DiagnosticItemView` 里 `ORDINAL_GLYPHS[ordinal - 1]` 写死成
-    //    某个固定字符（如永远显示 ①），这条会在其它 ordinal 不为 1 的故事里保持绿——
-    //    真正锁住"跟着 ordinal 走"的是下面 `PortConflictFail`（ordinal 4 ⇒ ④）那一条。
+    // 序号随 ordinal 渲染；其它 ordinal 故事防止固定成同一字符。
     await expect(row).toHaveTextContent('①');
     // ⚠️ 默认只看到一句结论：证据在展开层里。
     await expect(canvas.getByTestId('diagnostic-headline-container-runtime')).toHaveTextContent(
@@ -246,7 +237,8 @@ export const TimedOut: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const row = canvas.getByTestId('diagnostic-item-outbound-network');
-    await expect(row).toHaveTextContent('未得出结论');
+    await expect(row).toHaveTextContent('超时未响应');
+    await expect(row).toHaveTextContent('10 秒内没有结果');
     await expect(row).not.toHaveTextContent('失败');
   },
 };

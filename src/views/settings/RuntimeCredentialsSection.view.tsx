@@ -7,7 +7,7 @@
 //    · 搜索无果 —— 用户确实搜了，但没命中。
 //    · 一个都没有 —— 后端注册表是空的。
 import type { ReactNode } from 'react';
-import { Bot } from 'lucide-react';
+import { Bot, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RuntimeCredentialCardView } from '@/views/settings/RuntimeCredentialCard.view';
 import type {
@@ -29,6 +29,7 @@ export interface RuntimeCredentialsSectionProps {
   storageNote?: string;
   /** 每张卡对应的就地授权面板（容器按 expandedPanel 定位；无展开则 undefined）。 */
   panelFor: (runtimeId: string) => ReactNode;
+  expandedModeFor?: (runtimeId: string) => RuntimeAuthMode | undefined;
   onSwitch: (runtimeId: string, mode: RuntimeAuthMode) => void;
   onNeedSetup: (runtimeId: string, mode: RuntimeAuthMode) => void;
   onReauth: (runtimeId: string, method: RuntimeAuthMethod) => void;
@@ -47,6 +48,7 @@ export function RuntimeCredentialsSectionView({
   onSearch,
   storageNote,
   panelFor,
+  expandedModeFor,
   onSwitch,
   onNeedSetup,
   onReauth,
@@ -61,27 +63,68 @@ export function RuntimeCredentialsSectionView({
           <Bot aria-hidden="true" className="h-4 w-4" />
           Agent 帐号（这台机器上通用）
         </h2>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           帐号登录 / API Key
           二选一，这台机器上的所有任务都用它；两样可以同时留着，切换只改现在用哪个。
         </p>
         {storageNote !== undefined && storageNote !== '' && (
-          <p className="text-xs text-muted-foreground">{storageNote}</p>
+          <p className="text-[13px] text-muted-foreground">{storageNote}</p>
         )}
-        <input
-          type="search"
-          name="runtime-search"
-          placeholder="搜索 Agent 名字或帐号尾号…"
-          className="w-full max-w-xs rounded-md border border-border bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          value={search}
-          onChange={(e) => {
-            onSearch(e.target.value);
-          }}
-        />
+        <div className="relative w-full max-w-xs">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <input
+            type="search"
+            name="runtime-search"
+            aria-label="搜索 Agent 名字或帐号尾号"
+            placeholder="搜索 Agent 名字或帐号尾号…"
+            className="h-9 w-full rounded-md border border-border bg-background pl-9 pr-3 text-sm focus-visible:outline-none focus-visible:shadow-[shadow:var(--v2-focus-input)]"
+            value={search}
+            onChange={(e) => {
+              onSearch(e.target.value);
+            }}
+          />
+        </div>
       </header>
 
       {loading ? (
-        <div className="h-24 animate-pulse rounded-lg border border-border bg-muted/30" />
+        <div
+          aria-busy="true"
+          role="status"
+          aria-label="正在读取 Agent 列表…"
+          className="flex flex-col gap-4"
+        >
+          <span className="sr-only">正在读取 Agent 列表…</span>
+          {[0, 1].map((key) => (
+            <div
+              key={key}
+              aria-hidden="true"
+              className="overflow-hidden rounded-lg border border-border bg-card"
+            >
+              <div className="flex min-h-14 items-center justify-between border-b border-border px-5 py-3">
+                <div className="flex gap-2">
+                  <span className="h-4 w-16 animate-pulse rounded bg-muted" />
+                  <span className="h-4 w-12 animate-pulse rounded bg-muted" />
+                </div>
+                <span className="h-6 w-14 animate-pulse rounded-full bg-muted" />
+              </div>
+              {[0, 1].map((row) => (
+                <div
+                  key={row}
+                  className="flex min-h-16 items-center justify-between gap-3 border-b border-border px-5 py-3 last:border-0"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="size-4 animate-pulse rounded-full bg-muted" />
+                    <span className="h-4 w-20 animate-pulse rounded bg-muted" />
+                  </span>
+                  <span className="h-8 w-24 animate-pulse rounded bg-muted" />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       ) : loadError ? (
         // ⛔ 「查不动」自成一态：这里绝不能落到下面那句「没有匹配」——
         //    那会让用户以为自己搜错了，或者以为 Agent 列表真的是空的。
@@ -96,17 +139,18 @@ export function RuntimeCredentialsSectionView({
           </Button>
         </div>
       ) : cards.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p role="status" className="text-sm text-muted-foreground">
           {search.trim() === '' ? '这台机器上还没有可用的 Agent。' : '没有匹配的 Agent。'}
         </p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           {cards.map((model) => (
             <RuntimeCredentialCardView
               key={model.runtimeId}
               model={model}
               rowBusy={(mode) => isRowBusy?.(model.runtimeId, mode) ?? false}
               expandedSlot={panelFor(model.runtimeId)}
+              expandedMode={expandedModeFor?.(model.runtimeId)}
               onSwitch={(mode) => {
                 onSwitch(model.runtimeId, mode);
               }}

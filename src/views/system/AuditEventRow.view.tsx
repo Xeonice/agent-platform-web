@@ -14,11 +14,7 @@ import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import { AuditDetailPanelView } from '@/views/system/AuditDetailPanel.view';
 import type { AuditRowModel, AuditSeverity } from '@/types/audit';
 
-/**
- * 三重线索：图标 / 文字 / 颜色——现在交给 `StatusPill`（design/design-notes.md §4 Phase 1
- * 第五条：审计行状态换 `StatusPill`，与 design/prototype.html 的 `SEVERITY_MAP` 一致：
- * `info → info`、`warn → warn`、`error → fail`）。
- */
+/** 审计严重度由 StatusPill 统一表达：info→info、warn→warn、error→fail。 */
 const SEVERITY_PILL_STATUS: Readonly<Record<AuditSeverity, StatusPillStatus>> = {
   info: 'info',
   warn: 'warn',
@@ -39,13 +35,15 @@ const OUTCOME_TEXT: Record<'ok' | 'failed' | 'skipped', string> = {
 export interface AuditEventRowProps {
   row: AuditRowModel;
   expanded?: boolean;
+  timelineFiltered?: boolean;
   onToggleDetail: (seq: number) => void;
-  onOpenTimeline: (subjectId: string) => void;
+  onOpenTimeline: (subjectId: string, subjectName?: string) => void;
 }
 
 export function AuditEventRowView({
   row,
   expanded = false,
+  timelineFiltered = false,
   onToggleDetail,
   onOpenTimeline,
 }: AuditEventRowProps) {
@@ -97,14 +95,15 @@ export function AuditEventRowView({
         ) : (
           <div className="flex min-w-0 flex-1 items-center gap-2 px-1">{header}</div>
         )}
-        {row.subjectLink !== undefined && (
+        {row.subjectLink !== undefined && !timelineFiltered && (
           <Button
             type="button"
             size="sm"
             variant="ghost"
             className="shrink-0"
             onClick={() => {
-              if (row.subjectLink !== undefined) onOpenTimeline(row.subjectLink.subjectId);
+              if (row.subjectLink !== undefined)
+                onOpenTimeline(row.subjectLink.subjectId, row.subjectLink.subjectName);
             }}
           >
             {row.subjectLink.label}

@@ -34,7 +34,7 @@ const OUTCOMES = {
     category: 'skipped',
     label: '跳过',
     detail:
-      '这个 Agent 的凭证已过期或被吊销，本次没有触发。重新授权后会按原来的时间表继续。这次没有执行，不算失败。',
+      '这个 Agent 的凭证已过期或被删除，本次没有触发。重新授权后会按原来的时间表继续。这次没有执行，不算失败。',
     countsTowardFailure: false,
   },
   skippedPrev: {
@@ -93,7 +93,13 @@ const meta: Meta<typeof RunHistoryItemView> = {
   title: 'Project/RunHistoryItem',
   component: RunHistoryItemView,
   parameters: { layout: 'padded' },
-  args: { row: make('success'), expanded: true, onToggleDetail: fn(), onOpenTask: fn() },
+  args: {
+    row: make('success'),
+    expanded: true,
+    onToggleDetail: fn(),
+    onOpenTask: fn(),
+    onViewArtifacts: fn(),
+  },
   decorators: [
     (Story) => (
       <ul className="max-w-xl">
@@ -111,7 +117,8 @@ export const Success: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('run-failure-accounting')).toHaveTextContent('不算失败');
-    await expect(canvas.getByTestId('run-open-task')).toBeInTheDocument();
+    await expect(canvas.queryByTestId('run-open-task')).toBeNull();
+    await expect(canvas.getByRole('button', { name: '查看成果' })).toBeInTheDocument();
     // MUTATION：把 `CATEGORY_ICON` 换回 emoji 字符或改到另一个图标 ⇒ 下面两条先红——
     // 只锁 `run-label` 文案在两种写法下都绿，锁不住"真的换成了哪个图标组件"。
     const icon = canvas.getByTestId('run-outcome-icon');

@@ -13,7 +13,7 @@
 import { http, HttpResponse } from 'msw';
 import type { ProjectDto } from '@/types/project';
 import type { RetainedVolumeDto } from '@/types/retainedVolume';
-import type { AutomationDto, AutomationRunDto } from '@/types/automation';
+import type { AutomationAttentionItem, AutomationDto, AutomationRunDto } from '@/types/automation';
 import type { MaskedGitCredential, StoreGitCredentialResponse } from '@/types/gitCredential';
 import type {
   AuthChallenge,
@@ -27,6 +27,7 @@ import type { AgentTaskDto } from '@/types/task';
 import type {
   CheckImageUpdateDto,
   ImageManifestDto,
+  ImageDeletionPreviewDto,
   RegisterImageResponseDto,
   RevalidateOutcomeDto,
   ValidationOutcomeDto,
@@ -1371,6 +1372,35 @@ export const handlers = [
   }),
 
   // —— 自动化（F21-7 / 10 §6.5 的 7 条 + webhook-test）——
+  http.get(`${API_BASE}/api/automations/:id/deletion-preview`, () =>
+    HttpResponse.json({
+      runCount: 0,
+      artifactCount: 0,
+      runningTasks: [],
+    } satisfies components['schemas']['AutomationDeletionPreviewResponseDto']),
+  ),
+  http.get(`${API_BASE}/api/projects/:id/deletion-preview`, () =>
+    HttpResponse.json({
+      activeTasks: [],
+      retainedVolumeCount: 0,
+      automationCount: 0,
+      automationRunCount: 0,
+      taskCount: 0,
+    } satisfies components['schemas']['ProjectDeletionPreviewResponseDto']),
+  ),
+  http.delete(
+    `${API_BASE}/api/runtimes/:rt/auth/sessions/:challengeRef`,
+    () => new HttpResponse(null, { status: 204 }),
+  ),
+  http.get(`${API_BASE}/api/runtimes/:rt/credentials/:credentialId/deletion-preview`, () =>
+    HttpResponse.json({
+      affectedTasks: [],
+      preparingTasks: [],
+    } satisfies components['schemas']['RuntimeCredentialDeletionPreviewResponseDto']),
+  ),
+  http.get(`${API_BASE}/api/automations/attention`, () =>
+    HttpResponse.json([] satisfies AutomationAttentionItem[]),
+  ),
   // ⚠️ 后端这条切片正在并行实现，openapi.json 里还没有它们 ⇒ **手写形状**，
   //    依据是 10 §7.3 的 automation 契约块逐字段抄写（12 §3.4）。
   http.get(`${API_BASE}/api/projects/:id/automations`, ({ params }) =>
@@ -1787,6 +1817,16 @@ export const handlers = [
     );
   }),
 
+  http.get(`${API_BASE}/api/images/:id/deletion-preview`, ({ params }) => {
+    const target = IMAGE_MANIFESTS.find((manifest) => manifest.id === params['id']);
+    return HttpResponse.json({
+      canDelete: target !== undefined && !target.isBuiltin,
+      tasks: [],
+      versions: IMAGE_MANIFESTS.filter((manifest) => manifest.imageId === target?.imageId).map(
+        ({ id, version, digest, isActive }) => ({ id, version, digest, isActive }),
+      ),
+    } satisfies ImageDeletionPreviewDto);
+  }),
   http.delete(`${API_BASE}/api/images/:id`, () => new HttpResponse(null, { status: 204 })),
 
   // ————————————————————————————————————————————————————————————————
@@ -2046,6 +2086,8 @@ function systemProvidersDto(): SystemProvidersDto {
     })),
     imageSpecs: [{ id: 'oci', isDefault: true }],
     healthWindowMs: 60 * 60 * 1000,
+    healthWarnRate: 0.01,
+    healthErrorRate: 0.1,
   };
 }
 

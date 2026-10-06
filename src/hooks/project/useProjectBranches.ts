@@ -1,3 +1,4 @@
+import { projectSyncFailure } from '@/lib/project/projectSyncCopy';
 // 项目分支列表（F21-2 §N.1「分支选择器」）：`GET /api/projects/:id/branches` → `string[]`。
 //
 // 三条语义写在这里，都是**否定性**的，很容易在实现时"顺手"丢掉：
@@ -10,7 +11,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listProjectBranches, syncProject } from '@/services/api/project.service';
 import { projectKeys } from '@/hooks/project/useProjects';
-import { cloneFailureGuidance } from '@/lib/project/projectClone';
 import { ApiErrorException } from '@/services/api/apiError';
 
 /** 分支 query key 族（15 §2.1）：挂在项目下的独立资源。 */
@@ -68,6 +68,7 @@ export interface SyncProjectApi {
   errorMessage?: string;
   /** 权限类失败 ⇒ 就地给 [配置 Git 凭证] 入口（与克隆失败同一条出路）。 */
   needsCredentials: boolean;
+  isSuccess: boolean;
 }
 
 /**
@@ -96,13 +97,14 @@ export function useSyncProject(): SyncProjectApi {
   });
 
   const code = m.error instanceof ApiErrorException ? m.error.envelope.code : undefined;
-  const guidance = m.error ? cloneFailureGuidance(code) : null;
+  const guidance = m.error ? projectSyncFailure(code) : null;
 
   return {
     sync: (projectId) => {
       m.mutate(projectId);
     },
     isPending: m.isPending,
+    isSuccess: m.isSuccess,
     ...(guidance === null ? {} : { errorMessage: guidance.message }),
     needsCredentials: guidance?.needsCredentials ?? false,
   };

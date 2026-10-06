@@ -108,14 +108,11 @@ export const AutoDisabled: Story = {
  * 这条 play 是那条纪律的回归：本面板已经活在一层 ModalShell 里。
  */
 export const DeleteConfirm: Story = {
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByTestId('detail-delete'));
-    await expect(canvas.getByTestId('detail-delete-confirm')).toBeInTheDocument();
-    // ⛔ 确认区不得是一个新的 dialog。
+    await expect(args.onDelete).toHaveBeenCalledWith(ROW.id);
     await expect(canvas.queryByRole('dialog')).toBeNull();
-    // 且要说清"运行历史一并删除"。
-    await expect(canvas.getByTestId('detail-delete-confirm')).toHaveTextContent('运行历史');
   },
 };
 

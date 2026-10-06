@@ -21,6 +21,7 @@ export interface ResourceConfirmProps {
   isError: boolean;
   isFinishing: boolean;
   onFinish: () => void;
+  hideFinishAction?: boolean;
 }
 
 export function ResourceConfirmView({
@@ -28,6 +29,7 @@ export function ResourceConfirmView({
   isError,
   isFinishing,
   onFinish,
+  hideFinishAction = false,
 }: ResourceConfirmProps) {
   return (
     <section data-testid="resource-confirm" className="flex flex-col gap-3">
@@ -42,14 +44,14 @@ export function ResourceConfirmView({
         <p className="text-sm text-muted-foreground">正在读取本机资源…</p>
       ) : (
         <>
-          <ul className="flex flex-col gap-2">
+          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
             {model.rows.map((row) => (
               <li
                 key={row.id}
                 data-testid={`resource-row-${row.id}`}
                 data-low={row.low ? 'true' : 'false'}
                 data-level={row.level}
-                className="flex flex-col gap-1 rounded-md border border-border/60 px-3 py-2 text-sm"
+                className="flex flex-col gap-2 px-4 py-3 text-sm"
               >
                 <span className="flex flex-wrap items-center gap-2">
                   <StatusPill status={row.low ? 'warn' : 'ok'}>
@@ -75,22 +77,24 @@ export function ResourceConfirmView({
               data-testid="resource-low"
               className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-amber-600"
             >
-              ⚠️ {model.lowText}
+              {model.lowText}
             </p>
           )}
         </>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {/* ⚠️ 资源偏低**不禁用**它（见文件头）。只有请求在途时才禁，防重复提交。 */}
-        <Button type="button" disabled={isFinishing} onClick={onFinish}>
-          {isFinishing ? '正在完成…' : '确认，开始使用'}
-        </Button>
-        {/* ⛔ 原文是「点它才会写入初始化完成标记」—— 那是在描述数据库里发生了什么。 */}
-        <span className="text-xs text-muted-foreground">
-          点它才算装完 —— 这一步只做一次，之后要改任何配置都在「设置 → 系统状态」里。
-        </span>
-      </div>
+      {hideFinishAction ? null : (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* ⚠️ 资源偏低**不禁用**它（见文件头）。只有请求在途时才禁，防重复提交。 */}
+          <Button type="button" disabled={isFinishing} onClick={onFinish}>
+            {isFinishing ? '正在完成…' : '确认，开始使用'}
+          </Button>
+          {/* ⛔ 原文是「点它才会写入初始化完成标记」—— 那是在描述数据库里发生了什么。 */}
+          <span className="text-xs text-muted-foreground">
+            点它才算装完 —— 这一步只做一次，之后要改任何配置都在「系统状态」里。
+          </span>
+        </div>
+      )}
     </section>
   );
 }

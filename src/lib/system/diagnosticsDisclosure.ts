@@ -1,23 +1,5 @@
-// 「非 ok/info 默认展开」的判定与受控 Accordion 状态计算
-// （design/design-notes.md §1 问题 1「信息密度高」+ §4 Phase 1 第一条）。
-//
-// ⚠️ **判定覆盖八态，不是只覆盖诊断卡用得到的那六个。** 诊断项本身只会落在
-// ok/info/warn/fail/timeout/`pending`（未到达）这六种上，但这条纪律的原话是「非
-// ok/info 都默认展开」——`StatusPill`（`components/ui/status-pill.tsx`）的八态
-// （另外两态 `skipped`/`unknown` 用在向导步骤条 / 沙箱环境卡）迟早会复用同一条判定。
-// ⇒ `isDefaultExpanded` 吃的是同一个八态闭集，不是另开一个只覆盖六态的窄类型。
-//
-// ⚠️ **这里不 import `StatusPillStatus`。** `lib` 层的依赖方向禁止指向 `component`
-// 层（`eslint.config.js` boundaries：`lib` 只能 `allow: ['lib','type']`）——即使只是
-// type-only import 也一样。⇒ `DisclosureStatus` 在这里**独立声明**同一份八态字面量，
-// 用例（`__tests__/diagnosticsDisclosure.test.ts`）额外钉了一条
-// `DISCLOSURE_STATUSES` 与 `STATUS_PILL_STATUSES` 逐字相同，两边其中一边加了新状态
-// 忘了同步另一边，那条用例先红。
-//
-// ⚠️ **override 只记「用户手动碰过的那几项」，不是整份快照。** 点开一项就把其余
-// 七项的当前展开状态也顺手记成 override，会让"没手动碰过的项继续吃默认值"这条
-// 语义失效——后续到达的新结果（比如某一项从 pending 变成 fail）就再也扳不动它的
-// 展开状态了。`diffManualToggles` 只返回本次真正变化的那几个 id。
+// 诊断 Accordion 的默认展开与手动 override 计算：非 ok/info 默认展开。
+// DisclosureStatus 覆盖八态；lib 不依赖 component，保持纯逻辑与表现层分离。
 import type { DiagnosticItemModel } from '@/types/system';
 
 /** 与 `components/ui/status-pill.tsx` 的 `STATUS_PILL_STATUSES` 同一份闭集。 */

@@ -5,6 +5,7 @@
 
 # next.js
 /.next/
+/.next-*/
 /out/
 next-env.d.ts
 
@@ -41,3 +42,6 @@ yarn-error.log*
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+/.next-acceptance/
+/.tsconfig.acceptance.json

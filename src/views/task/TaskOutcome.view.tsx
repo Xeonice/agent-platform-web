@@ -136,7 +136,7 @@ export function TaskOutcomeView({
       )}
 
       {copy.diagnosticCode !== undefined && copy.diagnosticCode !== '' && (
-        <p className="text-[10px] text-muted-foreground">诊断码：{copy.diagnosticCode}</p>
+        <p className="text-xs text-muted-foreground">诊断码：{copy.diagnosticCode}</p>
       )}
     </section>
   );

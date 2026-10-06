@@ -62,8 +62,7 @@ export function SubscriptionSetupView({
         —— 装了第三方 Agent 的机器上，这一句当场变成假话。
       */}
       <p className="text-sm text-muted-foreground">
-        Agent 用你自己的模型帐号跑。 <span className="text-foreground">配好任意一个就能开始</span>{' '}
-        —— 不用全部配。
+        <span className="text-foreground">配好任意一个就能开始</span> —— 不用全部配。
       </p>
 
       {model.runtimes.length === 0 ? (
@@ -77,7 +76,7 @@ export function SubscriptionSetupView({
           平台一个 Agent 都没有注册 —— 这不该发生，去系统状态页看看。
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
           {model.runtimes.map((r) => {
             const expanded = expandedRuntimeId === r.id;
             const StateIcon = STATE_ICON[r.state];
@@ -86,7 +85,7 @@ export function SubscriptionSetupView({
                 key={r.id}
                 data-testid={`subscription-runtime-${r.id}`}
                 data-state={r.state}
-                className="flex flex-col gap-2 rounded-md border border-border/60 px-3 py-2 text-sm"
+                className="flex flex-col gap-2 px-4 py-3 text-sm"
               >
                 <span className="flex flex-wrap items-center gap-2">
                   <StateIcon
@@ -109,6 +108,7 @@ export function SubscriptionSetupView({
                       <Button
                         type="button"
                         size="sm"
+                        variant="outline"
                         data-testid={`subscription-configure-${r.id}`}
                         onClick={() => {
                           onExpand(r.id);
@@ -131,6 +131,7 @@ export function SubscriptionSetupView({
       {model.blockedText === undefined ? null : (
         <p
           role="alert"
+          id="subscription-blocked"
           data-testid="subscription-blocked"
           className="flex items-start gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm text-amber-600"
         >

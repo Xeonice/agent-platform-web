@@ -9,7 +9,7 @@
 //   [重新验证] 问「这个 digest 还合格吗」——只改三级结论，不动 digest、不动 isActive；
 //   [检查更新] 问「这个 tag 现在还指向它吗」——才谈得上换镜像。
 import { useState, type ReactNode } from 'react';
-import { AlertTriangle, Loader2, RefreshCw, Wrench } from 'lucide-react';
+import { AlertTriangle, Square, Loader2, RefreshCw, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
 import { ValidationResultView } from '@/views/image/ValidationResult.view';
@@ -37,12 +37,14 @@ export interface ImageCardProps {
   startCommand?: string;
   /** 展开的运行参数编辑区（container 注入 `EnvVarEditor`；**行内表格，非弹层**）。 */
   runParamsSlot?: ReactNode;
+  downloadSlot?: ReactNode;
   onEditRunParams: () => void;
   onRevalidate: () => void;
   onCheckUpdate: () => void;
   onToggle: (next: boolean) => void;
   onDelete: () => void;
   onViewRequirements?: () => void;
+  requirementsOpen?: boolean;
   onViewUpstreamChange?: () => void;
   onCopyDigest?: (digest: string) => void;
 }
@@ -53,7 +55,7 @@ export function ImageCardSkeleton() {
     <div
       data-testid="image-card-skeleton"
       aria-hidden="true"
-      className="flex animate-pulse flex-col gap-3 rounded-lg border border-border p-4"
+      className="flex min-h-[318px] animate-pulse flex-col gap-3 rounded-lg border border-border p-4"
     >
       <div className="h-4 w-40 rounded bg-muted" />
       <div className="h-3 w-64 rounded bg-muted" />
@@ -72,12 +74,14 @@ export function ImageCardView({
   envSummary,
   startCommand,
   runParamsSlot,
+  downloadSlot,
   onEditRunParams,
   onRevalidate,
   onCheckUpdate,
   onToggle,
   onDelete,
   onViewRequirements,
+  requirementsOpen = false,
   onViewUpstreamChange,
   onCopyDigest,
 }: ImageCardProps) {
@@ -92,7 +96,7 @@ export function ImageCardView({
       data-active={String(model.isActive)}
       data-status={model.validationStatus}
       className={`flex flex-col gap-3 rounded-lg border border-border p-4 ${
-        model.isActive ? '' : 'opacity-60'
+        model.isActive ? 'bg-card' : 'bg-[var(--v2-surface-inset)]'
       }`}
     >
       <header className="flex items-start justify-between gap-2">
@@ -100,24 +104,34 @@ export function ImageCardView({
           <h3 className="flex items-center gap-2 text-sm font-semibold">
             {model.name}
             <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
-              {model.canDelete ? '自定义' : '预置'}
+              {model.canDelete ? '自定义' : '预制'}
             </span>
           </h3>
-          <span className="font-mono text-xs text-muted-foreground">{model.refDisplay}</span>
+          <span className="break-all font-mono text-xs text-muted-foreground">
+            {model.refDisplay}
+          </span>
         </div>
-        {/*
-          ⭐ 「已启用」也走 StatusPill，⛔ 不是小圆点 + 文字（那是第三套写法，见
-          design-notes.md Phase 6 ①）。「已禁用」用 `pending`（灰）—— ⛔ 不是 `fail`：
-          禁用是用户主动做的，不是坏了；它和"无效"是原型里刻意分开的两件事。
-        */}
-        <StatusPill status={model.isActive ? 'ok' : 'pending'} data-testid="enable-state">
-          {model.isActive ? '已启用' : '已禁用'}
-        </StatusPill>
+        {/* 启用状态统一使用 StatusPill。禁用是用户选择，不表示镜像验证失败。 */}
+        {model.isActive ? (
+          <StatusPill status="ok" data-testid="enable-state">
+            已启用
+          </StatusPill>
+        ) : (
+          <span
+            data-testid="enable-state"
+            className="inline-flex items-center gap-1 rounded-full bg-[var(--v2-status-neutral-subtle-bg)] px-2 py-0.5 text-xs text-muted-foreground"
+          >
+            <Square aria-hidden="true" className="h-2.5 w-2.5 fill-current" />
+            已禁用
+          </span>
+        )}
       </header>
 
       <div className="relative">
         <ValidationResultView
+          requirementsOpen={requirementsOpen}
           status={model.validationStatus}
+          unknownCodes={model.unknownCodes}
           warnings={model.warnings}
           errors={model.errors}
           {...(onViewRequirements === undefined ? {} : { onViewRequirements })}
@@ -135,13 +149,7 @@ export function ImageCardView({
         )}
       </div>
 
-      {/*
-        ⭐ 满宽之后一行放得下：「适用 / 运行的版本 / 来源」从各占一整行改成一行三列
-        （design-notes.md Phase 6 / prototype.html #images 的 `sm:grid-cols-3`）。
-        ⚠️ 三个格子内部的文案/testid 原样未动——只是外层从三条 flex 行并成一个 grid，
-        没有削减信息，也没有替 `lib/image/imageCardModel.ts` 算好的文案（如 `lineage.text`
-        自带的"来源："前缀）加二次标签，避免同一句话被念两遍。
-      */}
+      {/* 适用运行时、运行版本、来源宽屏并列；沿用 model 文案，不重复添加来源标签。 */}
       <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
         {model.supportedRuntimes.length > 0 && (
           <p className="text-muted-foreground">适用：{model.supportedRuntimes.join('、')}</p>
@@ -154,11 +162,17 @@ export function ImageCardView({
         >
           {model.digestState === 'pinned' && digestFull !== undefined ? (
             <>
-              <span className="font-mono text-muted-foreground" data-testid="pinned-digest">
+              <span
+                className="min-w-0 select-all break-all font-mono text-muted-foreground"
+                id={`image-digest-${model.id}`}
+                data-testid="pinned-digest"
+              >
                 运行的版本：{digestExpanded ? digestFull : model.digestShort}
               </span>
               <button
                 type="button"
+                aria-expanded={digestExpanded}
+                aria-controls={`image-digest-${model.id}`}
                 className="text-muted-foreground underline-offset-2 hover:underline"
                 onClick={() => {
                   setDigestExpanded((v) => !v);
@@ -257,6 +271,7 @@ export function ImageCardView({
         </div>
       )}
 
+      {downloadSlot}
       {/* ——— 🔧 运行参数区（P21-4 §10.2）——— */}
       <div className="flex flex-col gap-1 rounded-md border border-border p-2 text-xs">
         <div className="flex items-center justify-between gap-2">
@@ -264,7 +279,14 @@ export function ImageCardView({
             <Wrench aria-hidden="true" className="h-3 w-3" />
             运行参数
           </span>
-          <Button type="button" variant="ghost" size="sm" onClick={onEditRunParams}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-expanded={runParamsSlot !== undefined}
+            aria-controls={`image-env-${model.id}`}
+            onClick={onEditRunParams}
+          >
             编辑环境变量
           </Button>
         </div>
@@ -276,7 +298,7 @@ export function ImageCardView({
             启动命令：<span className="font-mono">{startCommand}</span>（只读）
           </span>
         )}
-        {runParamsSlot}
+        <div id={`image-env-${model.id}`}>{runParamsSlot}</div>
       </div>
 
       {/* ——— 操作区 ——— */}
@@ -310,11 +332,17 @@ export function ImageCardView({
             onToggle(!model.isActive);
           }}
         >
-          {model.isActive ? '禁用' : '启用'}
+          {toggling ? (model.isActive ? '禁用中…' : '启用中…') : model.isActive ? '禁用' : '启用'}
         </Button>
         {/* 预置镜像（AIO）**不渲染** [删除]，仅可禁用（P21-4 §9）。 */}
         {model.canDelete && (
-          <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-destructive"
+            size="sm"
+            onClick={onDelete}
+          >
             删除
           </Button>
         )}

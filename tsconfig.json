@@ -18,23 +18,25 @@
     "incremental": true,
     "verbatimModuleSyntax": false,
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
-    "plugins": [{ "name": "next" }],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "paths": {
       "@/*": ["./src/*"]
     }
   },
   "include": [
-    "next-env.d.ts",
-    "src/**/*.ts",
-    "src/**/*.tsx",
+    "*.mts",
+    "*.ts",
+    ".next/types/**/*.ts",
     ".storybook/**/*.ts",
     ".storybook/**/*.tsx",
+    "next-env.d.ts",
     "scripts/**/*.ts",
-    "e2e/**/*.ts",
-    "*.ts",
-    "*.mts",
-    "vitest.setup.ts",
-    ".next/types/**/*.ts"
+    "src/**/*.ts",
+    "src/**/*.tsx"
   ],
   "exclude": ["node_modules", ".next", "storybook-static"]
 }

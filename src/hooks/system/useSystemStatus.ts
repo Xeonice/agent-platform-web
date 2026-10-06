@@ -22,6 +22,8 @@ import {
   getProviders,
   getResources,
 } from '@/services/api/system.service';
+import { automationKeys } from '@/hooks/automation/useAutomations';
+import { ApiErrorException } from '@/services/api/apiError';
 import { systemKeys } from '@/hooks/system/useAuditStream';
 import { useAppStore } from '@/stores';
 import {
@@ -63,6 +65,7 @@ export interface UseSystemStatusResult {
   resourcesError: boolean;
   providers: SystemProvidersDto | undefined;
   providersError: boolean;
+  restErrorCode?: string;
   isLoading: boolean;
   /** 手动 [刷新]：两个 query 一起重取。 */
   refresh: () => void;
@@ -195,13 +198,21 @@ export function useSystemStatus(): UseSystemStatusResult {
   const refresh = useCallback(() => {
     void refetchResources();
     void refetchProviders();
-  }, [refetchResources, refetchProviders]);
+    void client.invalidateQueries({ queryKey: automationKeys.attention() });
+  }, [client, refetchResources, refetchProviders]);
 
+  const restError = resources.error ?? providers.error;
   return {
     resources: resources.data,
     resourcesError: resources.isError,
     providers: providers.data,
     providersError: providers.isError,
+    ...(restError === null
+      ? {}
+      : {
+          restErrorCode:
+            restError instanceof ApiErrorException ? restError.envelope.code : 'UNKNOWN',
+        }),
     isLoading: resources.isPending || providers.isPending,
     refresh,
     isRefreshing: resources.isFetching || providers.isFetching,

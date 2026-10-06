@@ -23,6 +23,7 @@ import type {
   CheckImageUpdateDto,
   ImageConfigInput,
   ImageManifestDto,
+  ImageDeletionPreviewDto,
   RegisterImageResult,
   RevalidateOutcomeDto,
   ValidationOutcomeDto,
@@ -33,9 +34,17 @@ import type {
  * 带 `runtimeId` 时后端只回向导可选集（`is_active ∧ 非 invalid ∧ 支持该 runtime`）。
  * ⚠️ 管理页**永远不传** `runtimeId`：传了就看不见历史版本，也就没法回滚。
  */
-export async function listImages(runtimeId?: string): Promise<ImageManifestDto[]> {
+export async function listImages(
+  runtimeId?: string,
+  provider?: string,
+): Promise<ImageManifestDto[]> {
   const { data, error, response } = await apiClient.GET('/api/images', {
-    params: { query: runtimeId === undefined ? {} : { runtimeId } },
+    params: {
+      query: {
+        ...(runtimeId === undefined ? {} : { runtimeId }),
+        ...(provider === undefined ? {} : { provider }),
+      },
+    },
   });
   if (!response.ok || data === undefined) {
     throw new ApiErrorException(toApiError(error, response.status), response.status);
@@ -62,8 +71,12 @@ export async function validateImageRef(ref: string): Promise<ValidationOutcomeDt
  * 所以只能在这里从 `response.status` 提出来——hook 拿 `created` 分岔（重复注册走"就地提示 +
  * [定位到该镜像]"，不是弹一个错误）。
  */
-export async function registerImage(ref: string): Promise<RegisterImageResult> {
-  const { data, error, response } = await apiClient.POST('/api/images', { body: { ref } });
+export async function registerImage(
+  input: string | { ref: string; copyConfigFromId?: string },
+): Promise<RegisterImageResult> {
+  const { data, error, response } = await apiClient.POST('/api/images', {
+    body: typeof input === 'string' ? { ref: input } : input,
+  });
   if (!response.ok || data === undefined) {
     throw new ApiErrorException(toApiError(error, response.status), response.status);
   }
@@ -159,4 +172,14 @@ export async function deleteImage(id: string): Promise<void> {
   if (!response.ok) {
     throw new ApiErrorException(toApiError(error, response.status), response.status);
   }
+}
+
+/** 只读清单，失败不能冒充零引用。 */
+export async function getImageDeletionPreview(id: string): Promise<ImageDeletionPreviewDto> {
+  const { data, error, response } = await apiClient.GET('/api/images/{id}/deletion-preview', {
+    params: { path: { id } },
+  });
+  if (!response.ok || data === undefined)
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
+  return data;
 }

@@ -23,8 +23,15 @@ export interface UseProxySettingsResult {
   /** 已存配置的回填值；还没取回来时是三个空串。 */
   initial: ProxyFormValues;
   isSaving: boolean;
+  isLoading: boolean;
+  loadError: boolean;
+  retry: () => void;
   /** 保存失败的人话原因；`null` = 没有失败。 */
   errorMessage: string | null;
+  fieldErrors: Partial<Record<keyof ProxyFormValues, string>>;
+  clearSaveError: () => void;
+  saveSucceeded: boolean;
+  configured: boolean;
   save: (values: ProxyFormValues) => void;
 }
 
@@ -51,23 +58,54 @@ export function useProxySettings(): UseProxySettingsResult {
 
   const save = useCallback(
     (values: ProxyFormValues): void => {
+      if (settings.data === undefined || settings.isError) return;
       mutation.mutate(values);
     },
-    [mutation],
+    [mutation, settings.data, settings.isError],
   );
 
   // ⚠️ 保存失败要给**人话**：服务端 message 不上屏（它随时可能是技术腔，
   //    与 `projectErrorCopy` 同一条纪律）。
+  const fieldErrors: Partial<Record<keyof ProxyFormValues, string>> = {};
+  if (
+    mutation.error instanceof ApiErrorException &&
+    mutation.error.envelope.code === 'VALIDATION_FAILED'
+  ) {
+    for (const issue of mutation.error.envelope.details ?? []) {
+      const path = issue['path'];
+      const field = typeof path === 'string' ? path.split('.').at(-1) : undefined;
+      if (field === 'httpProxy')
+        fieldErrors.httpProxy = 'HTTP_PROXY 要以 http:// 或 https:// 开头。';
+      if (field === 'httpsProxy')
+        fieldErrors.httpsProxy = 'HTTPS_PROXY 要以 http:// 或 https:// 开头。';
+    }
+  }
   const errorMessage =
-    mutation.error === null
-      ? null
-      : mutation.error instanceof ApiErrorException
-        ? describeErrorCode(mutation.error.envelope.code, {
-            overrides: {},
-            fallback: '保存失败，请稍后重试。',
-            traceId: mutation.error.envelope.traceId,
-          })
-        : '网络不通，请稍后再试。';
+    Object.keys(fieldErrors).length > 0
+      ? `代理地址格式不对 —— ${Object.values(fieldErrors).join(' ')}`
+      : mutation.error === null
+        ? null
+        : mutation.error instanceof ApiErrorException
+          ? describeErrorCode(mutation.error.envelope.code, {
+              overrides: {},
+              fallback: '保存失败，请稍后重试。',
+              traceId: mutation.error.envelope.traceId,
+            })
+          : '网络不通，请稍后再试。';
 
-  return { initial, isSaving: mutation.isPending, errorMessage, save };
+  return {
+    initial,
+    isSaving: mutation.isPending,
+    isLoading: settings.isPending,
+    loadError: settings.isError,
+    retry: () => {
+      void settings.refetch();
+    },
+    errorMessage,
+    fieldErrors,
+    clearSaveError: mutation.reset,
+    saveSucceeded: mutation.isSuccess,
+    configured: initial.httpProxy.trim() !== '' || initial.httpsProxy.trim() !== '',
+    save,
+  };
 }

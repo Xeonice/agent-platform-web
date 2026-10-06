@@ -84,7 +84,8 @@ export const AtLimit: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('automation-create')).toBeDisabled();
+    await expect(canvas.getByTestId('automation-create')).toHaveAttribute('aria-disabled', 'true');
+    await expect(canvas.getByTestId('automation-create')).not.toBeDisabled();
     await expect(canvas.getByTestId('automation-limit-note')).toHaveTextContent('20');
   },
 };

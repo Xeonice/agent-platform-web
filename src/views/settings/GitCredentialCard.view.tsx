@@ -5,6 +5,7 @@
 // ⚠️ **「查不到」与「没有」是两态。** 此前 Git 凭证接口失败时也落到 `credential === null` 这一支，
 //    屏幕上就是「○ 未配置」+ [配置 SSH 密钥] —— 用户会以为自己的密钥被清了，然后重新配一份。
 //    加载失败必须单独说，并给 [重试]，绝不给「去配一个新的」这种引导。
+import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
 import { KnownHostsRowView } from '@/views/settings/KnownHostsRow.view';
@@ -27,6 +28,7 @@ export interface GitCredentialCardProps {
   onRevoke?: () => void;
   onConfigureSsh?: () => void;
   onConfigureHttps?: () => void;
+  footerSlot?: ReactNode;
 }
 
 export function GitCredentialCardView({
@@ -42,6 +44,7 @@ export function GitCredentialCardView({
   onRevoke,
   onConfigureSsh,
   onConfigureHttps,
+  footerSlot,
 }: GitCredentialCardProps) {
   if (loadFailed) {
     return (
@@ -60,9 +63,8 @@ export function GitCredentialCardView({
 
   if (credential === null) {
     return (
-      <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border p-4">
-        {/* ⭐ 状态用 StatusPill 的 skipped（虚线框），⛔ 不是 fail：没配 Git 凭证不等于
-            出错了，是「这一路没走」（design/prototype.html #credentials 第 663/717 行同款）。 */}
+      <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border p-5">
+        {/* 未配置 Git 凭证使用 skipped；未选择此路径不等于配置错误。 */}
         <StatusPill status="skipped" data-testid="git-unconfigured-badge">
           未配置
         </StatusPill>
@@ -80,53 +82,62 @@ export function GitCredentialCardView({
 
   const isSsh = credential.type === 'ssh-key';
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border p-4">
-      <div className="flex flex-col gap-1 text-sm">
-        <div>
-          <span className="text-muted-foreground">类型：</span>
-          <span className="font-medium">{isSsh ? 'SSH 私钥' : 'HTTPS Token'}</span>
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div
+        role="group"
+        aria-label={isSsh ? 'SSH 私钥' : 'HTTPS Token'}
+        className="flex flex-wrap items-start justify-between gap-4 p-5"
+      >
+        <div className="min-w-0 flex-1 space-y-2">
+          <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-[13px] leading-5">
+            <dt className="text-muted-foreground">类型：</dt>
+            <dd className="font-medium">{isSsh ? 'SSH 私钥' : 'HTTPS Token'}</dd>
+            <dt className="text-muted-foreground">{isSsh ? '指纹：' : 'Token 尾号：'}</dt>
+            <dd className="break-all font-mono">{credential.maskedIdentifier}</dd>
+            {!isSsh && credential.allowedHosts.length > 0 && (
+              <>
+                <dt className="text-muted-foreground">host 白名单：</dt>
+                <dd className="break-all">{credential.allowedHosts.join('、')}</dd>
+              </>
+            )}
+            {lastUsedLabel !== undefined && lastUsedLabel !== '' && (
+              <>
+                <dt className="text-muted-foreground">最后使用：</dt>
+                <dd>{lastUsedLabel}</dd>
+              </>
+            )}
+          </dl>
+          {isSsh && credential.knownHosts !== undefined && (
+            <KnownHostsRowView knownHosts={credential.knownHosts} />
+          )}
+          <TestConnectionResultView testing={testing} result={testResult} />
         </div>
-        <div className="break-all">
-          <span className="text-muted-foreground">{isSsh ? '指纹：' : 'Token 尾号：'}</span>
-          <span className="font-mono">{credential.maskedIdentifier}</span>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onReplace}>
+            更换
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy || testing}
+            onClick={onTest}
+          >
+            测试连接
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
+            disabled={busy}
+            onClick={onRevoke}
+          >
+            删除
+          </Button>
         </div>
-        {!isSsh && credential.allowedHosts.length > 0 && (
-          <div>
-            <span className="text-muted-foreground">host 白名单：</span>
-            <span className="font-mono">{credential.allowedHosts.join('、')}</span>
-          </div>
-        )}
-        {lastUsedLabel !== undefined && lastUsedLabel !== '' && (
-          <div>
-            <span className="text-muted-foreground">最后使用：</span>
-            <span>{lastUsedLabel}</span>
-          </div>
-        )}
       </div>
-
-      {isSsh && credential.knownHosts !== undefined && (
-        <KnownHostsRowView knownHosts={credential.knownHosts} />
-      )}
-
-      <TestConnectionResultView testing={testing} result={testResult} />
-
-      <div className="mt-1 flex flex-wrap gap-2">
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onReplace}>
-          更换
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={busy || testing}
-          onClick={onTest}
-        >
-          测试连接
-        </Button>
-        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onRevoke}>
-          删除
-        </Button>
-      </div>
+      {footerSlot}
     </div>
   );
 }

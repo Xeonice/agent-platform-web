@@ -9,6 +9,7 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { getInitStatus } from '@/services/api/system.service';
 import { systemKeys } from '@/hooks/system/useAuditStream';
+import { useAppStore } from '@/stores';
 import type { InitStatusDto } from '@/types/system';
 
 export const INIT_QUERY_OPTIONS = {
@@ -20,9 +21,12 @@ export const INIT_QUERY_OPTIONS = {
   //    而每多一次重试就把首屏骨架多按住几秒（默认全局 retry 是 2 次指数退避）。
   //    失败时 `AppBootGate` 的处置见那边的注释：**放行**，不是卡在骨架上。
   retry: false,
+  // A failed snapshot still releases the shell; consumers must not restart boot on mount.
+  retryOnMount: false,
 } as const;
 
 /** `initialized` 与它的加载态。**判定只在这里读一次**，其余地方一律读缓存。 */
 export function useInitGate(): UseQueryResult<InitStatusDto> {
-  return useQuery(INIT_QUERY_OPTIONS);
+  const locked = useAppStore((s) => s.accessLocked);
+  return useQuery({ ...INIT_QUERY_OPTIONS, enabled: !locked });
 }

@@ -90,7 +90,7 @@ export function ImageVersionHistoryView({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  disabled={switchingId === row.id}
+                  disabled={switchingId !== undefined || row.validationStatus === 'invalid'}
                   onClick={() => {
                     onSwitchVersion(row.id);
                   }}
@@ -98,6 +98,9 @@ export function ImageVersionHistoryView({
                   {switchingId === row.id ? '切换中…' : '切换到此版本'}
                 </Button>
               )}
+              {row.validationStatus === 'invalid' && !row.isActive ? (
+                <span className="text-muted-foreground">这一版无效，不能切换</span>
+              ) : null}
             </li>
           );
         })}

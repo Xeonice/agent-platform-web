@@ -91,6 +91,8 @@ export function ScheduleSelectorView({
             onChange={(e) => {
               onConfigChange({ ...config, minute: Number.parseInt(e.target.value, 10) });
             }}
+            aria-invalid={errorMessage !== undefined}
+            aria-describedby={errorMessage === undefined ? undefined : 'schedule-field-error'}
             data-testid="schedule-minute"
           />
           分
@@ -107,13 +109,22 @@ export function ScheduleSelectorView({
             onChange={(e) => {
               onConfigChange({ ...config, time: e.target.value });
             }}
+            aria-invalid={errorMessage !== undefined}
+            aria-describedby={errorMessage === undefined ? undefined : 'schedule-field-error'}
             data-testid="schedule-time"
           />
         </label>
       )}
 
       {kind === 'weekly' && (
-        <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="schedule-days">
+        <div
+          className="flex flex-wrap items-center gap-2 text-xs"
+          role="group"
+          aria-label="星期"
+          aria-invalid={errorMessage !== undefined}
+          aria-describedby={errorMessage === undefined ? undefined : 'schedule-field-error'}
+          data-testid="schedule-days"
+        >
           星期
           {WEEKDAYS.map((label, index) => (
             <label key={label} className="flex items-center gap-1">
@@ -132,6 +143,17 @@ export function ScheduleSelectorView({
             </label>
           ))}
         </div>
+      )}
+
+      {errorMessage !== undefined && errorMessage !== '' && (
+        <p
+          role="alert"
+          className="text-xs text-red-400"
+          id="schedule-field-error"
+          data-testid="schedule-error"
+        >
+          {errorMessage}
+        </p>
       )}
 
       <label className="flex flex-col gap-1 text-xs">
@@ -158,12 +180,6 @@ export function ScheduleSelectorView({
             : '默认取你当前的时区，建好之后就定下来了；之后你换机器或改系统时区都不会影响这条规则。'}
         </span>
       </label>
-
-      {errorMessage !== undefined && errorMessage !== '' && (
-        <p role="alert" className="text-xs text-red-400" data-testid="schedule-error">
-          {errorMessage}
-        </p>
-      )}
     </fieldset>
   );
 }

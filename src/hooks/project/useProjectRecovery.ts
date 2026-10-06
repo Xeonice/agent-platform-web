@@ -18,8 +18,8 @@ export interface UseProjectRecoveryArgs {
 }
 
 export interface ProjectRecoveryApi {
-  retry: () => void;
-  convertToEmpty: () => void;
+  retry: (id?: string) => void;
+  convertToEmpty: (id?: string) => void;
   busy: boolean;
   /** 动作失败的用户可见错误（409/网络等；null 无错误）。 */
   actionError: string | null;
@@ -69,24 +69,26 @@ export function useProjectRecovery({
 
   const rollbackCode = errorCode ?? undefined;
 
-  const retry = (): void => {
-    if (projectId === null) return;
+  const retry = (override?: string): void => {
+    const target = override ?? projectId;
+    if (target === null) return;
     setActionError(null);
-    setCloneProgress(projectId, { phase: 'cloning' }); // 乐观置 cloning
-    retryClone.mutate(projectId, {
+    setCloneProgress(target, { phase: 'cloning' }); // 乐观置 cloning
+    retryClone.mutate(target, {
       onError: (error) => {
         reportRestError(error);
         // 关键：回退到 failed，绝不停在 cloning（P0-2）。
-        setCloneProgress(projectId, { phase: 'failed', errorCode: rollbackCode });
+        setCloneProgress(target, { phase: 'failed', errorCode: rollbackCode });
         setActionError(actionErrorMessage(error, RETRY_INVALID_STATE));
       },
     });
   };
 
-  const convert = (): void => {
-    if (projectId === null) return;
+  const convert = (override?: string): void => {
+    const target = override ?? projectId;
+    if (target === null) return;
     setActionError(null);
-    convertToEmpty.mutate(projectId, {
+    convertToEmpty.mutate(target, {
       onSuccess: (project) => {
         clearCloneProgress(project.id);
         onConverted?.(project.id);

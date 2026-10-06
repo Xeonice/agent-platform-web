@@ -5,6 +5,7 @@ import { apiClient } from '@/services/api/client';
 import { ApiErrorException, toApiError } from '@/services/api/apiError';
 import type {
   RuntimeDto,
+  RuntimeCredentialDeletionPreview,
   AuthChallenge,
   AuthStatusResponse,
   RuntimeCredentialResult,
@@ -128,7 +129,33 @@ export async function revokeRuntimeCredential(rt: string, credentialId: string):
   }
 }
 
+export async function getCredentialDeletionPreview(
+  rt: string,
+  credentialId: string,
+): Promise<RuntimeCredentialDeletionPreview> {
+  const { data, error, response } = await apiClient.GET(
+    '/api/runtimes/{rt}/credentials/{credentialId}/deletion-preview',
+    {
+      params: { path: { rt, credentialId } },
+    },
+  );
+  if (!response.ok || data === undefined)
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
+  return data;
+}
+
 /** 帐号授权类方式（oauth-device / setup-token）→ 生效模式 'account'；api-key → 'api-key'（05 §4）。 */
 export function authMethodToMode(method: RuntimeAuthMethod): RuntimeAuthMode {
   return method === 'api-key' ? 'api-key' : 'account';
+}
+
+export async function cancelAuth(rt: string, challengeRef: string): Promise<void> {
+  const { error, response } = await apiClient.DELETE(
+    '/api/runtimes/{rt}/auth/sessions/{challengeRef}',
+    {
+      params: { path: { rt, challengeRef } },
+    },
+  );
+  if (!response.ok)
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
 }

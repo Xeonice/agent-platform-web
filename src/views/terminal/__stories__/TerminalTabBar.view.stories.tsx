@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { TerminalTabBarView } from '@/views/terminal/TerminalTabBar.view';
+import { TerminalToolbarView } from '@/views/terminal/TerminalToolbar.view';
+import { TerminalPaneView } from '@/views/terminal/TerminalPane.view';
 
 const meta: Meta<typeof TerminalTabBarView> = {
   title: 'Terminal/TerminalTabBar',
@@ -18,6 +20,60 @@ const TABS = [
   { sessionId: 'sb-1:shell:1', label: '终端 1', closable: true },
   { sessionId: 'sb-1:shell:2', label: '终端 2', closable: true },
 ];
+
+/** f-wb-live-01：标签与工具组成40px一行，下面直接接满幅画布。 */
+export const WithToolsAndCanvas: Story = {
+  args: {
+    tabs: TABS.slice(0, 2),
+    activeSessionId: 'sb-1:0',
+    onSelect: noop,
+    onClose: noop,
+    onNewTerminal: noop,
+    launchOptions: [{ runtimeId: 'codex', label: 'Codex' }, { label: '终端' }],
+  },
+  parameters: { layout: 'fullscreen' },
+  render: (args) => (
+    <div className="flex h-80 w-[calc(100vw-48px)] min-w-0 flex-col sm:w-[calc(100vw-256px)]">
+      <TerminalTabBarView
+        {...args}
+        toolsSlot={
+          <div className="ml-auto shrink-0">
+            <TerminalToolbarView
+              onCopy={fn()}
+              onClear={fn()}
+              onDecreaseFontSize={fn()}
+              onIncreaseFontSize={fn()}
+            />
+          </div>
+        }
+      />
+      <div className="min-h-0 flex-1">
+        <TerminalPaneView />
+      </div>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const bar = canvas.getByTestId('terminal-tab-bar');
+    await expect(bar.getBoundingClientRect().height).toBe(40);
+    const tools = canvas.getByRole('group', { name: '当前终端工具' });
+    await expect(bar.getBoundingClientRect().right - tools.getBoundingClientRect().right).toBe(16);
+    await expect(
+      within(canvas.getByRole('tablist')).queryByRole('button', { name: '新终端' }),
+    ).toBeNull();
+    await expect(
+      canvas
+        .getByRole('group', { name: '当前终端工具' })
+        .closest('[data-testid="terminal-tab-bar"]'),
+    ).toBe(bar);
+    await expect(getComputedStyle(canvas.getByRole('tab', { name: 'Agent' })).fontSize).toBe(
+      '14px',
+    );
+    const screen = canvas.getByTestId('terminal-container');
+    await expect(getComputedStyle(screen).borderRadius).toBe('0px');
+    await expect(getComputedStyle(screen).backgroundColor).toBe('rgb(0, 0, 0)');
+  },
+};
 
 /**
  * ⭐ 单标签态：一个 Task 打开时的样子 —— 只有 Agent 那个会话，**没有 [×]**。
@@ -45,12 +101,8 @@ export const AgentOnly: Story = {
 };
 
 /**
- * ⭐ 多标签态 + **按钮叫「+ 新终端」**。
- *
- * ⚠️ 名字是有来历的：左下角 [＋ 新任务] 是发起一个新 Task，这里是在同一个 Task 里
- * 多开一个终端。两者曾经都叫"新建"，在同一屏上分不清（design-notes 2026-09 裁决）。
- *
- * MUTATION: 把按钮文案改回「+ 新建」⇒ 第一条断言红。
+ * 新终端在当前任务内增加会话，与发起新任务的入口区分。
+ * 改成含糊的新建文案应使按钮名称断言失败。
  */
 export const MultipleTabs: Story = {
   args: {
@@ -62,7 +114,7 @@ export const MultipleTabs: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('terminal-tab-new')).toHaveTextContent('+ 新终端');
+    await expect(canvas.getByTestId('terminal-tab-new')).toHaveTextContent('新终端');
     // ⛔ 不许出现「新建」二字（那是 [＋ 新任务] 那一侧的词）。
     await expect(canvas.getByTestId('terminal-tab-new').textContent).not.toContain('新建');
     // 用户自己开的标签才有 [×]，而且每个都有。

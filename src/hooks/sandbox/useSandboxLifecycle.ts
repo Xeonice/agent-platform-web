@@ -1,5 +1,6 @@
 // 从 sandbox 状态 store 派生生命周期决策（hook 可 import lib；view 只吃派生结果）。
 import { useEffect, useMemo, useState } from 'react';
+import { isSandboxStuck } from '@/lib/sandbox/taskPresentation';
 import { useAppStore } from '@/stores';
 import {
   classifyStatus,
@@ -55,6 +56,8 @@ export interface SandboxLifecycle {
   elapsedLabel?: string;
   /** failed / ended 决策下的人话呈现（P22 §1：人话 + 可操作建议）；其余决策为 null。 */
   outcome: SandboxErrorCopy | null;
+  stuckElapsed?: string;
+  continueWaiting: () => void;
 }
 
 /** 无记录时按 startup(pending) 兜底：create 刚发出、事件未到时展示"启动中"而非空白。 */
@@ -87,7 +90,9 @@ export function useSandboxLifecycle(sandboxId: string | null): SandboxLifecycle 
    * 秒级心跳，**只在启动中且真的有锚点时才跑**。没有这两个条件就一个定时器都不建：
    * 一个 running 的沙箱每秒重渲染一次，是为了一行不会显示的文案付整页的代价。
    */
-  const ticking = decision === 'startup' && observedAt !== undefined;
+  const lastProgressAt = runtime?.lastProgressAt ?? Date.now();
+  const continueWaiting = useAppStore((s) => s.continueSandboxWaiting);
+  const ticking = decision === 'startup';
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!ticking) return;
@@ -127,7 +132,15 @@ export function useSandboxLifecycle(sandboxId: string | null): SandboxLifecycle 
       ...(subtitle === undefined ? {} : { subtitle }),
       // `ticking` 已经蕴含 observedAt 有值（它就是由这个条件构成的）——再判一次会被
       // `no-unnecessary-condition` 判死，也确实是一句永远为真的话。
-      ...(ticking ? { elapsedLabel: formatElapsed(now - observedAt) } : {}),
+      ...(ticking && observedAt !== undefined
+        ? { elapsedLabel: formatElapsed(now - observedAt) }
+        : {}),
+      ...(isSandboxStuck(effective, lastProgressAt, now, installStatus === 'installing')
+        ? { stuckElapsed: formatElapsed(now - lastProgressAt) }
+        : {}),
+      continueWaiting: () => {
+        if (sandboxId !== null) continueWaiting(sandboxId);
+      },
       outcome:
         decision === 'failed'
           ? // 人话按**码**查 P22 §1；failureMessage 是纯自由文本细节，只作为排障小字原样透出，
@@ -138,6 +151,9 @@ export function useSandboxLifecycle(sandboxId: string | null): SandboxLifecycle 
             : null,
     };
   }, [
+    sandboxId,
+    continueWaiting,
+    lastProgressAt,
     status,
     effective,
     decision,

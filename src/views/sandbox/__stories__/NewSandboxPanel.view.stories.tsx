@@ -171,7 +171,10 @@ export const AuthGateBlocking: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByRole('button', { name: '发起任务并打开终端' })).toBeDisabled();
+    await expect(canvas.getByRole('button', { name: '发起任务并打开终端' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     await expect(canvas.getByTestId('auth-gate-disabled-reason')).toHaveTextContent(
       '先完成上面的 Claude Code 登录，才能发起任务。',
     );

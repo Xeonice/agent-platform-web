@@ -24,8 +24,7 @@ type Story = StoryObj<typeof ConnectivityItemView>;
 export const ModelApiOk: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    // ⚠️ 状态用 `StatusPill`（design/design-notes.md §2 八态对照表）：颜色/图标/文字三重
-    // 线索，⛔ 不再是手写 emoji。
+    // 验证 StatusPill 的文字与语义状态，颜色不是唯一线索。
     await expect(canvas.getByTestId('connectivity-item-api.openai.com')).toHaveTextContent(
       '可达 · 351ms',
     );

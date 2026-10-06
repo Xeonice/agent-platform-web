@@ -2,6 +2,7 @@
 // 真正实例化 xterm 的子层（08 §2.2）：仅由 TerminalContainer 经 next/dynamic({ssr:false}) 懒加载。
 // xterm.css 由 useTerminalInstance（唯一 @xterm/* import 点）随 terminal chunk 注入（08 §2.3）。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
   useTerminalInstance,
@@ -51,41 +52,27 @@ export interface TerminalMountProps {
    * 还挂着的标签里借一条代发 `close_shell`（帧里带 shellId，见 10 §7.4）。
    */
   registerSend?: (send: ((frame: TerminalClientFrame) => boolean) | null) => void;
-  /**
-   * 仪表壳内工具栏的面包屑（design-notes.md §4 Phase 3 / 原型 `renderTerminal()`：
-   * `${项目名} / ${任务名}`）。缺席 ⇒ 不渲染工具栏——纯终端场景（没有项目/任务上下文
-   * 可供拼接）不该憋出一句空面包屑。
-   */
-  breadcrumb?: string;
+  /** 活动会话把工具放进共享终端栏；画布与PTY实例仍常驻原位置。 */
+  toolbarTarget?: HTMLDivElement | null;
 }
 
 export default function TerminalMount({
   sessionId,
+  sandboxId,
   socketConfig,
   active = true,
   onShellId,
   onShells,
   registerSend,
-  breadcrumb,
+  toolbarTarget,
 }: TerminalMountProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const term = useTerminalInstance();
   const sendRef = useRef<(frame: TerminalClientFrame) => boolean>(() => false);
 
   /**
-   * 终端工具栏 [A-]/[A+]（design-notes.md §4 Phase 3 / P21-1 §6「字号 persist」）。
-   *
-   * ⚠️ **接的是 `uiSlice.terminalFontSize`，不是本地 `useState`**——这个 persist 字段与
-   * `setTerminalFontSize` action 在这一轮之前就已经存在（`createUiSlice.ts`），却和
-   * `toggleProjectFold` 一样，从来没有任何 UI 调用过：字号有地方记，却没有输入它的入口。
-   * 接上 store 而不是新起一份本地 state，才是真的把"字号记忆"这句话落地——刷新页面、
-   * 换个任务打开终端，字号都还是上次调过的那个值。
-   *
-   * 已知取舍：多个终端标签**共用同一个全局字号**（Zustand 的订阅是全局的，任意一个
-   * 标签调 [A+] 都会让所有订阅了这个字段的组件重渲染），但**不会**反过来把已经挂载
-   * 的、当下不是这次点击来源的其它标签的 xterm 实例也现改字号——那需要每个挂载点
-   * 反应式监听这个字段的变化并主动调 `term.setFontSize()`，复杂度换不回明显的收益
-   * （多标签同时开着还要眼看字号跳变的场景很少），本轮不做。
+   * 终端字号保存到 uiSlice.terminalFontSize，刷新或重新打开终端时沿用上次值。
+   * 多个会话共享字号偏好；工具栏操作针对当前会话实例，首次挂载使用字号快照。
    */
   const fontSize = useAppStore((s) => s.terminalFontSize);
   const setTerminalFontSize = useAppStore((s) => s.setTerminalFontSize);
@@ -102,6 +89,11 @@ export default function TerminalMount({
     // ⚠️ 剪贴板写在 container（07 §3 规则 2）：非 HTTPS 局域网部署下 `navigator.clipboard`
     // 可能压根不存在，读 `.writeText` 会当场抛 TypeError——失败不许静默
     // （与 `SandboxLifecycleContainer.handleCopyDiagnostics` 同一条纪律）。
+    // DOM types assume clipboard exists; insecure origins may omit it.
+    if (typeof navigator.clipboard === 'undefined') {
+      toast.error('复制失败，请手动选中终端内容复制');
+      return;
+    }
     void navigator.clipboard.writeText(text).then(
       () => {
         toast.success('已复制到剪贴板');
@@ -115,6 +107,32 @@ export default function TerminalMount({
   const handleClear = useCallback((): void => {
     term.clear(sessionId);
   }, [term, sessionId]);
+
+  const setVisibleTerminal = useAppStore((s) => s.setVisibleTerminal);
+  useEffect(() => {
+    if (!active) return;
+    setVisibleTerminal({ sandboxId, sessionId });
+    return () => {
+      const current = useAppStore.getState().visibleTerminal;
+      if (current?.sandboxId === sandboxId && current.sessionId === sessionId)
+        setVisibleTerminal(null);
+    };
+  }, [active, sandboxId, sessionId, setVisibleTerminal]);
+
+  const clearRequest = useAppStore((s) => s.terminalClearRequest);
+  const consumeClear = useAppStore((s) => s.consumeTerminalClear);
+  useEffect(() => {
+    const visible = useAppStore.getState().visibleTerminal;
+    if (
+      active &&
+      clearRequest?.sandboxId === sandboxId &&
+      visible?.sandboxId === sandboxId &&
+      visible.sessionId === sessionId
+    ) {
+      term.clear(sessionId);
+      consumeClear();
+    }
+  }, [active, clearRequest, sandboxId, sessionId, term, consumeClear]);
 
   const handleDecreaseFontSize = useCallback((): void => {
     const next = Math.max(MIN_TERMINAL_FONT_SIZE, fontSize - 1);
@@ -304,7 +322,20 @@ export default function TerminalMount({
   }, [active, term, sessionId]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
+      {active && toolbarTarget != null
+        ? createPortal(
+            <TerminalToolbarView
+              onCopy={handleCopy}
+              onClear={handleClear}
+              onDecreaseFontSize={handleDecreaseFontSize}
+              onIncreaseFontSize={handleIncreaseFontSize}
+              canDecreaseFontSize={fontSize > MIN_TERMINAL_FONT_SIZE}
+              canIncreaseFontSize={fontSize < MAX_TERMINAL_FONT_SIZE}
+            />,
+            toolbarTarget,
+          )
+        : null}
       {/*
         退避耗尽后必须给一条出路：ptySocket 现在真的会撞到上限并停手（STABLE_CONNECTION_MS），
         而终端上的"停手"＝用户正盯着的 shell 被判死。接线在这里，那个「手动重连」才不是死按钮。
@@ -319,24 +350,7 @@ export default function TerminalMount({
         {...(endedMessage === null ? {} : { sessionEndedMessage: endedMessage })}
       />
       <div className="min-h-0 flex-1">
-        <TerminalPaneView
-          ref={containerRef}
-          {...(breadcrumb === undefined
-            ? {}
-            : {
-                toolbar: (
-                  <TerminalToolbarView
-                    breadcrumb={breadcrumb}
-                    onCopy={handleCopy}
-                    onClear={handleClear}
-                    onDecreaseFontSize={handleDecreaseFontSize}
-                    onIncreaseFontSize={handleIncreaseFontSize}
-                    canDecreaseFontSize={fontSize > MIN_TERMINAL_FONT_SIZE}
-                    canIncreaseFontSize={fontSize < MAX_TERMINAL_FONT_SIZE}
-                  />
-                ),
-              })}
-        />
+        <TerminalPaneView ref={containerRef} />
       </div>
     </div>
   );

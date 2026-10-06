@@ -19,14 +19,16 @@ export function automationRows(
   dtos: AutomationDto[],
   nowMs: number,
   environmentTimeZone: string,
+  runtimeNames: Readonly<Record<string, string>> = {},
 ): AutomationRow[] {
-  return dtos.map((dto) => automationRow(dto, nowMs, environmentTimeZone));
+  return dtos.map((dto) => automationRow(dto, nowMs, environmentTimeZone, runtimeNames));
 }
 
 export function automationRow(
   dto: AutomationDto,
   nowMs: number,
   environmentTimeZone: string,
+  runtimeNames: Readonly<Record<string, string>> = {},
 ): AutomationRow {
   const lifecycle = automationLifecycle({
     enabled: dto.enabled,
@@ -43,7 +45,7 @@ export function automationRow(
     lifecycle,
     ...(presentation.status === undefined ? {} : { status: presentation.status }),
     statusText: presentation.text,
-    summaryText: `${dto.runtime} · ${describeSchedule(dto.scheduleKind, dto.scheduleConfig)}`,
+    summaryText: `${runtimeNames[dto.runtime] ?? { codex: 'Codex', 'claude-code': 'Claude Code' }[dto.runtime] ?? '未识别的 Agent'} · ${describeSchedule(dto.scheduleKind, dto.scheduleConfig)}`,
     ...(nextText === undefined ? {} : { nextTriggerText: nextText }),
     timezone: dto.timezone,
     // IANA 名准确但不直观；补一个**实时算出的**偏移，让"早上 8 点是谁的早上 8 点"当场读懂。

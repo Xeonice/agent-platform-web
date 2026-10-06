@@ -6,7 +6,6 @@ const meta: Meta<typeof TerminalToolbarView> = {
   title: 'Terminal/TerminalToolbar',
   component: TerminalToolbarView,
   args: {
-    breadcrumb: 'ProjectA / Codex · 重构支付模块的类型定义',
     onCopy: fn(),
     onClear: fn(),
     onDecreaseFontSize: fn(),
@@ -20,9 +19,12 @@ type Story = StoryObj<typeof TerminalToolbarView>;
 export const Default: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('terminal-toolbar-breadcrumb')).toHaveTextContent(
-      'ProjectA / Codex · 重构支付模块的类型定义',
-    );
+    await expect(canvas.getByRole('group', { name: '当前终端工具' })).toBeInTheDocument();
+    for (const name of ['复制', '清屏', '缩小字号', '放大字号']) {
+      const button = canvas.getByRole('button', { name });
+      await expect(button.getBoundingClientRect().height).toBe(28);
+      await expect(button.getBoundingClientRect().width).toBe(28);
+    }
   },
 };
 

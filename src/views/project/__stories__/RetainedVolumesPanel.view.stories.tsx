@@ -122,11 +122,8 @@ export const DeleteNeedsConfirm: Story = {
     const canvas = within(canvasElement);
 
     await userEvent.click(canvas.getByRole('button', { name: '删除' }));
-    // ⭐ 第一下**不删**：只展开确认态。一步删除是不可逆操作里最常见的事故。
-    await expect(args.onDelete).not.toHaveBeenCalled();
-    await expect(canvas.getByText('永久删除？删掉之后这份工作目录拿不回来。')).toBeInTheDocument();
-
-    await userEvent.click(canvas.getByRole('button', { name: '确认删除' }));
+    // The view requests the host's same-dialog confirmation; the host owns DELETE.
+    await expect(args.onDelete).toHaveBeenCalledOnce();
     await expect(args.onDelete).toHaveBeenCalledWith('rv-1');
   },
 };
@@ -149,7 +146,7 @@ export const Empty: Story = {
     const empty = canvas.getByTestId('retained-volumes-empty');
     await expect(empty).toHaveTextContent('这个项目还没有保留下来的成果。');
     // 空态要说清"卷是怎么来的"，否则用户不知道下次该怎么留下成果。
-    await expect(empty).toHaveTextContent('把工作目录留下来');
+    await expect(empty).toHaveTextContent('把代码副本留下来');
     // 空态不摆任何合计行（"共 0 个 · 占用 0 B" 是噪声）。
     await expect(canvas.queryByTestId('retained-volumes-totals')).toBeNull();
   },

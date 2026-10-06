@@ -156,7 +156,7 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
   BRANCH_NOT_FOUND: {
     title: '项目里没有这个分支',
     advice:
-      '项目当前的代码里找不到这个分支 —— 可能远端已经删掉了它，而项目这边还停在同步之前。改选一个列表里有的分支；如果确信远端还有，先到项目上做一次[重新同步]再回来选。重来同一个分支名只会再被拒一次。',
+      '项目当前的代码里找不到这个分支 —— 可能远端已经删掉了它，而项目这边还停在同步之前。改选一个列表里有的分支；如果确信远端还有，先到项目上做一次[拉取最新代码]再回来选。重来同一个分支名只会再被拒一次。',
     severity: 'fail',
     actions: [{ key: 'reconfigure', label: '改选分支' }],
   },
@@ -353,8 +353,8 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
     actions: [RETRY, { key: 'reconfigure', label: '检查镜像地址' }],
   },
   RESOURCE_EXHAUSTED: {
-    title: '同时在跑的任务太多，资源不够了',
-    advice: '停掉几个不用的任务把资源让出来，或者过一会儿再试。',
+    title: '这台机器能同时登记的任务已满',
+    advice: '停止任务不会腾出名额；先销毁几个不用的任务，名额释放后还能再发几个。',
     severity: 'fail',
     actions: [
       { key: 'retry', label: '稍后重试' },
@@ -371,7 +371,7 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
   PROVIDER_UNAVAILABLE: {
     title: '容器服务没有响应',
     advice:
-      '平台连不上这台机器上的容器服务。先确认 Docker Desktop 或 OrbStack 这类容器服务已经在运行，起来之后再重试。',
+      '平台连不上这台机器提供运行环境的服务。先运行诊断，确认这台机器的环境已经就绪；恢复之后再重新发起任务。',
     severity: 'fail',
     actions: [RETRY],
   },
@@ -380,9 +380,9 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 文案不许把前者说成后者。
    */
   TIMEOUT: {
-    title: '这一步等太久，平台先停下了',
+    title: '超时未响应：这一步等太久，平台先停下了',
     advice:
-      '超时只说明这次在限定时间内没做完，不等于对面连不上。可以重试；一直超时就看看容器服务是不是负载过高。',
+      '在限定时间内没有等到应答。超时不等于连不上，可以重新发起；一直超时就运行诊断，确认这台机器的环境。',
     severity: 'timeout',
     actions: [RETRY],
   },
@@ -470,11 +470,49 @@ const ZERO_SIDE_EFFECT_PHRASING = {
 
 /** 零副作用拒绝的**就地**提示文案（不含任何"重试/重新创建"语义）。 */
 export function zeroSideEffectRejectionMessage(
-  error: Pick<ErrorEnvelope, 'message'>,
+  error: Pick<ErrorEnvelope, 'message'> & Partial<Pick<ErrorEnvelope, 'code'>>,
   context: ZeroSideEffectContext,
 ): string {
   const phrasing = ZERO_SIDE_EFFECT_PHRASING[context];
-  const reason = error.message !== '' ? error.message : phrasing.fallbackReason;
+  const choices: Record<string, { reason: string; advice: string }> = {
+    INVALID_IMAGE_REFERENCE: {
+      reason: '这张镜像现在不能被新任务选用（刚被禁用、验证没通过或已删除）',
+      advice: '请改选一张镜像后再试',
+    },
+    IMAGE_NOT_REGISTERED: {
+      reason: '这张镜像现在不能被新任务选用（刚被禁用、验证没通过或已删除）',
+      advice: '请改选一张镜像后再试',
+    },
+    IMAGE_PROVIDER_MISMATCH: {
+      reason: '这张镜像跑不在这台机器的沙箱环境上',
+      advice: '请改选一张镜像后再试',
+    },
+    BRANCH_NOT_FOUND: {
+      reason: '项目里没有这个分支（远端可能已经删掉了它，项目这边还停在同步之前）',
+      advice: '请改选一个列表里有的分支后再试',
+    },
+    UNKNOWN_RUNTIME: {
+      reason: '这个 Agent 现在没有在平台上注册',
+      advice: '请改选一个可用的 Agent 后再试',
+    },
+    UNKNOWN_PROVIDER: {
+      reason: '这台机器的沙箱环境没有在平台上注册',
+      advice: '请到「系统状态」检查环境',
+    },
+    PROJECT_NOT_FOUND: { reason: '这个项目已经不存在', advice: '请改选一个项目后再试' },
+    PROJECT_NOT_READY: {
+      reason: '这个项目现在还不能接任务',
+      advice: '请去项目页查看状态，或改选一个就绪的项目后再试',
+    },
+    UNSUPPORTED_CAPABILITY: {
+      reason: '这台机器的沙箱环境不支持所需能力',
+      advice: '请到「系统状态」检查环境',
+    },
+  };
+  const choice = error.code === undefined ? undefined : choices[error.code];
+  if (choice !== undefined)
+    return `${phrasing.lead}：${choice.reason}。${choice.advice}（本次请求未创建任何任务）。`;
+  const reason = phrasing.fallbackReason;
   return `${phrasing.lead}：${reason}。${phrasing.tail}`;
 }
 
@@ -509,8 +547,7 @@ function fallbackCopy(code: string, message?: string): SandboxErrorCopy {
 export const SANDBOX_ENDED_COPY: SandboxErrorCopy = {
   code: 'ENDED',
   title: '任务已停止',
-  advice:
-    '这个任务的运行环境已经回收了。可以再发起一个 —— 那是全新的一轮，从头开始，不会接着上次的进度。',
+  advice: '运行环境停着，代码副本还在；启动后 Agent 会话从头开始，不会接着上次的对话。',
   // 'info'：这是正常收场，不是失败——⛔ 不与上面各条 'fail' 共用同一个图标/颜色语义。
   severity: 'info',
   actions: [{ key: 'reconfigure', label: '发起新任务' }],

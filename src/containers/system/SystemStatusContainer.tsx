@@ -9,12 +9,13 @@
 //
 // ⚠️ **审计卡与这四张卡同屏共存，且不合并**（P21-5 §10.1）：审计流是结构化事件、给产品
 // 用户看；provider 那边的运行日志是文本行、给运维看。两者在组件层不共享任何视图。
-import { useCallback } from 'react';
+import { useCallback, type Ref } from 'react';
 import { toast } from 'sonner';
 import { useSystemStatus } from '@/hooks/system/useSystemStatus';
 import { useSystemStatusModels } from '@/hooks/system/useSystemStatusModels';
 import { useExportAuditLogs } from '@/hooks/system/useExportAuditLogs';
 import { useDiagnosticsDisclosure } from '@/hooks/system/useDiagnosticsDisclosure';
+import { useProviderLogs } from '@/hooks/system/useProviderLogs';
 import { useProxySettings } from '@/hooks/system/useProxySettings';
 import { ResourcePoolCardView } from '@/views/system/ResourcePoolCard.view';
 import { SandboxEnvStatusCardView } from '@/views/system/SandboxEnvStatusCard.view';
@@ -25,13 +26,18 @@ import { DiagnosticsCardView } from '@/views/system/DiagnosticsCard.view';
 export interface SystemStatusContainerProps {
   /** [清理保留卷] 的去处（页面注入路由跳转；story 注入 spy）。 */
   onCleanupRetained?: () => void;
+  cleanupTriggerRef?: Ref<HTMLButtonElement>;
 }
 
-export function SystemStatusContainer({ onCleanupRetained }: SystemStatusContainerProps = {}) {
+export function SystemStatusContainer({
+  onCleanupRetained,
+  cleanupTriggerRef,
+}: SystemStatusContainerProps = {}) {
   const status = useSystemStatus();
   const models = useSystemStatusModels(status);
   const disclosure = useDiagnosticsDisclosure(models.diagnostics.items);
   const proxy = useProxySettings();
+  const providerLogs = useProviderLogs();
   const exportLogs = useExportAuditLogs();
 
   const copyHint = useCallback((hint: string) => {
@@ -50,20 +56,8 @@ export function SystemStatusContainer({ onCleanupRetained }: SystemStatusContain
     onCleanupRetained?.();
   }, [onCleanupRetained]);
 
-  // ⚠️ 两栏分组在这一层，⛔ **栅格本身不在这里**（`lg:grid-cols-2` 与窄屏回落在上一层
-  // `app/settings/system/page.tsx`，因为审计流卡是独立容器、要作为跨两列的整行纳入同一个栅格）。
-  //
-  // ⚠️⚠️ **诊断不在任何一列，它占整行**（2026-09-15 按原型 v3 重排，design-notes §1 问题 6）。
-  // 问题从来不是"哪张卡放错了列"，而是 `DiagnosticsCard` 的高度在两个状态之间跳：
-  // **尚未运行 98px、跑完八项 789px**（实测）。把一张高度差 8 倍的卡固定指派给某一列，
-  // 另一列必然一会儿空一会儿挤 —— 按"跑完"的样子分，进页面时左边是空的；按"没跑"的样子
-  // 分，跑完之后右边被顶出屏幕。这就是这个问题反复出现又反复"修好"的原因。
-  // ⇒ 两列只留**高度稳定**的卡：左 [资源水位 303 + 连接状态 180]=499，
-  //   右 [沙箱环境 320 + 出网代理 363]=698，差 199px（重排前 626px，实测）。
-  // ⛔ **不要再把诊断塞回某一列去"配平"** —— 它下一次展开/收起就会把配平破坏掉，
-  //   而看起来又像是某人手滑改错了列。
-  // ⛔ 两列都不给 `items-stretch`/固定高度：v1 的「三列卡片强制等高空出一大截」是 v2
-  // 专门推翻掉的四个布局问题之一。
+  // 系统卡片分组由容器装配，栅格留在 app/settings/system/page.tsx。
+  // 诊断展开后的高度会变化，独占整行；其它卡片不强制等高，避免空白和挤压。
   return (
     <>
       <div className="flex flex-col gap-4" data-testid="system-status-column-left">
@@ -73,16 +67,38 @@ export function SystemStatusContainer({ onCleanupRetained }: SystemStatusContain
           isRefreshing={status.isRefreshing}
           onRefresh={status.refresh}
           onCleanupRetained={cleanup}
+          cleanupTriggerRef={cleanupTriggerRef}
         />
         <ConnectionStatusCardView model={models.connection} />
       </div>
       <div className="flex flex-col gap-4" data-testid="system-status-column-right">
-        <SandboxEnvStatusCardView model={models.sandboxEnvStatus} isError={status.providersError} />
+        <SandboxEnvStatusCardView
+          model={models.sandboxEnvStatus}
+          isError={status.providersError}
+          loadingProviderCount={models.loadingProviderCount}
+          loadingRuntimeCount={models.loadingRuntimeCount}
+          openLogProviderId={providerLogs.providerId}
+          onToggleLogs={providerLogs.toggle}
+          logPanel={{
+            lines: providerLogs.lines,
+            isLoading: providerLogs.isLoading,
+            isError: providerLogs.isError,
+            unavailableReason: providerLogs.unavailableReason,
+            onRetry: providerLogs.retry,
+          }}
+        />
         {/* ⚠️ 一张高度稳定的表单卡，与沙箱环境状态配成一列正好（见上方的实测数字）。 */}
         <ProxySettingsCardView
           initial={proxy.initial}
+          isLoading={proxy.isLoading}
+          loadError={proxy.loadError}
+          onRetry={proxy.retry}
           isSaving={proxy.isSaving}
           errorMessage={proxy.errorMessage}
+          fieldErrors={proxy.fieldErrors}
+          onFieldChange={proxy.clearSaveError}
+          saveSucceeded={proxy.saveSucceeded}
+          configured={proxy.configured}
           onSave={proxy.save}
         />
       </div>

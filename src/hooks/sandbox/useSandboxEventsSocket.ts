@@ -45,7 +45,9 @@ export interface UseSandboxEventsSocketArgs {
    * 那是**纯内存投影**；Query 失效是取数策略，属于调用方（15 §2.3 前端纪律：
    * WS 只 patch/失效，不在通道层决定谁该重新取数）。
    */
+  onConnected?: () => void;
   onSandboxChanged?: (event: SandboxEvent) => void;
+  onProjectCloneChanged?: (projectId: string, phase: string) => void;
   /** 测试注入 mock 工厂（避免 mock.module，12 §3.1.1）。 */
   socketFactory?: EventsSocketFactory;
   // ⚠️ **刻意没有** maxReconnect：本通道不设重试次数上限（理由见文件头注释）。
@@ -74,6 +76,8 @@ export function useSandboxEventsSocket(
     onUnauthorized,
     onRuntimeAuthChanged,
     onSandboxChanged,
+    onProjectCloneChanged,
+    onConnected,
     socketFactory,
   } = args;
 
@@ -95,8 +99,13 @@ export function useSandboxEventsSocket(
   onUnauthorizedRef.current = onUnauthorized;
   const onRuntimeAuthChangedRef = useRef(onRuntimeAuthChanged);
   onRuntimeAuthChangedRef.current = onRuntimeAuthChanged;
+  const onProjectCloneChangedRef = useRef(onProjectCloneChanged);
+  onProjectCloneChangedRef.current = onProjectCloneChanged;
   const onSandboxChangedRef = useRef(onSandboxChanged);
   onSandboxChangedRef.current = onSandboxChanged;
+
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
 
   const uri = buildEventsSocketUri(base);
 
@@ -120,6 +129,8 @@ export function useSandboxEventsSocket(
         // 各 action 对不相关变体自身 no-op（switch/default），彼此不干扰。
         applyRef.current(event);
         applyCloneRef.current(event);
+        if (event.event === 'project.clone_progress')
+          onProjectCloneChangedRef.current?.(event.projectId, event.phase);
         if (event.event === 'runtime-auth.status_changed') {
           onRuntimeAuthChangedRef.current?.(event.runtime);
         }
@@ -142,7 +153,10 @@ export function useSandboxEventsSocket(
         setConnState(state);
         setAttempt(nextAttempt);
         // 连上了 = 上一次的握手问题已不成立（后端回滚/重新部署都可能修好它）。
-        if (state === 'open') setHandshakeErrorCode(null);
+        if (state === 'open') {
+          setHandshakeErrorCode(null);
+          onConnectedRef.current?.();
+        }
         if (state === 'reconnecting') {
           // **没有次数上限**（文件头 ①②③）：只退避、不停手。delay 由 reconnectDelay 封顶在 30s，
           // 所以"无限重试"的实际形态是每 30s 敲一次门，而不是一个忙循环。

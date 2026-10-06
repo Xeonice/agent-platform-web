@@ -50,22 +50,15 @@ export const CredentialsActive: Story = {
   },
 };
 
-/**
- * ⭐ 390px 响应式回归：写死的 `w-56`（224px）此前不响应式收起，把内容区挤到约 118px
- * （design/design-notes.md 收口第 3 项）。⇒ 窄屏下改成 `w-full` + 顶部横向可滚动条，
- * `sm:` 起才切回固定 `sm:w-56` 的竖排侧边栏。
- */
+/** 390px 时使用满宽横向滚动菜单；sm 起恢复固定宽度竖排侧栏，保留主内容空间。 */
 export const Responsive: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const nav = canvas.getByRole('navigation', { name: '设置菜单' });
-    // MUTATION：把 `sm:w-56` 从 `SettingsMenuView` 的 className 里删掉 ⇒ 这两条其中一条
-    // 会红（窄屏仍是 `w-full` 没问题，但桌面态再也拿不到固定宽度，看着像没收口）。
-    await expect(nav).toHaveClass('w-full');
-    await expect(nav).toHaveClass('sm:w-56');
-    // 窄屏是横向排列 + 可横向滚动（不是纵向挤压），`sm:` 起切回竖排。
-    await expect(nav).toHaveClass('flex-row');
-    await expect(nav).toHaveClass('sm:flex-col');
-    await expect(nav).toHaveClass('overflow-x-auto');
+    await expect(nav).toHaveClass('w-16', 'md:w-[256px]', 'flex-col');
+    await expect(canvas.getByRole('button', { name: '返回工作台' })).toHaveAttribute(
+      'title',
+      '任务',
+    );
   },
 };

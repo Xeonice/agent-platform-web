@@ -1,9 +1,9 @@
-// 通用二次确认弹层（F21-3 §5「模式切换确认」用；受影响 Task 的吊销确认另有 RevokeConfirmDialog）。
-// 纯展示、props 驱动、零副作用。
 import { Button } from '@/components/ui/button';
+import { AppDialogView } from '@/views/common/AppDialog.view';
 
 export interface ConfirmDialogProps {
   title: string;
+  subtitle?: string;
   message: string;
   confirmLabel?: string;
   busy?: boolean;
@@ -13,6 +13,7 @@ export interface ConfirmDialogProps {
 
 export function ConfirmDialogView({
   title,
+  subtitle,
   message,
   confirmLabel = '确认',
   busy = false,
@@ -20,24 +21,29 @@ export function ConfirmDialogView({
   onCancel,
 }: ConfirmDialogProps) {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    <AppDialogView
+      title={title}
+      subtitle={subtitle}
+      onClose={onCancel}
+      busy={busy}
+      testId="credential-mode-confirm"
     >
-      <div className="flex w-full max-w-md flex-col gap-3 rounded-lg border border-border bg-background p-5">
-        <h3 className="text-base font-semibold">{title}</h3>
-        <p className="text-sm text-muted-foreground">{message}</p>
-        <div className="mt-1 flex justify-end gap-2">
-          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onCancel}>
-            取消
-          </Button>
-          <Button type="button" size="sm" disabled={busy} onClick={onConfirm}>
-            {busy ? '处理中…' : confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
+      <p className="px-5 py-4 text-sm text-muted-foreground">{message}</p>
+      <footer className="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-3">
+        <Button
+          autoFocus
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          取消
+        </Button>
+        <Button type="button" size="sm" disabled={busy} onClick={onConfirm}>
+          {busy ? '切换中…' : confirmLabel}
+        </Button>
+      </footer>
+    </AppDialogView>
   );
 }

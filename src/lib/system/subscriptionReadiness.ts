@@ -29,6 +29,7 @@ export function subscriptionStepModel(runtimes: readonly RuntimeDto[]): Subscrip
   const models: SubscriptionRuntimeModel[] = runtimes.map((r) => ({
     id: r.id,
     displayName: r.displayName,
+    vendor: r.vendor,
     state: stateOf(r.credentialStatus),
     ...(r.maskedIdentifier === undefined ? {} : { maskedIdentifier: r.maskedIdentifier }),
     methods: r.authMethods,

@@ -1,12 +1,6 @@
 'use client';
-// 主题偏好的读写 + 把它同步到 `<html>` 上（design-notes §4 Phase 5 第 3 条）。
-//
-// ⚠️ **首屏那一次不归这里管**：偏好存在 localStorage，而本 hook 要等 React 水合才跑得起来
-// —— 那时第一帧早画完了。首帧前的应用在 `app/layout.tsx` 的内联 `<script>` 里，
-// 那段与这里是**同一套判定**（system → 看 `prefers-color-scheme`；否则用存的值）。
-// ⛔ 改了一处就要改另一处，否则会出现"刷新后是亮的、切一下变暗的"这种自相矛盾。
-//
-// 本 hook 负责的是**运行期**：用户点了切换、或系统主题在页面开着时变了。
+// 主题偏好同步到 html。首帧由 app/layout.tsx 内联脚本应用，运行期由 hook 更新。
+// 两处必须共用一致判定：system 跟随 prefers-color-scheme，其它值使用存储偏好。
 import { useEffect } from 'react';
 import { useAppStore } from '@/stores';
 

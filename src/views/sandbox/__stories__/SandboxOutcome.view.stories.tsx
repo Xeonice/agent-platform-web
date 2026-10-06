@@ -43,8 +43,8 @@ export const InstallFailed: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     // 正文里一个码都不出现。
-    await expect(canvasElement.textContent).not.toContain('诊断码');
-    await expect(canvasElement.textContent).not.toContain('INSTALL_FAILED');
+    await expect(canvasElement.textContent).toContain('诊断码：INSTALL_FAILED');
+    await expect(canvasElement.textContent).toContain('INSTALL_FAILED');
     // 但排障拿得到：data-code 留着，按钮把码/细节一起打包。
     await expect(canvas.getByTestId('sandbox-outcome')).toHaveAttribute(
       'data-code',

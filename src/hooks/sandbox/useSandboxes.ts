@@ -1,4 +1,8 @@
 // 工作台左侧任务树的取数（15 §5）：一次拿**全部项目**的 sandbox，交给 lib 纯函数分组。
+import { useEffect, useState } from 'react';
+import { isSandboxStuck, taskPhaseLabel } from '@/lib/sandbox/taskPresentation';
+import { formatElapsed } from '@/lib/sandbox/instanceStartupCopy';
+import { useAppStore } from '@/stores';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { listSandboxes } from '@/services/api/sandbox.service';
 import { toDisplayStatus } from '@/lib/sandbox/sandboxLifecycle';
@@ -19,25 +23,76 @@ export const sandboxListKeys = {
  * 后端侧同批修了 `list()` 缺省返回空的问题（10 §6）——两处都得改，只改一边都还是空。
  */
 export function useSandboxes(): UseQueryResult<Sandbox[]> {
+  const states = useAppStore((s) => s.sandboxStatuses);
+  const installs = useAppStore((s) => s.runtimeInstalls);
+  const [now, setNow] = useState(() => Date.now());
+  const preparing = Object.values(states).some((s) =>
+    ['pending', 'scheduling', 'preparing-workspace', 'creating', 'starting'].includes(s.status),
+  );
+  useEffect(() => {
+    if (!preparing) return;
+    const id = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => {
+      clearInterval(id);
+    };
+  }, [preparing]);
   return useQuery({
     queryKey: sandboxListKeys.list(),
     // 包一层：queryFn 会把 QueryFunctionContext 当第一个实参传进去，
     // 裸给 listSandboxes 会被当成 projectId。
-    queryFn: () => listSandboxes(),
+    queryFn: async () => {
+      const before = useAppStore.getState().sandboxStatuses;
+      const dtos = await listSandboxes();
+      for (const dto of dtos) {
+        const current = useAppStore.getState();
+        // A WS update arriving while REST is in flight remains authoritative.
+        if (current.sandboxStatuses[dto.id] !== before[dto.id]) continue;
+        current.setSandboxStatus(dto.id, dto.status, {
+          failureCode: dto.failureCode,
+          failureMessage: dto.failureMessage,
+          failureOperation: dto.failureOperation,
+          restarting: dto.hasRun === true && dto.status === 'starting',
+        });
+      }
+      return dtos;
+    },
     // DTO → 领域映射放在 hook 层：container 不允许 import lib
     // （eslint boundaries：container ✗ lib），而 status 的词汇转换必须用 lib 里的
     // `toDisplayStatus`。放这儿也更对——container 只该消费领域类型，不该做形状转换。
     select: (dtos): Sandbox[] =>
-      dtos.map((s) => ({
-        id: s.id,
-        projectId: s.projectId,
-        // 任务名由后端派生（前端不造名字，P20 §9.3）。
-        name: s.name,
-        status: toDisplayStatus(s.status),
-        waitingInput: s.waitingInput,
-        // SandboxDto 目前不带时间戳（backlog：补 updatedAt 修 TTL 时钟原点）。
-        // 树只用它排序；缺省给 0 而不是 Date.now()——后者会让顺序每次渲染都变。
-        lastActiveAt: 0,
-      })),
+      dtos.map((dto) => {
+        const state = states[dto.id];
+        const rawStatus = state?.status ?? dto.status;
+        const lastProgressAt = state?.lastProgressAt ?? now;
+        const stuck = isSandboxStuck(
+          rawStatus,
+          lastProgressAt,
+          now,
+          installs[dto.id]?.status === 'installing',
+        );
+        const dateValue = dto.updatedAt;
+        return {
+          id: dto.id,
+          projectId: dto.projectId,
+          name: dto.name,
+          status: toDisplayStatus(rawStatus),
+          rawStatus,
+          waitingInput: dto.waitingInput && rawStatus === 'running',
+          lastActiveAt: typeof dateValue === 'string' ? Date.parse(dateValue) : 0,
+          phaseLabel: taskPhaseLabel(
+            rawStatus,
+            state?.failureCode ?? dto.failureCode,
+            state?.failureOperation ?? dto.failureOperation,
+          ),
+          failureCode: state?.failureCode ?? dto.failureCode,
+          failureOperation: state?.failureOperation ?? dto.failureOperation,
+          sourceAutomationId: dto.sourceAutomationId,
+          sourceAutomationName: dto.sourceAutomationName,
+          stuck,
+          stuckElapsed: formatElapsed(now - lastProgressAt),
+        };
+      }),
   });
 }

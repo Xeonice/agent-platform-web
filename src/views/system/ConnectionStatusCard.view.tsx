@@ -1,16 +1,5 @@
-// 连接状态卡（F21-5 §3/§6）。纯展示、props 驱动、零副作用。
-//
-// ⚠️ **三态而不是两态**：`ok` / `down` / `unknown`。
-// 「测不了」用 ⚪ 而不是 🔴 —— 把"本页没有测量这条通道"渲染成"已断开"，是每次进设置页
-// 都会亮一次的**假警报**，而假警报比不检查更贵（同 P21-5 §9B 对端口检查的那句）。
-// 这与诊断里 `timeout ≠ fail` 是同一条纪律的两处落地。
-//
-// ⚠️ `unknown` 那一行**必须带上"为什么测不了"**（`hint`）：只写一个「未测量」，读者
-// 唯一能得到的结论是"这个界面没做完"。
-//
-// ⚠️ **三态映射到 `StatusPill` 的八态闭集**（design-notes §4 Phase 1）：`down` 映射到
-// `fail`（红，确定坏了），`unknown` **原样**映射到 `StatusPill` 的 `unknown`
-// （虚线灰）——两边字面同名不是巧合，是同一条"测不了 ≠ 已断开"纪律的两处落地。
+// 连接状态区分 ok/down/unknown。测不了不等于已断开；unknown 必须说明未测量原因。
+// StatusPill 映射为 ok/fail/unknown，避免未测量产生假警报。
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { ConnectionState, ConnectionStatusCardModel } from '@/types/system';
 
@@ -47,7 +36,11 @@ export function ConnectionStatusCardView({ model }: ConnectionStatusCardProps) {
             className="flex flex-col gap-0.5 text-sm"
           >
             <span className="flex flex-wrap items-center gap-2">
-              <StatusPill status={STATE_PILL_STATUS[row.state]}>{STATE_TEXT[row.state]}</StatusPill>
+              {row.showBadge === false ? null : (
+                <StatusPill status={STATE_PILL_STATUS[row.state]}>
+                  {STATE_TEXT[row.state]}
+                </StatusPill>
+              )}
               <span className="font-medium">{row.label}</span>
               <span className="text-muted-foreground">{row.valueText}</span>
             </span>

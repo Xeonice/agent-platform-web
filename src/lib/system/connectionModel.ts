@@ -30,7 +30,7 @@ export function formatLatency(ms: number | null): string {
 
 export interface ConnectionFacts {
   /** 本页两个 query 的实时结论。`errorCode` 来自错误信封。 */
-  rest: { ok: boolean; errorCode?: string };
+  rest: { ok: boolean | null; errorCode?: string };
   /** 全局终端 registry：总条目数与其中处于 `open` 的条数。 */
   terminals: { total: number; connected: number };
   /**
@@ -48,13 +48,19 @@ const EVENTS_UNMEASURED_HINT =
   '通道断连时工作台会自行退避重连，无需在此干预';
 
 export function connectionStatusModel(facts: ConnectionFacts): ConnectionStatusCardModel {
-  const restState: ConnectionState = facts.rest.ok ? 'ok' : 'down';
+  const restState: ConnectionState =
+    facts.rest.ok === null ? 'unknown' : facts.rest.ok ? 'ok' : 'down';
   const rows: ConnectionRowModel[] = [
     {
       id: 'rest',
       label: 'REST',
       state: restState,
-      valueText: facts.rest.ok ? '正常（本页数据刚取回）' : '请求失败',
+      valueText:
+        facts.rest.ok === null
+          ? '本页数据尚未取回'
+          : facts.rest.ok
+            ? '正常（本页数据刚取回）'
+            : '请求失败',
       ...(facts.rest.ok || facts.rest.errorCode === undefined
         ? {}
         : { hint: `错误码 ${facts.rest.errorCode}` }),
@@ -73,6 +79,7 @@ export function connectionStatusModel(facts: ConnectionFacts): ConnectionStatusC
       id: 'terminals',
       label: '终端连接',
       state: 'ok',
+      showBadge: facts.terminals.total > 0,
       // ⚠️ 0 是**事实**不是未知：registry 里确实一个条目都没有（终端实例随工作台卸载销毁）。
       valueText:
         facts.terminals.total === 0

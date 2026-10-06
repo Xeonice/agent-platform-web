@@ -108,13 +108,27 @@ export function useNewTaskDeepLink(): void {
     const project = projects.data.find((p) => p.id === entry.projectId);
     setConsumed(true);
     // ⛔ 不存在 / 已删：不开弹窗、不报错崩页（§2.1 完成判据 3）。
-    if (project === undefined) return;
+    if (project === undefined) {
+      const s = useAppStore.getState();
+      s.setSelectedProjectId(null);
+      s.setSelectedSandboxId(null);
+      s.setWorkbenchNotice({ message: '找不到这个项目：可能已被删除。' });
+      return;
+    }
     // 项目上下文照给（哪怕还在克隆）——用户至少落在他要的那个项目上。
     setSelectedProjectId(project.id);
     // 克隆中 / 克隆失败 ⇒ **不开弹窗**：那时 `WorkbenchContainer` 渲染的是恢复面板或
     // 「正在克隆」占位，`SandboxTerminalContainer` 根本没挂载，把 `currentModal` 置成
     // `'newTask'` 只会得到一个"开着但什么都没有"的幽灵态。
-    if (project.cloneStatus !== 'ready') return;
+    if (project.cloneStatus !== 'ready') {
+      useAppStore.getState().setWorkbenchNotice({
+        message:
+          project.cloneStatus === 'cloning'
+            ? '项目正在克隆，完成后才能发起任务。'
+            : '项目克隆失败，先重试克隆或改为空项目。',
+      });
+      return;
+    }
     setCurrentModal('newTask');
   }, [settled, entry, projects.isSuccess, projects.data, setSelectedProjectId, setCurrentModal]);
 

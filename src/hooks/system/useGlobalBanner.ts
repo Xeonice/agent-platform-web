@@ -25,6 +25,9 @@ import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { INIT_QUERY_OPTIONS } from '@/hooks/system/useInitGate';
 import { DIAGNOSE_CACHE_OPTIONS } from '@/hooks/system/useSystemStatus';
+import { useRuntimes } from '@/hooks/credential/useRuntimes';
+import { getResources } from '@/services/api/system.service';
+import { systemKeys } from '@/hooks/system/useAuditStream';
 import { useAutomationAttention } from '@/hooks/automation/useAutomations';
 import { useAppStore } from '@/stores';
 import { ApiErrorException } from '@/services/api/apiError';
@@ -95,6 +98,8 @@ function useConnectivitySnapshot(): ConnectivitySnapshot {
 
 export interface GlobalBannerApi {
   model: BannerStackModel;
+  /** Project of the first named attention rule (selection stays unchanged). */
+  automationProjectId?: string;
   /**
    * 显式关闭一条。**语义按 severity 分岔**（`types/banner.ts` 头部那两条纪律）：
    * 🔴 阻断类只在**本次会话**内生效；⚠️ 治理类写 `bannerDismissedToday`，当天不再弹。
@@ -104,20 +109,24 @@ export interface GlobalBannerApi {
   requestRecheck: () => void;
 }
 
-export function useGlobalBanner(): GlobalBannerApi {
+export function useGlobalBanner(pathname: string): GlobalBannerApi {
   const snapshot = useConnectivitySnapshot();
+  const accessLocked = useAppStore((s) => s.accessLocked);
   const [dismissed, setDismissed] = useState<BannerId[]>([]);
+  const [appearanceOrder, setAppearanceOrder] = useState<BannerId[]>([]);
   const requestDiagnoseAutorun = useAppStore((s) => s.requestDiagnoseAutorun);
-  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
   const dismissedToday = useAppStore((s) => s.bannerDismissedToday);
   const dismissBannerToday = useAppStore((s) => s.dismissBannerToday);
 
-  // 治理类横幅的数据源：`useAutomations.ts` 已经备好了这一位（"给全局横幅层用的那一位"，
-  // 见该 hook 自己的文档注释），⛔ 不在这里另起一份只读缓存订阅——两份查同一个 key、
-  // 算同一件事，迟早只改其中一份、另一份悄悄漂掉。projectId 取当前**选中的项目**：
-  // 横幅这一刻只能代表"我正盯着的这个项目"，不是"全部项目"（跨项目概览需要后端新端点，
-  // 见 `lib/automation/automationAttention.ts` 文末记录的后端待办）。
-  const automation = useAutomationAttention(selectedProjectId);
+  // One cross-project snapshot, independent of the currently selected project or opened panels.
+  const automation = useAutomationAttention(pathname);
+  const resources = useQuery({
+    queryKey: systemKeys.resources(),
+    queryFn: getResources,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+  const runtimes = useRuntimes();
 
   const banners = useMemo<GlobalBannerModel[]>(
     () =>
@@ -127,9 +136,22 @@ export function useGlobalBanner(): GlobalBannerApi {
           ? {}
           : { statusUnavailableReason: snapshot.statusUnavailableReason }),
         automation,
+        resources: resources.isError ? undefined : resources.data,
+        runtimes: pathname === '/settings/credentials' ? undefined : runtimes.data,
+        now: Date.now(),
       }),
-    [snapshot, automation],
+    [snapshot, automation, resources.data, resources.isError, runtimes.data, pathname],
   );
+
+  const nextAppearanceOrder = [
+    ...appearanceOrder.filter((id) => banners.some((banner) => banner.id === id)),
+    ...banners.filter((banner) => !appearanceOrder.includes(banner.id)).map((banner) => banner.id),
+  ];
+  if (
+    nextAppearanceOrder.length !== appearanceOrder.length ||
+    nextAppearanceOrder.some((id, i) => id !== appearanceOrder[i])
+  )
+    setAppearanceOrder(nextAppearanceOrder);
 
   // 回收已消失那条的关闭记录 —— 否则"关闭"会变成永久的（见 `pruneDismissed` 注释）。
   // ⚠️ 在**渲染期**算而不是在 effect 里 set：effect 会晚一帧，那一帧里横幅已经该出现却还被
@@ -155,7 +177,11 @@ export function useGlobalBanner(): GlobalBannerApi {
     [live, dismissedTodayIds],
   );
 
-  const model = useMemo(() => bannerStackModel(banners, allDismissed), [banners, allDismissed]);
+  const model = useMemo(
+    () =>
+      accessLocked ? { banners: [] } : bannerStackModel(banners, allDismissed, appearanceOrder),
+    [accessLocked, banners, allDismissed, appearanceOrder],
+  );
 
   const dismiss = useCallback(
     (id: BannerId): void => {
@@ -171,7 +197,12 @@ export function useGlobalBanner(): GlobalBannerApi {
     [banners, dismissBannerToday],
   );
 
-  return { model, dismiss, requestRecheck: requestDiagnoseAutorun };
+  return {
+    model,
+    dismiss,
+    requestRecheck: requestDiagnoseAutorun,
+    ...(automation.projectId === undefined ? {} : { automationProjectId: automation.projectId }),
+  };
 }
 
 export interface OfflineModeApi {

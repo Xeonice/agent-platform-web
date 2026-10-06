@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": ">=20.11.0"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "next dev",
@@ -16,8 +16,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md,css}\"",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --config vitest.acceptance.config.ts",
+    "test:watch": "vitest --config vitest.acceptance.config.ts",
     "test:storybook": "vitest run --config vitest.storybook.config.ts",
     "check:openapi": "pnpm generate:api && git diff --exit-code src/types/generated/",
     "generate:api": "openapi-typescript ./openapi.json -o ./src/types/generated/openapi.d.ts && prettier --write ./src/types/generated/openapi.d.ts",
@@ -27,8 +27,9 @@
     "check:mock-contracts": "tsx scripts/check-mock-contract-anchoring.ts",
     "storybook": "storybook dev -p 6006 --no-open",
     "build-storybook": "storybook build",
-    "e2e": "playwright test",
-    "prepare": "husky || true"
+    "e2e": "pnpm --dir ../e2e-contract test",
+    "prepare": "husky || true",
+    "test:acceptance": "vitest run --config vitest.acceptance.config.ts"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.20",

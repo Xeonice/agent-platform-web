@@ -149,6 +149,7 @@ export const SandboxEventSchema = z.discriminatedUnion('event', [
     event: z.literal('project.clone_progress'),
     projectId: z.string(),
     phase: z.enum(['cloning', 'slow', 'done', 'failed']),
+    startedAt: z.string().datetime().optional(),
     // git 阶段名（03 §7.2★）：填住 receiving 开始前那段"一个数都没有"的空窗。
     stage: z
       .enum(['enumerating', 'counting', 'compressing', 'receiving', 'resolving', 'checkout'])
@@ -392,7 +393,7 @@ export const WS_PROTOCOL_CANONICAL =
   'shells{shells[shellId,runtimeId?]}|' +
   'events:sandbox.created{sandboxId,projectId},sandbox.status_changed{sandboxId,status,phase?,errorCode?},' +
   'sandbox.removed{sandboxId},sandbox.waiting_input{sandboxId,waiting,sessionId?},' +
-  'project.clone_progress{projectId,phase,stage?,percent?,objectsDone?,objectsTotal?,' +
+  'project.clone_progress{projectId,phase,startedAt?,stage?,percent?,objectsDone?,objectsTotal?,' +
   'receivedBytes?,bytesPerSecond?,errorCode?},' +
   'runtime-auth.status_changed{runtime},' +
   'runtime.install_progress{sandboxId,runtime,status,versionDetected?,errorCode?},' +

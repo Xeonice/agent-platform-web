@@ -257,7 +257,7 @@ export function auditEmptyKind(
 }
 
 const CATEGORY_TEXT: Readonly<Record<string, string>> = {
-  sandbox: '沙箱',
+  sandbox: '任务',
   project: '项目',
   credential: '凭证',
   image: '镜像',
@@ -269,16 +269,29 @@ const CATEGORY_TEXT: Readonly<Record<string, string>> = {
  * ⚠️ 空态**必须说清筛的是什么**（P21-5 §10.2）：只写「暂无记录」而不说条件，
  * 用户会以为平台什么都没干过，而真相可能是他自己开着「仅告警 + 镜像」。
  */
-export function describeAuditFilters(filters: AuditFilters): string {
+export function describeAuditFilters(
+  filters: AuditFilters,
+  now = Date.now(),
+  subjectName?: string,
+): string {
   const parts: string[] = [];
   if (filters.category !== undefined) {
     parts.push(`类别：${CATEGORY_TEXT[filters.category] ?? filters.category}`);
   }
   if (filters.severity === 'warn-and-error') parts.push('仅告警');
-  if (filters.subjectId !== undefined) parts.push(`对象：${filters.subjectId}`);
-  if (filters.from !== undefined) parts.push(`起：${filters.from}`);
-  if (filters.to !== undefined) parts.push(`止：${filters.to}`);
+  if (filters.subjectId !== undefined) parts.push(`任务：${subjectName ?? filters.subjectId}`);
+  if (filters.from !== undefined) parts.push(`起：${formatAuditFilterTime(filters.from, now)}`);
+  if (filters.to !== undefined) parts.push(`止：${formatAuditFilterTime(filters.to, now)}`);
   return parts.length === 0 ? '当前无筛选条件（全部类别、全部严重度）' : parts.join(' · ');
+}
+
+/** 条件句使用本机时间；跨年才写年份，避免把 ISO 协议串直接交给用户。 */
+export function formatAuditFilterTime(iso: string, now: number): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  const year =
+    at.getFullYear() === new Date(now).getFullYear() ? '' : `${String(at.getFullYear())}年`;
+  return `${year}${String(at.getMonth() + 1)}月${String(at.getDate())}日 ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
 }
 
 /**

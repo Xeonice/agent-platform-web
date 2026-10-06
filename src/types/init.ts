@@ -235,6 +235,7 @@ export interface ProxyFormValues {
 export type SubscriptionRuntimeState = 'ready' | 'expired' | 'none';
 
 export interface SubscriptionRuntimeModel {
+  vendor?: string;
   id: string;
   displayName: string;
   state: SubscriptionRuntimeState;

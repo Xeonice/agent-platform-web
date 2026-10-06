@@ -261,7 +261,7 @@ export function resourceConfirmModel(
     //    「磁盘可调度上限 787.4 GB」—— 它就写在「可用 28.9 GB ⚠️」的下一行，
     //    两个数字直接打架，而大的那个更醒目。公式不改（它是产品定的），把边界说出来。
     reservedText:
-      `平台会留出总容量的 ${String(dto.disk.reservedPercent)}% 不拿去跑任务（上面的进度条分母仍然是总容量）：` +
+      `平台会留出总容量的 ${String(dto.disk.reservedPercent)}% 不拿去跑任务：` +
       `内存最多能分出 ${formatBytes(schedulableBytes(dto.ram.totalBytes, dto.disk.reservedPercent))}、` +
       `磁盘 ${formatBytes(schedulableBytes(dto.disk.totalBytes, dto.disk.reservedPercent))} —— ` +
       `磁盘还要与当前可用的 ${formatBytes(dto.disk.availableBytes)} 取小。`,

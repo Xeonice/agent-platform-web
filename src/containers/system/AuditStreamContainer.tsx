@@ -37,14 +37,18 @@ export function AuditStreamContainer({ initialSubjectId }: AuditStreamContainerP
   // ——于是游标、断层、轮询这套东西一行都不用重写（§5）。
   const setSubjectId = f.setSubjectId;
   const openTimeline = useCallback(
-    (next: string) => {
-      setSubjectId(next);
+    (next: string, name?: string) => {
+      setSubjectId(next, name);
       setExpandedSeq(null);
     },
     [setSubjectId],
   );
 
-  const clearFilters = f.clear;
+  const clear = f.clear;
+  const clearFilters = useCallback(() => {
+    clear();
+    setExpandedSeq(null);
+  }, [clear]);
 
   return (
     <AuditStreamCardView
@@ -60,6 +64,7 @@ export function AuditStreamContainer({ initialSubjectId }: AuditStreamContainerP
       hasOlder={stream.hasOlder}
       isFetchingOlder={stream.isFetchingOlder}
       expandedSeq={expandedSeq}
+      timelineFiltered={f.filters.subjectId !== undefined}
       onToggleDetail={toggleDetail}
       onOpenTimeline={openTimeline}
       onFillGap={stream.fillGap}
@@ -73,6 +78,11 @@ export function AuditStreamContainer({ initialSubjectId }: AuditStreamContainerP
           alertsOnly={f.alertsOnly}
           fromLocal={f.fromLocal}
           toLocal={f.toLocal}
+          subjectName={f.subjectName}
+          onClearSubject={clearFilters}
+          categoryRef={f.categoryRef}
+          timeError={f.timeError}
+          timeErrorField={f.timeErrorField}
           onCategoryChange={f.setCategory}
           onAlertsOnlyChange={f.setAlertsOnly}
           onFromChange={f.setFromLocal}

@@ -1,35 +1,41 @@
-// 新建项目弹窗的内容（F21-6 §9.4）：name + 来源（git 填 repoUrl + **分支** / 空项目）。
-// 纯展示，本地受控 state，零副作用；外壳（overlay + 标题 + [✕]）由 `ModalShell.view` 提供。
-//
-// ⚠️ **它此前不是弹窗**：`currentModal==='createProject'` 这个名字是假的——
-// `WorkbenchContainer` 把它 return 成 `mainContent`，是主区换页（F21-2 §N.0）。
-// 本轮与「新建任务」走同一套 overlay，**形态对称**。
-//
-// ⚠️ `CreateProjectRequest.repoBranch` **契约里一直有**（生成物里就有这个可选字段），
-// 表单从来没接 —— 于是"克隆哪个分支"这件事在界面上无法表达，只能拿远端默认分支。
-// 本轮补上：**留空 = 远端默认分支**（不填就不发这个字段，与新建任务的分支缺省同一条纪律）。
-import { useState } from 'react';
+// PRJ v2 creation fields. AppDialog supplies the title, description and focus trap.
+import { useId, useState } from 'react';
+import { CircleX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { CreateProjectInput, ProjectSourceType } from '@/types/project';
 
 export interface NewProjectFormProps {
+  initialSourceType?: ProjectSourceType;
+  focusRepository?: boolean;
+  initialName?: string;
+  suggestedEmptyName?: string;
   submitting?: boolean;
   errorMessage?: string;
   onSubmit: (input: CreateProjectInput) => void;
   onCancel?: () => void;
 }
 
+const inputClass =
+  'h-9 w-full rounded-md border-0 bg-[var(--v2-surface)] px-3 shadow-[shadow:var(--v2-shadow-ring)] outline-none placeholder:text-[var(--v2-foreground-subtle)] hover:shadow-[0_0_0_1px_var(--v2-border-strong)] focus:shadow-[shadow:var(--v2-focus-input)] disabled:cursor-not-allowed disabled:bg-muted disabled:text-[var(--v2-foreground-disabled)]';
+const radioClass =
+  "relative m-0 grid size-4 shrink-0 appearance-none place-items-center rounded-full bg-[var(--v2-surface)] shadow-[inset_0_0_0_1px_var(--ds-gray-700)] before:size-2 before:scale-0 before:rounded-full before:bg-foreground before:content-[''] checked:shadow-[inset_0_0_0_1px_currentColor] checked:before:scale-100 focus-visible:shadow-[shadow:var(--v2-focus-ring)] disabled:cursor-not-allowed disabled:bg-muted disabled:before:bg-[var(--v2-foreground-disabled)]";
+
 export function NewProjectFormView({
+  initialSourceType = 'git',
+  focusRepository = false,
+  initialName = '',
+  suggestedEmptyName = '未命名项目 1',
   submitting = false,
   errorMessage,
   onSubmit,
   onCancel,
 }: NewProjectFormProps) {
-  const [name, setName] = useState('');
-  const [sourceType, setSourceType] = useState<ProjectSourceType>('git');
+  const [name, setName] = useState(initialName);
+  const [sourceType, setSourceType] = useState<ProjectSourceType>(initialSourceType);
   const [repoUrl, setRepoUrl] = useState('');
   const [repoBranch, setRepoBranch] = useState('');
-
+  const repositoryHelpId = useId();
+  const repositoryId = useId();
   const trimmedName = name.trim();
   const trimmedRepo = repoUrl.trim();
   const trimmedBranch = repoBranch.trim();
@@ -38,115 +44,151 @@ export function NewProjectFormView({
 
   return (
     <form
-      className="flex w-full flex-col gap-5 p-6"
-      onSubmit={(e) => {
-        e.preventDefault();
+      className="flex min-h-0 w-full flex-1 flex-col"
+      aria-busy={submitting}
+      onSubmit={(event) => {
+        event.preventDefault();
         if (!canSubmit) return;
         onSubmit({
           name: trimmedName,
           sourceType,
           ...(sourceType === 'git' ? { repoUrl: trimmedRepo } : {}),
-          // 留空 ⇒ **不发这个字段**，由后端走远端默认分支（不自作主张填 'main'：
-          // 远端默认分支叫什么是远端说了算，前端猜一个名字迟早猜错）。
           ...(sourceType === 'git' && trimmedBranch !== '' ? { repoBranch: trimmedBranch } : {}),
         });
       }}
     >
-      <p className="text-sm text-muted-foreground">从 Git 仓库克隆，或创建一个空项目</p>
-
-      <label className="flex flex-col gap-1 text-sm">
-        <span className="text-muted-foreground">项目名称</span>
-        <input
-          type="text"
-          name="project-name"
-          autoFocus
-          className="rounded-md border border-border bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          value={name}
-          disabled={submitting}
-          onChange={(e) => {
-            setName(e.target.value);
-          }}
-        />
-      </label>
-
-      <fieldset className="flex flex-col gap-2" disabled={submitting}>
-        <legend className="mb-1 text-xs text-muted-foreground">来源</legend>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="source-type"
-            value="git"
-            checked={sourceType === 'git'}
-            onChange={() => {
-              setSourceType('git');
-            }}
-          />
-          <span>Git 仓库</span>
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="source-type"
-            value="empty"
-            checked={sourceType === 'empty'}
-            onChange={() => {
-              setSourceType('empty');
-            }}
-          />
-          <span>空项目</span>
-        </label>
-      </fieldset>
-
-      {sourceType === 'git' && (
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">仓库地址</span>
-          <input
-            type="text"
-            name="repo-url"
-            placeholder="https://github.com/org/repo.git"
-            className="rounded-md border border-border bg-transparent px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            value={repoUrl}
-            disabled={submitting}
-            onChange={(e) => {
-              setRepoUrl(e.target.value);
-            }}
-          />
-        </label>
-      )}
-
-      {/* 空项目没有远端，也就没有"克隆哪个分支"这个问题 ⇒ 整块不渲染（与新建任务弹窗一致）。 */}
-      {sourceType === 'git' && (
-        <label className="flex flex-col gap-1 text-sm" data-testid="repo-branch-field">
-          <span className="text-muted-foreground">分支（可选）</span>
-          <input
-            type="text"
-            name="repo-branch"
-            placeholder="留空 = 仓库的默认分支"
-            className="rounded-md border border-border bg-transparent px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            value={repoBranch}
-            disabled={submitting}
-            onChange={(e) => {
-              setRepoBranch(e.target.value);
-            }}
-          />
-        </label>
-      )}
-
-      {errorMessage !== undefined && errorMessage !== '' && (
-        <p role="alert" className="text-sm text-red-400">
-          {errorMessage}
-        </p>
-      )}
-
-      <div className="flex gap-2">
-        <Button type="submit" disabled={!canSubmit}>
-          {submitting ? '创建中…' : '创建项目'}
-        </Button>
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-6 pt-4"
+        data-project-form-body=""
+      >
+        <div className="flex flex-col gap-5">
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium">项目名称</span>
+            <input
+              type="text"
+              name="project-name"
+              autoFocus={!focusRepository || initialName.trim() === '' || sourceType !== 'git'}
+              className={`${inputClass} text-sm`}
+              value={name}
+              readOnly={submitting}
+              onChange={(event) => {
+                setName(Array.from(event.target.value).slice(0, 40).join(''));
+              }}
+            />
+          </label>
+          <fieldset className="flex min-w-0 flex-col gap-2" disabled={submitting}>
+            <legend className="mb-2 text-sm font-medium">来源</legend>
+            <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm">
+              <input
+                className={radioClass}
+                type="radio"
+                name="source-type"
+                value="git"
+                checked={sourceType === 'git'}
+                onChange={() => {
+                  setSourceType('git');
+                }}
+              />
+              <span>Git 仓库</span>
+            </label>
+            <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm">
+              <input
+                className={radioClass}
+                type="radio"
+                name="source-type"
+                value="empty"
+                checked={sourceType === 'empty'}
+                onChange={() => {
+                  setSourceType('empty');
+                  if (name.trim() === '') setName(suggestedEmptyName);
+                }}
+              />
+              <span>空项目</span>
+            </label>
+          </fieldset>
+          {sourceType === 'git' && (
+            <div className="flex flex-col gap-1.5 text-sm">
+              <label htmlFor={repositoryId} className="font-medium">
+                仓库地址
+              </label>
+              <input
+                type="text"
+                name="repo-url"
+                id={repositoryId}
+                aria-describedby={repositoryHelpId}
+                autoFocus={focusRepository && initialName.trim() !== ''}
+                placeholder="https://github.com/org/repo.git"
+                className={`${inputClass} font-mono text-[13px]`}
+                value={repoUrl}
+                readOnly={submitting}
+                onChange={(event) => {
+                  setRepoUrl(event.target.value);
+                }}
+              />
+              <span
+                id={repositoryHelpId}
+                className="text-[13px] leading-[18px] text-muted-foreground"
+              >
+                私有仓库需先配置 Git 凭证（凭证管理 › Git 凭证）。
+              </span>
+            </div>
+          )}
+          {sourceType === 'git' && (
+            <label className="flex flex-col gap-1.5 text-sm" data-testid="repo-branch-field">
+              <span className="font-medium">
+                分支<span className="font-normal text-muted-foreground">（可选）</span>
+              </span>
+              <input
+                type="text"
+                name="repo-branch"
+                placeholder="留空 = 仓库的默认分支"
+                className={`${inputClass} font-mono text-[13px]`}
+                value={repoBranch}
+                readOnly={submitting}
+                onChange={(event) => {
+                  setRepoBranch(event.target.value);
+                }}
+              />
+            </label>
+          )}
+        </div>
+        {errorMessage !== undefined && errorMessage !== '' && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md bg-[var(--v2-status-fail-subtle-bg)] px-3 py-2 text-sm leading-[22px] shadow-[inset_0_0_0_1px_var(--v2-status-fail-subtle-border)]"
+          >
+            <CircleX
+              aria-hidden="true"
+              className="mt-0.5 size-4 shrink-0 text-[var(--v2-status-fail-fg)]"
+            />
+            <p>{errorMessage}</p>
+          </div>
+        )}
+      </div>
+      <div
+        className="flex shrink-0 items-center gap-2 border-t border-border bg-[var(--v2-surface-inset)] px-4 py-3"
+        data-project-form-footer=""
+      >
         {onCancel !== undefined && (
-          <Button type="button" variant="ghost" disabled={submitting} onClick={onCancel}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-0 bg-[var(--v2-surface)] shadow-[shadow:var(--v2-shadow-ring)]"
+            disabled={submitting}
+            onClick={onCancel}
+          >
             取消
           </Button>
         )}
+        <Button
+          type="submit"
+          size="sm"
+          className="ml-auto disabled:bg-muted disabled:text-[var(--v2-foreground-disabled)] disabled:opacity-100 disabled:shadow-[shadow:var(--v2-shadow-ring)]"
+          disabled={!canSubmit}
+        >
+          {submitting ? '创建中…' : '创建项目'}
+        </Button>
       </div>
     </form>
   );

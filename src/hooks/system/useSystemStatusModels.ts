@@ -14,6 +14,8 @@ import { diagnosticsCardModel } from '@/lib/system/diagnoseModel';
 import { sandboxEnvStatusModel } from '@/lib/system/sandboxEnvModel';
 import { resourcePoolModel } from '@/lib/system/resourceModel';
 import type { UseSystemStatusResult } from '@/hooks/system/useSystemStatus';
+import { useProviders } from '@/hooks/sandbox/useProviders';
+import { useRuntimes } from '@/hooks/credential/useRuntimes';
 import type {
   ConnectionStatusCardModel,
   DiagnosticsCardModel,
@@ -27,10 +29,14 @@ export interface SystemStatusModels {
   sandboxEnvStatus: SandboxEnvStatusCardModel | null;
   connection: ConnectionStatusCardModel;
   diagnostics: DiagnosticsCardModel;
+  loadingProviderCount: number;
+  loadingRuntimeCount: number;
 }
 
 export function useSystemStatusModels(status: UseSystemStatusResult): SystemStatusModels {
   const terminals = useAppStore((s) => s.entries);
+  const providerRegistry = useProviders();
+  const runtimeRegistry = useRuntimes();
 
   const resources = status.resources;
   const resourcePool = useMemo(
@@ -46,11 +52,17 @@ export function useSystemStatusModels(status: UseSystemStatusResult): SystemStat
     [providers],
   );
 
-  const restOk = !status.resourcesError && !status.providersError;
+  const restOk =
+    status.resourcesError || status.providersError
+      ? false
+      : status.resources === undefined || status.providers === undefined
+        ? null
+        : true;
+  const restErrorCode = status.restErrorCode;
   const connection = useMemo(
     () =>
       connectionStatusModel({
-        rest: { ok: restOk },
+        rest: { ok: restOk, ...(restErrorCode === undefined ? {} : { errorCode: restErrorCode }) },
         terminals: {
           total: terminals.size,
           connected: [...terminals.values()].filter((e) => e.connState === 'open').length,
@@ -59,11 +71,18 @@ export function useSystemStatusModels(status: UseSystemStatusResult): SystemStat
         //    ⛔ 不许为了点亮这一行在本页新开一条连接（见 connectionModel.ts 文件头）。
         eventsLatencyMs: null,
       }),
-    [restOk, terminals],
+    [restOk, restErrorCode, terminals],
   );
 
   const diagnoseState = status.diagnoseState;
   const diagnostics = useMemo(() => diagnosticsCardModel(diagnoseState), [diagnoseState]);
 
-  return { resourcePool, sandboxEnvStatus, connection, diagnostics };
+  return {
+    resourcePool,
+    sandboxEnvStatus,
+    connection,
+    diagnostics,
+    loadingProviderCount: providerRegistry.data?.length ?? 1,
+    loadingRuntimeCount: runtimeRegistry.data?.length ?? 1,
+  };
 }
