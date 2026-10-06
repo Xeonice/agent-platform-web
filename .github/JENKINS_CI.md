@@ -15,7 +15,7 @@ promote an existing staged deployment.
 ## CI coverage and trust boundary
 
 The discovery job schedules `main` and open PR heads from this fixed repository.
-The umbrella release job schedules `feat/design-v2-migration` with its pinned
+The umbrella release job schedules `main` with its pinned
 project commits. Every run has full `SHA`, `REF`, `ROOT_SHA` and `API_SHA`
 parameters. Jenkins checks out the exact requested commit, refuses a
 ref that moved, and installs with pnpm 9.15.0 and a frozen lockfile. Web tests and
