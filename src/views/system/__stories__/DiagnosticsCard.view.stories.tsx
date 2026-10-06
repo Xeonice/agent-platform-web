@@ -166,10 +166,8 @@ export const Completed: Story = {
 };
 
 /**
- * ⭐ Phase 1「非 ok/info 默认展开」（design-notes §1 问题 1 + §4）：全部完成的场景里，
- * `ok`/`info` 两项默认收起，其余（`warn`/`fail`/`timeout`）默认展开——用户打开页面
- * 第一眼看到的就是"哪几项需要我看"，不用逐项点开。且用户能手动扳动其中一项，
- * 不连带影响别的项。
+ * 全部完成后，ok/info 默认收起，warn/fail/timeout 默认展开。
+ * 用户手动开关一项时不连带改变其它项。
  */
 export const DefaultDisclosure: Story = {
   args: {

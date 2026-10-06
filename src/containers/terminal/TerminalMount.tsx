@@ -71,19 +71,8 @@ export default function TerminalMount({
   const sendRef = useRef<(frame: TerminalClientFrame) => boolean>(() => false);
 
   /**
-   * 终端工具栏 [A-]/[A+]（design-notes.md §4 Phase 3 / P21-1 §6「字号 persist」）。
-   *
-   * ⚠️ **接的是 `uiSlice.terminalFontSize`，不是本地 `useState`**——这个 persist 字段与
-   * `setTerminalFontSize` action 在这一轮之前就已经存在（`createUiSlice.ts`），却和
-   * `toggleProjectFold` 一样，从来没有任何 UI 调用过：字号有地方记，却没有输入它的入口。
-   * 接上 store 而不是新起一份本地 state，才是真的把"字号记忆"这句话落地——刷新页面、
-   * 换个任务打开终端，字号都还是上次调过的那个值。
-   *
-   * 已知取舍：多个终端标签**共用同一个全局字号**（Zustand 的订阅是全局的，任意一个
-   * 标签调 [A+] 都会让所有订阅了这个字段的组件重渲染），但**不会**反过来把已经挂载
-   * 的、当下不是这次点击来源的其它标签的 xterm 实例也现改字号——那需要每个挂载点
-   * 反应式监听这个字段的变化并主动调 `term.setFontSize()`，复杂度换不回明显的收益
-   * （多标签同时开着还要眼看字号跳变的场景很少），本轮不做。
+   * 终端字号保存到 uiSlice.terminalFontSize，刷新或重新打开终端时沿用上次值。
+   * 多个会话共享字号偏好；工具栏操作针对当前会话实例，首次挂载使用字号快照。
    */
   const fontSize = useAppStore((s) => s.terminalFontSize);
   const setTerminalFontSize = useAppStore((s) => s.setTerminalFontSize);

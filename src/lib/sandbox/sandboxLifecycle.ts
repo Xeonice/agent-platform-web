@@ -107,16 +107,8 @@ export function startupPercent(status: string): number {
 }
 
 /**
- * 后端 12 个技术状态 → 前端 6 个**展示词汇**（`types/domain.ts` 的 `SandboxStatus`）。
- *
- * 两套词汇本来就不同源：后端那套是状态机（`preparing-workspace`/`creating`/… ），
- * 前端这套是"用户看到的名字"。此前左侧树的任务列表被写死成空数组，这个转换从来没被
- * 需要过，于是也一直没有——接真实列表时必须补上，否则只能靠 cast 蒙混。
- *
- * ⚠️ `waiting-input` **不在这里产生**：它是 `running` 的子态，走 DTO 的 `waitingInput`
- * 布尔字段（10 §7.4），树上单独渲染一个 `StatusDot`（warn，design-notes.md §4 Phase 3
- * 第 2 条；此前是手写的 🔵 emoji）。把它折进 status 会让"等待输入"与"运行中"
- * 变成互斥的两个值，而它们实际是一个状态加一个标志。
+ * 后端技术状态映射到前端展示词汇。waitingInput 是 running 的附加标志，
+ * 不在此处生成独立状态；任务树根据标志渲染等待输入提示。
  */
 export function toDisplayStatus(
   status: string,

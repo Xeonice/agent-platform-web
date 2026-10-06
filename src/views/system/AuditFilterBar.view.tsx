@@ -1,22 +1,6 @@
-// 审计流筛选条（F21-5 §3 / P21-5 §10.2）：类别下拉 · [仅告警] 开关 · 时间范围。
-//
-// ⚠️ **三个都是筛选，没有一个是翻页**（§3A ⑤）。时间范围尤其容易被当成"翻到那一天"——
-// 它走 `from`/`to`，与 `seq` 游标是两套坐标；折算成 seq 会在边界上悄悄吞记录。
-//
-// ⚠️ 本组件**不持有 state、不换算时间**：`datetime-local` 的值原样透出，ISO 换算在容器里
-// （view 碰不到 lib，也不该碰 `Date`）。切换筛选后游标由 query key 天然重置，
-// 这里**没有**任何 reset 回调——有的话就说明有人在手动清游标（§3A ④ 明令不写）。
-// （⚠️ 「天然重置」只管游标：hook 里跟着筛选才有意义的 state 由 `useAuditStream` 自己
-// 绑定到 query key 上清空，那件事同样不该冒到这一层来。）
-//
-// ⚠️ [仅告警] 是一个**服务端**筛选（wire 上是 `severity=warn,error`，10 §6.6.1 的多值），
-// 不是"把已加载的行藏起来"。这一点在 UI 上完全看不出来，却决定了空态说的是
-// 「全表没有告警」还是「最近 200 条里没有告警」——后者会让用户读出"平台从没告警过"。
-//
-// ⚠️ **「仅告警」是开关语义，不是勾选框**（design/design-notes.md §4 Phase 1 第四条 /
-// design/prototype.html `.switch-track`）：这是一个即时生效的二元状态切换，不是"选中几项
-// 中的一项再提交"，所以换成 shadcn `Switch`（Radix `role="switch"`），⛔ 不是原生
-// `<input type="checkbox">`。
+// 审计筛选是即时服务端过滤，不是翻页：时间范围使用 from/to，与 seq 游标分离。
+// view 不持有筛选 state 或转换时间；query key 重置游标，hook 管理相关状态。
+// 仅告警使用服务端 severity 筛选和 role=switch，不能只隐藏当前已加载行。
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';

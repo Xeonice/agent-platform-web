@@ -116,18 +116,14 @@ export const Governance: Story = {
     // 是两个不同的图标，不只是换了颜色。
     await expect(banner.querySelector('.lucide-triangle-alert')).not.toBeNull();
     await expect(banner.querySelector('.lucide-octagon-alert')).toBeNull();
-    // ⛔ 不与阻断类共用红色三件套（design-notes.md §4 Phase 3 第 3 条：三色分层）。
+    // 治理提示与阻断提示使用不同的语义颜色。
     await expect(banner.className).toContain('v2-status-warn-subtle-bg');
   },
 };
 
 /**
- * ⭐ **三色分层的核心断言**：阻断 > 治理，同时存在时排序与视觉都要分得开。
- * design-notes.md §4 Phase 3 第 3 条要求"按原型的三色分层实现"，且要覆盖"同时存在"，
- * 这条 story 就是那个用例——⛔ 不能只测单条（那测不出优先级，只测出了渲染）。
- *
- * 变异：把 `BANNER_RANK['automation-needs-attention']` 改成 `0`（排到两条 blocking 前面）
- * ⇒ `alerts[0]` 的断言变红；把两档共用同一套 `SEVERITY_STYLES` ⇒ 下面的 className 断言变红。
+ * 同时存在阻断与治理提示时，验证排序和视觉分层；单条故事无法覆盖优先级。
+ * 修改 BANNER_RANK 或共用两档颜色应使排序或样式断言失败。
  */
 export const BlockingOutranksGovernance: Story = {
   args: { model: { banners: [UNKNOWN, OFFLINE, AUTOMATION_ATTENTION] } },

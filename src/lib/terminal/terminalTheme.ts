@@ -13,10 +13,7 @@ export const TERMINAL_FONT_FAMILY =
   "'Geist Mono', Menlo, 'SF Mono', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Apple Symbols', 'DejaVu Sans Mono', 'Noto Sans Symbols 2', 'Segoe UI Symbol', monospace";
 
 export const DEFAULT_TERMINAL_FONT_SIZE = 14;
-/**
- * 终端工具栏 [A-]/[A+] 的字号边界（design-notes.md §4 Phase 3）。下限保证可读性，
- * 上限避免一屏挤不下几个字符——两个数字都不是精确计算出来的，是常见终端应用的经验值。
- */
+/** 终端字号边界保证可读性与画布容量；工具栏和实例配置复用这组值。 */
 export const MIN_TERMINAL_FONT_SIZE = 10;
 export const MAX_TERMINAL_FONT_SIZE = 22;
 

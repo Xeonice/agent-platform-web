@@ -195,11 +195,7 @@ export function SandboxTerminalContainer({
   );
   const sandboxId = localTask?.id ?? (restored.notFound ? null : restoreId);
   const taskName = localTask?.name ?? restored.name;
-  /**
-   * 终端仪表壳工具栏的面包屑（design-notes.md §4 Phase 3 / 原型 `renderTerminal()`：
-   * `${t.project} / ${t.name}`）。任务名缺席时（还没拿到名字的极短窗口）只给项目名，
-   * ⛔ 不拼一个空的 `/ undefined`。
-   */
+  /** 终端面包屑展示项目名与任务名；任务名尚未到达时只显示项目名，不拼空分隔符。 */
   // 无头任务打给沙箱自己的 runtime（本会话取创建响应，刷新后取 DTO）。
   const sandboxRuntime = localTask?.runtime ?? restored.runtime;
   const taskImage = localTask?.image ?? restored.image;
@@ -460,28 +456,9 @@ export function SandboxTerminalContainer({
   };
 
   /**
-   * 「新建任务」弹层（§N.1 单弹窗一屏：runtime / provider / 分支 / 指令）。
-   *
-   * ⚠️ 它**不再是兜底渲染**。此前这份面板由 `sandboxId===null || socketConfig===null`
-   * 这个条件"自己出现"——于是"创建"根本不是一个动作，也没有任何入口（§N.0）。
-   * 现在它由 `currentModal==='newTask'` 打开，入口在工作台 [+ 新任务]，
-   * 并且**在沙箱已经跑起来时同样能打开**（一个项目可以有多个任务）。
-   *
-   * ⚠️ 鉴权闸门仍然在 `authGateSlot` 里**就地展开**：不跳步、不新开弹层
-   *（那两步壳从来就不存在，§3）。
-   *
-   * ⚠️ **弹层外壳本轮从手写 `ModalShellView` 换成 shadcn `Dialog`**（design-notes.md
-   * §4 Phase 3 第 5 条 / §1「弹层组件选型」）——**普通、可关闭的那一份**，不是向导专用的
-   * `BlockingDialog`（那份靠"没有 `onOpenChange` 出口"保证关不掉，语义完全相反）。
-   * 焦点陷阱 / `aria-modal` / 背景滚动锁定 / 关闭后焦点归位全部交给 Radix：
-   *   · 关闭事件统一走 `onOpenChange`，`busy`（创建中）时直接吞掉 —— 与此前
-   *     `ModalShellView` 的 `busy` 参数、`useEscapeKey` 的 `!createSandbox.isPending`
-   *     是同一条纪律，只是不再需要手动接两个 hook；
-   *   · 不用共享的 `DialogContent`（它内置的关闭按钮无障碍名是英文 "Close"）——这里手写
-   *     `DialogPrimitive.Close`，无障碍名保持中文「关闭」，与关掉这份弹层的既有断言对齐；
-   *   · **DOM 顺序**：标题/副标题在前、`NewSandboxPanelView` 内容次之、关闭按钮**最后**
-   *     （视觉上用 `absolute` 摆回右上角）——Radix 的自动聚焦取的是"容器内第一个可
-   *     聚焦元素"，顺序反了就会把首次打开的焦点误放到 [✕] 上（回车就把弹层关了）。
+   * 新任务弹层由 currentModal=newTask 打开，现有任务运行时仍可创建同项目的其它任务。
+   * 鉴权面板在表单中就地展开。Radix 负责焦点陷阱、背景滚动锁定与焦点归位；创建中禁止关闭。
+   * 关闭按钮排在正文之后，避免首次自动聚焦误落到关闭按钮。
    */
   const newTaskModal =
     currentModal !== 'newTask' ? null : (

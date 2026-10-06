@@ -64,8 +64,7 @@ export function GitCredentialCardView({
   if (credential === null) {
     return (
       <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border p-5">
-        {/* ⭐ 状态用 StatusPill 的 skipped（虚线框），⛔ 不是 fail：没配 Git 凭证不等于
-            出错了，是「这一路没走」（design/prototype.html #credentials 第 663/717 行同款）。 */}
+        {/* 未配置 Git 凭证使用 skipped；未选择此路径不等于配置错误。 */}
         <StatusPill status="skipped" data-testid="git-unconfigured-badge">
           未配置
         </StatusPill>

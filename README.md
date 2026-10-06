@@ -17,7 +17,7 @@ pnpm storybook           # http://localhost:6006 看全部视图的形态与交�
 
 首次或 CI 首拉需 `pnpm exec msw init public/`（生成 MSW worker 文件，dev 浏览器 mock 用）。
 
-## Vercel 前端与 Mac mini API
+## Vercel 前端与 Mac mini Docker API
 
 Vercel 项目使用仓库根目录、Next.js preset、Node `22.x`、`pnpm@9.15.0`，安装命令 `pnpm install --frozen-lockfile`，构建命令 `pnpm build`，输出目录使用 Next 默认值。`ENABLE_EXPERIMENTAL_COREPACK=1` 使安装版本遵循 `packageManager`。
 
@@ -85,7 +85,7 @@ src/
 | 每个 view 必有 story                                                      | `scripts/check-story-coverage.ts`（CI fail）                                                            | 12 §2.5         |
 | partialize 白名单（`initialPrompt`/凭证绝不落盘）                         | `stores/index.ts#partializeAppState` + `acceptance/realtime-session-boundaries.test.tsx` 实际持久化边界 | 15 §3.5         |
 | pre-commit（eslint --fix + prettier）+ commitlint                         | `.husky/` + `.lintstagedrc.json` + `commitlint.config.js`                                               | 09              |
-| CI 四道门                                                                 | `.github/workflows/ci.yml`                                                                              | 12 §5 / 09 §1.3 |
+| CI 与跨仓浏览器验收                                                       | Jenkins `agent-platform-web` 与其 `agent-platform-contract` 子任务，见 [CI 说明](.github/JENKINS_CI.md) | 12 §5 / 09 §1.3 |
 
 ## 目录结构（详见 docs/frontend/07 §2）
 
@@ -105,10 +105,8 @@ src/
 
 ## 当前验收范围
 
-新版验收按 REQ/AC 场景独立编写，默认 `pnpm test` 只运行 `vitest.acceptance.config.ts`。真实 container/hook 消费显式 HTTP 夹具；事件与终端用例在资源边界注入通道，验证 REST/事件竞态、重连、序号去重、会话身份和隐私白名单。旧源码旁全面单元 suites 已退休，不作为当前产品结论。
+验收按 REQ/AC 场景编写，默认 `pnpm test` 运行 `vitest.acceptance.config.ts`。真实 container/hook 消费显式 HTTP 夹具；事件与终端用例在资源边界注入通道，验证 REST/事件竞态、重连、序号去重、会话身份和隐私白名单。
 
 `pnpm e2e` 在主仓启动完整 Nest、隔离 SQLite 和独立生产 Web 构建，经同源代理驱动浏览器。HTTP、WS、仓库 facade 与业务持久化不替换；仅外部 provider、模型、registry、Git 与 PTY 资源使用确定性 fixture。执行后退出独立进程，避免覆盖普通开发构建。
 
-设计浏览器脚本位于 `scripts/check-design-*-v2.mjs`，使用已经运行的生产服务，不自行起服。每稿记录真实 route/action/state、暗亮三尺寸截图、错误和溢出；HTTP/socket 资源夹具不写真实数据库。这些证据与真实跨仓 e2e、代码核对分开。
-
-主仓 `artifacts/migration-audit/` 保存执行报告、逐 AC 证据、172 稿件 manifest 和旧测试退休清单。Storybook 的状态与交互通过不等于完整容器链路或全站无障碍扫描。
+Storybook 提供当前组件的空态、失败态、边界值和交互回归；跨仓浏览器验收覆盖页面与真实 API 的完整链路。Jenkins 归档各项执行报告与构建产物，见 [CI 说明](.github/JENKINS_CI.md)。Storybook 的状态与交互通过不等于完整容器链路或全站无障碍扫描。

@@ -17,12 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { ProviderHealthLevel, SandboxEnvStatusCardModel } from '@/types/system';
 
-/**
- * `ProviderHealthLevel` → `StatusPill` 八态（design/design-notes.md §4 Phase 1 第三条：
- * 沙箱环境状态换 `StatusPill`）。⚠️ **`no-sample` 映射到 `unknown`**（虚线灰）而不是
- * `ok`/`pending`——它既不是"好"也不是"坏"，而是"没有数据可以下结论"，与诊断的
- * `timeout ≠ fail` 是同一条纪律的另一处落地。
- */
+/** 环境健康级别沿用 StatusPill；no-sample 映射 unknown，不能据无样本推断 ok 或 pending。 */
 const SANDBOX_ENV_PILL_STATUS: Readonly<Record<ProviderHealthLevel, StatusPillStatus>> = {
   ok: 'ok',
   warning: 'warn',
@@ -62,10 +57,7 @@ export function SandboxEnvStatusCardView({
       className="flex flex-col gap-3 rounded-lg border border-border p-4 [container-type:inline-size]"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-2">
-        {/* ⚠️ 只改可见文案，不改文件名/组件名/类型名（design-notes §4 Phase 1 +
-            §5 拍板点 1：`SandboxEnvStatusCard` 这个名字已经在上一轮改过，这一轮
-            只把标题从「这台机器的沙箱环境」换成「沙箱环境状态」，与同页其它三张卡
-            「X状态」的命名对齐）。 */}
+        {/* 卡片标题使用沙箱环境状态；组件和类型标识保持稳定。 */}
         <h2 id="sandbox-env-status-heading" className="text-base font-semibold">
           沙箱环境状态
         </h2>
@@ -171,8 +163,7 @@ export function SandboxEnvStatusCardView({
                   data-testid={`runtime-row-${r.id}`}
                   className="flex items-center gap-2"
                 >
-                  {/* 紧凑型：只留图标（design/prototype.html Agent 分组的 `status-pill`
-                      同样只给 18px 高、无文字，行内密度高不需要重复的文字标签）。 */}
+                  {/* 高密度运行时行使用紧凑图标状态，保留独立可访问名称。 */}
                   {r.credentialConfigured ? (
                     <StatusPill status="ok" className="h-[18px] px-1" aria-label="凭证已配置" />
                   ) : (

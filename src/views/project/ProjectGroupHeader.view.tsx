@@ -10,10 +10,7 @@ export interface ProjectGroupHeaderProps {
   cloneStatus: ProjectGroup['cloneStatus'];
   selected: boolean;
   onSelect: (projectId: string) => void;
-  /**
-   * 折叠态（design-notes.md §4 Phase 3 / 原型 `renderTaskTree()` 的 chevron）。
-   * 由 `taskListFolds`（store）经 `selectProjectTaskTree` 派生。
-   */
+  /** 折叠态由 store.taskListFolds 经 selectProjectTaskTree 派生。 */
   collapsed: boolean;
   /** 点折叠箭头：只切折叠，⛔ 不连带选中项目——两个是不同的动作。 */
   onToggleCollapse: (projectId: string) => void;

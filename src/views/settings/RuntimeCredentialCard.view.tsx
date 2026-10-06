@@ -31,13 +31,7 @@ const STATUS_LABEL: Record<RuntimeCredentialCardModel['status'], string> = {
   expired: '已过期',
 };
 
-/**
- * 卡片状态 → `StatusPill` 八态（design/prototype.html #credentials + design-notes.md
- * Phase 6 映射表）。
- *
- * ⚠️ `none` 映射到 `skipped`（虚线框），⛔ **不是 `fail`**——「未配置」不是错误，是
- * 「这一路没走」。只配了 API Key 没配帐号登录的用户，看见红色会以为自己弄坏了什么。
- */
+/** 凭证 none 映射为 skipped，未配置不等于错误；其它状态沿用 StatusPill 语义。 */
 const STATUS_PILL_STATUS: Record<RuntimeCredentialCardModel['status'], StatusPillStatus> = {
   none: 'skipped',
   active: 'ok',
@@ -74,10 +68,7 @@ export function RuntimeCredentialCardView({
         </StatusPill>
       </header>
 
-      {/* ⭐ 分隔线代替卡中卡：外层已经是一张卡（`rounded-lg border`），帐号登录 / API Key
-          两法不再各自套一层边框，改成 `divide-y` 分隔线（design/prototype.html #credentials
-          `border-t border-border divide-y`；design-notes.md Phase 6 ③）——此前是
-          `card > bordered-row` 两层边框，「哪个是一张卡」变得含糊。 */}
+      {/* 外层卡片内用分隔线组织帐号登录与 API Key，避免重复嵌套边框。 */}
       <div
         role="radiogroup"
         aria-labelledby={`runtime-card-${model.runtimeId}`}

@@ -1,14 +1,11 @@
 /*
- * 设计语言 v2 · token（贴近 Vercel 控制台）——自动生成，勿手改
- * 来源：research/tokens-v2-draft.json（v2-draft-1，2026-10-02）；生成：node tools/build-tokens.cjs
- * 三层：① --ds-* 原语（Geist 色阶）② 语义 token（页面与组件只用这一层）③ 组件（components-v2.css）
+ * 平台设计 token：此文件维护当前页面与组件共用的颜色、字体、间距和焦点样式。
+ * 三层：① --ds-* 原语（Geist 色阶）② 语义 token（页面与组件只用这一层）③ 组件变量。
  * 主题：:root 与 [data-theme="dark"] = 暗色；:root:not(.dark) = 亮色；任意元素上写 data-theme 都能开一个主题作用域
- * 取值偏离 Geist 的地方见简报 §3（多数是为了中文与 WCAG AA）；暗色 --v2-canvas / --v2-border-subtle 为推断值（待核实）
- * 试点层覆盖（tools/build-tokens.cjs 里 OVERRIDES / EXTRA_COLORS，JSON 不改）：亮色 --v2-overlay → rgb(0 0 0 / .32)；新增 --v2-skeleton、--v2-sidebar-sep、--v2-skeleton-term、--v2-term-min-contrast；
- *   --v2-font-mono 中文字体挪到 Apple Symbols 之前；--v2-font-sans 补 Noto Sans CJK SC
+ * --v2-* 名称是当前组件的公共样式契约；修改取值时同时核对暗亮主题与 Storybook 状态。
  */
 
-/* ---- 字体：Geist / Geist Mono 可变字体（SIL OFL 1.1，见 assets/LICENSES.md）；本地文件，零网络请求 ---- */
+/* ---- 字体：Geist / Geist Mono 可变字体（SIL OFL 1.1，见 public/fonts/LICENSE.txt）；本地文件，零网络请求 ---- */
 /* Geist 排除 U+2014（——）与 U+2018–201D（弯引号）：中文语境里的破折号与引号落到中文字体的全角字形；· 与 … 保留 Geist 字形 */
 @font-face {
   font-family: 'Geist';
@@ -418,7 +415,7 @@
 
 :root,
 [data-theme] {
-  /* ---- 任务用户态 → 状态点颜色（Q-DS-15 ②A；形状见 components-v2.css .status-dot） ---- */
+  /* 任务用户态 → 状态点颜色；形状由使用这些 token 的组件维护。 */
   --v2-task-preparing: var(
     --v2-status-neutral-fg
   ); /* 灰脉冲点（圆，animate pulse） · 取自 status.neutral.fg（亮 #4d4d4d / 暗 #a1a1a1） */

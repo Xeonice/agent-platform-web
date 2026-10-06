@@ -111,11 +111,7 @@ export function ImageCardView({
             {model.refDisplay}
           </span>
         </div>
-        {/*
-          ⭐ 「已启用」也走 StatusPill，⛔ 不是小圆点 + 文字（那是第三套写法，见
-          design-notes.md Phase 6 ①）。「已禁用」用 `pending`（灰）—— ⛔ 不是 `fail`：
-          禁用是用户主动做的，不是坏了；它和"无效"是原型里刻意分开的两件事。
-        */}
+        {/* 启用状态统一使用 StatusPill。禁用是用户选择，不表示镜像验证失败。 */}
         {model.isActive ? (
           <StatusPill status="ok" data-testid="enable-state">
             已启用
@@ -153,13 +149,7 @@ export function ImageCardView({
         )}
       </div>
 
-      {/*
-        ⭐ 满宽之后一行放得下：「适用 / 运行的版本 / 来源」从各占一整行改成一行三列
-        （design-notes.md Phase 6 / prototype.html #images 的 `sm:grid-cols-3`）。
-        ⚠️ 三个格子内部的文案/testid 原样未动——只是外层从三条 flex 行并成一个 grid，
-        没有削减信息，也没有替 `lib/image/imageCardModel.ts` 算好的文案（如 `lineage.text`
-        自带的"来源："前缀）加二次标签，避免同一句话被念两遍。
-      */}
+      {/* 适用运行时、运行版本、来源宽屏并列；沿用 model 文案，不重复添加来源标签。 */}
       <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
         {model.supportedRuntimes.length > 0 && (
           <p className="text-muted-foreground">适用：{model.supportedRuntimes.join('、')}</p>

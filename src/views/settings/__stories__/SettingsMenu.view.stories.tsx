@@ -50,11 +50,7 @@ export const CredentialsActive: Story = {
   },
 };
 
-/**
- * ⭐ 390px 响应式回归：写死的 `w-56`（224px）此前不响应式收起，把内容区挤到约 118px
- * （design/design-notes.md 收口第 3 项）。⇒ 窄屏下改成 `w-full` + 顶部横向可滚动条，
- * `sm:` 起才切回固定 `sm:w-56` 的竖排侧边栏。
- */
+/** 390px 时使用满宽横向滚动菜单；sm 起恢复固定宽度竖排侧栏，保留主内容空间。 */
 export const Responsive: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

@@ -140,12 +140,7 @@ export function markDiagnoseAborted(state: DiagnoseRunState): DiagnoseRunState {
 
 const IDLE_MODEL: DiagnosticsCardModel = { phase: 'idle', items: [] };
 
-/**
- * 只有第 ⑤ 项（联网检查）配这句——**数值来自服务端首帧 `start.timeoutMs`**，
- * ⛔ 不许写死字面量秒数（design/prototype.html 那份静态原型里的 `10s` 只是示例数据，
- * 前车之鉴见 `web/src/mocks/handlers.ts` 里 `DIAGNOSE_TIMEOUT_MS` 的那条注释）。
- * `timeoutMs <= 0` 时（还没收到 `start` 帧）不产出——那时候没有配置可读，说了也是编的。
- */
+/** 联网检查的超时时限取自服务端首帧 start.timeoutMs；尚未收到有效配置时不产出文案。 */
 function timeoutTextFor(checkId: DiagnoseCheckId, timeoutMs: number): string | undefined {
   if (checkId !== 'outbound-network' || timeoutMs <= 0) return undefined;
   return `超时时限 ${formatDurationMs(timeoutMs)}`;

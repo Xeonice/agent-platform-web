@@ -45,7 +45,7 @@ export const Healthy: Story = {
     await expect(canvas.getByTestId('resource-reserved')).toHaveTextContent('总容量的 15%');
     await expect(canvas.getByTestId('resource-row-disk')).toHaveTextContent('镜像缓存');
     await expect(canvas.queryByTestId('resource-low')).toBeNull();
-    // ⚠️ 状态用 `StatusPill`（design/design-notes.md §2）：不偏低 ⇒ `ok`。
+    // 资源不偏低时，StatusPill 状态为 ok。
     await expect(
       canvas.getByTestId('resource-row-cpu').querySelector('[data-status="ok"]'),
     ).not.toBeNull();

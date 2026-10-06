@@ -101,11 +101,7 @@ export const Unknown: Story = {
   },
 };
 
-// ————————————————————————————————————————————————————————————————
-// StatusDot —— 极简变体（design-notes.md §4 Phase 3 第 2 条）：纯色圆点，
-// 用在任务树状态点 / 组头徽标这类高密度位置。⚠️ 这是**新增**的独立小组件，
-// 上面八个 `StatusPill` variant 的颜色/图标/语义一个字节都没有改动。
-// ————————————————————————————————————————————————————————————————
+// StatusDot 用于任务树等高密度位置；与 StatusPill 共用语义 token，保持独立组件。
 type DotStory = StoryObj<typeof StatusDot>;
 
 /** 六态一次性摆开，肉眼核对色相互不冲突（尤其 timeout 与 fail、unknown 与 warn/skipped 的琥珀/灰对比）。 */

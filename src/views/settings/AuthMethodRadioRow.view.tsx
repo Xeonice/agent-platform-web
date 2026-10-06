@@ -40,13 +40,8 @@ interface ExpiryMarker {
   icon?: LucideIcon;
   className?: string;
   /**
-   * 设了这个字段 = 这一格改走 `StatusPill`，不再走下面 icon+className 的纯文字渲染。
-   *
-   * ⚠️ **只有 `expired` 走 pill，`warning` 刻意不跟进**：`warning` 这里显示的是
-   * `expiryLabel`（"剩 6 天" 这种动态倒计时），不是"即将过期"这句固定状态文案——
-   * 原型（design/prototype.html #credentials 第 647 行）里同一格也是纯色 mono 文字，
-   * 不是 pill；`expired` 才是没有倒计时可言的终态，对应 design-notes.md Phase 6
-   * 映射表里的「已过期 → fail」。
+   * expired 使用 StatusPill；warning 显示动态 expiryLabel 倒计时。
+   * 倒计时保持纯文字，终态已过期映射为 fail。
    */
   pillStatus?: StatusPillStatus;
 }

@@ -1,25 +1,5 @@
-// 三级验证结论 ✅/⚠️/❌（P21-4 §5/§9，F21-4 §3）。纯展示、props 驱动、零副作用。
-//
-// P21-4 §9 的硬要求：**每级都要给后果说明，不裸报技术词**。所以 ⚠️ 一定带 warnings、
-// ❌ 一定带 errors + [查看镜像要求] 出路（同 P22 §1「发生了什么 + 现在能做什么」）。
-//
-// ⚠️ 这里**没有** [保存]：能不能保存是注册弹窗的事（`RegisterImageModal.view`），
-// 结论区只负责说清楚结论。把两件事塞进一个组件，就会出现"结论已作废但保存还在"的缝。
-//
-// ⚠️ v3 原型收口（design-notes.md Phase 6 / prototype.html #images ①）：这一条从
-// "自制的带边框条"（手写 TONE_CLASS 边框色）改成"一行 StatusPill + 一句话"——颜色/
-// 图标交给 `StatusPill` 统一管（八态对照表见 status-pill.tsx），这里不再自己维护
-// 一套边框色。
-//
-// ⚠️⚠️ **`HEADLINE` 只放「细节」那一半，结论词归 pill**。产品文档 P21-4 §5 写的是
-// 「✅ 验证通过：镜像可用」这种「结论：细节」句式 —— 当时结论由 emoji 旁边的文字承担。
-// 换成 pill 之后 pill 自己就带文字（八态体系要求"图标 + 文字 + 颜色三重线索"，
-// design-notes 问题 2），如果 HEADLINE 仍保留整句，屏幕上就会念两遍：
-//   ⛔ `[✓ 验证通过] 验证通过：镜像可用`
-//   ✅ `[✓ 验证通过] 镜像可用`
-// **信息一个字没少**（结论 + 细节都还在），只是结论从句子里搬进了 pill。
-// ⛔ 不要把「验证通过 / 验证失败」这类结论词写回 HEADLINE —— 下面那条 story
-// 断言（结论词全页只出现一次）会红。
+// 三级验证结论以 StatusPill 和后果说明展示，警告带 warnings，失败带 errors 与查看要求入口。
+// 保存动作由注册弹窗负责；HEADLINE 只展示细节，避免重复 pill 中的结论词。
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import { Button } from '@/components/ui/button';
 import type { ImageValidationResultData } from '@/types/image';
@@ -39,14 +19,14 @@ const HEADLINE: Record<ImageValidationResultData['status'], string> = {
   invalid: '镜像不符合平台约定',
 };
 
-/** pill 短标签——字面抄自 prototype.html #images 区块的 `.status-pill` 文案。 */
+/** 验证结论的 pill 短标签。 */
 const PILL_LABEL: Record<ImageValidationResultData['status'], string> = {
   valid: '验证通过',
   warning: '有警告',
   invalid: '无效',
 };
 
-/** 结论 → StatusPill 八态之三（design-notes.md Phase 6：「通过→ok、有警告→warn、无效→fail」）。 */
+/** 验证结论映射：通过 ok、有警告 warn、无效 fail。 */
 const PILL_STATUS: Record<ImageValidationResultData['status'], StatusPillStatus> = {
   valid: 'ok',
   warning: 'warn',

@@ -101,14 +101,8 @@ export interface UiSlice {
 
   // —— 字号/记忆（persist）——
   /**
-   * 主题偏好（design-notes §4 Phase 5 第 3 条）。
-   *
-   * ⚠️ 三态而不是布尔：`system` 跟随操作系统。但它**不是默认值** —— 默认是 `dark`
-   * （产品裁决，见下方初始值的注释）。给三态是为了让用户**能把已经表过的态收回去**：
-   * 做成「暗色」开关的话，"我不想管、跟着系统走"这个意思就没法表达。
-   *
-   * ⚠️ 落盘（`partializeAppState` 白名单）：它与 `sidebarCollapsed`/`terminalFontSize`
-   * 同类 —— 纯显示偏好，不含任何指令/凭证/内部路径，不触碰 15 §3.5 的红线。
+   * 主题偏好提供 dark/light/system，默认 dark。
+   * 它属于可持久化的纯显示偏好，partialize 白名单不包含指令、凭据或内部路径。
    */
   theme: 'system' | 'dark' | 'light';
   setTheme: (theme: 'system' | 'dark' | 'light') => void;

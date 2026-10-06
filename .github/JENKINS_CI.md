@@ -1,10 +1,11 @@
 # Local Jenkins CI and prebuilt releases
 
-This repository uses the Mac mini Jenkins job `agent-platform-web`. The former
-GitHub Actions build is preserved under `workflow-archive/ci.yml`; that directory
-is outside GitHub's active workflow directory. The Jenkins definitions and
-installed phase tools are maintained in `Xeonice/cloud-agent-platform-docs` under
-`deploy/jenkins/web.groovy` and `deploy/jenkins/jenkins-web.mjs`.
+This repository uses the Mac mini's Docker Jenkins job `agent-platform-web`.
+The Jenkins definitions and installed phase tools are maintained in
+`Xeonice/cloud-agent-platform-docs` under `deploy/jenkins/web.groovy` and
+`deploy/jenkins/jenkins-web.mjs`. The protected dashboard is
+`https://jenkins.douglasdong.com/`; agents and authenticated automation use the
+private controller transport.
 
 The source configuration disables Vercel Git builds. Production publication uses
 locally built Build Output API artifacts. Changing `vercel.json` takes effect
@@ -17,10 +18,11 @@ The discovery job schedules `main` and open PR heads from this fixed repository.
 The umbrella release job schedules `feat/design-v2-migration` with its pinned
 project commits. Every run has full `SHA`, `REF`, `ROOT_SHA` and `API_SHA`
 parameters. Jenkins checks out the exact requested commit, refuses a
-ref that moved, installs with pnpm 9.15.0 and a frozen lockfile, and runs on native
-macOS ARM64 Node 22.
+ref that moved, and installs with pnpm 9.15.0 and a frozen lockfile. Web tests and
+production prebuilt output run on the isolated Linux AMD64
+`agent-platform-web-build` agent with Node 22.
 
-Repository code runs on the separate `agent-platform-ci` agent and OS account.
+Repository code runs in the separate CI container.
 It receives no production runtime environment, Vercel token or GitHub release
 credential. The Jenkins controller has zero executors. For the production branch,
 a trusted stage pulls the fixed Vercel project's settings without checking out
@@ -33,9 +35,18 @@ tests, a static Storybook build and the production build. Tests produce JSON and
 JUnit results; missing, failed or skipped tests block packaging. Storybook's
 interaction runner is not an accessibility certification.
 
+Before the web job can succeed, it releases its executor and waits for the
+`agent-platform-contract` child job. That job verifies the exact `ROOT_SHA`,
+`API_SHA` and `WEB_SHA`, runs documentation and deployment-tool checks, and
+drives the cross-repository browser flow against actual Nest and fresh SQLite.
+Provider, model, registry, Git and PTY resources use deterministic fixtures;
+this browser gate does not certify a live BoxLite VM. The child's actual
+`SUCCESS` and commit parameters are recorded in the archived cross-repository
+report.
+
 Production builds run `vercel build --prod --standalone` locally with an empty
 authentication directory. Internal function aliases are flattened; references
-outside the output and macOS native binaries are rejected before upload. The
+outside the output and incompatible native binaries are rejected before upload. The
 committed `.env.example` documentation sample is excluded from traced function
 output. Actual env/auth files remain forbidden in the package.
 
@@ -54,7 +65,8 @@ deployment agent adopts an immutable release keyed by all three commits. Reused
 packages retain their original bytes and originating build evidence.
 
 Upload uses `vercel deploy --prebuilt --prod --skip-domain --archive=tgz` for the
-fixed `agent-platform-web` project. This uploads compiled output without a remote
+fixed `agent-platform` Vercel project
+(`prj_XYIzK6r7LgRrV5NHCwWff489J73r`). This uploads compiled output without a remote
 build and leaves it staged. Before promotion the tool rechecks the approved
 project pin, current production branch, API commit/readiness and remote deployment
 metadata. Completed retries verify the actual production alias. Failed or
@@ -85,6 +97,6 @@ pnpm build-storybook
 pnpm build
 ```
 
-The managed Jenkins dashboard is local to the Mac mini. Its build history,
-stage graph, console and archived reports are the execution evidence; a prepared
-pipeline definition or manual local smoke is not a successful Jenkins run.
+The managed Jenkins dashboard's build history, stage graph, console and archived
+reports are the execution evidence; a prepared pipeline definition or manual
+local smoke is not a successful Jenkins run.

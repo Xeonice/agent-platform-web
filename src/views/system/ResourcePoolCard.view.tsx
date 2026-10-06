@@ -15,14 +15,7 @@ import type { Ref } from 'react';
 import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import type { ResourceGaugeModel, ResourceLevel, ResourcePoolCardModel } from '@/types/system';
 
-/**
- * 三重线索之一：颜色/图标——现在交给 `StatusPill`（design/design-notes.md §4 Phase 1
- * 第二条：本机资源水位三档改用 `StatusPill`，⛔ 不再是自己另起一套 emoji 查表）。
- *
- * ⚠️ **`critical` 映射到 `fail`**——它与「连不上/确定坏了」共用同一套视觉语义：
- * 磁盘/CPU/内存耗尽同样是「现在不能再干活」，不该比 `warn` 更弱。`StatusPill` 的八态
- * 闭集里没有专门给"资源耗尽"开一个第九态的必要。
- */
+/** 资源水位沿用 StatusPill；critical 映射 fail，耗尽不能弱化为 warn。 */
 const LEVEL_PILL_STATUS: Readonly<Record<ResourceLevel, StatusPillStatus>> = {
   ok: 'ok',
   warn: 'warn',
@@ -33,15 +26,7 @@ const LEVEL_TEXT: Readonly<Record<ResourceLevel, string>> = {
   warn: '警告',
   critical: '严重',
 };
-/**
- * `Progress`（shadcn/Radix）的填充色只有一档 `bg-primary`（Phase 0 产物，⛔ 不改）——
- * 这里用 Tailwind 的子选择器 `[&>div]:bg-*` 覆盖它的 `Indicator`，不用去改
- * `components/ui/progress.tsx` 加 variant。
- *
- * ⚠️ **颜色改用语义 token（`success`/`warning`/`error`），不是裸的 `emerald-500` 等**——
- * 与 `StatusPill` 用的是同一套 `--success`/`--warning`/`--error` 变量，颜色才不会在两处
- * 各自漂移（design/prototype.html 的 `.progress-fill` 内联样式同样直接取这三个变量）。
- */
+/** Progress Indicator 通过子选择器覆盖，颜色复用 success/warning/error 语义 token。 */
 const LEVEL_BAR: Readonly<Record<ResourceLevel, string>> = {
   ok: '[&>div]:bg-success',
   warn: '[&>div]:bg-warning',
@@ -85,10 +70,7 @@ function Gauge({ gauge }: { gauge: ResourceGaugeModel }) {
           {gauge.pathText}
         </span>
       )}
-      {/* 细进度条 + 灰底槽（design/prototype.html `.progress-track` 6px + 底槽）—— 现状此前
-          是 8px 高、且底槽颜色与 `Progress` 自带的 `bg-primary/20` 同优先级打架、实际不可见，
-          视觉上成了"粗、纯色、无槽"。`!` 前缀在此处是必要的：两条类作用在同一个根节点上，
-          仅按 class 顺序覆盖是不可靠的。 */}
+      {/* 细进度条保留灰色底槽；重要性前缀确保底槽颜色不被 Progress 默认背景覆盖。 */}
       <Progress
         value={Math.min(100, Math.max(0, gauge.usedPercent))}
         aria-label={`${gauge.label} 使用率`}

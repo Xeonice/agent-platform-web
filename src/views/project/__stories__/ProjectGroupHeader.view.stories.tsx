@@ -84,12 +84,8 @@ export const CloneFailed: Story = {
 };
 
 /**
- * ⭐ 折叠箭头是**独立按钮**：点它只切折叠，不触发 `onSelect`（design-notes.md §4
- * Phase 3 / 原型的 chevron）。两个动作分开是刻意的——failed 态项目仍然要能被选中
- * 才能触达恢复面板（见文件头注释），把折叠揉进选中按钮会两头不讨好。
- *
- * 变异：把折叠箭头点击处理器改成同时调用 `onSelect` ⇒ 本例最后一句
- * `onSelect` 未被调用的断言变红。
+ * 折叠箭头是独立按钮，只切折叠，不触发 onSelect。
+ * 失败项目仍可选中进入恢复面板；把折叠与选中合并应使此交互断言失败。
  */
 export const ToggleCollapse: Story = {
   play: async ({ args, canvasElement }) => {

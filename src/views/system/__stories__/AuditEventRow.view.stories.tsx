@@ -35,9 +35,7 @@ export const Info: Story = {
   args: { row: row({ durationText: '4.2s', outcome: 'ok' }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    // **三重线索**：图标 + 文字 + 颜色，现在由 `StatusPill` 统一给（design/design-notes.md
-    // §4 Phase 1 第五条：审计行状态换 `StatusPill`，不再是自己另起一套 emoji 查表）。
-    // 断言的是"文字也在" + pill 语义状态是 `info`——只上色的版本在灰度屏上等于没有严重度。
+    // 同时验证文字与 info 语义状态，避免只上色的审计严重度表达。
     const pill = canvas.getByText('信息');
     await expect(pill).toBeInTheDocument();
     await expect(pill).toHaveAttribute('data-status', 'info');

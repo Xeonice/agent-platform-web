@@ -38,10 +38,8 @@ export interface UsePresetImageProvisionResult {
    */
   progress: number | null | undefined;
   /**
-   * 本次搬运已经跑了多少秒——**真实挂钟时间**，`Date.now()` 差值，不是估算值。
-   * 只在 `isProvisioning` 为真时递增；结束（成功/失败/未开始）时为 `undefined`。
-   * ⚠️ 这与"进度百分比停在原地"是两件独立的事——`Progress` 里的字节分数长时间不变时，
-   * 这个仍在跳动的数字才是"没有卡死，还在写盘"的证据（design/design-notes.md §1 问题 3）。
+   * 本次搬运的真实挂钟时长，仅 isProvisioning 为真时递增，结束或尚未开始为 undefined。
+   * 时长与字节进度分别计算；进度不变时不能伪造增量。
    */
   elapsedSeconds: number | undefined;
   start: () => void;
@@ -131,10 +129,7 @@ export function usePresetImageProvision(
     });
   }, [onFinished, disabledReason]);
 
-  // ⚠️ **真实挂钟时间，不是估算**：`Date.now()` 差值，每秒刷新一次。只在这一轮搬运真的
-  //    在跑的时候递增——结束（成功/失败）或还没开始过都是 `undefined`，⛔ 不假装还在计时。
-  //    这与 `progress` 是两件独立的事：字节分数长时间不动时，这个仍在跳的数字才是
-  //    "没有卡死，还在写盘"的证据（design/design-notes.md §1 问题 3）。
+  // 真实挂钟时长使用 Date.now() 差值，每秒刷新；未运行或结束后不继续计时。
   useEffect(() => {
     if (!isProvisioning) {
       setElapsedSeconds(undefined);

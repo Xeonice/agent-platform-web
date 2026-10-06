@@ -14,11 +14,7 @@ import { StatusPill, type StatusPillStatus } from '@/components/ui/status-pill';
 import { AuditDetailPanelView } from '@/views/system/AuditDetailPanel.view';
 import type { AuditRowModel, AuditSeverity } from '@/types/audit';
 
-/**
- * 三重线索：图标 / 文字 / 颜色——现在交给 `StatusPill`（design/design-notes.md §4 Phase 1
- * 第五条：审计行状态换 `StatusPill`，与 design/prototype.html 的 `SEVERITY_MAP` 一致：
- * `info → info`、`warn → warn`、`error → fail`）。
- */
+/** 审计严重度由 StatusPill 统一表达：info→info、warn→warn、error→fail。 */
 const SEVERITY_PILL_STATUS: Readonly<Record<AuditSeverity, StatusPillStatus>> = {
   info: 'info',
   warn: 'warn',

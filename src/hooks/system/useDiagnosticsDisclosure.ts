@@ -1,13 +1,5 @@
-// 诊断卡「非 ok/info 默认展开」的受控 Accordion 状态（design/design-notes.md §1
-// 问题 1 + §4 Phase 1 第一条）。
-//
-// ⚠️ **这一层存在的理由与 `useSystemStatusModels` 一样：分层铁律。** `view` 不许
-// import `lib`（eslint boundaries：`view` 只能 `allow: ['view','type','component']`），
-// 纯判定函数（`isDefaultExpanded` / `diffManualToggles` / `resolveOpenIds`）住在
-// `lib/system/diagnosticsDisclosure.ts`，这里只是把它们接到一份 `useState` 上，
-// 交给 `SystemStatusContainer` 用、再把结果（`openIds` + `onOpenIdsChange`）当成
-// 两个普通 prop 传给 `DiagnosticsCardView`——view 那边因此不需要知道这套 override
-// 逻辑，只管照给定的 `openIds` 渲染。
+// 受控诊断 Accordion：非 ok/info 默认展开，用户手动开关由 hook 管理。
+// 纯判定函数留在 lib；容器把 openIds/onOpenIdsChange 作为 props 传给 view。
 import { useCallback, useMemo, useState } from 'react';
 import { diffManualToggles, resolveOpenIds } from '@/lib/system/diagnosticsDisclosure';
 import type { DiagnosticItemModel } from '@/types/system';
