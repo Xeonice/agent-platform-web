@@ -14,7 +14,9 @@ promote an existing staged deployment.
 
 ## CI coverage and trust boundary
 
-The discovery job schedules `main` and open PR heads from this fixed repository.
+The discovery job schedules `main` and open same-repository PR heads into
+`main` (drafts included). Other branches, fork PRs and stacked PRs are not built
+automatically; push a fork's change to a branch here and open a PR into `main`.
 The umbrella release job schedules `main` with its pinned
 project commits. Every run has full `SHA`, `REF`, `ROOT_SHA` and `API_SHA`
 parameters. Jenkins checks out the exact requested commit, refuses a
