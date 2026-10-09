@@ -1,6 +1,6 @@
 import { Loader2 } from 'lucide-react';
-// 新建任务弹窗的内容（F21-2 §N.1「单弹窗一屏」）：runtime / provider / **分支** / 指令 + [创建]。
-// 纯展示、props 驱动、零副作用；外壳（overlay + 标题 + [✕]）由 `ModalShell.view` 提供。
+// 新建任务弹窗的内容：项目 / Agent / 分支 / 镜像 / 指令 + [发起任务]。
+// 字段值由 props 驱动，搜索与开合属于本地 UI 状态；Dialog 外壳由 `SandboxTerminalContainer` 提供。
 //
 // ⚠️ **它此前不是弹窗**：`SandboxTerminalContainer` 在 `sandboxId===null || socketConfig===null`
 // 时**兜底渲染**它——不是被"打开"的，是条件为假时自己出现的，于是"创建"根本不是一个动作
@@ -110,9 +110,9 @@ export interface NewSandboxPanelProps {
    */
   branchesErrorMessage?: string;
 
-  /** 弹层上下文：任务归属的项目名（弹窗内**没有**项目下拉，归属继承左侧树选中项，§9.0）。 */
+  /** 当前表单所选项目名；未提供 projects 候选时，由 container 传入入口项目上下文。 */
   projectName?: string;
-  /** [取消]（与 ModalShell 的 [✕] / Esc 同一个动作）。 */
+  /** [取消]（与任务 Dialog 的 [✕] / Esc 同一个动作）。 */
   onCancel?: () => void;
 
   // —— 鉴权拦截（P20 §5.1 三分支）——
