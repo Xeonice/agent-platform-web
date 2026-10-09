@@ -25,6 +25,7 @@ import {
   registerImage,
   revalidateImage,
   saveImageConfig,
+  saveImageAlias,
   validateImageRef,
 } from '@/services/api/image.service';
 // ⚠️ **这是一条 hook ↔ hook 的循环 import**（`useImages.ts` 也 import 本文件）。
@@ -44,6 +45,29 @@ import type {
 
 function invalidateImages(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: imageKeys.all() });
+}
+
+export function useSaveImageAlias(): UseMutationResult<
+  ImageManifestDto,
+  Error,
+  { id: string; alias: string | null }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, alias }) => saveImageAlias(id, alias),
+    onSuccess: (saved) => {
+      queryClient.setQueriesData<ImageManifestDto[]>(
+        { queryKey: [...imageKeys.all(), 'list'] },
+        (previous) =>
+          previous?.map((manifest) =>
+            manifest.imageId === saved.imageId
+              ? { ...manifest, imageAlias: saved.imageAlias }
+              : manifest,
+          ),
+      );
+      invalidateImages(queryClient);
+    },
+  });
 }
 
 /** `POST /api/images/validate` —— 注册前预检。**不落库 ⇒ 不 invalidate**（没有任何缓存会因它变旧）。 */

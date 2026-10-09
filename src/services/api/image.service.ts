@@ -10,13 +10,14 @@
 //    把后者拿来顶前者、或者反过来，界面看起来都"能用"，但一个会凭空落一行、
 //    另一个会对着不存在的 id 发请求。它们**不是一个方法的两种参数**。
 //
-// ② **`PATCH` 的两个可变字段各自只发自己那一半，且没有任何方法能发 `isActive:true`**。
+// ② **`PATCH` 的独立编辑方法各自只发自己的字段，且没有任何方法能发 `isActive:true`**。
 //    `disableImage(id)` **不收布尔参数**——不是"传 false"，是**根本没有那个入口**：
 //    后端对 `isActive:true` 明确回 400 并指向 `/activate`（controller 注释写死了），
 //    一个 `setActive(id, next: boolean)` 式的签名等于把那个 400 留在类型系统里当合法调用。
 //    启用/切版本一律走 `activateImage(id)`。
 //    `saveImageConfig` 同理只发 `imageConfig`：`GET /api/images` 的行里 `imageConfig` 是
 //    **可能为 null** 的，整体 PUT 会把用户的环境变量冲掉，而界面上看不出任何异常。
+//    `saveImageAlias` 只发 `alias`，不顺带改版本或运行参数，并核对服务端确认的别名。
 import { apiClient } from '@/services/api/client';
 import { ApiErrorException, toApiError } from '@/services/api/apiError';
 import type {
@@ -72,7 +73,7 @@ export async function validateImageRef(ref: string): Promise<ValidationOutcomeDt
  * [定位到该镜像]"，不是弹一个错误）。
  */
 export async function registerImage(
-  input: string | { ref: string; copyConfigFromId?: string },
+  input: string | { ref: string; copyConfigFromId?: string; alias?: string },
 ): Promise<RegisterImageResult> {
   const { data, error, response } = await apiClient.POST('/api/images', {
     body: typeof input === 'string' ? { ref: input } : input,
@@ -80,7 +81,29 @@ export async function registerImage(
   if (!response.ok || data === undefined) {
     throw new ApiErrorException(toApiError(error, response.status), response.status);
   }
+  if (
+    typeof input !== 'string' &&
+    input.alias !== undefined &&
+    data.manifest.imageAlias !== input.alias
+  ) {
+    throw new Error('服务未确认镜像别名，请刷新后检查或重试。');
+  }
   return { ...data, created: response.status === 201 };
+}
+
+/** 独立保存整张镜像的别名，只发送 alias，不改版本或运行参数。 */
+export async function saveImageAlias(id: string, alias: string | null): Promise<ImageManifestDto> {
+  const { data, error, response } = await apiClient.PATCH('/api/images/{id}', {
+    params: { path: { id } },
+    body: { alias },
+  });
+  if (!response.ok || data === undefined) {
+    throw new ApiErrorException(toApiError(error, response.status), response.status);
+  }
+  if (data.imageAlias !== alias) {
+    throw new Error('服务未确认镜像别名，原别名仍保留，请刷新后检查或重试。');
+  }
+  return data;
 }
 
 /**

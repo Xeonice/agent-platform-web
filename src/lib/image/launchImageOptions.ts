@@ -6,7 +6,12 @@ export function launchImageOptions(
   provider: string | undefined,
   runtime: string,
   runtimeName: string,
-): { options: LaunchImageOption[]; defaultDisabledReason?: string; defaultLabel: string } {
+): {
+  options: LaunchImageOption[];
+  defaultDisabledReason?: string;
+  defaultLabel: string;
+  defaultSecondary?: string;
+} {
   const groups = groupManifestsByImage(manifests).filter(
     ({ face }) => provider === undefined || face.providerCompatibility?.[provider] !== false,
   );
@@ -23,7 +28,11 @@ export function launchImageOptions(
     return {
       value: imageId,
       reference: face.ref,
-      label: `${face.ref}${reason === undefined ? (warning === undefined ? '' : `（${warning}）`) : `（${reason}）`}`,
+      label: face.imageAlias ?? face.ref,
+      ...(face.imageAlias?.trim() ? { secondary: face.ref } : {}),
+      searchText: [face.imageAlias, face.imageName, face.ref, face.version]
+        .filter(Boolean)
+        .join(' '),
       disabled: reason !== undefined,
       ...(reason === undefined ? {} : { reason }),
       ...(warning === undefined ? {} : { warning }),
@@ -31,12 +40,20 @@ export function launchImageOptions(
   };
   const builtin = groups.find(({ face }) => face.isProviderDefault === true);
   const defaultOption = builtin === undefined ? undefined : toOption(builtin);
+  const builtinAlias = builtin?.face.imageAlias?.trim();
   return {
     options: groups.filter(({ face }) => face.isProviderDefault !== true).map(toOption),
     defaultLabel:
       defaultOption?.reason === undefined
         ? '平台预制镜像（默认）'
         : `平台预制镜像（${defaultOption.reason}）`,
+    ...(builtin === undefined
+      ? {}
+      : {
+          defaultSecondary: builtinAlias
+            ? `${builtinAlias} · ${builtin.face.ref}`
+            : builtin.face.ref,
+        }),
     ...(defaultOption?.reason === undefined
       ? {}
       : {

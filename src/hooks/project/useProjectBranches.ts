@@ -39,7 +39,7 @@ export function useProjectBranches({
   projectId,
   isGitProject,
 }: UseProjectBranchesInput): ProjectBranchesView {
-  const enabled = projectId !== null && isGitProject;
+  const enabled = projectId !== null && projectId !== '' && isGitProject;
   const query = useQuery({
     queryKey: branchKeys.list(projectId ?? ''),
     queryFn: () => listProjectBranches(projectId ?? ''),

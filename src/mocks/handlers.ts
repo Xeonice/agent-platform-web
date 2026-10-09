@@ -514,6 +514,7 @@ function imageManifestDto(overrides: Partial<ImageManifestDto> = {}): ImageManif
     id: 'img-manifest-1',
     imageId: 'img-1',
     imageName: 'ghcr.io/agent-infra/sandbox',
+    imageAlias: null,
     isBuiltin: true,
     ref: 'ghcr.io/agent-infra/sandbox:latest',
     version: 'latest',
@@ -610,6 +611,53 @@ const IMAGE_MANIFESTS: ImageManifestDto[] = [
     resolvedAt: isoIn(-90 * DAY),
   }),
 ];
+
+// Keep immutable fixtures separate from the small mutable alias/registration store.
+// Tests reset this store explicitly; a dev session can save and reload the same alias.
+const imageAliases = new Map<string, string | null>();
+const registeredImageManifests = new Map<string, ImageManifestDto>();
+
+export function resetImageFixtures(): void {
+  imageAliases.clear();
+  registeredImageManifests.clear();
+}
+
+function imageFixtureRows(): ImageManifestDto[] {
+  return [...IMAGE_MANIFESTS, ...registeredImageManifests.values()].map((manifest) => ({
+    ...manifest,
+    imageAlias: imageAliases.has(manifest.imageId)
+      ? (imageAliases.get(manifest.imageId) ?? null)
+      : manifest.imageAlias,
+  }));
+}
+
+type MockAliasInput =
+  { ok: true; provided: boolean; alias: string | null } | { ok: false; message: string };
+
+/** Independent mock policy; importing production validation would hide its mistakes. */
+function imageAliasInput(body: unknown): MockAliasInput {
+  const alias: unknown =
+    typeof body === 'object' && body !== null ? Reflect.get(body, 'alias') : undefined;
+  if (alias === undefined) return { ok: true, provided: false, alias: null };
+  if (alias === null) return { ok: true, provided: true, alias: null };
+  if (typeof alias !== 'string') return { ok: false, message: '别名必须是文本或 null' };
+  if (/[\p{Cc}\u2028\u2029]/u.test(alias)) {
+    return { ok: false, message: '别名不能包含换行或控制字符' };
+  }
+  const normalized = alias.trim();
+  if (Array.from(normalized).length > 64) return { ok: false, message: '别名最多 64 个字符' };
+  return { ok: true, provided: true, alias: normalized === '' ? null : normalized };
+}
+
+function imageAliasError(message: string): ErrorEnvelope {
+  return {
+    code: 'VALIDATION_FAILED',
+    message,
+    retryable: false,
+    sideEffectFree: true,
+    details: [{ path: 'alias', code: 'custom', message }],
+  };
+}
 
 const VALIDATION_OK: ValidationOutcomeDto = { status: 'valid', errors: [], warnings: [] };
 
@@ -1727,12 +1775,13 @@ export const handlers = [
   //   所以规则在这里重写一遍，由**测试**去钉住两处行为一致（handlers.test.ts）。
   http.get(`${API_BASE}/api/images`, ({ request }) => {
     const runtimeId = new URL(request.url).searchParams.get('runtimeId');
-    if (runtimeId === null) return HttpResponse.json(IMAGE_MANIFESTS);
+    const rows = imageFixtureRows();
+    if (runtimeId === null) return HttpResponse.json(rows);
     return HttpResponse.json(
       // 白名单，不是「≠ invalid」：13 §2.4 的 pending 默认值不许漏进向导下拉。
       // runtime **不参与过滤**：血统保证了任何合规镜像都装得上任何 runtime，
       // 预装与否只决定选项旁那句「需现装约 12.5 分钟」（见 lib/image/selectableImages 文件头）。
-      IMAGE_MANIFESTS.filter(
+      rows.filter(
         (m) => m.isActive && (m.validationStatus === 'valid' || m.validationStatus === 'warning'),
       ),
     );
@@ -1743,11 +1792,15 @@ export const handlers = [
 
   // 注册：dev 一律当成"新的一行"（201）。⚠️ 200 与 201 是两条不同的前端路径，
   // 需要 200 那条的用例自己 `server.use()` 覆盖——替身默认值不替它做决定。
-  http.post(`${API_BASE}/api/images`, () => {
+  http.post(`${API_BASE}/api/images`, async ({ request }) => {
+    const input: unknown = await request.json().catch(() => null);
+    const alias = imageAliasInput(input);
+    if (!alias.ok) return HttpResponse.json(imageAliasError(alias.message), { status: 400 });
     const manifest = imageManifestDto({
       id: 'img-manifest-new',
       imageId: 'img-new',
       imageName: 'docker.io/myrepo/new-agent',
+      imageAlias: alias.alias,
       isBuiltin: false,
       ref: 'docker.io/myrepo/new-agent:v2.0',
       version: 'v2.0',
@@ -1756,6 +1809,8 @@ export const handlers = [
       registeredAt: isoIn(0),
       resolvedAt: isoIn(0),
     });
+    registeredImageManifests.set(manifest.id, manifest);
+    imageAliases.set(manifest.imageId, manifest.imageAlias);
     const body: RegisterImageResponseDto = { manifest, validation: VALIDATION_OK };
     return HttpResponse.json(body, { status: 201 });
   }),
@@ -1774,7 +1829,8 @@ export const handlers = [
   // 检查更新：dev 给"已是最新"（changed:false）。要对比弹层的用例自己覆盖。
   http.post(`${API_BASE}/api/images/:id/check-update`, ({ params }) => {
     const id = String(params['id']);
-    const current = IMAGE_MANIFESTS.find((m) => m.id === id) ?? IMAGE_MANIFESTS[0];
+    const rows = imageFixtureRows();
+    const current = rows.find((m) => m.id === id) ?? rows[0];
     const digest = current?.digest ?? DIGEST_A;
     const body: CheckImageUpdateDto = {
       current: { digest, resolvedAt: current?.resolvedAt ?? isoIn(-3 * DAY) },
@@ -1787,16 +1843,19 @@ export const handlers = [
   // 切换版本（「更新到新版本」与「回滚到旧版本」同一个动作）。
   http.post(`${API_BASE}/api/images/:id/activate`, ({ params }) => {
     const id = String(params['id']);
-    const row = IMAGE_MANIFESTS.find((m) => m.id === id) ?? IMAGE_MANIFESTS[0];
+    const rows = imageFixtureRows();
+    const row = rows.find((m) => m.id === id) ?? rows[0];
     return HttpResponse.json(imageManifestDto({ ...row, id, isActive: true }));
   }),
 
-  // 两个可变字段的唯一入口。⚠️ `isActive:true` 后端**回 400 并指向 /activate**，
+  // 别名写共享 Image；版本字段仍独立。⚠️ `isActive:true` 后端**回 400 并指向 /activate**，
   // 替身照做——否则前端写出一个真后端上必然 400 的调用，而测试全绿。
   http.patch(`${API_BASE}/api/images/:id`, async ({ params, request }) => {
     const id = String(params['id']);
     const body: unknown = await request.json();
-    const row = IMAGE_MANIFESTS.find((m) => m.id === id) ?? IMAGE_MANIFESTS[0];
+    const rows = imageFixtureRows();
+    const target = rows.find((m) => m.id === id);
+    const row = target ?? rows[0];
     const isActive =
       typeof body === 'object' && body !== null && 'isActive' in body
         ? Reflect.get(body, 'isActive')
@@ -1812,19 +1871,39 @@ export const handlers = [
         { status: 400 },
       );
     }
+    const alias = imageAliasInput(body);
+    if (!alias.ok) return HttpResponse.json(imageAliasError(alias.message), { status: 400 });
+    if (row === undefined || (alias.provided && target === undefined)) {
+      return HttpResponse.json(
+        {
+          code: 'NOT_FOUND',
+          message: '这个镜像版本已经不在平台里了，请刷新列表。',
+          retryable: false,
+          sideEffectFree: true,
+        } satisfies ErrorEnvelope,
+        { status: 404 },
+      );
+    }
+    if (alias.provided) imageAliases.set(row.imageId, alias.alias);
     return HttpResponse.json(
-      imageManifestDto({ ...row, id, ...(isActive === false ? { isActive: false } : {}) }),
+      imageManifestDto({
+        ...row,
+        id,
+        imageAlias: alias.provided ? alias.alias : row.imageAlias,
+        ...(isActive === false ? { isActive: false } : {}),
+      }),
     );
   }),
 
   http.get(`${API_BASE}/api/images/:id/deletion-preview`, ({ params }) => {
-    const target = IMAGE_MANIFESTS.find((manifest) => manifest.id === params['id']);
+    const rows = imageFixtureRows();
+    const target = rows.find((manifest) => manifest.id === params['id']);
     return HttpResponse.json({
       canDelete: target !== undefined && !target.isBuiltin,
       tasks: [],
-      versions: IMAGE_MANIFESTS.filter((manifest) => manifest.imageId === target?.imageId).map(
-        ({ id, version, digest, isActive }) => ({ id, version, digest, isActive }),
-      ),
+      versions: rows
+        .filter((manifest) => manifest.imageId === target?.imageId)
+        .map(({ id, version, digest, isActive }) => ({ id, version, digest, isActive })),
     } satisfies ImageDeletionPreviewDto);
   }),
   http.delete(`${API_BASE}/api/images/:id`, () => new HttpResponse(null, { status: 204 })),

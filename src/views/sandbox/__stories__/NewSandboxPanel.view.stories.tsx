@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { expect, within } from 'storybook/test';
+import { expect, fn, userEvent, within } from 'storybook/test';
 import { NewSandboxPanelView } from '@/views/sandbox/NewSandboxPanel.view';
 import type { RuntimeDto } from '@/types/runtimeCredential';
 import type { SandboxProviderCapabilities, SandboxProviderDto } from '@/types/sandbox';
@@ -274,3 +274,59 @@ export const BranchesLoadFailed: Story = {
 };
 /** 选了非缺省分支：container 会把它填进请求体的 `branch`。 */
 export const BranchPicked: Story = { args: { branch: 'feature/x' } };
+
+/** Same task form and field stack, with the three shared searchable single selects. */
+export const SearchableFields: Story = {
+  args: {
+    onCreate: fn(),
+    projects: [
+      { id: 'web', label: 'acme-web', disabled: false },
+      { id: 'api', label: 'Acme-API（克隆中）', searchText: 'Acme-API', disabled: true },
+      { id: 'docs', label: 'docs-site', disabled: false },
+    ],
+    selectedProjectId: 'web',
+    onSelectProject: noop,
+    branches: ['main', 'feature/中文搜索', 'release/2026'],
+    images: [
+      {
+        value: 'image-a',
+        reference: 'docker.io/acme/ml-agent:v1',
+        label: '研发环境',
+        secondary: 'docker.io/acme/ml-agent:v1',
+        searchText: '研发环境 docker.io/acme/ml-agent:v1',
+        disabled: false,
+      },
+      {
+        value: 'image-b',
+        reference: 'docker.io/acme/invalid:v1',
+        label: 'docker.io/acme/invalid:v1',
+        reason: '无效：不符合平台约定',
+        disabled: true,
+      },
+    ],
+    image: 'image-a',
+    onSelectImage: noop,
+  },
+  play: async ({ canvasElement, args }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(page.getByLabelText('项目'));
+    await userEvent.type(page.getByRole('combobox', { name: '搜索项目' }), ' ACME ');
+    await expect(page.getAllByRole('option')).toHaveLength(2);
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(page.getByLabelText('分支（可选）'));
+    await userEvent.type(page.getByRole('combobox', { name: '搜索分支' }), 'no-match');
+    await expect(page.getByRole('option', { name: /跟随项目当前的分支（默认）/ })).toBeVisible();
+    await expect(page.getByRole('status')).toHaveTextContent('没有匹配的分支');
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(page.getByLabelText('镜像（可选）'));
+    await userEvent.type(page.getByRole('combobox', { name: '搜索镜像' }), '研发');
+    await expect(page.getByRole('option', { name: /研发环境/ })).toHaveTextContent(
+      'docker.io/acme/ml-agent:v1',
+    );
+    await userEvent.click(page.getByRole('button', { name: '发起任务并打开终端' }));
+    await expect(page.queryByRole('combobox', { name: '搜索镜像' })).not.toBeInTheDocument();
+    await expect(args.onCreate).not.toHaveBeenCalled();
+    await userEvent.click(page.getByRole('button', { name: '发起任务并打开终端' }));
+    await expect(args.onCreate).toHaveBeenCalledTimes(1);
+  },
+};

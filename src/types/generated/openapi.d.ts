@@ -802,7 +802,7 @@ export interface paths {
         delete: operations["ImageController_remove"];
         options?: never;
         head?: never;
-        /** Update the two mutable fields (isActive:false | imageConfig). `isActive:true` is refused with 400 pointing at /activate. */
+        /** Update alias on the shared Image, or version fields (isActive:false | imageConfig). `isActive:true` is refused with 400 pointing at /activate. */
         patch: operations["ImageController_patch"];
         trace?: never;
     };
@@ -1566,6 +1566,7 @@ export interface components {
             id: string;
             imageId: string;
             imageName: string;
+            imageAlias: string | null;
             isBuiltin: boolean;
             ref: string;
             version: string;
@@ -1612,12 +1613,14 @@ export interface components {
         RegisterImageDto: {
             ref: string;
             copyConfigFromId?: string;
+            alias?: string | null;
         };
         RegisterImageResponseDto: {
             manifest: {
                 id: string;
                 imageId: string;
                 imageName: string;
+                imageAlias: string | null;
                 isBuiltin: boolean;
                 ref: string;
                 version: string;
@@ -1736,6 +1739,7 @@ export interface components {
                 }[];
                 cmdOverride?: string[];
             };
+            alias?: string | null;
         };
         CheckImageUpdateResponseDto: {
             current: {

@@ -16,6 +16,8 @@ const meta: Meta<typeof RegisterImageModalView> = {
   args: {
     uri: '',
     onUriChange: noop,
+    alias: '',
+    onAliasChange: noop,
     onValidate: noop,
     onSave: noop,
     onCancel: noop,

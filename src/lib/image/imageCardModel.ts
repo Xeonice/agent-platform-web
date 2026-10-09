@@ -131,6 +131,7 @@ export function imageCardModel(input: ImageCardInput, now: number = Date.now()):
   return {
     id: input.id,
     name: input.name,
+    alias: input.alias ?? null,
     refDisplay: buildRefDisplay(input.ref, refKind, digestState),
     refKind,
     digestState,

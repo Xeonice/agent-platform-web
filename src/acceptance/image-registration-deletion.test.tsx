@@ -13,6 +13,7 @@ const image: ImageManifestDto = {
   id: 'image-actual',
   imageId: 'image',
   imageName: 'registry.test/actual',
+  imageAlias: null,
   version: 'v2',
   ref: 'registry.test/actual:v2',
   digest,

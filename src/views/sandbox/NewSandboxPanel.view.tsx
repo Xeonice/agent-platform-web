@@ -1,6 +1,6 @@
 import { Loader2 } from 'lucide-react';
-// 新建任务弹窗的内容（F21-2 §N.1「单弹窗一屏」）：runtime / provider / **分支** / 指令 + [创建]。
-// 纯展示、props 驱动、零副作用；外壳（overlay + 标题 + [✕]）由 `ModalShell.view` 提供。
+// 新建任务弹窗的内容：项目 / Agent / 分支 / 镜像 / 指令 + [发起任务]。
+// 字段值由 props 驱动，搜索与开合属于本地 UI 状态；Dialog 外壳由 `SandboxTerminalContainer` 提供。
 //
 // ⚠️ **它此前不是弹窗**：`SandboxTerminalContainer` 在 `sandboxId===null || socketConfig===null`
 // 时**兜底渲染**它——不是被"打开"的，是条件为假时自己出现的，于是"创建"根本不是一个动作
@@ -17,15 +17,22 @@ import { Loader2 } from 'lucide-react';
 //
 // ⚠️ 安全红线（15 §3.5）：任务指令的值由 **container 的局部 state** 持有并经 props 传入，
 // 视图不得把它写进任何 store / storage；container 提交即清空。
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { RuntimeDto } from '@/types/runtimeCredential';
 import type { SandboxProviderDto } from '@/types/sandbox';
 import { INITIAL_PROMPT_MAX_LENGTH } from '@/types/sandbox';
 import { Button } from '@/components/ui/button';
 import type { LaunchImageOption } from '@/types/image';
+import { SearchSelect } from '@/components/ui/search-select';
 
 export interface NewSandboxPanelProps {
-  projects?: readonly { id: string; label: string; disabled: boolean }[];
+  projects?: readonly {
+    id: string;
+    label: string;
+    disabled: boolean;
+    searchText?: string;
+    reason?: string;
+  }[];
   selectedProjectId?: string;
   onSelectProject?: (id: string) => void;
   relaunchNotice?: string;
@@ -38,6 +45,8 @@ export interface NewSandboxPanelProps {
   imageDisabledReason?: string;
   imageWarning?: string;
   defaultImageLabel?: string;
+  defaultImageSecondary?: string;
+  defaultImageDisabledReason?: string;
   /**
    * 服务端 registry 下发的可选 runtime（`GET /api/runtimes`，扁平数组；空数组 = 后端没注册 runtime）。
    * 视图不挑默认值，**container 也不挑**：平台没有「默认 runtime」概念（04 §8）。
@@ -101,9 +110,9 @@ export interface NewSandboxPanelProps {
    */
   branchesErrorMessage?: string;
 
-  /** 弹层上下文：任务归属的项目名（弹窗内**没有**项目下拉，归属继承左侧树选中项，§9.0）。 */
+  /** 当前表单所选项目名；未提供 projects 候选时，由 container 传入入口项目上下文。 */
   projectName?: string;
-  /** [取消]（与 ModalShell 的 [✕] / Esc 同一个动作）。 */
+  /** [取消]（与任务 Dialog 的 [✕] / Esc 同一个动作）。 */
   onCancel?: () => void;
 
   // —— 鉴权拦截（P20 §5.1 三分支）——
@@ -165,6 +174,8 @@ export function NewSandboxPanelView({
   imageDisabledReason,
   imageWarning,
   defaultImageLabel = '平台预制镜像（默认）',
+  defaultImageSecondary,
+  defaultImageDisabledReason,
   runtimes,
   runtime,
   onSelectRuntime,
@@ -197,6 +208,11 @@ export function NewSandboxPanelView({
   onInitialPromptChange,
   promptNotice,
 }: NewSandboxPanelProps) {
+  const [openPicker, setOpenPicker] = useState<string | null>(null);
+  const dismissPickerClick = useRef(false);
+  const pickerOpenChanged = (id: string, open: boolean) => {
+    setOpenPicker((current) => (open ? id : current === id ? null : current));
+  };
   const loadFailed = providersErrorMessage !== undefined && providersErrorMessage !== '';
   const noProviders = !loadingProviders && !loadFailed && hostProvider === undefined;
   const runtimesLoadFailed = runtimesErrorMessage !== undefined && runtimesErrorMessage !== '';
@@ -255,7 +271,10 @@ export function NewSandboxPanelView({
       data-testid="new-sandbox-panel"
       className="flex min-h-0 flex-1 flex-col overflow-hidden text-left"
     >
-      <div className="flex min-h-0 flex-1 flex-col items-stretch gap-5 overflow-y-auto p-6">
+      <div
+        data-search-select-boundary
+        className="flex min-h-0 flex-1 flex-col items-stretch gap-5 overflow-y-auto p-6"
+      >
         {relaunchNotice !== undefined && (
           <p role="status" className="rounded-md border border-border bg-muted/40 p-3 text-sm">
             {relaunchNotice}
@@ -266,20 +285,20 @@ export function NewSandboxPanelView({
             <label htmlFor="sandbox-project" className="text-sm font-medium">
               项目
             </label>
-            <select
+            <SearchSelect
               id="sandbox-project"
               value={selectedProjectId ?? ''}
               disabled={creating}
-              onChange={(event) => onSelectProject?.(event.target.value)}
-              className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="">请选择项目</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id} disabled={project.disabled}>
-                  {project.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => onSelectProject?.(value)}
+              onOpenChange={(open) => {
+                pickerOpenChanged('project', open);
+              }}
+              options={projects.map((project) => ({ ...project, value: project.id }))}
+              searchLabel="搜索项目"
+              emptyLabel={projects.length === 0 ? '没有可选项目' : '没有匹配的项目'}
+              placeholder="请选择项目"
+              className="mt-2"
+            />
             {selectedProjectId === '' && (
               <p className="mt-1 text-xs text-muted-foreground">
                 先选择一个就绪的项目，才能发起任务。
@@ -444,32 +463,24 @@ export function NewSandboxPanelView({
             <label htmlFor="sandbox-branch" className="text-xs text-muted-foreground">
               分支（可选）
             </label>
-            {loadingBranches ? (
-              <div
-                aria-busy="true"
-                role="status"
-                aria-label="正在加载可选分支"
-                data-testid="branches-skeleton"
-                className="mt-1 h-8 w-full animate-pulse rounded bg-muted"
-              />
-            ) : (
-              <select
-                id="sandbox-branch"
-                value={branch}
-                disabled={creating}
-                onChange={(e) => {
-                  onSelectBranch(e.target.value);
-                }}
-                className="mt-1 w-full rounded border border-input bg-background px-2 py-1.5 text-sm"
-              >
-                <option value="">跟随项目当前的分支（默认）</option>
-                {branches.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
-              </select>
-            )}
+            <SearchSelect
+              key={selectedProjectId}
+              id="sandbox-branch"
+              value={branch}
+              disabled={creating}
+              onValueChange={onSelectBranch}
+              onOpenChange={(open) => {
+                pickerOpenChanged('branch', open);
+              }}
+              fixedOption={{ value: '', label: '跟随项目当前的分支（默认）' }}
+              options={branches.map((value) => ({ value, label: value }))}
+              searchLabel="搜索分支"
+              emptyLabel={branches.length === 0 ? '没有可选分支' : '没有匹配的分支'}
+              placeholder="跟随项目当前的分支（默认）"
+              loading={loadingBranches}
+              loadingLabel="正在加载可选分支…"
+              className="mt-1"
+            />
             {branchesErrorMessage !== undefined && branchesErrorMessage !== '' && (
               <p role="status" className="mt-1 text-xs text-muted-foreground">
                 分支列表暂时取不到（{branchesErrorMessage}），这次会用项目当前的分支。
@@ -487,23 +498,30 @@ export function NewSandboxPanelView({
             <label htmlFor="sandbox-image" className="text-sm font-medium">
               镜像（可选）
             </label>
-            <select
+            <SearchSelect
               id="sandbox-image"
               value={image}
               disabled={creating || loadingImages}
               aria-describedby={
                 imageDisabledReason === undefined ? undefined : 'sandbox-image-reason'
               }
-              onChange={(event) => onSelectImage?.(event.target.value)}
-              className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="">{defaultImageLabel}</option>
-              {images.map((option) => (
-                <option key={option.value} value={option.value} disabled={option.disabled}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={(value) => onSelectImage?.(value)}
+              onOpenChange={(open) => {
+                pickerOpenChanged('image', open);
+              }}
+              options={images}
+              fixedOption={{
+                value: '',
+                label: defaultImageLabel,
+                secondary: defaultImageSecondary,
+                disabled: defaultImageDisabledReason !== undefined,
+                reason: defaultImageDisabledReason,
+              }}
+              searchLabel="搜索镜像"
+              emptyLabel={images.length === 0 ? '没有可选镜像' : '没有匹配的镜像'}
+              placeholder={image === '' ? defaultImageLabel : '当前镜像不可用，请改选'}
+              className="mt-2"
+            />
             {loadingImages && (
               <p role="status" className="mt-1 text-xs text-muted-foreground">
                 正在加载可选镜像…
@@ -654,7 +672,14 @@ export function NewSandboxPanelView({
           aria-disabled={createDisabled}
           title={loading ? undefined : (imageDisabledReason ?? disabledReason)}
           data-testid="launch-task-submit"
+          onPointerDown={() => {
+            dismissPickerClick.current = openPicker !== null;
+          }}
           onClick={() => {
+            if (dismissPickerClick.current) {
+              dismissPickerClick.current = false;
+              return;
+            }
             if (!createDisabled) onCreate();
           }}
           disabled={creating || loading}
