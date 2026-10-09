@@ -41,6 +41,9 @@ import {
 } from '@/lib/image/imageIssueCopy';
 import { mapEnvErrorResponse } from '@/lib/image/mapEnvErrorResponse';
 import { validateEnvVars } from '@/lib/image/validateEnvVar';
+import { validateImageAlias } from '@/lib/image/imageAlias';
+import { useImageAliasEditor } from '@/hooks/image/useImageAliasEditor';
+import { parseManifestRef } from '@/lib/image/imageManifestCards';
 import { describeSandboxError } from '@/lib/sandbox/sandboxErrorCopy';
 import { usePresetImageDownload } from '@/hooks/image/usePresetImageDownload';
 import { useAppStore } from '@/stores';
@@ -159,6 +162,7 @@ export interface PendingImageDelete {
 }
 
 export interface ImagesManager {
+  aliasEditor: ReturnType<typeof useImageAliasEditor>;
   presetDownload: ReturnType<typeof usePresetImageDownload>;
   loadFailed: boolean;
   retryLoad: () => void;
@@ -192,6 +196,11 @@ export interface ImagesManager {
   openRegister: () => void;
   closeRegister: () => void;
   uri: string;
+  registerAlias: string;
+  registerAliasCount: number;
+  registerAliasError?: string;
+  registerAliasInvalid: boolean;
+  onRegisterAliasChange: (next: string) => void;
   onUriChange: (next: string) => void;
   uriError?: string;
   validating: boolean;
@@ -358,6 +367,14 @@ export function useImageManager(): ImagesManager {
   }, []);
 
   const [uri, setUri] = useState('');
+  const [registerAlias, setRegisterAlias] = useState('');
+  const [registerAliasServerError, setRegisterAliasServerError] = useState<string>();
+  const registerAliasCheck = validateImageAlias(registerAlias);
+  const onRegisterAliasChange = useCallback((next: string) => {
+    setRegisterAlias(next);
+    setRegisterAliasServerError(undefined);
+    setDuplicate(undefined);
+  }, []);
   /**
    * 「上一次被验证的那个 URI」。
    * ⚠️ 是 `useRef` 而不是 `useState`：它**不参与渲染**（界面看的是 `validationResult` 有没有、
@@ -404,6 +421,13 @@ export function useImageManager(): ImagesManager {
   const manifests = useMemo(() => query.data ?? [], [query.data]);
   const presetDownload = usePresetImageDownload(manifests.some((manifest) => manifest.isBuiltin));
   const groups = useMemo(() => groupManifestsByImage(manifests), [manifests]);
+  const aliasEditor = useImageAliasEditor(
+    manifests,
+    currentModal !== null ||
+      compare !== null ||
+      pendingDelete !== null ||
+      pendingBuiltinDisable !== null,
+  );
   const sourceManifest =
     taskSource === null
       ? undefined
@@ -421,7 +445,10 @@ export function useImageManager(): ImagesManager {
         if (statusFilter !== 'all' && status !== statusFilter) return false;
         if (needle === '') return true;
         return (
-          g.imageName.toLowerCase().includes(needle) || g.face.ref.toLowerCase().includes(needle)
+          (g.face.imageAlias ?? '').toLowerCase().includes(needle) ||
+          g.face.version.toLowerCase().includes(needle) ||
+          g.imageName.toLowerCase().includes(needle) ||
+          g.face.ref.toLowerCase().includes(needle)
         );
       })
       .map((g) => toCardViewModel(g, now, upstreamByManifest));
@@ -471,6 +498,8 @@ export function useImageManager(): ImagesManager {
   const closeRegister = useCallback(() => {
     setCurrentModal(null);
     setUri('');
+    setRegisterAlias('');
+    setRegisterAliasServerError(undefined);
     validatedUriRef.current = null;
     setValidationResult(undefined);
     setConclusionInvalidated(false);
@@ -480,6 +509,8 @@ export function useImageManager(): ImagesManager {
 
   const openRegister = useCallback(() => {
     setUri('');
+    setRegisterAlias('');
+    setRegisterAliasServerError(undefined);
     validatedUriRef.current = null;
     setValidationResult(undefined);
     setConclusionInvalidated(false);
@@ -502,6 +533,7 @@ export function useImageManager(): ImagesManager {
    */
   const onUriChange = useCallback((next: string) => {
     setUri(next);
+    setRegisterAliasServerError(undefined);
     setDuplicate(undefined);
     setRequestFailure(undefined);
     const previous = validatedUriRef.current;
@@ -573,12 +605,19 @@ export function useImageManager(): ImagesManager {
       validationResult.status === 'invalid'
     )
       return;
+    const alias = validateImageAlias(registerAlias);
+    if (alias.error !== undefined) return;
+    setRegisterAliasServerError(undefined);
     setRequestFailure(undefined);
     const ref = uri.trim();
     if (ref === '') return;
     const previousVersion = manifests.find((manifest) => manifest.ref === ref && manifest.isActive);
     registerMutation.mutate(
-      { ref, ...(previousVersion === undefined ? {} : { copyConfigFromId: previousVersion.id }) },
+      {
+        ref,
+        ...(alias.value === null ? {} : { alias: alias.value }),
+        ...(previousVersion === undefined ? {} : { copyConfigFromId: previousVersion.id }),
+      },
       {
         onSuccess: (result) => {
           if (!result.created) {
@@ -612,6 +651,25 @@ export function useImageManager(): ImagesManager {
           toast.success(`已注册，锁定在 ${shortenDigest(result.manifest.digest)}`);
         },
         onError: (error) => {
+          if (
+            error instanceof ApiErrorException &&
+            error.envelope.code === 'VALIDATION_FAILED' &&
+            error.envelope.details?.some((detail) => detail['path'] === 'alias')
+          ) {
+            const detail = error.envelope.details.find((item) => item['path'] === 'alias');
+            setRegisterAliasServerError(
+              typeof detail?.['message'] === 'string' ? detail['message'] : error.envelope.message,
+            );
+            const existing = manifests.find(
+              (manifest) => manifest.imageName === parseManifestRef(ref).name,
+            );
+            if (existing !== undefined)
+              setDuplicate({
+                message: '这张镜像已存在，修改别名请在镜像卡片上操作。',
+                imageId: existing.imageId,
+              });
+            return;
+          }
           if (error instanceof ApiErrorException && error.envelope.code === 'MANIFEST_INVALID') {
             const details = error.envelope.details ?? [];
             const findings = details.map((i) => ({
@@ -650,6 +708,7 @@ export function useImageManager(): ImagesManager {
     closeRegister,
     validateMutation.isPending,
     validationResult,
+    registerAlias,
   ]);
 
   const locateExisting = useCallback(() => {
@@ -1151,6 +1210,7 @@ export function useImageManager(): ImagesManager {
   }, [envDraft, localEnv, saveConfigMutation]);
 
   return {
+    aliasEditor,
     presetDownload,
     loading: query.isPending,
     loadFailed: query.isError,
@@ -1176,6 +1236,11 @@ export function useImageManager(): ImagesManager {
     openRegister,
     closeRegister,
     uri,
+    registerAlias,
+    registerAliasCount: registerAliasCheck.count,
+    registerAliasInvalid: registerAliasCheck.error !== undefined,
+    registerAliasError: registerAliasCheck.error ?? registerAliasServerError,
+    onRegisterAliasChange,
     onUriChange,
     ...(uriError === undefined ? {} : { uriError }),
     validating: validateMutation.isPending,

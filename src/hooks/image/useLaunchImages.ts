@@ -65,6 +65,8 @@ export function useLaunchImages(
     selectedImage,
     disabledReason,
     defaultLabel: choices.defaultLabel,
+    defaultSecondary: choices.defaultSecondary,
+    defaultDisabledReason: choices.defaultDisabledReason,
     isPending: images.isPending,
     errorMessage: images.isError
       ? pickedImage === ''

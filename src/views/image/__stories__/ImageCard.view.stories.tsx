@@ -60,6 +60,7 @@ const meta: Meta<typeof ImageCardView> = {
     envSummary: 'LOG_LEVEL=info · CACHE_TTL=3600 · MY_SECRET=***',
     startCommand: 'python -u agent.py',
     onEditRunParams: noop,
+    onEditAlias: noop,
     onRevalidate: noop,
     onCheckUpdate: noop,
     onToggle: noop,
@@ -99,6 +100,16 @@ export const ValidCustom: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('button', { name: '删除' })).toBeInTheDocument();
+  },
+};
+
+export const WithAlias: Story = {
+  args: { model: { ...customWarning, alias: '研发环境' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('heading', { name: /研发环境/ })).toBeInTheDocument();
+    await expect(canvas.getByText(customWarning.refDisplay)).toBeInTheDocument();
+    await expect(canvas.getByRole('button', { name: '编辑别名' })).toBeInTheDocument();
   },
 };
 

@@ -38,6 +38,10 @@ export interface ImageCardProps {
   /** 展开的运行参数编辑区（container 注入 `EnvVarEditor`；**行内表格，非弹层**）。 */
   runParamsSlot?: ReactNode;
   downloadSlot?: ReactNode;
+  aliasEditorSlot?: ReactNode;
+  onEditAlias?: (trigger: HTMLButtonElement) => void;
+  aliasEditing?: boolean;
+  aliasSaving?: boolean;
   onEditRunParams: () => void;
   onRevalidate: () => void;
   onCheckUpdate: () => void;
@@ -75,6 +79,10 @@ export function ImageCardView({
   startCommand,
   runParamsSlot,
   downloadSlot,
+  aliasEditorSlot,
+  onEditAlias,
+  aliasEditing = false,
+  aliasSaving = false,
   onEditRunParams,
   onRevalidate,
   onCheckUpdate,
@@ -100,12 +108,26 @@ export function ImageCardView({
       }`}
     >
       <header className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-0.5">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
-            {model.name}
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h3 className="flex flex-wrap items-center gap-2 break-all text-sm font-semibold">
+            {model.alias ?? model.refDisplay}
             <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
               {model.canDelete ? '自定义' : '预制'}
             </span>
+            {onEditAlias === undefined ? null : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={aliasSaving}
+                aria-expanded={aliasEditing}
+                onClick={(event) => {
+                  onEditAlias(event.currentTarget);
+                }}
+              >
+                编辑别名
+              </Button>
+            )}
           </h3>
           <span className="break-all font-mono text-xs text-muted-foreground">
             {model.refDisplay}
@@ -126,6 +148,8 @@ export function ImageCardView({
           </span>
         )}
       </header>
+
+      {aliasEditorSlot}
 
       <div className="relative">
         <ValidationResultView

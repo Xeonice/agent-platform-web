@@ -19,6 +19,7 @@ import { useImageManager } from '@/hooks/image/useImages';
 import { useEscapeKey } from '@/hooks/_shared/useEscapeKey';
 import { useModalFocus } from '@/hooks/_shared/useModalFocus';
 import { ImageCardView, ImageCardSkeleton } from '@/views/image/ImageCard.view';
+import { ImageAliasEditorView } from '@/views/image/ImageAliasEditor.view';
 import { ImageVersionHistoryView } from '@/views/image/ImageVersionHistory.view';
 import { EnvVarEditorView } from '@/views/image/EnvVarEditor.view';
 import { ImageRequirementsPanelView } from '@/views/image/ImageRequirementsPanel.view';
@@ -105,7 +106,8 @@ export function ImagesContainer() {
           <input
             type="search"
             aria-label="搜索镜像"
-            placeholder="按名称或坐标搜索"
+            placeholder="按别名、名称、坐标或 tag 搜索"
+            ref={m.aliasEditor.searchRef}
             className="w-56 rounded-md border border-border bg-transparent px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             value={m.search}
             onChange={(e) => {
@@ -232,6 +234,27 @@ export function ImagesContainer() {
               checkingUpdate={card.checkingUpdate}
               toggling={card.toggling}
               envSummary={card.envSummary}
+              aliasEditing={m.aliasEditor.draft?.manifestId === card.manifestId}
+              aliasSaving={m.aliasEditor.saving}
+              onEditAlias={(trigger) => {
+                m.aliasEditor.open(card.manifestId, trigger);
+              }}
+              aliasEditorSlot={
+                m.aliasEditor.draft?.manifestId === card.manifestId ? (
+                  <ImageAliasEditorView
+                    inputRef={m.aliasEditor.inputRef}
+                    value={m.aliasEditor.draft.raw}
+                    count={m.aliasEditor.count}
+                    error={m.aliasEditor.error}
+                    invalid={m.aliasEditor.invalid}
+                    saving={m.aliasEditor.saving}
+                    onChange={m.aliasEditor.change}
+                    onSave={m.aliasEditor.save}
+                    onCancel={m.aliasEditor.close}
+                    onClear={m.aliasEditor.clear}
+                  />
+                ) : undefined
+              }
               downloadSlot={
                 !card.model.canDelete &&
                 m.presetDownload.offer !== undefined &&
@@ -338,6 +361,11 @@ export function ImagesContainer() {
             validateRef={operationFocus.validateRef}
             saveRef={operationFocus.saveRef}
             uri={m.uri}
+            alias={m.registerAlias}
+            aliasCount={m.registerAliasCount}
+            aliasError={m.registerAliasError}
+            aliasInvalid={m.registerAliasInvalid}
+            onAliasChange={m.onRegisterAliasChange}
             onUriChange={m.onUriChange}
             onValidate={m.validate}
             onSave={m.save}

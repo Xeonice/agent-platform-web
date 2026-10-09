@@ -99,6 +99,7 @@ export function manifestToCardInput(dto: ImageManifestDto): ImageCardInput {
   return {
     id: dto.id,
     name: dto.imageName,
+    alias: dto.imageAlias,
     ref: { registry: '', repository: parsed.name, tag: parsed.tag, digest: dto.digest },
     validationStatus: status,
     supportedRuntimes: dto.supportedRuntimes,

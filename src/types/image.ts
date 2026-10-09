@@ -22,6 +22,8 @@ export interface LaunchImageOption {
   value: string;
   reference: string;
   label: string;
+  secondary?: string;
+  searchText?: string;
   disabled: boolean;
   reason?: string;
   warning?: string;
@@ -61,6 +63,7 @@ export interface ImageRefInput {
 export interface ImageCardInput {
   id: string;
   name: string;
+  alias?: string | null;
   ref: ImageRefInput;
   validationStatus: ImageValidationStatus;
   supportedRuntimes: readonly string[];
@@ -114,6 +117,7 @@ export interface ImageLineageModel {
 export interface ImageCardModel {
   id: string;
   name: string;
+  alias?: string | null;
   /** 用户认得的坐标：`docker.io/myrepo/ml-agent:v1.0` 或 `docker.io/myrepo/ml-agent@sha256:…`。 */
   refDisplay: string;
   refKind: ImageRefKind;

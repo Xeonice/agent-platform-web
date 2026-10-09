@@ -109,9 +109,11 @@ export function SandboxTerminalContainer({
    * `''` 时请求体**不含** `branch` 字段，由后端走缺省（§9.4 ④）。
    */
   const [branch, setBranch] = useState('');
-  const [formProjectId, setFormProjectId] = useState(
-    launchProjectId === undefined ? projectId : (launchProjectId ?? ''),
-  );
+  const defaultLaunchProjectId =
+    launchProjectId === undefined
+      ? projectId
+      : (launchProjectId ?? projects?.find((project) => project.cloneStatus === 'ready')?.id ?? '');
+  const [formProjectId, setFormProjectId] = useState(defaultLaunchProjectId);
   const launchProject = projects?.find((project) => project.id === formProjectId);
   const formProjectReady =
     projects === undefined ? formProjectId !== '' : launchProject?.cloneStatus === 'ready';
@@ -432,10 +434,10 @@ export function SandboxTerminalContainer({
     setPickedImage('');
     setBranch('');
     setRelaunch(null);
-    setFormProjectId(launchProjectId === undefined ? projectId : (launchProjectId ?? ''));
+    setFormProjectId(defaultLaunchProjectId);
     createSandbox.reset();
     setCurrentModal(null);
-  }, [createSandbox, setCurrentModal, launchProjectId, projectId]);
+  }, [createSandbox, setCurrentModal, defaultLaunchProjectId]);
 
   const handleRetry = (omitRuntime = false, fromFailure = true): void => {
     setPickedRuntime(omitRuntime || !fromFailure ? null : (sandboxRuntime ?? null));
@@ -502,11 +504,13 @@ export function SandboxTerminalContainer({
                     projects: [...projects]
                       .sort(
                         (a, b) =>
-                          Number(b.id === launchProjectId) - Number(a.id === launchProjectId),
+                          Number(b.id === defaultLaunchProjectId) -
+                          Number(a.id === defaultLaunchProjectId),
                       )
                       .map((project) => ({
                         id: project.id,
                         label: `${project.name}${project.cloneStatus === 'ready' ? '' : project.cloneStatus === 'cloning' ? '（克隆中）' : '（克隆失败）'}`,
+                        searchText: project.name,
                         disabled: project.cloneStatus !== 'ready',
                       })),
                     selectedProjectId: formProjectId,
@@ -531,6 +535,8 @@ export function SandboxTerminalContainer({
               imageDisabledReason={imageDisabledReason}
               imageWarning={selectedImage?.warning}
               defaultImageLabel={launchImages.defaultLabel}
+              defaultImageSecondary={launchImages.defaultSecondary}
+              defaultImageDisabledReason={launchImages.defaultDisabledReason}
               runtimes={runtimeList}
               runtime={runtime}
               onSelectRuntime={(nextRuntime) => {

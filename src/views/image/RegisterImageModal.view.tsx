@@ -21,6 +21,11 @@ export interface RegisterImageModalProps {
   validateRef?: Ref<HTMLButtonElement>;
   saveRef?: Ref<HTMLButtonElement>;
   uri: string;
+  alias?: string;
+  aliasCount?: number;
+  aliasError?: string;
+  aliasInvalid?: boolean;
+  onAliasChange?: (next: string) => void;
   onUriChange: (next: string) => void;
   onValidate: () => void;
   onSave: () => void;
@@ -48,6 +53,11 @@ export interface RegisterImageModalProps {
 
 export function RegisterImageModalView({
   uri,
+  alias = '',
+  aliasCount = 0,
+  aliasError,
+  aliasInvalid = false,
+  onAliasChange,
   validateRef,
   saveRef,
   onUriChange,
@@ -108,6 +118,44 @@ export function RegisterImageModalView({
           <p id="image-uri-error" role="alert" className="text-xs text-red-400">
             {uriError}
           </p>
+        )}
+
+        {onAliasChange === undefined ? null : (
+          <div className="flex flex-col gap-1 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="register-image-alias">别名（可选）</label>
+              <span className="text-xs text-muted-foreground">{aliasCount}/64</span>
+            </div>
+            <input
+              id="register-image-alias"
+              type="text"
+              value={alias}
+              readOnly={validating || saving}
+              aria-invalid={aliasError !== undefined}
+              aria-describedby={`register-image-alias-help${aliasError === undefined ? '' : ' register-image-alias-error'}`}
+              className="min-w-0 rounded-md border border-border bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              onChange={(event) => {
+                onAliasChange(event.target.value);
+              }}
+              onPaste={(event) => {
+                event.preventDefault();
+                const input = event.currentTarget;
+                onAliasChange(
+                  alias.slice(0, input.selectionStart ?? alias.length) +
+                    event.clipboardData.getData('text') +
+                    alias.slice(input.selectionEnd ?? alias.length),
+                );
+              }}
+            />
+            <p id="register-image-alias-help" className="text-xs text-muted-foreground">
+              用于识别镜像，不修改镜像地址。已有镜像的别名请在卡片上编辑。
+            </p>
+            {aliasError === undefined ? null : (
+              <p id="register-image-alias-error" role="alert" className="text-xs text-destructive">
+                {aliasError}
+              </p>
+            )}
+          </div>
         )}
 
         {/*
@@ -225,7 +273,13 @@ export function RegisterImageModalView({
           </Button>
           {/* ✅/⚠️ 才出现 [保存]；❌ 与"无结论"一样，**根本不渲染**。 */}
           {canSave && (
-            <Button ref={saveRef} type="button" size="sm" disabled={saving} onClick={onSave}>
+            <Button
+              ref={saveRef}
+              type="button"
+              size="sm"
+              disabled={saving || aliasInvalid}
+              onClick={onSave}
+            >
               {saving ? '保存中…' : '保存'}
             </Button>
           )}
