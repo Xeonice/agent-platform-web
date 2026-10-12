@@ -2625,6 +2625,7 @@ export interface components {
                             min: number;
                             max: number;
                         };
+                        dataFormats?: "project-name-v2-authority"[];
                     };
                     web: {
                         artifactDigest: string;
@@ -2634,6 +2635,7 @@ export interface components {
                             min: number;
                             max: number;
                         };
+                        dataFormats?: "project-name-v2-authority"[];
                         webRevision: string;
                     };
                     installer: {
@@ -2644,6 +2646,7 @@ export interface components {
                             min: number;
                             max: number;
                         };
+                        dataFormats?: "project-name-v2-authority"[];
                     };
                     coordinator?: {
                         artifactDigest: string;
@@ -2653,6 +2656,7 @@ export interface components {
                             min: number;
                             max: number;
                         };
+                        dataFormats?: "project-name-v2-authority"[];
                     };
                     owner?: {
                         artifactDigest: string;
@@ -2662,6 +2666,7 @@ export interface components {
                             min: number;
                             max: number;
                         };
+                        dataFormats?: "project-name-v2-authority"[];
                     };
                 };
                 commits: {
@@ -2687,6 +2692,7 @@ export interface components {
                             min: number;
                             max: number;
                         };
+                        dataFormats?: "project-name-v2-authority"[];
                     };
                     web: {
                         artifactDigest: string;
@@ -2696,6 +2702,7 @@ export interface components {
                             min: number;
                             max: number;
                         };
+                        dataFormats?: "project-name-v2-authority"[];
                         webRevision: string;
                     };
                     installer: {
@@ -2706,6 +2713,7 @@ export interface components {
                             min: number;
                             max: number;
                         };
+                        dataFormats?: "project-name-v2-authority"[];
                     };
                     coordinator?: {
                         artifactDigest: string;
@@ -2715,6 +2723,7 @@ export interface components {
                             min: number;
                             max: number;
                         };
+                        dataFormats?: "project-name-v2-authority"[];
                     };
                     owner?: {
                         artifactDigest: string;
@@ -2724,6 +2733,7 @@ export interface components {
                             min: number;
                             max: number;
                         };
+                        dataFormats?: "project-name-v2-authority"[];
                     };
                 };
                 commits: {

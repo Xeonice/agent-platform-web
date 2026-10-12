@@ -7282,6 +7282,15 @@
                           "min",
                           "max"
                         ]
+                      },
+                      "dataFormats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "project-name-v2-authority"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -7324,6 +7333,15 @@
                           "min",
                           "max"
                         ]
+                      },
+                      "dataFormats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "project-name-v2-authority"
+                          ]
+                        }
                       },
                       "webRevision": {
                         "type": "string",
@@ -7371,6 +7389,15 @@
                           "min",
                           "max"
                         ]
+                      },
+                      "dataFormats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "project-name-v2-authority"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -7413,6 +7440,15 @@
                           "min",
                           "max"
                         ]
+                      },
+                      "dataFormats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "project-name-v2-authority"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -7455,6 +7491,15 @@
                           "min",
                           "max"
                         ]
+                      },
+                      "dataFormats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "project-name-v2-authority"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -7571,6 +7616,15 @@
                           "min",
                           "max"
                         ]
+                      },
+                      "dataFormats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "project-name-v2-authority"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -7613,6 +7667,15 @@
                           "min",
                           "max"
                         ]
+                      },
+                      "dataFormats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "project-name-v2-authority"
+                          ]
+                        }
                       },
                       "webRevision": {
                         "type": "string",
@@ -7660,6 +7723,15 @@
                           "min",
                           "max"
                         ]
+                      },
+                      "dataFormats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "project-name-v2-authority"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -7702,6 +7774,15 @@
                           "min",
                           "max"
                         ]
+                      },
+                      "dataFormats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "project-name-v2-authority"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -7744,6 +7825,15 @@
                           "min",
                           "max"
                         ]
+                      },
+                      "dataFormats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "project-name-v2-authority"
+                          ]
+                        }
                       }
                     },
                     "required": [

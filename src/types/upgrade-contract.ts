@@ -15,6 +15,7 @@ export const UpgradeArtifactSchema = z
     inputFingerprint: Digest,
     sourceRevision: Revision,
     protocol: UpgradeProtocolRangeSchema,
+    dataFormats: z.array(z.literal('project-name-v2-authority')).optional(),
   })
   .passthrough();
 export const UpgradeComponentsSchema = z
