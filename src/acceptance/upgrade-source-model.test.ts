@@ -68,6 +68,28 @@ function installed(): UpgradeStatus {
   };
 }
 describe('UPG F01/F03/C02 canonical version observations', () => {
+  it('explains an unqualified global schema change without claiming deployment, progress or task continuity', () => {
+    const status = upgradeFixture();
+    status.catalog = {
+      ...status.catalog,
+      state: 'unavailable',
+      reason: 'GLOBAL_SCHEMA_MIGRATION_UNQUALIFIED',
+      availableRelease: null,
+    };
+    const derived = model(status);
+    expect(derived).toMatchObject({
+      phase: 'unknown',
+      showEntry: false,
+      showDot: false,
+      canUpgrade: false,
+      canRefresh: false,
+      percent: null,
+    });
+    expect(derived.subtitle).toContain('数据结构变更尚未具备连续升级验证');
+    expect(derived.subtitle).toContain('实例未应用该步骤');
+    expect(derived.subtitle).toContain('兼容桥或独立维护方案');
+    expect(derived.subtitle).not.toContain('任务');
+  });
   it('only a fresh server-measured partial tuple permits a new authorized attempt from the system card, keeping historical version and failed target quiet', () => {
     const status = upgradeFixture();
     status.attempt = { ...attemptFixture(), state: 'deferred', reason: 'candidate unavailable' };

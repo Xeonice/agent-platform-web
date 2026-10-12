@@ -331,7 +331,11 @@ export function deriveUpgradeModel(
     };
   }
   if (data.catalog.state === 'unknown' || data.catalog.state === 'unavailable') {
-    return { ...base, phase: 'unknown', subtitle: data.catalog.reason ?? '暂时无法确认可安装版本' };
+    const subtitle =
+      data.catalog.reason === 'GLOBAL_SCHEMA_MIGRATION_UNQUALIFIED'
+        ? '当前版本的数据结构变更尚未具备连续升级验证，实例未应用该步骤并保留当前版本。完成兼容桥或独立维护方案后再升级。'
+        : (data.catalog.reason ?? '暂时无法确认可安装版本');
+    return { ...base, phase: 'unknown', subtitle };
   }
   if (
     attempt?.state === 'activation-confirmed' &&
