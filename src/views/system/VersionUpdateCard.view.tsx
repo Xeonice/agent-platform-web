@@ -12,6 +12,10 @@ import {
   VersionUpdateDetailsView,
   type VersionUpdateDetailsProps,
 } from '@/views/system/VersionUpdateDetails.view';
+import {
+  ContractFinalizeView,
+  type ContractFinalizeProps,
+} from '@/views/system/ContractFinalize.view';
 
 interface Props extends VersionUpdateDetailsProps {
   headingRef: Ref<HTMLHeadingElement>;
@@ -20,6 +24,7 @@ interface Props extends VersionUpdateDetailsProps {
   authorizationBusy: boolean;
   authorizationError: string | null;
   onAuthorize: (key: string) => void;
+  contractFinalize?: ContractFinalizeProps;
 }
 function UpgradeAuthorizationInput({
   onAuthorize,
@@ -65,6 +70,7 @@ export function VersionUpdateCardView({
   authorizationBusy,
   authorizationError,
   onAuthorize,
+  contractFinalize,
   ...details
 }: Props) {
   return (
@@ -82,6 +88,7 @@ export function VersionUpdateCardView({
         版本与更新
       </h2>
       <VersionUpdateDetailsView {...details} />
+      {contractFinalize === undefined ? null : <ContractFinalizeView {...contractFinalize} />}
       <details className="mt-3 text-xs">
         <summary className="cursor-pointer text-muted-foreground">运行产物详情</summary>
         <dl className="mt-2 space-y-1">

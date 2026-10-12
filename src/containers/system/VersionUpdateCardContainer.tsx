@@ -2,9 +2,11 @@
 import { useVersionCardModel } from '@/hooks/system/useVersionCardModel';
 import { useVersionCardFocus } from '@/hooks/system/useVersionCardFocus';
 import { VersionUpdateCardView } from '@/views/system/VersionUpdateCard.view';
+import { useContractFinalize } from '@/hooks/system/useContractFinalize';
 const noop = () => undefined;
 export function VersionUpdateCardContainer() {
   const { controller, model } = useVersionCardModel();
+  const contractFinalize = useContractFinalize(controller);
   const headingRef = useVersionCardFocus(
     controller?.detailsRequested ?? false,
     controller?.consumeDetailsRequest ?? noop,
@@ -28,6 +30,7 @@ export function VersionUpdateCardContainer() {
       authorizationBusy={controller?.authorizationBusy ?? false}
       authorizationError={controller?.authorizationError ?? null}
       onAuthorize={controller?.authorize ?? noop}
+      contractFinalize={contractFinalize}
     />
   );
 }

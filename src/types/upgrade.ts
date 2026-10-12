@@ -8,6 +8,10 @@ export type UpgradeRequest =
   operations['UpgradeController_request']['requestBody']['content']['application/json'];
 export type UpgradeAttempt =
   operations['UpgradeController_request']['responses'][202]['content']['application/json'];
+export type UpgradeContractRequest =
+  operations['UpgradeController_contractRequest']['requestBody']['content']['application/json'];
+export type UpgradeContractAttempt =
+  operations['UpgradeController_contractRequest']['responses'][202]['content']['application/json'];
 
 /** Immutable identity compiled into the actual loaded Web artifact, never read from API. */
 export interface LoadedWebBuild {
@@ -42,4 +46,11 @@ export interface UpgradeViewActions {
   onRefresh: () => void;
   onLater: () => void;
   onDetails: () => void;
+}
+export interface ContractFinalizeDisplay {
+  visible: boolean;
+  canExecute: boolean;
+  status: string;
+  reason: string | null;
+  facts: { label: string; value: string }[];
 }

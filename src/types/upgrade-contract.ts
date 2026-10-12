@@ -83,6 +83,74 @@ export const UpgradePolicySchema = z
     contractInUpgrade: z.literal(false),
   })
   .passthrough();
+/** Separately signed semantic contraction; ordinary installation never executes it. */
+export const UpgradeContractPlanSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('project-name-contract'),
+    planDigest: Digest,
+    expandPlanDigest: Digest,
+    targetTable: z.string().regex(/^upg_shadow_[a-z0-9_]{1,64}$/),
+    nameColumn: z.string().regex(/^[a-z][a-z0-9_]{0,80}$/),
+    artifactInputFingerprint: Digest,
+    rollbackWindowMs: z.number().int().min(60000),
+    maxValidationRows: z.number().int().positive().max(10000),
+    maxBatchRows: z.number().int().positive().max(1000),
+    batchBudgetMs: z.number().int().positive().max(1000),
+    minFreeBytes: z.number().int().positive(),
+    maxWalBytes: z.number().int().positive(),
+    preserveUserResources: z.literal(true),
+    rollbackToLegacy: z.literal(false),
+  })
+  .strict();
+export const UpgradeContractRequestSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    targetPlanDigest: Digest,
+    expectedActivationGeneration: z.number().int().nonnegative(),
+    acknowledgeRollbackClosure: z.literal(true),
+  })
+  .strict();
+export const UpgradeContractAttemptSchema = z.object({
+  instanceId: Name,
+  contractAttemptId: z.string().uuid(),
+  requestId: z.string().uuid(),
+  targetPlanDigest: Digest,
+  activationGeneration: z.number().int().nonnegative(),
+  sequence: z.number().int().nonnegative(),
+  state: z.enum([
+    'accepted',
+    'retiring-readers',
+    'authority-active',
+    'clearing',
+    'completed',
+    'deferred',
+    'failed',
+    'unknown',
+  ]),
+  stage: z.string(),
+  completedRows: z.number().int().nonnegative(),
+  totalRows: z.number().int().nonnegative().nullable(),
+  acceptedAt: Time,
+  observedAt: Time,
+  reason: z.string().nullable(),
+});
+export const UpgradeContractStatusSchema = z.object({
+  authority: z.enum(['legacy', 'new', 'unknown']),
+  availablePlan: z
+    .object({
+      planDigest: Digest,
+      releaseId: Release,
+      expandPlanDigest: Digest,
+      rollbackWindowClosesAt: Time,
+      eligible: z.boolean(),
+      reason: z.string().nullable(),
+      legacyReaderCount: z.number().int().nonnegative(),
+      irreversible: z.literal(true),
+    })
+    .nullable(),
+  attempt: UpgradeContractAttemptSchema.nullable(),
+});
 export const UpgradeManifestSchema = z
   .object({
     schemaVersion: z.literal(2),
@@ -109,6 +177,7 @@ export const UpgradeManifestSchema = z
         })
         .passthrough(),
     ),
+    contractPlans: z.array(UpgradeContractPlanSchema).max(16).optional(),
   })
   .passthrough();
 export const SignedUpgradeManifestSchema = z.object({
@@ -273,7 +342,11 @@ export const UpgradeStatusSchema = z.object({
       })
       .nullable(),
   }),
-  capabilities: z.object({ canUpgradeInstance: z.boolean(), canAuthenticate: z.boolean() }),
+  capabilities: z.object({
+    canUpgradeInstance: z.boolean(),
+    canAuthenticate: z.boolean(),
+    canContract: z.boolean().optional(),
+  }),
   csrfToken: z.string(),
   attempt: UpgradeAttemptSchema.nullable(),
   recovery: UpgradeRecoverySchema.nullable(),
@@ -300,6 +373,7 @@ export const UpgradeStatusSchema = z.object({
     })
     .nullable()
     .optional(),
+  contract: UpgradeContractStatusSchema.nullable().optional(),
 });
 
 export type UpgradeManifest = z.infer<typeof UpgradeManifestSchema>;
@@ -312,3 +386,7 @@ export type UpgradeStatus = z.infer<typeof UpgradeStatusSchema>;
 export type ConfirmedServiceRelease = z.infer<typeof ConfirmedServiceReleaseSchema>;
 export type UpgradeRecovery = z.infer<typeof UpgradeRecoverySchema>;
 export type UpgradeSourceActual = z.infer<typeof UpgradeSourceActualSchema>;
+export type UpgradeContractPlan = z.infer<typeof UpgradeContractPlanSchema>;
+export type UpgradeContractRequest = z.infer<typeof UpgradeContractRequestSchema>;
+export type UpgradeContractAttempt = z.infer<typeof UpgradeContractAttemptSchema>;
+export type UpgradeContractStatus = z.infer<typeof UpgradeContractStatusSchema>;

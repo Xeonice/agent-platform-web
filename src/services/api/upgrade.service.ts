@@ -5,8 +5,16 @@ import {
   UpgradeAttemptSchema,
   UpgradeRequestSchema,
   UpgradeAccessSchema,
+  UpgradeContractRequestSchema,
+  UpgradeContractAttemptSchema,
 } from '@/types/upgrade-contract';
-import type { UpgradeStatus, UpgradeRequest, UpgradeAttempt } from '@/types/upgrade';
+import type {
+  UpgradeStatus,
+  UpgradeRequest,
+  UpgradeAttempt,
+  UpgradeContractRequest,
+  UpgradeContractAttempt,
+} from '@/types/upgrade';
 
 async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   const controller = new AbortController();
@@ -72,5 +80,22 @@ export async function grantUpgradeAccess(
       headers: { 'Content-Type': 'application/json', 'X-Upgrade-CSRF': csrfToken },
       body: JSON.stringify(UpgradeAccessSchema.parse({ upgradeKey })),
     }),
+  );
+}
+export async function requestSemanticContract(
+  body: UpgradeContractRequest,
+  csrfToken: string,
+): Promise<UpgradeContractAttempt> {
+  return UpgradeContractAttemptSchema.parse(
+    await call('/api/system/upgrade/contracts/requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Upgrade-CSRF': csrfToken },
+      body: JSON.stringify(UpgradeContractRequestSchema.parse(body)),
+    }),
+  );
+}
+export async function lookupContractRequest(requestId: string): Promise<UpgradeContractAttempt> {
+  return UpgradeContractAttemptSchema.parse(
+    await call(`/api/system/upgrade/contracts/requests/${encodeURIComponent(requestId)}`),
   );
 }

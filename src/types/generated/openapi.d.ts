@@ -1282,6 +1282,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/upgrade/contracts/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeController_contractRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/upgrade/contracts/requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeController_contractLookup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/upgrade/probe": {
         parameters: {
             query?: never;
@@ -1596,6 +1628,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["UpgradeInternalController_resumeCoordinator"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/contracts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeContractInternalController_snapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/contracts/{id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeContractInternalController_check"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2688,6 +2752,7 @@ export interface components {
             capabilities: {
                 canUpgradeInstance: boolean;
                 canAuthenticate: boolean;
+                canContract?: boolean;
             };
             csrfToken: string;
             attempt: {
@@ -2748,6 +2813,41 @@ export interface components {
                 /** Format: date-time */
                 observedAt: string;
             } | null;
+            contract?: {
+                /** @enum {string} */
+                authority: "legacy" | "new" | "unknown";
+                availablePlan: {
+                    planDigest: string;
+                    releaseId: string;
+                    expandPlanDigest: string;
+                    /** Format: date-time */
+                    rollbackWindowClosesAt: string;
+                    eligible: boolean;
+                    reason: string | null;
+                    legacyReaderCount: number;
+                    irreversible: boolean;
+                } | null;
+                attempt: {
+                    instanceId: string;
+                    /** Format: uuid */
+                    contractAttemptId: string;
+                    /** Format: uuid */
+                    requestId: string;
+                    targetPlanDigest: string;
+                    activationGeneration: number;
+                    sequence: number;
+                    /** @enum {string} */
+                    state: "accepted" | "retiring-readers" | "authority-active" | "clearing" | "completed" | "deferred" | "failed" | "unknown";
+                    stage: string;
+                    completedRows: number;
+                    totalRows: number | null;
+                    /** Format: date-time */
+                    acceptedAt: string;
+                    /** Format: date-time */
+                    observedAt: string;
+                    reason: string | null;
+                } | null;
+            } | null;
         };
         UpgradeAccessDto: {
             upgradeKey: string;
@@ -2776,6 +2876,33 @@ export interface components {
             completedWork: number;
             totalWork: number | null;
             planDigest: string;
+            /** Format: date-time */
+            acceptedAt: string;
+            /** Format: date-time */
+            observedAt: string;
+            reason: string | null;
+        };
+        UpgradeContractRequestDto: {
+            /** Format: uuid */
+            requestId: string;
+            targetPlanDigest: string;
+            expectedActivationGeneration: number;
+            acknowledgeRollbackClosure: boolean;
+        };
+        UpgradeContractAttemptDto: {
+            instanceId: string;
+            /** Format: uuid */
+            contractAttemptId: string;
+            /** Format: uuid */
+            requestId: string;
+            targetPlanDigest: string;
+            activationGeneration: number;
+            sequence: number;
+            /** @enum {string} */
+            state: "accepted" | "retiring-readers" | "authority-active" | "clearing" | "completed" | "deferred" | "failed" | "unknown";
+            stage: string;
+            completedRows: number;
+            totalRows: number | null;
             /** Format: date-time */
             acceptedAt: string;
             /** Format: date-time */
@@ -4787,6 +4914,50 @@ export interface operations {
             };
         };
     };
+    UpgradeController_contractRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpgradeContractRequestDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeContractAttemptDto"];
+                };
+            };
+        };
+    };
+    UpgradeController_contractLookup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeContractAttemptDto"];
+                };
+            };
+        };
+    };
     UpgradeController_readProbe: {
         parameters: {
             query: {
@@ -5173,6 +5344,44 @@ export interface operations {
             header?: never;
             path: {
                 attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeContractInternalController_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeContractInternalController_check: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
             };
             cookie?: never;
         };

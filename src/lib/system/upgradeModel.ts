@@ -46,6 +46,33 @@ export function receiveUpgradeStatus(
         return previous;
       const before = old.attempt;
       const after = next.attempt;
+      const oldContract = old.contract;
+      const nextContract = next.contract;
+      const previousContractAttempt = oldContract?.attempt;
+      const nextContractAttempt = nextContract?.attempt;
+      if (
+        previousContractAttempt &&
+        previousContractAttempt.contractAttemptId === nextContractAttempt?.contractAttemptId
+      ) {
+        if (nextContractAttempt.sequence < previousContractAttempt.sequence) return previous;
+        if (
+          nextContractAttempt.targetPlanDigest !== previousContractAttempt.targetPlanDigest ||
+          nextContractAttempt.activationGeneration !==
+            previousContractAttempt.activationGeneration ||
+          nextContractAttempt.completedRows < previousContractAttempt.completedRows ||
+          (nextContractAttempt.sequence === previousContractAttempt.sequence &&
+            JSON.stringify(nextContractAttempt) !== JSON.stringify(previousContractAttempt))
+        ) {
+          return { ...previous, uncertain: true, reason: '数据清理观测发生冲突，等待原请求确认' };
+        }
+      }
+      if (oldContract?.authority === 'new' && nextContract?.authority === 'legacy') {
+        return {
+          ...previous,
+          uncertain: true,
+          reason: '数据格式权威暂时无法确认，保留最后已知事实',
+        };
+      }
       if (before !== null && after !== null && before.attemptId === after.attemptId) {
         if (
           after.generation < before.generation ||
