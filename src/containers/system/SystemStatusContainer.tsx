@@ -22,6 +22,7 @@ import { SandboxEnvStatusCardView } from '@/views/system/SandboxEnvStatusCard.vi
 import { ConnectionStatusCardView } from '@/views/system/ConnectionStatusCard.view';
 import { ProxySettingsCardView } from '@/views/system/ProxySettingsCard.view';
 import { DiagnosticsCardView } from '@/views/system/DiagnosticsCard.view';
+import { VersionUpdateCardContainer } from '@/containers/system/VersionUpdateCardContainer';
 
 export interface SystemStatusContainerProps {
   /** [清理保留卷] 的去处（页面注入路由跳转；story 注入 spy）。 */
@@ -60,6 +61,9 @@ export function SystemStatusContainer({
   // 诊断展开后的高度会变化，独占整行；其它卡片不强制等高，避免空白和挤压。
   return (
     <>
+      <div className="lg:col-span-2">
+        <VersionUpdateCardContainer />
+      </div>
       <div className="flex flex-col gap-4" data-testid="system-status-column-left">
         <ResourcePoolCardView
           model={models.resourcePool}

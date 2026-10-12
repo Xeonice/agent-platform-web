@@ -155,6 +155,15 @@ describe('EVT/TRM/SBX · wire and session acceptance', () => {
         socketSessionKey: 'opaque-server-key',
         shellId: 'server-shell',
       });
+      a.received({
+        type: 'ready',
+        sandboxId: 'task-a',
+        terminalIdentity: '00000000-0000-4000-8000-000000000025',
+        runtimeIdentity: 'original-task-runtime',
+        attachmentId: 'attachment-a',
+        protocolRevision: 2,
+        existingSession: true,
+      });
       a.received({ type: 'data', data: '保留下来的字节' });
       a.disconnected();
       vi.advanceTimersByTime(31000);
@@ -164,6 +173,9 @@ describe('EVT/TRM/SBX · wire and session acceptance', () => {
       rows: '47',
       socketSessionKey: 'opaque-server-key',
       shellId: 'server-shell',
+      terminalIdentity: '00000000-0000-4000-8000-000000000025',
+      protocolMin: '1',
+      protocolMax: '2',
       xSchemaHash: 'sb-terminal-v4',
     });
     expect(frame).toHaveBeenCalledWith({ type: 'data', data: '保留下来的字节' });

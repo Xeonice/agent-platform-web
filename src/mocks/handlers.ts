@@ -11,6 +11,7 @@
 //     现在的形状让"凭空造值"在结构上就做不到：两个开放集各有**唯一一份**注册表常量（见下），
 //     所有 handler 的取值都从它派生，`handlers.test.ts` 再从外部把这条不变量钉住。
 import { http, HttpResponse } from 'msw';
+import { unknownUpgradeFixture } from '@/mocks/upgrade';
 import type { ProjectDto } from '@/types/project';
 import type { RetainedVolumeDto } from '@/types/retainedVolume';
 import type { AutomationAttentionItem, AutomationDto, AutomationRunDto } from '@/types/automation';
@@ -1295,6 +1296,9 @@ function auditEvent(seq: number): AuditEventDto {
 const AUDIT_EVENTS: AuditEventDto[] = Array.from({ length: 300 }, (_, i) => auditEvent(300 - i));
 
 export const handlers = [
+  http.get(`${API_BASE}/api/system/upgrade/status`, () =>
+    HttpResponse.json(unknownUpgradeFixture()),
+  ),
   // liveness probe：真实契约 GET /api/health 无响应体 schema，getHealth 只读 response.ok/status。
   // 返回空 JSON（openapi-fetch 默认按 json 解析，须是合法 JSON），body 内容不被读取。
   http.get(`${API_BASE}/api/health`, () => HttpResponse.json(HEALTH_BODY, { status: 200 })),

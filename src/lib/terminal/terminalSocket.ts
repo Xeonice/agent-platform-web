@@ -51,6 +51,8 @@ export function buildTerminalSocketConfig(
       cols: String(size.cols),
       rows: String(size.rows),
       xSchemaHash: schemaHash,
+      protocolMin: '1',
+      protocolMax: '2',
     },
   };
 }
@@ -70,14 +72,22 @@ export function buildTerminalSocketConfig(
  */
 export function withTerminalTarget(
   config: TerminalSocketConfig,
-  target: { kind: TerminalSessionKind; shellId?: string; runtimeId?: string },
+  target: {
+    kind: TerminalSessionKind;
+    shellId?: string;
+    runtimeId?: string;
+    terminalIdentity?: string;
+  },
 ): TerminalSocketConfig {
-  if (target.kind === 'agent') return config;
+  if (target.kind === 'agent' && target.terminalIdentity === undefined) return config;
   return {
     uri: config.uri,
     query: {
       ...config.query,
-      kind: target.kind,
+      ...(target.kind === 'agent' ? {} : { kind: target.kind }),
+      ...(target.terminalIdentity === undefined
+        ? {}
+        : { terminalIdentity: target.terminalIdentity }),
       ...(target.shellId === undefined || target.shellId === '' ? {} : { shellId: target.shellId }),
       // ⚠️ `runtime` 那一支**必须**带 runtimeId（后端会因缺它而拒握手）：
       //    「开哪个 CLI」是寻址的一部分，不是可选装饰。

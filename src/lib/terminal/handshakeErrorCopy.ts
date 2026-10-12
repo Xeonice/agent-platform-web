@@ -30,18 +30,28 @@ export interface HandshakeErrorCopy {
  * 这里给一句放之四海的兜底反而会把新码盖成一句废话。
  */
 const HANDSHAKE_ERROR_COPY: Readonly<Record<string, HandshakeErrorCopy>> = {
+  AUTH_EXPIRED: { message: '访问授权已过期，请解锁后续接原终端。', retryable: true },
+  PROTOCOL_INCOMPATIBLE: {
+    message: '终端协议无法兼容，请查看系统版本详情；不会因此停止原任务。',
+    retryable: false,
+  },
+  RUNTIME_UNKNOWN: { message: '原运行环境暂时无法确认，请重试或查看系统状态。', retryable: true },
+  TERMINAL_GONE: {
+    message: '已确认原终端不存在。保留原任务信息，不会自动创建替代终端。',
+    retryable: false,
+  },
   UNAUTHORIZED: {
     message: '连接未通过口令校验，解锁后会自动接上。',
     // 可自愈：cookie 就位后下一次重连即通过（useAccessGate 的解锁门正是这么设计的）。
     retryable: true,
   },
   SCHEMA_MISMATCH: {
-    message: '页面版本与后端不一致（前端不是最新的），请刷新页面；重连不会解决这个问题。',
+    message: '页面与服务的终端协议暂时无法兼容，请查看系统版本详情；确认新版页面可用后可自主刷新。',
     // **确定性失败**：hash 固化在这份前端产物里，重连多少次都是同一个结果。
     retryable: false,
   },
   TERMINAL_TARGET_INVALID: {
-    message: '这个终端标签没说清要连哪一个会话，后端拒绝了；请关掉它重新开一个。',
+    message: '原终端身份暂时无法确认，请查看系统状态；不会自动另开终端。',
     // **确定性失败**：query 是这条连接建立时就定死的，重连发的还是同一串参数。
     // ⚠️ 它是客户端自己发错了参数，所以出路不是"等一等"，也不是"解锁"——
     // 是把这个标签丢掉重开（真出现了就是前端 bug，文案也得让人做得下去）。

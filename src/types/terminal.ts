@@ -28,3 +28,22 @@ export interface TerminalSocketConfig {
  * container 在用。
  */
 export const TERMINAL_EXIT_ATTACH_FAILED = -2;
+
+/** Public bookmark only. Credentials, output, input and paths never belong in it. */
+export interface TerminalBookmark {
+  version: 1;
+  terminalIdentity: string;
+  kind: 'agent' | 'shell' | 'runtime';
+  ordinal: number;
+  runtimeId?: string;
+}
+
+export interface TerminalAttachment {
+  sandboxId: string;
+  terminalIdentity: string;
+  runtimeIdentity: string;
+  attachmentId: string;
+  protocolRevision: number;
+}
+export type TerminalAttachmentState =
+  'restoring' | 'attached' | 'unconfirmed' | 'auth-expired' | 'incompatible' | 'gone';

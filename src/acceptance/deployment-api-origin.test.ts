@@ -182,7 +182,14 @@ describe('Deployment · one API host for HTTP streams, unlock and sockets', () =
     });
     expect(wire.io).toHaveBeenNthCalledWith(3, `${PRODUCTION_API}/terminal`, {
       ...expectedTransport,
-      query: { sandboxId: 'task-a', cols: '132', rows: '47', xSchemaHash: 'sb-terminal-v4' },
+      query: {
+        sandboxId: 'task-a',
+        cols: '132',
+        rows: '47',
+        xSchemaHash: 'sb-terminal-v4',
+        protocolMin: '1',
+        protocolMax: '2',
+      },
     });
 
     events.close();

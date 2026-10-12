@@ -38,6 +38,7 @@ export interface TerminalMountProps {
   active?: boolean;
   /** `session` 首帧带回后端分配的 shellId 时回调（用户终端标签才有）。 */
   onShellId?: (shellId: string) => void;
+  onTerminalIdentity?: (terminalIdentity: string) => void;
   /**
    * 后端推来的「这个 Task 下还有哪几个用户终端」（06 §5.5/§5.6）。
    * 每条带 `shellId` + 可选的 `runtimeId`（里面跑的是哪个 CLI；缺席 = 纯终端）。
@@ -62,10 +63,14 @@ export default function TerminalMount({
   socketConfig,
   active = true,
   onShellId,
+  onTerminalIdentity,
   onShells,
   registerSend,
   toolbarTarget,
 }: TerminalMountProps) {
+  const initialSocketConfig = useRef(socketConfig);
+  const identityCallbackRef = useRef(onTerminalIdentity);
+  identityCallbackRef.current = onTerminalIdentity;
   const containerRef = useRef<HTMLDivElement>(null);
   const term = useTerminalInstance();
   const sendRef = useRef<(frame: TerminalClientFrame) => boolean>(() => false);
@@ -174,39 +179,20 @@ export default function TerminalMount({
         // （那会触发一次连接重建，见下面 fittedSize 处的自喂循环注释）——PtySocket 自己
         // 在重连时会带上它，而装配层记下来是为了这个标签被淘汰后**重建**时能接回去。
         if (frame.shellId !== undefined) onShellIdRef.current?.(frame.shellId);
+      } else if (frame.type === 'ready') {
+        identityCallbackRef.current?.(frame.terminalIdentity);
       } else if (frame.type === 'shells') {
         // ⚠️ `null` 原样往上传，**不许在这里折成 `[]`**：那就是把「问不出来」说成
         //    「没有」，而两者在界面上是两句不同的话（06 §5.5 三态）。
         onShellsRef.current?.(frame.shells);
       } else if (frame.type === 'exit') {
-        // ⚠️ 两个码语义不同,不能合并成一句话：
-        //  · `-2`（TERMINAL_EXIT_ATTACH_FAILED）= 平台**没能附着上**，运行环境多半已不在
-        //    ⇒ 重连不会有结果，出路是重新发起任务；
-        //  · `-1` = 进程真的退出了但退出码未知（被信号杀死，例如 OOM）⇒ 任务跑过、
-        //    可能有日志，说"运行环境不在了"是假话。
-        // 第一版把两者都当 `-1` 处理，于是一个被 OOM kill 的 agent 会被告知
-        // "实例可能已不存在"——后端已改用独立哨兵码，前端跟上。
-        const attachFailed = frame.code === TERMINAL_EXIT_ATTACH_FAILED;
-        /**
-         * ⛔ **`-2` 时不往终端里写「[进程已退出，code -2]」。**
-         *
-         * `-2` 是**平台自造的哨兵码**，不是任何进程的退出码 —— 这一支上根本没有进程退出
-         * 这回事（平台压根没附着上）。把它印成"进程已退出，code -2"是在终端里写一句假话，
-         * 而且是用户最可能截图去搜的那一句。上面那个区分本来只落到了状态条，屏幕上
-         * 这一行仍然把两支混成一样。
-         *
-         * ⇒ `-2` 只走状态条（`sessionEndedMessage`，说清"没能连上、重连没用"）。
-         *   `-1` 与真实退出码照旧写屏：那两支确实有一个进程退出过。
-         */
-        if (!attachFailed) {
-          term.write(sessionId, `\r\n[进程已退出，code ${String(frame.code)}]\r\n`);
-        }
+        // Attach failure is not proof of task or process exit. Keep the canvas and allow a truthful retry.
+        if (frame.code === TERMINAL_EXIT_ATTACH_FAILED) return;
+        term.write(sessionId, `\r\n[进程已退出，code ${String(frame.code)}]\r\n`);
         setEndedMessage(
-          attachFailed
-            ? '终端会话已结束——没能连上这个任务的运行环境（多半已经回收了）。重连不会有结果，请重新发起一个任务。'
-            : frame.code === -1
-              ? '终端会话已结束（进程被信号终止，退出码未知）。'
-              : `终端会话已结束（退出码 ${String(frame.code)}）。`,
+          frame.code === -1
+            ? '终端会话已结束（进程被信号终止，退出码未知）。'
+            : `终端会话已结束（退出码 ${String(frame.code)}）。`,
         );
       }
     },
@@ -228,13 +214,26 @@ export default function TerminalMount({
   const query = useMemo(
     () =>
       fittedSize === null
-        ? socketConfig.query
-        : { ...socketConfig.query, cols: String(fittedSize.cols), rows: String(fittedSize.rows) },
-    [socketConfig.query, fittedSize],
+        ? initialSocketConfig.current.query
+        : {
+            ...initialSocketConfig.current.query,
+            cols: String(fittedSize.cols),
+            rows: String(fittedSize.rows),
+          },
+    [fittedSize],
   );
 
-  const { connState, attempt, send, reconnect, handshakeErrorMessage } = useSandboxTerminalSocket({
-    uri: socketConfig.uri,
+  const {
+    connState,
+    attempt,
+    attachmentState,
+    restoringSlow,
+    canRetry,
+    send,
+    reconnect,
+    handshakeErrorMessage,
+  } = useSandboxTerminalSocket({
+    uri: initialSocketConfig.current.uri,
     query,
     enabled: fittedSize !== null,
     onFrame: handleFrame,
@@ -344,6 +343,9 @@ export default function TerminalMount({
           并且不再给那个按不通的「手动重连」（hook 那边也已停掉退避循环）。 */}
       <ConnectionStatusView
         connState={connState}
+        attachmentState={attachmentState}
+        restoringSlow={restoringSlow}
+        canRetry={canRetry}
         attempt={attempt}
         onManualReconnect={reconnect}
         handshakeErrorMessage={handshakeErrorMessage}

@@ -1,9 +1,11 @@
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
+import { unknownUpgradeFixture } from '@/mocks/upgrade';
 import { API, NOW, online, provider, resources, runtime } from './fixtures';
 
 // Baseline reads only. Each acceptance scenario declares its objects and mutations explicitly.
 export const server = setupServer(
+  http.get(`${API}/api/system/upgrade/status`, () => HttpResponse.json(unknownUpgradeFixture())),
   http.get(`${API}/api/health`, () => HttpResponse.json({ status: 'ok' })),
   http.get(`${API}/api/projects`, () => HttpResponse.json([])),
   http.get(`${API}/api/sandboxes`, () => HttpResponse.json([])),

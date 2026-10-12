@@ -24,6 +24,7 @@ interface Props {
   taskStatusTone?: 'ok' | 'warn' | 'fail' | 'pending' | 'unknown';
   moreMenuSlot?: ReactNode;
   projectInfoSlot?: ReactNode;
+  headerActionsSlot?: ReactNode;
 }
 export function WorkbenchHeaderView({
   currentProjectName = null,
@@ -39,6 +40,7 @@ export function WorkbenchHeaderView({
   taskStatusTone = 'unknown',
   moreMenuSlot,
   projectInfoSlot,
+  headerActionsSlot,
 }: Props) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[var(--v2-border-subtle)] px-4 sm:px-6">
@@ -92,36 +94,39 @@ export function WorkbenchHeaderView({
           {healthLabel}
         </span>
       )}
-      <div className="group relative ml-auto">
-        <Button
-          size="sm"
-          data-testid="new-task-entry"
-          disabled={isLoading}
-          aria-disabled={!isLoading && newTaskDisabledReason !== undefined}
-          aria-describedby={
-            !isLoading && newTaskDisabledReason !== undefined
-              ? 'new-task-disabled-reason'
-              : undefined
-          }
-          title={isLoading ? undefined : newTaskDisabledReason}
-          className="aria-disabled:opacity-50"
-          onClick={() => {
-            if (!isLoading && newTaskDisabledReason === undefined) onNewTask?.();
-          }}
-        >
-          <Plus aria-hidden="true" />
-          <span className="hidden sm:inline">新任务</span>
-          <span className="sr-only sm:hidden">新任务</span>
-        </Button>
-        {!isLoading && newTaskDisabledReason !== undefined && (
-          <p
-            id="new-task-disabled-reason"
-            role="tooltip"
-            className="pointer-events-none absolute right-0 top-full z-30 mt-2 hidden w-56 rounded-md border border-[var(--v2-border)] bg-[var(--v2-surface)] p-2 text-xs text-foreground shadow-[shadow:var(--v2-shadow-menu)] group-hover:block group-focus-within:block"
+      <div className="ml-auto flex items-center gap-2">
+        <div className="group relative">
+          <Button
+            size="sm"
+            data-testid="new-task-entry"
+            disabled={isLoading}
+            aria-disabled={!isLoading && newTaskDisabledReason !== undefined}
+            aria-describedby={
+              !isLoading && newTaskDisabledReason !== undefined
+                ? 'new-task-disabled-reason'
+                : undefined
+            }
+            title={isLoading ? undefined : newTaskDisabledReason}
+            className="aria-disabled:opacity-50"
+            onClick={() => {
+              if (!isLoading && newTaskDisabledReason === undefined) onNewTask?.();
+            }}
           >
-            {newTaskDisabledReason}
-          </p>
-        )}
+            <Plus aria-hidden="true" />
+            <span className="hidden sm:inline">新任务</span>
+            <span className="sr-only sm:hidden">新任务</span>
+          </Button>
+          {!isLoading && newTaskDisabledReason !== undefined && (
+            <p
+              id="new-task-disabled-reason"
+              role="tooltip"
+              className="pointer-events-none absolute right-0 top-full z-30 mt-2 hidden w-56 rounded-md border border-[var(--v2-border)] bg-[var(--v2-surface)] p-2 text-xs text-foreground shadow-[shadow:var(--v2-shadow-menu)] group-hover:block group-focus-within:block"
+            >
+              {newTaskDisabledReason}
+            </p>
+          )}
+        </div>
+        {headerActionsSlot}
       </div>
     </header>
   );

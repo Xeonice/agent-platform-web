@@ -30,6 +30,8 @@ import { ProjectGroupMenuView } from '@/views/project/ProjectGroupMenu.view';
 import { ShortcutsView } from '@/views/workbench/Shortcuts.view';
 import { GlobalBannerContainer } from '@/containers/banner/GlobalBannerContainer';
 import { CommandPaletteContainer } from '@/containers/workbench/CommandPaletteContainer';
+import { InstanceUpgradeProviderContainer } from '@/containers/system/InstanceUpgradeProviderContainer';
+import { VersionUpdateContainer } from '@/containers/system/VersionUpdateContainer';
 import type { Project, Sandbox } from '@/types/domain';
 import type { SandboxDto } from '@/types/sandbox';
 
@@ -179,186 +181,192 @@ export function AppFrameContainer({ children }: { children: ReactNode }) {
       : '系统状态';
   const disconnected = events.connState === 'reconnecting' || events.connState === 'closed';
   return (
-    <div className="flex h-dvh bg-background text-foreground">
-      <AppSidebarView
-        {...(offline.disabledReason === undefined
-          ? {}
-          : { newTaskDisabledReason: offline.disabledReason })}
-        groups={tree.groups}
-        waitingInputCount={tree.waitingInputCount}
-        activePath={pathname}
-        isLoading={projects.isPending || tasks.isPending}
-        {...(disconnected
-          ? { eventsMessage: '实时更新已中断，正在重连…\n列表可能不是最新的' }
-          : {})}
-        sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={toggleSidebar}
-        onFind={navigation.openPalette}
-        onShortcuts={navigation.openShortcuts}
-        selectedProjectId={selectedProjectId}
-        selectedTaskId={selectedSandboxId}
-        onSelectProject={selectProject}
-        onSelectTask={(id) => {
-          const owner = tasks.data?.find((task) => task.id === id);
-          if (owner !== undefined) {
-            if (pathname !== '/') router.push(`/?taskId=${encodeURIComponent(id)}`);
-            selectWorkbenchTask(id, owner.projectId, owner.name);
-          }
-        }}
-        onNewProject={() => {
-          openModal('createProject');
-        }}
-        onNewTask={startTask}
-        onToggleGroupCollapse={toggleProjectFold}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-        hasNoFilterMatches={tree.hasNoFilterMatches}
-        theme={theme}
-        onThemeChange={setTheme}
-        renderTaskMenu={(task) => (
-          <TaskActionsContainer
-            id={task.id}
-            name={task.name}
-            projectId={task.projectId}
-            status={task.rawStatus}
-          />
-        )}
-        renderGroupMenu={(id) => {
-          const project = projects.data?.find((item) => item.id === id);
-          if (project === undefined) return null;
-          const open = menuProjectId === id;
-          return (
-            <ProjectGroupMenuView
-              projectId={id}
-              projectName={project.name}
-              cloneStatus={project.cloneStatus}
-              open={open}
-              onCloseAutoFocus={preserveProjectDialogFocus}
-              onOpenChange={(next) => {
-                setMenuProjectId(next ? id : null);
-              }}
-              busy={open && (recovery.busy || cancelClone.isPending)}
-              canRetry={recovery.guidance.canRetry}
-              needsCredentials={recovery.guidance.needsCredentials}
-              onConfigureCredentials={() => {
-                setMenuProjectId(null);
-                useAppStore.getState().setPendingProjectCreate({
-                  projectId: id,
-                  name: project.name,
-                  source: 'git',
-                  ...(project.repoUrl ? { url: project.repoUrl } : {}),
-                });
-                router.push('/settings/credentials?section=git');
-              }}
-              {...(open && actionError !== undefined ? { actionError } : {})}
-              onOpenDetail={() => {
-                openModal('projectMenu', id);
-              }}
-              onOpenRetainedVolumes={() => {
-                openModal('retainedVolumes', id);
-              }}
-              onOpenAutomations={() => {
-                openModal('automations', id);
-              }}
-              onRetryClone={recovery.retry}
-              onConvertToEmpty={recovery.convertToEmpty}
-              onCancelClone={() => {
-                cancelClone.mutate(id, {
-                  onSuccess: () => {
-                    setMenuProjectId(null);
-                  },
-                });
-              }}
-              onRequestDelete={() => {
-                openModal('projectMenu', id, true);
-              }}
+    <InstanceUpgradeProviderContainer>
+      <div className="flex h-dvh bg-background text-foreground">
+        <AppSidebarView
+          {...(offline.disabledReason === undefined
+            ? {}
+            : { newTaskDisabledReason: offline.disabledReason })}
+          groups={tree.groups}
+          waitingInputCount={tree.waitingInputCount}
+          activePath={pathname}
+          isLoading={projects.isPending || tasks.isPending}
+          {...(disconnected
+            ? { eventsMessage: '实时更新已中断，正在重连…\n列表可能不是最新的' }
+            : {})}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={toggleSidebar}
+          onFind={navigation.openPalette}
+          onShortcuts={navigation.openShortcuts}
+          selectedProjectId={selectedProjectId}
+          selectedTaskId={selectedSandboxId}
+          onSelectProject={selectProject}
+          onSelectTask={(id) => {
+            const owner = tasks.data?.find((task) => task.id === id);
+            if (owner !== undefined) {
+              if (pathname !== '/') router.push(`/?taskId=${encodeURIComponent(id)}`);
+              selectWorkbenchTask(id, owner.projectId, owner.name);
+            }
+          }}
+          onNewProject={() => {
+            openModal('createProject');
+          }}
+          onNewTask={startTask}
+          onToggleGroupCollapse={toggleProjectFold}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          hasNoFilterMatches={tree.hasNoFilterMatches}
+          theme={theme}
+          onThemeChange={setTheme}
+          renderTaskMenu={(task) => (
+            <TaskActionsContainer
+              id={task.id}
+              name={task.name}
+              projectId={task.projectId}
+              status={task.rawStatus}
             />
-          );
-        }}
-      />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {pathname === '/' ? (
-          <WorkbenchHeaderView
-            projectInfoSlot={
-              selectedProject?.cloneStatus === 'ready' ? (
-                <ProjectInfoContainer key={selectedProject.id} project={selectedProject} />
-              ) : undefined
-            }
-            currentTaskName={selectedTask?.name}
-            taskStatusLabel={
-              selectedTask === undefined
-                ? undefined
-                : selectedTask.stuck
-                  ? '可能卡住'
-                  : selectedTask.status === 'preparing'
-                    ? '准备中'
-                    : selectedTask.status === 'running'
-                      ? '运行中'
-                      : selectedTask.status === 'error'
-                        ? '异常'
-                        : selectedTask.status === 'stopping'
-                          ? '停止中'
-                          : selectedTask.status === 'deleting'
-                            ? '删除中'
-                            : '已停止'
-            }
-            taskStatusTone={
-              selectedTask?.stuck
-                ? 'warn'
-                : selectedTask?.status === 'running'
-                  ? 'ok'
-                  : selectedTask?.status === 'error'
-                    ? 'fail'
-                    : 'pending'
-            }
-            moreMenuSlot={
-              selectedTask === undefined ? undefined : (
-                <TaskActionsContainer
-                  id={selectedTask.id}
-                  name={selectedTask.name}
-                  projectId={selectedTask.projectId}
-                  status={selectedTask.rawStatus}
-                />
-              )
-            }
-            projects={domainProjects}
-            currentProjectName={selectedProject?.name ?? null}
-            onSelectProject={selectProject}
-            onOverview={() => {
-              useAppStore.getState().setSelectedProjectId(null);
-              useAppStore.getState().setSelectedSandboxId(null);
-            }}
-            onNewTask={startTask}
-            {...(taskDisabledReason === undefined
-              ? {}
-              : { newTaskDisabledReason: taskDisabledReason })}
-            isLoading={projects.isPending || tasks.isPending}
-            healthLabel={health.isError ? '后端不可用' : null}
+          )}
+          renderGroupMenu={(id) => {
+            const project = projects.data?.find((item) => item.id === id);
+            if (project === undefined) return null;
+            const open = menuProjectId === id;
+            return (
+              <ProjectGroupMenuView
+                projectId={id}
+                projectName={project.name}
+                cloneStatus={project.cloneStatus}
+                open={open}
+                onCloseAutoFocus={preserveProjectDialogFocus}
+                onOpenChange={(next) => {
+                  setMenuProjectId(next ? id : null);
+                }}
+                busy={open && (recovery.busy || cancelClone.isPending)}
+                canRetry={recovery.guidance.canRetry}
+                needsCredentials={recovery.guidance.needsCredentials}
+                onConfigureCredentials={() => {
+                  setMenuProjectId(null);
+                  useAppStore.getState().setPendingProjectCreate({
+                    projectId: id,
+                    name: project.name,
+                    source: 'git',
+                    ...(project.repoUrl ? { url: project.repoUrl } : {}),
+                  });
+                  router.push('/settings/credentials?section=git');
+                }}
+                {...(open && actionError !== undefined ? { actionError } : {})}
+                onOpenDetail={() => {
+                  openModal('projectMenu', id);
+                }}
+                onOpenRetainedVolumes={() => {
+                  openModal('retainedVolumes', id);
+                }}
+                onOpenAutomations={() => {
+                  openModal('automations', id);
+                }}
+                onRetryClone={recovery.retry}
+                onConvertToEmpty={recovery.convertToEmpty}
+                onCancelClone={() => {
+                  cancelClone.mutate(id, {
+                    onSuccess: () => {
+                      setMenuProjectId(null);
+                    },
+                  });
+                }}
+                onRequestDelete={() => {
+                  openModal('projectMenu', id, true);
+                }}
+              />
+            );
+          }}
+        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {pathname === '/' ? (
+            <WorkbenchHeaderView
+              headerActionsSlot={<VersionUpdateContainer />}
+              projectInfoSlot={
+                selectedProject?.cloneStatus === 'ready' ? (
+                  <ProjectInfoContainer key={selectedProject.id} project={selectedProject} />
+                ) : undefined
+              }
+              currentTaskName={selectedTask?.name}
+              taskStatusLabel={
+                selectedTask === undefined
+                  ? undefined
+                  : selectedTask.stuck
+                    ? '可能卡住'
+                    : selectedTask.status === 'preparing'
+                      ? '准备中'
+                      : selectedTask.status === 'running'
+                        ? '运行中'
+                        : selectedTask.status === 'error'
+                          ? '异常'
+                          : selectedTask.status === 'stopping'
+                            ? '停止中'
+                            : selectedTask.status === 'deleting'
+                              ? '删除中'
+                              : '已停止'
+              }
+              taskStatusTone={
+                selectedTask?.stuck
+                  ? 'warn'
+                  : selectedTask?.status === 'running'
+                    ? 'ok'
+                    : selectedTask?.status === 'error'
+                      ? 'fail'
+                      : 'pending'
+              }
+              moreMenuSlot={
+                selectedTask === undefined ? undefined : (
+                  <TaskActionsContainer
+                    id={selectedTask.id}
+                    name={selectedTask.name}
+                    projectId={selectedTask.projectId}
+                    status={selectedTask.rawStatus}
+                  />
+                )
+              }
+              projects={domainProjects}
+              currentProjectName={selectedProject?.name ?? null}
+              onSelectProject={selectProject}
+              onOverview={() => {
+                useAppStore.getState().setSelectedProjectId(null);
+                useAppStore.getState().setSelectedSandboxId(null);
+              }}
+              onNewTask={startTask}
+              {...(taskDisabledReason === undefined
+                ? {}
+                : { newTaskDisabledReason: taskDisabledReason })}
+              isLoading={projects.isPending || tasks.isPending}
+              healthLabel={health.isError ? '后端不可用' : null}
+            />
+          ) : (
+            <header className="flex h-14 shrink-0 items-center border-b border-[var(--v2-border-subtle)] px-4 sm:px-6">
+              <h1 className="text-base font-semibold tracking-[-0.02em]">{pageTitle}</h1>
+              <div className="ml-auto">
+                <VersionUpdateContainer />
+              </div>
+            </header>
+          )}
+          <GlobalBannerContainer />
+          <div className="min-h-0 flex-1">{children}</div>
+        </div>
+        {navigation.paletteOpen && (
+          <CommandPaletteContainer
+            projects={projects.data ?? []}
+            tasks={tasks.data ?? []}
+            pathname={pathname}
+            onClose={navigation.closePalette}
+            onCloseAutoFocus={navigation.onCloseAutoFocus}
+            deferFocusRestore={navigation.deferFocusRestore}
           />
-        ) : (
-          <header className="flex h-14 shrink-0 items-center border-b border-[var(--v2-border-subtle)] px-4 sm:px-6">
-            <h1 className="text-base font-semibold tracking-[-0.02em]">{pageTitle}</h1>
-          </header>
         )}
-        <GlobalBannerContainer />
-        <div className="min-h-0 flex-1">{children}</div>
+        {navigation.shortcutsOpen && (
+          <ShortcutsView
+            onClose={navigation.closeShortcuts}
+            onCloseAutoFocus={navigation.onCloseAutoFocus}
+          />
+        )}
       </div>
-      {navigation.paletteOpen && (
-        <CommandPaletteContainer
-          projects={projects.data ?? []}
-          tasks={tasks.data ?? []}
-          pathname={pathname}
-          onClose={navigation.closePalette}
-          onCloseAutoFocus={navigation.onCloseAutoFocus}
-          deferFocusRestore={navigation.deferFocusRestore}
-        />
-      )}
-      {navigation.shortcutsOpen && (
-        <ShortcutsView
-          onClose={navigation.closeShortcuts}
-          onCloseAutoFocus={navigation.onCloseAutoFocus}
-        />
-      )}
-    </div>
+    </InstanceUpgradeProviderContainer>
   );
 }

@@ -1,8 +1,10 @@
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { webBuildIdentity } from './scripts/web-build-identity.mjs';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: webBuildIdentity(),
   distDir: process.env.NEXT_DIST_DIR ?? '.next',
   // 仓库外层存在其它 lockfile，显式锁定本仓为 tracing root，消除 Next 的多 lockfile 警告。
   outputFileTracingRoot: dirname(fileURLToPath(import.meta.url)),
