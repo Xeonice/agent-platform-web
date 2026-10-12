@@ -68,6 +68,80 @@ function installed(): UpgradeStatus {
   };
 }
 describe('UPG F01/F03/C02 canonical version observations', () => {
+  it('only a fresh server-measured partial tuple permits a new authorized attempt from the system card, keeping historical version and failed target quiet', () => {
+    const status = upgradeFixture();
+    status.attempt = { ...attemptFixture(), state: 'deferred', reason: 'candidate unavailable' };
+    status.lastConfirmedServiceRelease = status.confirmedServiceRelease;
+    status.confirmedServiceRelease = null;
+    status.serviceState = 'transitioning';
+    status.capabilities.canUpgradeInstance = true;
+    expect(model(status).canUpgrade).toBe(false);
+    status.repairableCurrent = {
+      baseConfirmedReleaseId: status.lastConfirmedServiceRelease!.releaseId,
+      activationGeneration: status.activationGeneration,
+      observedAt: UPGRADE_TEST_TIME,
+    };
+    expect(model(status)).toMatchObject({
+      phase: 'failed',
+      canUpgrade: true,
+      showEntry: false,
+      showDot: false,
+      canRefresh: false,
+    });
+    expect(model(status).facts[0]?.value).toContain('上次完整版本');
+    expect(model(status).artifactDetails[0]?.label).toBe('上次完整 API 构建');
+    status.capabilities.canUpgradeInstance = false;
+    expect(model(status).canUpgrade).toBe(false);
+  });
+  it.each(['generation', 'history', 'stale', 'future'] as const)(
+    'rejects an unconfirmed partial repair fact with %s mismatch',
+    (kind) => {
+      const status = upgradeFixture();
+      status.attempt = { ...attemptFixture(), state: 'deferred' };
+      status.lastConfirmedServiceRelease = status.confirmedServiceRelease;
+      status.confirmedServiceRelease = null;
+      status.serviceState = 'unknown';
+      status.capabilities.canUpgradeInstance = true;
+      status.repairableCurrent = {
+        baseConfirmedReleaseId: status.lastConfirmedServiceRelease!.releaseId,
+        activationGeneration: status.activationGeneration,
+        observedAt: UPGRADE_TEST_TIME,
+      };
+      if (kind === 'generation') status.repairableCurrent.activationGeneration++;
+      if (kind === 'history') status.repairableCurrent.baseConfirmedReleaseId = '9.9.9';
+      if (kind === 'stale')
+        status.repairableCurrent.observedAt = new Date(now - 120000).toISOString();
+      if (kind === 'future')
+        status.repairableCurrent.observedAt = new Date(now + 120000).toISOString();
+      expect(model(status).canUpgrade).toBe(false);
+    },
+  );
+  it('a qualified explicit repair can proceed after unknown recovery, while an active recovery still cannot accept another attempt', () => {
+    const status = upgradeFixture();
+    status.attempt = { ...attemptFixture(), state: 'failed' };
+    status.lastConfirmedServiceRelease = status.confirmedServiceRelease;
+    status.confirmedServiceRelease = null;
+    status.serviceState = 'unknown';
+    status.capabilities.canUpgradeInstance = true;
+    status.repairableCurrent = {
+      baseConfirmedReleaseId: status.lastConfirmedServiceRelease!.releaseId,
+      activationGeneration: status.activationGeneration,
+      observedAt: UPGRADE_TEST_TIME,
+    };
+    status.recovery = {
+      recoveryAttemptId: 'a0000000-0000-4000-8000-000000000000',
+      triggeringAttemptId: status.attempt.attemptId,
+      generation: status.activationGeneration + 1,
+      sequence: 0,
+      state: 'unknown',
+      planDigest: DIGEST_B,
+      reason: 'previous result unknown',
+      observedAt: UPGRADE_TEST_TIME,
+    };
+    expect(model(status)).toMatchObject({ canUpgrade: true, showEntry: false });
+    status.recovery.state = 'recovering';
+    expect(model(status).canUpgrade).toBe(false);
+  });
   it('shows available to a read-only viewer without treating catalog publication as deployment', () => {
     expect(model(upgradeFixture())).toMatchObject({
       phase: 'available',

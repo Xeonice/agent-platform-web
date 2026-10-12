@@ -239,6 +239,19 @@ export const UpgradeRecoverySchema = z.object({
   reason: z.string(),
   observedAt: Time,
 });
+/** Private measured installation tuple. It does not assert a complete release. */
+export const UpgradeSourceActualSchema = z.object({
+  schemaVersion: z.literal(1),
+  qualified: z.literal(true),
+  partial: z.literal(true),
+  instanceId: Name,
+  baseConfirmedReleaseId: Release,
+  activationGeneration: z.number().int().nonnegative(),
+  schema: z.number().int().nonnegative(),
+  components: UpgradeComponentsSchema,
+  proofDigest: Digest,
+  observedAt: Time,
+});
 export const UpgradeStatusSchema = z.object({
   instanceId: Name,
   userScope: z.string().min(1),
@@ -279,6 +292,14 @@ export const UpgradeStatusSchema = z.object({
     })
     .nullable(),
   observedAt: Time,
+  repairableCurrent: z
+    .object({
+      baseConfirmedReleaseId: Release,
+      activationGeneration: z.number().int().nonnegative(),
+      observedAt: Time,
+    })
+    .nullable()
+    .optional(),
 });
 
 export type UpgradeManifest = z.infer<typeof UpgradeManifestSchema>;
@@ -290,3 +311,4 @@ export type UpgradeAttempt = z.infer<typeof UpgradeAttemptSchema>;
 export type UpgradeStatus = z.infer<typeof UpgradeStatusSchema>;
 export type ConfirmedServiceRelease = z.infer<typeof ConfirmedServiceReleaseSchema>;
 export type UpgradeRecovery = z.infer<typeof UpgradeRecoverySchema>;
+export type UpgradeSourceActual = z.infer<typeof UpgradeSourceActualSchema>;

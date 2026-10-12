@@ -131,11 +131,20 @@ export function deriveUpgradeModel(
     current === null || current === undefined
       ? []
       : [
-          { label: '实际 API 构建', value: current.components.api.sourceRevision },
+          {
+            label: data?.serviceState === 'confirmed' ? '实际 API 构建' : '上次完整 API 构建',
+            value: current.components.api.sourceRevision,
+          },
           { label: '实际 Web 构建', value: loaded.webRevision ?? '未注入' },
           ...(current.components.owner === undefined
             ? []
-            : [{ label: '原运行服务构建', value: current.components.owner.sourceRevision }]),
+            : [
+                {
+                  label:
+                    data?.serviceState === 'confirmed' ? '原运行服务构建' : '上次完整运行服务构建',
+                  value: current.components.owner.sourceRevision,
+                },
+              ]),
         ];
   const base: UpgradeDisplayModel = {
     phase: 'none',
@@ -174,10 +183,21 @@ export function deriveUpgradeModel(
   }
   const attempt = data.attempt;
   const recovery = data.recovery;
+  // The server grants this only after measuring the actual partial installation.
+  // An old successful release, a failed attempt or a browser hash cannot grant repair.
+  const repair = data.repairableCurrent;
+  const repairFresh =
+    repair?.activationGeneration === data.activationGeneration &&
+    repair.baseConfirmedReleaseId === current?.releaseId &&
+    Date.parse(repair.observedAt) <= Date.parse(data.observedAt) + 1000 &&
+    Math.max(0, Date.parse(data.observedAt) - Date.parse(repair.observedAt)) +
+      Math.max(0, now - observation.receivedAt) <=
+      UPGRADE_OBSERVATION_MS;
+  const canAcceptNewAttempt = data.serviceState === 'confirmed' || repairFresh;
   const recovering =
     recovery !== null &&
     recovery.triggeringAttemptId === attempt?.attemptId &&
-    recovery.state !== 'recovery-confirmed';
+    (recovery.state === 'recovering' || (recovery.state !== 'recovery-confirmed' && !repairFresh));
   if (attempt !== null && ONGOING.has(attempt.state) && !recovering) {
     const age =
       Math.max(0, Date.parse(data.observedAt) - Date.parse(attempt.observedAt)) +
@@ -271,7 +291,7 @@ export function deriveUpgradeModel(
         data.catalog.state === 'verified' &&
         available !== null &&
         data.capabilities.canUpgradeInstance &&
-        data.serviceState === 'confirmed',
+        canAcceptNewAttempt,
     };
   if (
     data.catalog.state === 'verified' &&
@@ -286,7 +306,7 @@ export function deriveUpgradeModel(
       showDot: true,
       title: '发现新版本',
       subtitle: `${confirmed?.releaseId ?? '当前服务'} → ${available.releaseId} · 待升级`,
-      canUpgrade: data.capabilities.canUpgradeInstance && data.serviceState === 'confirmed',
+      canUpgrade: data.capabilities.canUpgradeInstance && canAcceptNewAttempt,
     };
   }
   if (recovering)
