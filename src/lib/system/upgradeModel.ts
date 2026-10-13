@@ -79,11 +79,22 @@ export function receiveUpgradeStatus(
           (after.generation === before.generation && after.sequence < before.sequence)
         )
           return previous;
+        // An unknown step can acquire a real total after its durable completion.
+        // That resolves the same plan; it does not authorize changing a known total.
+        const resolvedTotal =
+          before.totalWork === null &&
+          after.totalWork !== null &&
+          (after.generation > before.generation ||
+            (after.generation === before.generation && after.sequence > before.sequence)) &&
+          Number.isFinite(after.totalWork) &&
+          Number.isFinite(after.completedWork) &&
+          after.completedWork >= 0 &&
+          after.totalWork >= after.completedWork;
         if (
           after.targetDigest !== before.targetDigest ||
           after.planDigest !== before.planDigest ||
           after.targetReleaseId !== before.targetReleaseId ||
-          after.totalWork !== before.totalWork
+          (after.totalWork !== before.totalWork && !resolvedTotal)
         ) {
           return { ...previous, uncertain: true, reason: '升级计划发生冲突，等待重新确认' };
         }
@@ -230,16 +241,16 @@ export function deriveUpgradeModel(
       Math.max(0, Date.parse(data.observedAt) - Date.parse(attempt.observedAt)) +
       Math.max(0, now - observation.receivedAt);
     const validWork =
-      attempt.totalWork !== null &&
-      Number.isFinite(attempt.totalWork) &&
-      attempt.totalWork > 0 &&
       Number.isFinite(attempt.completedWork) &&
       attempt.completedWork >= 0 &&
-      attempt.completedWork <= attempt.totalWork;
+      (attempt.totalWork === null ||
+        (Number.isFinite(attempt.totalWork) && attempt.completedWork <= attempt.totalWork));
     const known =
       age <= UPGRADE_OBSERVATION_MS &&
       validWork &&
       attempt.percent !== null &&
+      Number.isFinite(attempt.percent) &&
+      attempt.percent >= 0 &&
       attempt.percent < 100;
     return {
       ...base,

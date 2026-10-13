@@ -6,6 +6,7 @@ import {
 } from '@/lib/system/upgradeModel';
 import {
   attemptFixture,
+  DIGEST_A,
   DIGEST_B,
   loadedUpgradeFixture,
   upgradeFixture,
@@ -263,6 +264,141 @@ describe('UPG F01/F03/C02 canonical version observations', () => {
       now + 100,
     );
     expect(regression.uncertain).toBe(true);
+  });
+  it('shows a fresh API-confirmed weighted percent with an unresolved aggregate total without calculating a ratio', () => {
+    const status = upgradeFixture();
+    status.attempt = {
+      ...attemptFixture(),
+      state: 'candidate-ready',
+      sequence: 3,
+      percent: 35,
+      completedWork: 4105,
+      totalWork: null,
+    };
+    const observation = receiveUpgradeStatus(null, status, now);
+    expect(deriveUpgradeModel(observation, loadedUpgradeFixture, now)).toMatchObject({
+      phase: 'ongoing',
+      percent: 35,
+      progressText: '检查候选服务 · 35%',
+    });
+    expect(deriveUpgradeModel(observation, loadedUpgradeFixture, now + 5001).percent).toBeNull();
+    expect(
+      deriveUpgradeModel(unknownUpgradeObservation(observation), loadedUpgradeFixture, now).percent,
+    ).toBeNull();
+    status.attempt.percent = null;
+    expect(model(status).percent).toBeNull();
+    status.attempt.percent = 100;
+    expect(model(status).percent).toBeNull();
+    status.attempt.percent = 35;
+    status.attempt.completedWork = -1;
+    expect(
+      deriveUpgradeModel(receiveUpgradeStatus(null, status, now), loadedUpgradeFixture, now)
+        .percent,
+    ).toBeNull();
+  });
+  it.each([4105, 0])(
+    'accepts a genuinely resolved total for %s completed work only on a newer observation of the same plan',
+    (completedWork) => {
+      const status = upgradeFixture();
+      status.attempt = {
+        ...attemptFixture(),
+        state: 'candidate-ready',
+        sequence: 3,
+        percent: 35,
+        completedWork,
+        totalWork: null,
+      };
+      const previous = receiveUpgradeStatus(null, status, now);
+      const next = {
+        ...status,
+        observedAt: new Date(now + 2000).toISOString(),
+        attempt: {
+          ...status.attempt,
+          sequence: 4,
+          totalWork: completedWork === 0 ? 0 : 4122,
+          observedAt: new Date(now + 2000).toISOString(),
+        },
+      };
+      const received = receiveUpgradeStatus(previous, UpgradeStatusSchema.parse(next), now + 2000);
+      expect(received.uncertain).toBe(false);
+      expect(received.snapshot?.attempt).toEqual(next.attempt);
+      const derived = deriveUpgradeModel(received, loadedUpgradeFixture, now + 2000);
+      expect(derived.percent).toBe(35);
+      expect(received.snapshot?.attempt?.completedWork).toBe(completedWork);
+      expect(received.snapshot?.attempt?.planDigest).toBe(previous.snapshot?.attempt?.planDigest);
+    },
+  );
+  it.each([
+    { name: 'same-sequence total resolution', beforeTotal: null, patch: { totalWork: 4122 } },
+    { name: 'same-sequence work change', beforeTotal: null, patch: { completedWork: 4106 } },
+    { name: 'changed known total', beforeTotal: 4122, patch: { sequence: 4, totalWork: 4123 } },
+    { name: 'lost known total', beforeTotal: 4122, patch: { sequence: 4, totalWork: null } },
+    {
+      name: 'total below completed work',
+      beforeTotal: null,
+      patch: { sequence: 4, totalWork: 4104 },
+    },
+    {
+      name: 'nonfinite resolved total',
+      beforeTotal: null,
+      patch: { sequence: 4, totalWork: Infinity },
+    },
+    {
+      name: 'another fixed plan',
+      beforeTotal: null,
+      patch: { sequence: 4, totalWork: 4122, planDigest: DIGEST_A },
+    },
+  ])('rejects $name rather than refreshing conflicting progress', ({ beforeTotal, patch }) => {
+    const status = upgradeFixture();
+    status.attempt = {
+      ...attemptFixture(),
+      sequence: 3,
+      completedWork: 4105,
+      totalWork: beforeTotal,
+      percent: 35,
+    };
+    const previous = receiveUpgradeStatus(null, status, now);
+    const conflict = receiveUpgradeStatus(
+      previous,
+      { ...status, attempt: { ...status.attempt, ...patch } },
+      now + 100,
+    );
+    expect(conflict.uncertain).toBe(true);
+    expect(conflict.snapshot).toBe(previous.snapshot);
+    expect(deriveUpgradeModel(conflict, loadedUpgradeFixture, now + 100).percent).toBeNull();
+  });
+  it('accepts a resolved total after a missed generation handoff while ignoring later-arriving old-generation observations', () => {
+    const status = upgradeFixture();
+    status.attempt = {
+      ...attemptFixture(),
+      generation: 8,
+      sequence: 30,
+      percent: 35,
+      completedWork: 4105,
+      totalWork: null,
+    };
+    const previous = receiveUpgradeStatus(null, status, now);
+    const next = {
+      ...status,
+      observedAt: new Date(now + 2000).toISOString(),
+      attempt: {
+        ...status.attempt,
+        generation: 9,
+        sequence: 0,
+        totalWork: 4122,
+        observedAt: new Date(now + 2000).toISOString(),
+      },
+    };
+    const received = receiveUpgradeStatus(previous, UpgradeStatusSchema.parse(next), now + 2000);
+    expect(received.uncertain).toBe(false);
+    expect(received.snapshot?.attempt).toEqual(next.attempt);
+    expect(deriveUpgradeModel(received, loadedUpgradeFixture, now + 2000).percent).toBe(35);
+    const late = {
+      ...status,
+      observedAt: new Date(now + 3000).toISOString(),
+      attempt: { ...status.attempt, sequence: 99 },
+    };
+    expect(receiveUpgradeStatus(received, late, now + 3000)).toBe(received);
   });
   it('an independent new attempt may restart at zero but cannot inherit old recovery or completion', () => {
     const status = installed();
