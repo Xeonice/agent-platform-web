@@ -9,9 +9,10 @@
 //   "标签消失"，那正是 08 §5.2 明说不许发生的事。
 //
 // ⛔ **绝不 persist**：`shellId` 是后端会话凭据（与 socketSessionKey 同类，15 §3.5）。
-//    刷新之后标签回到只剩 Agent 一个，是**有意的**——见下面 `openShellTab` 的注释。
+//    刷新后只恢复公开选择书签，再与认证后的终端清单合并，不落盘会话凭据。
 import type { StateCreator } from 'zustand';
 import type { TerminalBookmark } from '@/types/terminal';
+import { shellTabSeqOf as terminalOrdinalOf } from '@/lib/terminal/terminalTabs';
 
 /**
  * 一个用户自己开的终端标签。
@@ -265,12 +266,11 @@ export const createTerminalTabsSlice: StateCreator<TerminalTabsSlice, [], [], Te
    * 那一刻可能还没建完会话，或者建完了但前端还没拿到 id）。拿清单做全量 reconcile
    * 就会把它当成"服务端没有"抹掉 —— 用户眼睁睁看着自己刚开的终端消失。
    *
-   * ⚠️ **顺序是载荷的一部分**：清单按 tmux `session_created` 升序，这里按同样的顺序
-   * 补进去，于是「终端 1..n」跟着创建顺序走。⇒ 刷新后编号可能**位移**（刷新前
-   * 「终端 1 / 终端 3」→ 刷新后「终端 1 / 终端 2」）。这是**已知代价不是 bug**：
-   * 序号不 persist（它藏在 sessionId 里），而唯一能跨刷新稳定的事实只有创建顺序；
-   * 要不位移就得把 `shellId → 序号` 存进 localStorage，而 `shellId` 是会话凭据，
-   * 15 §3.5 明令不许落盘。
+   * ⚠️ **顺序是载荷的一部分**：清单按 tmux `session_created` 升序。保留已有标签
+   * （包括公开选择书签恢复的标签）的编号，按创建顺序把未知终端补到空编号，再按
+   * 编号排回标签栏。否则先恢复「终端 2」会把原「终端 1」错误续号成「终端 3」。
+   * 未保存的历史编号 gap 仍可在刷新后压缩；不增加凭据或完整标签映射的持久化。
+   * 用户新开标签仍从已分配的最大编号续号，不因填空、重复清单或关闭标签倒退。
    *
    * `shells === null`（问不出来）⇒ 只记状态，**一个标签都不动**：既不补也不删。
    */
@@ -283,6 +283,8 @@ export const createTerminalTabsSlice: StateCreator<TerminalTabsSlice, [], [], Te
       const existing = s.shellTabsOf.get(sandboxId) ?? [];
       let seq = s.shellTabSeqOf.get(sandboxId) ?? 0;
       const next = [...existing];
+      const occupied = new Set(existing.map((tab) => terminalOrdinalOf(tab.sessionId)));
+      let available = 1;
       for (const entry of shells) {
         const index = next.findIndex(
           (tab) =>
@@ -294,10 +296,15 @@ export const createTerminalTabsSlice: StateCreator<TerminalTabsSlice, [], [], Te
           const known = next[index];
           if (known !== undefined) next[index] = { ...known, ...entry };
         } else {
-          seq += 1;
-          next.push({ sessionId: `${sandboxId}:shell:${String(seq)}`, ...entry });
+          while (occupied.has(available)) available += 1;
+          occupied.add(available);
+          seq = Math.max(seq, available);
+          next.push({ sessionId: `${sandboxId}:shell:${String(available)}`, ...entry });
         }
       }
+      next.sort(
+        (left, right) => terminalOrdinalOf(left.sessionId) - terminalOrdinalOf(right.sessionId),
+      );
       const shellTabsOf = new Map(s.shellTabsOf);
       shellTabsOf.set(sandboxId, next);
       const shellTabSeqOf = new Map(s.shellTabSeqOf);

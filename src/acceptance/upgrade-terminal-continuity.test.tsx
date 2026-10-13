@@ -12,6 +12,7 @@ import type { ReactNode } from 'react';
 import type { TerminalClientFrame } from '@/types/ws-protocol';
 const ID = '00000000-0000-4000-8000-000000000021';
 const ID2 = '00000000-0000-4000-8000-000000000022';
+const ID3 = '00000000-0000-4000-8000-000000000023';
 class Transport implements SocketLike {
   connected: () => void = () => undefined;
   disconnected: () => void = () => undefined;
@@ -241,6 +242,7 @@ describe('UPG F06/C03 public terminal bookmark restoration', () => {
     });
     expect(result.current.inventoryUnavailable).toBe(true);
     expect(result.current.activeSessionId).toBe(selected?.sessionId);
+    expect(result.current.tabs.map((tab) => tab.label)).toEqual(['Agent', '终端 2']);
     act(() => {
       result.current.receiveShellInventory([
         { shellId: 'credential-a', terminalIdentity: ID },
@@ -248,7 +250,12 @@ describe('UPG F06/C03 public terminal bookmark restoration', () => {
       ]);
     });
     expect(result.current.tabs.filter((tab) => tab.terminalIdentity === ID2)).toHaveLength(1);
+    expect(result.current.tabs.map((tab) => tab.label)).toEqual(['Agent', '终端 1', '终端 2']);
+    expect(result.current.tabs.map((tab) => tab.terminalIdentity)).toEqual([undefined, ID, ID2]);
     expect(result.current.activeSessionId).toBe(selected?.sessionId);
+    expect(
+      result.current.tabs.find((tab) => tab.sessionId === result.current.activeSessionId)?.label,
+    ).toBe('终端 2');
     expect(localStorage.getItem(key)).not.toContain('credential');
     expect(localStorage.getItem(key)).not.toContain('shellId');
     expect(partializeAppState(useAppStore.getState())).not.toHaveProperty('shellTabsOf');
@@ -258,6 +265,102 @@ describe('UPG F06/C03 public terminal bookmark restoration', () => {
         .shellTabsOf.get('sandbox-a')
         ?.find((tab) => tab.terminalIdentity === ID2)?.shellId,
     ).toBe('credential-b');
+  });
+  it('keeps restored ordinals and a newly opened tab when inventories repeat or remain unavailable', () => {
+    const key = terminalBookmarkKey(identity.instanceId, identity.userScope, 'sandbox-a');
+    localStorage.setItem(
+      key,
+      JSON.stringify({ version: 1, terminalIdentity: ID2, kind: 'shell', ordinal: 2 }),
+    );
+    const { result } = renderHook(() => useTerminalSessions('sandbox-a', config), { wrapper });
+    const original = result.current.activeSessionId;
+    act(() => {
+      result.current.openShellTab();
+    });
+    const local = result.current.activeSessionId;
+    expect(result.current.tabs.find((tab) => tab.sessionId === local)?.label).toBe('终端 3');
+    act(() => {
+      result.current.receiveShellInventory(null);
+      result.current.receiveShellInventory([
+        { shellId: 'credential-a', terminalIdentity: ID },
+        { shellId: 'credential-b', terminalIdentity: ID2 },
+      ]);
+      result.current.receiveShellInventory([
+        { shellId: 'credential-a', terminalIdentity: ID },
+        { shellId: 'credential-b', terminalIdentity: ID2 },
+      ]);
+    });
+    expect(result.current.tabs.map((tab) => tab.label)).toEqual([
+      'Agent',
+      '终端 1',
+      '终端 2',
+      '终端 3',
+    ]);
+    expect(result.current.activeSessionId).toBe(local);
+    expect(result.current.tabs.find((tab) => tab.sessionId === original)?.terminalIdentity).toBe(
+      ID2,
+    );
+    act(() => {
+      result.current.adoptTerminalIdentity(local, ID3);
+      result.current.receiveShellInventory([
+        { shellId: 'credential-a', terminalIdentity: ID },
+        { shellId: 'credential-b', terminalIdentity: ID2 },
+        { shellId: 'credential-c', terminalIdentity: ID3 },
+      ]);
+    });
+    expect(result.current.tabs).toHaveLength(4);
+    expect(result.current.tabs.find((tab) => tab.sessionId === local)?.shellId).toBe(
+      'credential-c',
+    );
+    act(() => {
+      result.current.receiveShellInventory([]);
+      result.current.receiveShellInventory(null);
+    });
+    expect(result.current.tabs.map((tab) => tab.label)).toEqual([
+      'Agent',
+      '终端 1',
+      '终端 2',
+      '终端 3',
+    ]);
+    expect(result.current.activeSessionId).toBe(local);
+    act(() => {
+      result.current.closeTab(local);
+      result.current.openShellTab();
+    });
+    expect(
+      result.current.tabs.find((tab) => tab.sessionId === result.current.activeSessionId)?.label,
+    ).toBe('终端 4');
+    expect(localStorage.getItem(key)).not.toContain('credential');
+    expect(localStorage.getItem(key)).not.toContain('shellId');
+    expect(partializeAppState(useAppStore.getState())).not.toHaveProperty('shellTabsOf');
+  });
+  it('fills unsaved ordinal gaps in server creation order without renumbering the selected bookmark', () => {
+    localStorage.setItem(
+      terminalBookmarkKey(identity.instanceId, identity.userScope, 'sandbox-a'),
+      JSON.stringify({ version: 1, terminalIdentity: ID3, kind: 'shell', ordinal: 3 }),
+    );
+    const { result } = renderHook(() => useTerminalSessions('sandbox-a', config), { wrapper });
+    const original = result.current.activeSessionId;
+    act(() => {
+      result.current.receiveShellInventory([
+        { shellId: 'credential-a', terminalIdentity: ID },
+        { shellId: 'credential-b', terminalIdentity: ID2 },
+        { shellId: 'credential-c', terminalIdentity: ID3 },
+      ]);
+    });
+    expect(result.current.tabs.map((tab) => tab.label)).toEqual([
+      'Agent',
+      '终端 1',
+      '终端 2',
+      '终端 3',
+    ]);
+    expect(result.current.tabs.map((tab) => tab.terminalIdentity)).toEqual([
+      undefined,
+      ID,
+      ID2,
+      ID3,
+    ]);
+    expect(result.current.activeSessionId).toBe(original);
   });
   it('an empty inventory preserves the original bookmark instead of switching or making another terminal', () => {
     localStorage.setItem(

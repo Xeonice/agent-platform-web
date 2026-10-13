@@ -22,7 +22,7 @@ export function VersionUpdateNoticeView({
     <aside
       aria-label="版本更新提醒"
       data-testid="upgrade-notice"
-      className="fixed right-3 top-16 z-40 w-[min(340px,calc(100vw-24px))] rounded-lg border border-border bg-background p-3 shadow-sm sm:right-6"
+      className="fixed right-4 top-16 z-40 w-[min(300px,calc(100vw-16px))] rounded-xl border border-border bg-background p-3 shadow-sm sm:right-6"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
