@@ -12,8 +12,10 @@ const meta: Meta<typeof UpdateCompareDialogView> = {
     imageName: 'ml-agent',
     refDisplay: 'docker.io/myrepo/ml-agent:v1.0',
     currentDigestShort: 'sha256:4b17e…a02',
+    currentRuntimeVersionsLabel: 'Codex 0.140.0 · Claude Code 未报告',
     currentResolvedAtLabel: '解析于 3 天前',
     upstreamDigestShort: 'sha256:8e05a…77f',
+    upstreamRuntimeVersionsLabel: 'Codex 0.150.1 · Claude Code 2.1.251',
     upstreamValidation: { status: 'valid', pinnedDigestShort: 'sha256:8e05a…77f' },
     onAdopt: noop,
     onDismiss: noop,
@@ -30,6 +32,10 @@ export const UpstreamValid: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId('current-digest')).toHaveTextContent('sha256:4b17e…a02');
     await expect(canvas.getByTestId('upstream-digest')).toHaveTextContent('sha256:8e05a…77f');
+    await expect(canvas.getByTestId('current-runtime-versions')).toHaveTextContent('Codex 0.140.0');
+    await expect(canvas.getByTestId('upstream-runtime-versions')).toHaveTextContent(
+      'Codex 0.150.1',
+    );
     await expect(canvas.getByRole('button', { name: '更新到新版本' })).toBeEnabled();
     await expect(canvas.getByRole('button', { name: '暂不更新' })).toBeInTheDocument();
     // MUTATION：把标题的 `<RefreshCw>` 换回 🔄 字符或换成另一个图标 ⇒ 这条先红。

@@ -2110,6 +2110,9 @@ export interface components {
                 healthcheckCmd?: string[];
             };
             supportedRuntimes: string[];
+            runtimeVersions?: {
+                [key: string]: string;
+            };
             providerCompatibility?: {
                 [key: string]: boolean;
             };
@@ -2164,6 +2167,9 @@ export interface components {
                     healthcheckCmd?: string[];
                 };
                 supportedRuntimes: string[];
+                runtimeVersions?: {
+                    [key: string]: string;
+                };
                 providerCompatibility?: {
                     [key: string]: boolean;
                 };
@@ -2198,6 +2204,9 @@ export interface components {
             };
             validation: {
                 digest?: string;
+                runtimeVersions?: {
+                    [key: string]: string;
+                };
                 /** @enum {string} */
                 status: "pending" | "valid" | "warning" | "invalid";
                 errors: {
@@ -2214,6 +2223,9 @@ export interface components {
         };
         ValidationOutcomeResponseDto: {
             digest?: string;
+            runtimeVersions?: {
+                [key: string]: string;
+            };
             /** @enum {string} */
             status: "pending" | "valid" | "warning" | "invalid";
             errors: {
@@ -2245,6 +2257,9 @@ export interface components {
         };
         RevalidateOutcomeResponseDto: {
             digest?: string;
+            runtimeVersions?: {
+                [key: string]: string;
+            };
             /** @enum {string} */
             status: "pending" | "valid" | "warning" | "invalid";
             errors: {
@@ -2283,6 +2298,9 @@ export interface components {
                 digest: string;
                 validation: {
                     digest?: string;
+                    runtimeVersions?: {
+                        [key: string]: string;
+                    };
                     /** @enum {string} */
                     status: "pending" | "valid" | "warning" | "invalid";
                     errors: {

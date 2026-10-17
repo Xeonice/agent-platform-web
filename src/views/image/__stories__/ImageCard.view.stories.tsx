@@ -28,6 +28,7 @@ const customWarning: ImageCardModel = {
   warnings: [CLAUDE_CODE_WARNING],
   errors: [],
   supportedRuntimes: ['Codex'],
+  runtimeVersionsLabel: 'Codex 0.150.1 · Claude Code 未报告',
   isActive: true,
   canDelete: true,
   canCheckUpdate: true,
@@ -45,6 +46,7 @@ const builtinValid: ImageCardModel = {
   validationStatus: 'valid',
   warnings: [],
   supportedRuntimes: ['Codex', 'Claude Code'],
+  runtimeVersionsLabel: 'Codex 0.150.1 · Claude Code 2.1.251',
   canDelete: false,
   resolvedAtLabel: '解析于 2 小时前',
   // 预置镜像**自己就是**来源起点：`derivedFromDigest === null` 在它身上是**事实**，不是缺值。
@@ -110,6 +112,15 @@ export const WithAlias: Story = {
     await expect(canvas.getByRole('heading', { name: /研发环境/ })).toBeInTheDocument();
     await expect(canvas.getByText(customWarning.refDisplay)).toBeInTheDocument();
     await expect(canvas.getByRole('button', { name: '编辑别名' })).toBeInTheDocument();
+  },
+};
+
+export const VersionsNotReported: Story = {
+  args: { model: { ...builtinValid, runtimeVersionsLabel: 'Codex 未报告 · Claude Code 未报告' } },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByTestId('image-runtime-versions')).toHaveTextContent(
+      '镜像声明：Codex 未报告 · Claude Code 未报告',
+    );
   },
 };
 

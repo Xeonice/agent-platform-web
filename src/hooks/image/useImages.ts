@@ -26,6 +26,7 @@ import {
   useValidateImageRef,
 } from '@/hooks/image/useImageMutations';
 import { imageCardModel, shortenDigest } from '@/lib/image/imageCardModel';
+import { imageRuntimeVersionsLabel } from '@/lib/image/imageRuntimeVersions';
 import {
   cardValidationStatus,
   envRowsFromConfig,
@@ -123,8 +124,10 @@ export interface ImageCompareState {
   imageName: string;
   refDisplay: string;
   currentDigestShort: string;
+  currentRuntimeVersionsLabel: string;
   currentResolvedAtLabel?: string;
   upstreamDigestShort: string;
+  upstreamRuntimeVersionsLabel: string;
   upstreamValidation: ImageValidationResultData;
   /**
    * [更新到新版本] 到底要写什么：
@@ -448,7 +451,8 @@ export function useImageManager(): ImagesManager {
           (g.face.imageAlias ?? '').toLowerCase().includes(needle) ||
           g.face.version.toLowerCase().includes(needle) ||
           g.imageName.toLowerCase().includes(needle) ||
-          g.face.ref.toLowerCase().includes(needle)
+          g.face.ref.toLowerCase().includes(needle) ||
+          imageRuntimeVersionsLabel(g.face.runtimeVersions).toLowerCase().includes(needle)
         );
       })
       .map((g) => toCardViewModel(g, now, upstreamByManifest));
@@ -566,6 +570,7 @@ export function useImageManager(): ImagesManager {
         setConclusionInvalidated(false);
         setValidationResult({
           status: cardValidationStatus(outcome.status),
+          runtimeVersionsLabel: imageRuntimeVersionsLabel(outcome.runtimeVersions),
           ...(outcome.digest === undefined
             ? {}
             : { pinnedDigestShort: shortenDigest(outcome.digest) }),
@@ -637,7 +642,11 @@ export function useImageManager(): ImagesManager {
               imageName: result.manifest.imageName,
               refDisplay: result.manifest.ref,
               currentDigestShort: live === undefined ? '（未知）' : shortenDigest(live.digest),
+              currentRuntimeVersionsLabel: imageRuntimeVersionsLabel(live?.runtimeVersions),
               upstreamDigestShort: shortenDigest(result.manifest.digest),
+              upstreamRuntimeVersionsLabel: imageRuntimeVersionsLabel(
+                result.manifest.runtimeVersions,
+              ),
               upstreamValidation: {
                 status: cardValidationStatus(result.validation.status),
                 warnings: issuesToText(result.validation.warnings),
@@ -770,10 +779,16 @@ export function useImageManager(): ImagesManager {
             imageName: manifest.imageName,
             refDisplay: model.refDisplay,
             currentDigestShort: shortenDigest(result.current.digest),
+            currentRuntimeVersionsLabel: imageRuntimeVersionsLabel(
+              manifest.digest === result.current.digest ? manifest.runtimeVersions : undefined,
+            ),
             ...(model.resolvedAtLabel === undefined
               ? {}
               : { currentResolvedAtLabel: model.resolvedAtLabel }),
             upstreamDigestShort: shortenDigest(upstreamDigest),
+            upstreamRuntimeVersionsLabel: imageRuntimeVersionsLabel(
+              result.upstream.validation.runtimeVersions,
+            ),
             upstreamValidation: {
               status: cardValidationStatus(result.upstream.validation.status),
               warnings: issuesToText(result.upstream.validation.warnings),

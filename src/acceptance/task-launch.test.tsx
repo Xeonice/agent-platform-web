@@ -386,7 +386,7 @@ describe('REQ-LCH-018 · local searchable task choices', () => {
     server.use(
       http.get(`${API}/api/images`, () =>
         HttpResponse.json([
-          image(),
+          image({ runtimeVersions: { codex: '0.150.1', 'claude-code': '2.1.251' } }),
           image({
             id: 'manifest-warning',
             imageId: 'image-warning',
@@ -427,6 +427,12 @@ describe('REQ-LCH-018 · local searchable task choices', () => {
     await pick();
     await choose('分支（可选）', 'feat/login-refresh');
     await choose('镜像（可选）', /研发环境/);
+    expect(screen.getByTestId('selected-image-detail')).toHaveTextContent(
+      '镜像声明：Codex 0.150.1 · Claude Code 2.1.251',
+    );
+    expect(screen.getByTestId('selected-image-reference')).toHaveTextContent(
+      'docker.io/acme/ml-agent:v1',
+    );
     fireEvent.change(screen.getByLabelText('任务指令（可选）'), {
       target: { value: '保留任务指令' },
     });
@@ -446,6 +452,15 @@ describe('REQ-LCH-018 · local searchable task choices', () => {
     expect(screen.getByRole('option', { name: /研发环境/ })).toHaveTextContent(
       'docker.io/acme/ml-agent:v1',
     );
+    expect(screen.getByRole('option', { name: /研发环境/ })).toHaveTextContent(
+      '镜像声明：Codex 0.150.1 · Claude Code 2.1.251',
+    );
+    fireEvent.change(search, { target: { value: '2.1.251' } });
+    expect(screen.getByRole('option', { name: /研发环境/ })).toHaveAttribute(
+      'data-value',
+      'option:image-custom',
+    );
+    expect(screen.queryByRole('option', { name: /启动较慢/ })).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: /平台预制镜像/ })).toBeInTheDocument();
     fireEvent.keyDown(search, { key: 'Escape' });
     await choose('项目', 'Acme-API');

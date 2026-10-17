@@ -39,6 +39,7 @@ export function ValidationResultView({
   errors = [],
   pinnedDigestShort,
   unknownCodes = [],
+  runtimeVersionsLabel,
   requirementsOpen = false,
   onViewRequirements,
 }: ValidationResultProps) {
@@ -60,6 +61,15 @@ export function ValidationResultView({
       {pinnedDigestShort !== undefined && status !== 'invalid' && (
         <p className="font-mono text-xs text-muted-foreground" data-testid="pinned-digest">
           钉定 {pinnedDigestShort}
+        </p>
+      )}
+
+      {runtimeVersionsLabel !== undefined && (
+        <p
+          className="break-words text-xs text-muted-foreground"
+          data-testid="validation-runtime-versions"
+        >
+          镜像声明：{runtimeVersionsLabel}
         </p>
       )}
 

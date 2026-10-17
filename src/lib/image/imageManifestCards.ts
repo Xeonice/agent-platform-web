@@ -11,6 +11,7 @@
 //    列表是逐行返回的，聚合只能在这里做。
 import { imageIssueCopy, KNOWN_IMAGE_ISSUE_CODES } from '@/lib/image/imageIssueCopy';
 import { shortenDigest } from '@/lib/image/imageCardModel';
+import { imageRuntimeVersionsLabel } from '@/lib/image/imageRuntimeVersions';
 import type {
   EnvVarRowModel,
   ImageCardInput,
@@ -103,6 +104,7 @@ export function manifestToCardInput(dto: ImageManifestDto): ImageCardInput {
     ref: { registry: '', repository: parsed.name, tag: parsed.tag, digest: dto.digest },
     validationStatus: status,
     supportedRuntimes: dto.supportedRuntimes,
+    runtimeVersions: dto.runtimeVersions,
     isActive: dto.isActive,
     isBuiltin: dto.isBuiltin,
     // 「解析于 X 前」的时刻。后端把 `resolvedAt` 与 `registeredAt` 定义成同一个事件
@@ -147,6 +149,7 @@ function toVersionRow(dto: ImageManifestDto): ImageVersionRowModel {
     isActive: dto.isActive,
     registeredAt: dto.registeredAt,
     validationStatus: dto.validationStatus,
+    runtimeVersionsLabel: imageRuntimeVersionsLabel(dto.runtimeVersions),
   };
 }
 

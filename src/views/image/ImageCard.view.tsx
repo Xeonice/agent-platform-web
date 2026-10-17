@@ -151,6 +151,10 @@ export function ImageCardView({
 
       {aliasEditorSlot}
 
+      <p data-testid="image-runtime-versions" className="break-words text-xs text-muted-foreground">
+        镜像声明：{model.runtimeVersionsLabel}
+      </p>
+
       <div className="relative">
         <ValidationResultView
           requirementsOpen={requirementsOpen}

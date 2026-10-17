@@ -23,6 +23,7 @@ export interface LaunchImageOption {
   reference: string;
   label: string;
   secondary?: string;
+  detail?: string;
   searchText?: string;
   disabled: boolean;
   reason?: string;
@@ -67,6 +68,8 @@ export interface ImageCardInput {
   ref: ImageRefInput;
   validationStatus: ImageValidationStatus;
   supportedRuntimes: readonly string[];
+  /** This digest's OCI build declaration; absent keys do not imply a missing runtime. */
+  runtimeVersions?: Readonly<Record<string, string>>;
   isActive: boolean;
   /** 预置镜像（AIO）：前端隐藏 [删除]，仅保留 [禁用]（P21-4 §9）。 */
   isBuiltin: boolean;
@@ -138,6 +141,7 @@ export interface ImageCardModel {
   warnings: readonly string[];
   errors: readonly string[];
   supportedRuntimes: readonly string[];
+  runtimeVersionsLabel: string;
   isActive: boolean;
   /** 预置镜像不给 [删除]（P21-4 §9）。 */
   canDelete: boolean;
@@ -165,6 +169,8 @@ export interface ImageVersionRowModel {
   /** ⚠️ 这里保留 DTO 的**四**档（含 `pending`）：历史列表是溯源视图，把 `pending` 归到 ❌ 会 */
   /** 让"平台没判过"看起来像"平台判过、不合格"——卡面必须选一档，这里不必。 */
   validationStatus: 'pending' | 'valid' | 'warning' | 'invalid';
+  /** Derived from this historical manifest, never the current card's versions. */
+  runtimeVersionsLabel: string;
 }
 
 // ——— 运行参数 / 环境变量（P21-4 §10）———
@@ -237,6 +243,7 @@ export interface ImageValidationResultData {
   /** ✅/⚠️ 时回显本次解析出的 digest 短串（P21-4 §6「并回显本次解析出的 digest」）。 */
   pinnedDigestShort?: string;
   unknownCodes?: readonly string[];
+  runtimeVersionsLabel?: string;
 }
 
 // ——— wire 类型（**生成物别名**，本轮后端 8 个端点落地后才有）———

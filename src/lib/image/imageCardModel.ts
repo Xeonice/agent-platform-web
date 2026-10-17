@@ -8,6 +8,7 @@
 // `__tests__/imageCardModel.test.ts` 里的否定断言。
 
 import { formatRelativePast } from '@/lib/_shared/formatTime';
+import { imageRuntimeVersionsLabel } from '@/lib/image/imageRuntimeVersions';
 import type {
   ImageCardInput,
   ImageCardModel,
@@ -146,6 +147,7 @@ export function imageCardModel(input: ImageCardInput, now: number = Date.now()):
     warnings: input.warnings ?? [],
     errors: input.errors ?? [],
     supportedRuntimes: input.supportedRuntimes,
+    runtimeVersionsLabel: imageRuntimeVersionsLabel(input.runtimeVersions),
     isActive: input.isActive,
     canDelete: !input.isBuiltin,
     canCheckUpdate: refKind === 'tag' && digestState === 'pinned',

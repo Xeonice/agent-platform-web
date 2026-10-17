@@ -46,6 +46,7 @@ export interface NewSandboxPanelProps {
   imageWarning?: string;
   defaultImageLabel?: string;
   defaultImageSecondary?: string;
+  defaultImageDetail?: string;
   defaultImageDisabledReason?: string;
   /**
    * 服务端 registry 下发的可选 runtime（`GET /api/runtimes`，扁平数组；空数组 = 后端没注册 runtime）。
@@ -175,6 +176,7 @@ export function NewSandboxPanelView({
   imageWarning,
   defaultImageLabel = '平台预制镜像（默认）',
   defaultImageSecondary,
+  defaultImageDetail,
   defaultImageDisabledReason,
   runtimes,
   runtime,
@@ -265,6 +267,9 @@ export function NewSandboxPanelView({
                   ? '列表暂时读不到，请重试加载。'
                   : undefined);
   const loading = loadingProviders || loadingRuntimes;
+  const selectedImage = images?.find((option) => option.value === image);
+  const selectedImageDetail = image === '' ? defaultImageDetail : selectedImage?.detail;
+  const selectedImageReference = image === '' ? defaultImageSecondary : selectedImage?.secondary;
 
   return (
     <div
@@ -514,6 +519,7 @@ export function NewSandboxPanelView({
                 value: '',
                 label: defaultImageLabel,
                 secondary: defaultImageSecondary,
+                detail: defaultImageDetail,
                 disabled: defaultImageDisabledReason !== undefined,
                 reason: defaultImageDisabledReason,
               }}
@@ -522,6 +528,22 @@ export function NewSandboxPanelView({
               placeholder={image === '' ? defaultImageLabel : '当前镜像不可用，请改选'}
               className="mt-2"
             />
+            {selectedImageReference !== undefined && (
+              <p
+                data-testid="selected-image-reference"
+                className="mt-1 break-all font-mono text-xs text-muted-foreground"
+              >
+                {selectedImageReference}
+              </p>
+            )}
+            {selectedImageDetail !== undefined && (
+              <p
+                data-testid="selected-image-detail"
+                className="mt-1 break-words text-xs text-muted-foreground"
+              >
+                {selectedImageDetail}
+              </p>
+            )}
             {loadingImages && (
               <p role="status" className="mt-1 text-xs text-muted-foreground">
                 正在加载可选镜像…
@@ -548,6 +570,9 @@ export function NewSandboxPanelView({
             )}
             <p className="mt-1 text-xs text-muted-foreground">
               置灰的镜像不能选：到「镜像管理」里处理好再回来。
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              CLI 版本为镜像构建声明，任务实际版本以任务环境为准。
             </p>
           </div>
         )}

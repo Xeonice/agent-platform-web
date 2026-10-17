@@ -1,4 +1,5 @@
 import { groupManifestsByImage } from '@/lib/image/imageManifestCards';
+import { imageRuntimeVersionsLabel } from '@/lib/image/imageRuntimeVersions';
 import type { ImageManifestDto, LaunchImageOption, TaskImageSnapshot } from '@/types/image';
 
 export function launchImageOptions(
@@ -11,6 +12,7 @@ export function launchImageOptions(
   defaultDisabledReason?: string;
   defaultLabel: string;
   defaultSecondary?: string;
+  defaultDetail?: string;
 } {
   const groups = groupManifestsByImage(manifests).filter(
     ({ face }) => provider === undefined || face.providerCompatibility?.[provider] !== false,
@@ -30,7 +32,14 @@ export function launchImageOptions(
       reference: face.ref,
       label: face.imageAlias ?? face.ref,
       ...(face.imageAlias?.trim() ? { secondary: face.ref } : {}),
-      searchText: [face.imageAlias, face.imageName, face.ref, face.version]
+      detail: `镜像声明：${imageRuntimeVersionsLabel(face.runtimeVersions)}`,
+      searchText: [
+        face.imageAlias,
+        face.imageName,
+        face.ref,
+        face.version,
+        imageRuntimeVersionsLabel(face.runtimeVersions),
+      ]
         .filter(Boolean)
         .join(' '),
       disabled: reason !== undefined,
@@ -53,6 +62,7 @@ export function launchImageOptions(
           defaultSecondary: builtinAlias
             ? `${builtinAlias} · ${builtin.face.ref}`
             : builtin.face.ref,
+          defaultDetail: defaultOption?.detail,
         }),
     ...(defaultOption?.reason === undefined
       ? {}

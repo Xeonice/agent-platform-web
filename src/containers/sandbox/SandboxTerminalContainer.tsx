@@ -536,6 +536,7 @@ export function SandboxTerminalContainer({
               imageWarning={selectedImage?.warning}
               defaultImageLabel={launchImages.defaultLabel}
               defaultImageSecondary={launchImages.defaultSecondary}
+              defaultImageDetail={launchImages.defaultDetail}
               defaultImageDisabledReason={launchImages.defaultDisabledReason}
               runtimes={runtimeList}
               runtime={runtime}

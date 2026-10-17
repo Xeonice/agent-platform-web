@@ -293,6 +293,7 @@ export const SearchableFields: Story = {
         reference: 'docker.io/acme/ml-agent:v1',
         label: '研发环境',
         secondary: 'docker.io/acme/ml-agent:v1',
+        detail: '镜像声明：Codex 0.150.1 · Claude Code 2.1.251',
         searchText: '研发环境 docker.io/acme/ml-agent:v1',
         disabled: false,
       },
@@ -325,6 +326,9 @@ export const SearchableFields: Story = {
     );
     await userEvent.click(page.getByRole('button', { name: '发起任务并打开终端' }));
     await expect(page.queryByRole('combobox', { name: '搜索镜像' })).not.toBeInTheDocument();
+    await expect(page.getByTestId('selected-image-detail')).toHaveTextContent(
+      '镜像声明：Codex 0.150.1 · Claude Code 2.1.251',
+    );
     await expect(args.onCreate).not.toHaveBeenCalled();
     await userEvent.click(page.getByRole('button', { name: '发起任务并打开终端' }));
     await expect(args.onCreate).toHaveBeenCalledTimes(1);
