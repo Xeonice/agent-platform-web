@@ -15,6 +15,11 @@ import type {
   UpgradeContractAttempt,
 } from '@/types/upgrade';
 
+// Verifying the installed source can take a minute and a command can verify it
+// twice. Keep this control-plane wait bounded without changing request health
+// deadlines or the freshness required to display upgrade progress.
+const UPGRADE_CONTROL_TIMEOUT_MS = 240_000;
+
 async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   const controller = new AbortController();
   const onAbort = () => {
@@ -24,7 +29,7 @@ async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   init.signal?.addEventListener('abort', onAbort, { once: true });
   const timeout = setTimeout(() => {
     controller.abort();
-  }, 5_000);
+  }, UPGRADE_CONTROL_TIMEOUT_MS);
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
