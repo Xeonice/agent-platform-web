@@ -1,6 +1,6 @@
 // 沙箱生命周期映射（纯函数，可单测）。把后端 12 值 status 归约为：
 //  - 生命周期决策：startup(启动中) / running(可开终端) / failed / ended / unknown
-//  - 启动四阶段（P20 §3.3，**展示序**）：初始化 / 拉取镜像 / 准备代码副本 / 启动运行环境
+//  - 启动步骤：初始化 / 准备代码副本 / 创建运行环境 / 启动运行环境
 // UI 决策不散落在容器条件里，集中在此，view 只吃派生结果。
 import { normalizeOrigin } from '@/lib/terminal/terminalSocket';
 import type { components } from '@/types/generated/openapi';
@@ -17,25 +17,13 @@ export function buildEventsSocketUri(base: string): string {
 
 export type LifecycleDecision = 'startup' | 'running' | 'failed' | 'ended' | 'unknown';
 
-/**
- * 启动进度卡的四个**展示格**（P20 §3.3）。
- *
- * ⚠️ **展示顺序 ≠ 状态机顺序，这是刻意的**（03 §4.0 / F21-2 §6）：
- * 技术上代码副本必须先备好（`scheduling → preparing-workspace → creating → starting`，
- * 这样 `provider.create()` 时卷已存在）；但用户心智里"拉镜像"在"准备代码副本"之前
- * （先有环境再有代码），因此进度卡按「初始化 → 拉取镜像 → 准备代码副本 → 启动运行环境」渲染。
- *
- * **实现时不要"顺手把展示顺序改成和状态机一致"**——三件事在此刻意解耦：
- *   ① 格的顺序 = 本数组；
- *   ② status → 格 = `STATUS_TO_PHASE_KEY`（多对一）；
- *   ③ 进度条百分比 = `STATUS_TECH_RANK`（技术推进序，保证单调递增，不受展示顺序影响）。
- */
+/** Steps follow actual execution order; their milestones are not measured workload. */
 export const STARTUP_PHASES = [
   { key: 'init', label: '初始化' },
-  { key: 'image', label: '拉取镜像' },
   // ⚠️ 上屏口径（P21-1 §9）：这里是**给用户看的名字**，不是状态机的名字。
   //    「工作区」→「代码副本」、「实例」→「运行环境」——两个内部词都不上屏。
   { key: 'workspace', label: '准备代码副本' },
+  { key: 'image', label: '创建运行环境' },
   { key: 'instance', label: '启动运行环境' },
 ] as const;
 
@@ -47,11 +35,7 @@ export type StartupPhaseKey = (typeof STARTUP_PHASES)[number]['key'];
  */
 export const INSTANCE_PHASE_KEY: StartupPhaseKey = 'instance';
 
-/**
- * status → 展示格 key（多对一）。**这里就是"展示顺序 ≠ 技术顺序"落到代码的那一处**：
- * `preparing-workspace` 落「准备代码副本」（展示第 3 格）、`creating` 落「拉取镜像」（展示第 2 格），
- * 即技术上后发生的 `creating` 反而点亮更靠前的格——这是预期，不是 bug。
- */
+/** Coarse legacy lifecycle states; detailed phase facts come from startupObservation. */
 const STATUS_TO_PHASE_KEY: Record<string, StartupPhaseKey> = {
   pending: 'init',
   scheduling: 'init',
@@ -90,7 +74,7 @@ export function phaseKeyForStatus(status: string): StartupPhaseKey {
   return STATUS_TO_PHASE_KEY[status] ?? 'init';
 }
 
-/** 当前**展示格下标**（未知 status 落 0）。注意：它不随技术推进单调，见 STARTUP_PHASES 注释。 */
+/** Actual step index, in execution order. Unknown status keeps the initial step. */
 export function phaseIndexForStatus(status: string): number {
   const key = phaseKeyForStatus(status);
   return STARTUP_PHASES.findIndex((p) => p.key === key);

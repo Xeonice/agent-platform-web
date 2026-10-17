@@ -3,6 +3,7 @@ import { ApiErrorException, toApiError } from '@/services/api/apiError';
 import {
   UpgradeStatusSchema,
   UpgradeAttemptSchema,
+  UpgradeOperationSchema,
   UpgradeRequestSchema,
   UpgradeContractRequestSchema,
   UpgradeContractAttemptSchema,
@@ -10,7 +11,7 @@ import {
 import type {
   UpgradeStatus,
   UpgradeRequest,
-  UpgradeAttempt,
+  UpgradeCommandResult,
   UpgradeContractRequest,
   UpgradeContractAttempt,
 } from '@/types/upgrade';
@@ -54,11 +55,16 @@ export async function getUpgradeStatus(signal?: AbortSignal): Promise<UpgradeSta
 export async function requestInstanceUpgrade(
   body: UpgradeRequest,
   csrfToken: string,
-): Promise<UpgradeAttempt> {
-  return UpgradeAttemptSchema.parse(
+  preferAsync = false,
+): Promise<UpgradeCommandResult> {
+  return UpgradeOperationSchema.or(UpgradeAttemptSchema).parse(
     await call('/api/system/upgrade/requests', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Upgrade-CSRF': csrfToken },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Upgrade-CSRF': csrfToken,
+        ...(preferAsync ? { Prefer: 'respond-async' } : {}),
+      },
       body: JSON.stringify(UpgradeRequestSchema.parse(body)),
     }),
   );
@@ -66,12 +72,13 @@ export async function requestInstanceUpgrade(
 export async function lookupUpgradeRequest(
   requestId: string,
   signal?: AbortSignal,
-): Promise<UpgradeAttempt> {
-  return UpgradeAttemptSchema.parse(
-    await call(
-      `/api/system/upgrade/requests/${encodeURIComponent(requestId)}`,
-      signal === undefined ? {} : { signal },
-    ),
+  preferAsync = false,
+): Promise<UpgradeCommandResult> {
+  return UpgradeOperationSchema.or(UpgradeAttemptSchema).parse(
+    await call(`/api/system/upgrade/requests/${encodeURIComponent(requestId)}`, {
+      ...(signal === undefined ? {} : { signal }),
+      ...(preferAsync ? { headers: { Prefer: 'respond-async' } } : {}),
+    }),
   );
 }
 export async function requestSemanticContract(

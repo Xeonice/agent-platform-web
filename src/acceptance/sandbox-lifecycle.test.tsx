@@ -98,6 +98,15 @@ describe('SBX · stop/start/delete HTTP lifecycle', () => {
           { status: 503 },
         ),
       ),
+      http.get(`${API}/api/sandboxes/task-a`, () =>
+        HttpResponse.json(
+          sandbox({
+            status: 'failed',
+            failureCode: 'PROVIDER_UNAVAILABLE',
+            failureOperation: 'start',
+          }),
+        ),
+      ),
     );
     const { result } = renderHook(useOperation, { wrapper: queryHarness().wrapper });
     act(() => {
@@ -111,6 +120,40 @@ describe('SBX · stop/start/delete HTTP lifecycle', () => {
       failureOperation: 'start',
     });
   });
+  it.each(['start', 'stop'] as const)(
+    'REQ-SBX-014: an unresolved %s timeout reads the same task and never fabricates a terminal failure or repeats the command',
+    async (operation) => {
+      const previous = operation === 'start' ? 'stopped' : 'running';
+      const pending = operation === 'start' ? 'starting' : 'stopping';
+      useAppStore.getState().setSandboxStatus('task-a', previous);
+      const commands = vi.fn();
+      const reads = vi.fn();
+      server.use(
+        http.post(`${API}/api/sandboxes/task-a/${operation}`, () => {
+          commands();
+          return HttpResponse.json(
+            { code: 'TIMEOUT', message: 'control response did not arrive', retryable: true },
+            { status: 504 },
+          );
+        }),
+        http.get(`${API}/api/sandboxes/task-a`, () => {
+          reads();
+          return HttpResponse.json(sandbox({ status: pending }));
+        }),
+      );
+      const { result } = renderHook(useOperation, { wrapper: queryHarness().wrapper });
+      act(() => {
+        result.current[operation]();
+      });
+      await waitFor(() => {
+        expect(result.current.busy).toBe(false);
+        expect(reads).toHaveBeenCalledOnce();
+      });
+      expect(useAppStore.getState().sandboxStatuses['task-a']?.status).toBe(pending);
+      expect(useAppStore.getState().sandboxStatuses['task-a']?.failureCode).toBeUndefined();
+      expect(commands).toHaveBeenCalledOnce();
+    },
+  );
   it('REQ-SBX-020/021/022: selected delete returns to overview immediately, omits it from attention, and waits for success notice', async () => {
     const gate = deferred();
     const submitted = vi.fn();

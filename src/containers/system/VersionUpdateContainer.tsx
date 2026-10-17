@@ -29,6 +29,8 @@ export function VersionUpdateContainer() {
       onRefresh={controller.refreshPage}
       onLater={later}
       onDetails={details}
+      onContinue={controller.continueWorking}
+      onCopyDiagnostics={controller.copyDiagnostics}
       open={popover.open}
       onOpenChange={popover.setOpen}
       triggerRef={popover.triggerRef}

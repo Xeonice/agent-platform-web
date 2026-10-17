@@ -1865,6 +1865,24 @@ export interface components {
             name: string;
             /** @enum {string} */
             status: "pending" | "scheduling" | "preparing-workspace" | "creating" | "starting" | "running" | "idle" | "stopping" | "stopped" | "failed" | "destroying" | "destroyed";
+            startupObservation?: {
+                operationId: string;
+                sequence: number;
+                /** @enum {string} */
+                state: "inflight" | "unknown" | "succeeded" | "failed";
+                /** @enum {string} */
+                stage: "workspace-preparation" | "instance-create" | "instance-start" | "runtime-tools" | "environment-initialization" | "agent-bootstrap" | "completed";
+                /** Format: date-time */
+                startedAt: string | null;
+                /** Format: date-time */
+                stageEnteredAt: string | null;
+                /** Format: date-time */
+                lastProgressAt: string | null;
+                /** Format: date-time */
+                heartbeatAt: string | null;
+                /** Format: date-time */
+                observedAt: string | null;
+            };
             headless: boolean;
             timeoutMinutes: (number) | null;
             idleTimeoutSec: number;
@@ -2627,6 +2645,72 @@ export interface components {
                 projectCleanupJobs: number;
             };
         };
+        UpgradeAttemptDto: {
+            instanceId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            requestId: string;
+            targetReleaseId: string;
+            targetDigest: string;
+            generation: number;
+            sequence: number;
+            /** @enum {string} */
+            state: "accepted" | "downloading" | "package-verified" | "migrating" | "prepared" | "candidate-ready" | "routing-switched" | "observing" | "api-activated" | "activation-confirmed" | "deferred" | "candidate-rejected" | "failed" | "reverted";
+            stage: string;
+            percent: number | null;
+            completedWork: number;
+            totalWork: number | null;
+            planDigest: string;
+            /** Format: date-time */
+            acceptedAt: string;
+            /** Format: date-time */
+            observedAt: string;
+            reason: string | null;
+        };
+        UpgradeOperationDto: {
+            instanceId: string;
+            /** Format: uuid */
+            operationId: string;
+            /** Format: uuid */
+            requestId: string;
+            finalTargetReleaseId: string;
+            finalTargetDigest: string;
+            sequence: number;
+            /** @enum {string} */
+            state: "accepted" | "preparing" | "running" | "completed" | "failed" | "deferred";
+            /** Format: date-time */
+            acceptedAt: string;
+            /** Format: date-time */
+            observedAt: string;
+            currentStageIndex: number;
+            stages: {
+                releaseId: string;
+                targetDigest: string;
+                /** Format: uuid */
+                attemptId: string | null;
+                /** @enum {string} */
+                state: "pending" | "running" | "confirmed" | "failed" | "deferred";
+            }[];
+            percent: number | null;
+            reason: string | null;
+            defaultImageUpdate?: {
+                /** @enum {string} */
+                scope: "managed-default";
+                images: {
+                    provider: string;
+                    previousRef: string;
+                    previousDigest: string;
+                    ref: string;
+                    digest: string;
+                    runtimeVersions: {
+                        [key: string]: string;
+                    };
+                }[];
+                /** Format: date-time */
+                observedAt: string;
+            } | null;
+        };
         UpgradeStatusDto: {
             instanceId: string;
             userScope: string;
@@ -2648,6 +2732,7 @@ export interface components {
                             max: number;
                         };
                         dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
                     };
                     web: {
                         artifactDigest: string;
@@ -2658,6 +2743,7 @@ export interface components {
                             max: number;
                         };
                         dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
                         webRevision: string;
                     };
                     installer: {
@@ -2669,6 +2755,7 @@ export interface components {
                             max: number;
                         };
                         dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
                     };
                     coordinator?: {
                         artifactDigest: string;
@@ -2679,6 +2766,7 @@ export interface components {
                             max: number;
                         };
                         dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
                     };
                     owner?: {
                         artifactDigest: string;
@@ -2689,6 +2777,7 @@ export interface components {
                             max: number;
                         };
                         dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
                     };
                 };
                 commits: {
@@ -2715,6 +2804,7 @@ export interface components {
                             max: number;
                         };
                         dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
                     };
                     web: {
                         artifactDigest: string;
@@ -2725,6 +2815,7 @@ export interface components {
                             max: number;
                         };
                         dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
                         webRevision: string;
                     };
                     installer: {
@@ -2736,6 +2827,7 @@ export interface components {
                             max: number;
                         };
                         dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
                     };
                     coordinator?: {
                         artifactDigest: string;
@@ -2746,6 +2838,7 @@ export interface components {
                             max: number;
                         };
                         dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
                     };
                     owner?: {
                         artifactDigest: string;
@@ -2756,6 +2849,7 @@ export interface components {
                             max: number;
                         };
                         dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
                     };
                 };
                 commits: {
@@ -2779,6 +2873,7 @@ export interface components {
                     webRevision: string;
                     webArtifactDigest: string;
                     installable: boolean;
+                    supportsAsync?: boolean;
                 } | null;
             };
             capabilities: {
@@ -2880,6 +2975,75 @@ export interface components {
                     reason: string | null;
                 } | null;
             } | null;
+            operation?: {
+                instanceId: string;
+                /** Format: uuid */
+                operationId: string;
+                /** Format: uuid */
+                requestId: string;
+                finalTargetReleaseId: string;
+                finalTargetDigest: string;
+                sequence: number;
+                /** @enum {string} */
+                state: "accepted" | "preparing" | "running" | "completed" | "failed" | "deferred";
+                /** Format: date-time */
+                acceptedAt: string;
+                /** Format: date-time */
+                observedAt: string;
+                currentStageIndex: number;
+                stages: {
+                    releaseId: string;
+                    targetDigest: string;
+                    /** Format: uuid */
+                    attemptId: string | null;
+                    /** @enum {string} */
+                    state: "pending" | "running" | "confirmed" | "failed" | "deferred";
+                }[];
+                percent: number | null;
+                reason: string | null;
+                defaultImageUpdate?: {
+                    /** @enum {string} */
+                    scope: "managed-default";
+                    images: {
+                        provider: string;
+                        previousRef: string;
+                        previousDigest: string;
+                        ref: string;
+                        digest: string;
+                        runtimeVersions: {
+                            [key: string]: string;
+                        };
+                    }[];
+                    /** Format: date-time */
+                    observedAt: string;
+                } | null;
+            } | null;
+            currentStageProgress?: {
+                stage: string;
+                completedWork: number;
+                totalWork: number | null;
+                percent: number | null;
+                /** Format: date-time */
+                enteredAt: string | null;
+                /** Format: date-time */
+                lastProgressAt: string | null;
+            } | null;
+            serviceAvailability?: {
+                /** @enum {string} */
+                state: "available" | "unavailable" | "unknown";
+                /** Format: date-time */
+                observedAt: string | null;
+                reason: string | null;
+            };
+            observation?: {
+                /** @enum {string} */
+                state: "fresh" | "stale" | "checking";
+                /** Format: date-time */
+                confirmedAt: string | null;
+                /** Format: date-time */
+                checkedAt: string | null;
+                reason: string | null;
+            };
         };
         UpgradeAccessDto: {
             upgradeKey?: string;
@@ -2890,29 +3054,6 @@ export interface components {
             targetReleaseId: string;
             targetDigest: string;
             expectedActivationGeneration: number;
-        };
-        UpgradeAttemptDto: {
-            instanceId: string;
-            /** Format: uuid */
-            attemptId: string;
-            /** Format: uuid */
-            requestId: string;
-            targetReleaseId: string;
-            targetDigest: string;
-            generation: number;
-            sequence: number;
-            /** @enum {string} */
-            state: "accepted" | "downloading" | "package-verified" | "migrating" | "prepared" | "candidate-ready" | "routing-switched" | "observing" | "api-activated" | "activation-confirmed" | "deferred" | "candidate-rejected" | "failed" | "reverted";
-            stage: string;
-            percent: number | null;
-            completedWork: number;
-            totalWork: number | null;
-            planDigest: string;
-            /** Format: date-time */
-            acceptedAt: string;
-            /** Format: date-time */
-            observedAt: string;
-            reason: string | null;
         };
         UpgradeContractRequestDto: {
             /** Format: uuid */
@@ -4905,7 +5046,10 @@ export interface operations {
     UpgradeController_request: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description respond-async admits one durable final-target operation; omitted preserves the legacy technical-attempt response. */
+                Prefer?: string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4920,7 +5064,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UpgradeAttemptDto"];
+                    "application/json": components["schemas"]["UpgradeAttemptDto"] | components["schemas"]["UpgradeOperationDto"];
                 };
             };
         };
@@ -4928,7 +5072,10 @@ export interface operations {
     UpgradeController_lookup: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description respond-async looks up the original user operation. Existing legacy attempts remain readable. */
+                Prefer?: string;
+            };
             path: {
                 requestId: string;
             };
@@ -4941,7 +5088,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UpgradeAttemptDto"];
+                    "application/json": components["schemas"]["UpgradeAttemptDto"] | components["schemas"]["UpgradeOperationDto"];
                 };
             };
         };

@@ -33,3 +33,19 @@ export function readPendingRequest(raw: string | null): string | null {
     return null;
   }
 }
+
+/** Compatibility mode belongs to the original request, not a later catalog. */
+export function readPendingAsyncPreference(raw: string | null): boolean {
+  if (readPendingRequest(raw) === null || raw === null) return false;
+  try {
+    const value: unknown = JSON.parse(raw);
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      'preferAsync' in value &&
+      value.preferAsync === true
+    );
+  } catch {
+    return false;
+  }
+}

@@ -3,6 +3,9 @@
 // 另含装 runtime CLI 的进度投影 runtimeInstalls（runtime.install_progress，S5）——见下方字段注释。
 // ⚠️ 纯内存运行时态，不 persist（未纳入 partializeAppState 白名单）。
 import type { StateCreator } from 'zustand';
+import { receiveStartupObservation } from '@/lib/sandbox/startupObservation';
+import { inconclusiveLifecycleResult } from '@/lib/sandbox/pendingLifecycle';
+import type { StartupObservation } from '@/types/ws-protocol';
 import type { SandboxEvent } from '@/types/ws-protocol';
 import type { RuntimeInstallProgress } from '@/lib/sandbox/runtimeInstallProgress';
 import type { InstanceStartupProgress } from '@/lib/sandbox/instanceStartupCopy';
@@ -55,12 +58,22 @@ export interface SandboxRuntimeState {
    */
   observedAt?: number;
   lastProgressAt?: number;
+  startupObservation?: StartupObservation;
+  startupObservationUncertain?: boolean;
+  waitingDismissedAt?: number;
+  pendingLifecycleOperation?: 'start' | 'stop';
+  pendingLifecycleSourceOperationId?: string;
   restarting?: boolean;
   failureOperation?: string;
 }
 
 /** REST DTO / WS 帧归一化后的一次写入。 */
 export interface SandboxStatusPatch {
+  startupObservation?: StartupObservation;
+  startupObservationUncertain?: boolean;
+  pendingLifecycleOperation?: 'start' | 'stop';
+  pendingLifecycleSourceOperationId?: string;
+  clearPendingLifecycle?: boolean;
   restarting?: boolean;
   phase?: string;
   failureCode?: string;
@@ -118,7 +131,7 @@ export const createSandboxStatusSlice: StateCreator<
         [id]: {
           ...s.sandboxStatuses[id],
           status: s.sandboxStatuses[id]?.status ?? 'pending',
-          lastProgressAt: Date.now(),
+          waitingDismissedAt: Date.now(),
         },
       },
     }));
@@ -131,6 +144,10 @@ export const createSandboxStatusSlice: StateCreator<
           ...s.sandboxStatuses[id],
           status: 'starting',
           restarting: true,
+          pendingLifecycleOperation: 'start',
+          pendingLifecycleSourceOperationId: s.sandboxStatuses[id]?.startupObservation?.operationId,
+          startupObservation: undefined,
+          startupObservationUncertain: false,
           observedAt: Date.now(),
           lastProgressAt: Date.now(),
         },
@@ -140,37 +157,69 @@ export const createSandboxStatusSlice: StateCreator<
   runtimeInstalls: {},
   instanceStartups: {},
   setSandboxStatus: (sandboxId, status, patch): void => {
-    set((s) => ({
-      sandboxStatuses: {
-        ...s.sandboxStatuses,
-        [sandboxId]: {
+    set((s) => {
+      const previous = s.sandboxStatuses[sandboxId];
+      if (
+        patch?.clearPendingLifecycle !== true &&
+        inconclusiveLifecycleResult(previous, {
           status,
-          phase: patch?.phase,
-          failureCode: patch?.failureCode,
-          failureMessage: patch?.failureMessage,
-          failureOperation:
-            patch?.failureOperation ?? s.sandboxStatuses[sandboxId]?.failureOperation,
-          restarting: patch?.restarting ?? s.sandboxStatuses[sandboxId]?.restarting,
-          lastProgressAt:
-            s.sandboxStatuses[sandboxId]?.status === status
-              ? (s.sandboxStatuses[sandboxId].lastProgressAt ?? Date.now())
-              : Date.now(),
-          // 只**保留**已有锚点（同一个 status 的刷新恢复），从不**新造**一个：
-          // REST 说不出"这个状态是什么时候进的"，见 observedAt 的注释。
-          observedAt:
-            s.sandboxStatuses[sandboxId]?.status === status
-              ? s.sandboxStatuses[sandboxId].observedAt
-              : undefined,
+          startupObservation: patch?.startupObservation,
+        })
+      )
+        return s;
+      const merged = receiveStartupObservation(
+        previous?.startupObservation,
+        patch?.startupObservation,
+      );
+      if (merged.ignored)
+        return merged.uncertain && previous !== undefined
+          ? {
+              sandboxStatuses: {
+                ...s.sandboxStatuses,
+                [sandboxId]: { ...previous, startupObservationUncertain: true },
+              },
+            }
+          : s;
+      return {
+        sandboxStatuses: {
+          ...s.sandboxStatuses,
+          [sandboxId]: {
+            status,
+            startupObservation: merged.observation,
+            startupObservationUncertain: patch?.startupObservationUncertain ?? merged.uncertain,
+            pendingLifecycleOperation: patch?.pendingLifecycleOperation,
+            pendingLifecycleSourceOperationId: patch?.pendingLifecycleSourceOperationId,
+            waitingDismissedAt: previous?.waitingDismissedAt,
+            phase: patch?.phase,
+            failureCode: patch?.failureCode,
+            failureMessage: patch?.failureMessage,
+            failureOperation:
+              patch?.failureOperation ?? s.sandboxStatuses[sandboxId]?.failureOperation,
+            restarting: patch?.restarting ?? s.sandboxStatuses[sandboxId]?.restarting,
+            lastProgressAt:
+              merged.observation?.lastProgressAt !== null &&
+              merged.observation?.lastProgressAt !== undefined
+                ? Date.parse(merged.observation.lastProgressAt)
+                : s.sandboxStatuses[sandboxId]?.status === status
+                  ? (s.sandboxStatuses[sandboxId].lastProgressAt ?? Date.now())
+                  : Date.now(),
+            // 只**保留**已有锚点（同一个 status 的刷新恢复），从不**新造**一个：
+            // REST 说不出"这个状态是什么时候进的"，见 observedAt 的注释。
+            observedAt:
+              s.sandboxStatuses[sandboxId]?.status === status
+                ? s.sandboxStatuses[sandboxId].observedAt
+                : undefined,
+          },
         },
-      },
-      // 显式写入非 failed 状态 → 顺带清掉装 CLI 的陈旧子文案（与事件路径同规则）。
-      runtimeInstalls: INSTALL_TERMINAL_STATUSES.has(status)
-        ? omitKey(s.runtimeInstalls, sandboxId)
-        : s.runtimeInstalls,
-      instanceStartups: INSTALL_TERMINAL_STATUSES.has(status)
-        ? omitKey(s.instanceStartups, sandboxId)
-        : s.instanceStartups,
-    }));
+        // 显式写入非 failed 状态 → 顺带清掉装 CLI 的陈旧子文案（与事件路径同规则）。
+        runtimeInstalls: INSTALL_TERMINAL_STATUSES.has(status)
+          ? omitKey(s.runtimeInstalls, sandboxId)
+          : s.runtimeInstalls,
+        instanceStartups: INSTALL_TERMINAL_STATUSES.has(status)
+          ? omitKey(s.instanceStartups, sandboxId)
+          : s.instanceStartups,
+      };
+    });
   },
   applySandboxEvent: (event): void => {
     switch (event.event) {
@@ -183,6 +232,12 @@ export const createSandboxStatusSlice: StateCreator<
               phase: event.phase,
               restarting: s.sandboxStatuses[event.sandboxId]?.restarting,
               failureOperation: s.sandboxStatuses[event.sandboxId]?.failureOperation,
+              startupObservation: s.sandboxStatuses[event.sandboxId]?.startupObservation,
+              startupObservationUncertain:
+                s.sandboxStatuses[event.sandboxId]?.startupObservationUncertain,
+              waitingDismissedAt: s.sandboxStatuses[event.sandboxId]?.waitingDismissedAt,
+              pendingLifecycleOperation: undefined,
+              pendingLifecycleSourceOperationId: undefined,
               lastProgressAt:
                 s.sandboxStatuses[event.sandboxId]?.status === event.status &&
                 s.sandboxStatuses[event.sandboxId]?.phase === event.phase
@@ -211,30 +266,43 @@ export const createSandboxStatusSlice: StateCreator<
         }));
         break;
       case 'sandbox.instance_progress':
-        // 与 install_progress 同款纪律：**绝不碰 sandboxStatuses**。起实例期间 status 恒为
-        // `starting`，让这条事件去改状态就是伪造一次不存在的状态机转移（10 §7.4 的整条论证）。
-        // ⚠️ `imageStaged` 缺席时写 undefined 是对的：**「provider 说不出」不能被记成
-        // 「本机没有」**，文案层据此退回中性说法。
-        set((s) => ({
-          sandboxStatuses:
-            s.sandboxStatuses[event.sandboxId] === undefined
-              ? s.sandboxStatuses
-              : {
-                  ...s.sandboxStatuses,
-                  [event.sandboxId]: {
-                    ...s.sandboxStatuses[event.sandboxId],
-                    status: s.sandboxStatuses[event.sandboxId]?.status ?? 'starting',
-                    lastProgressAt:
-                      s.instanceStartups[event.sandboxId]?.phase === event.phase
-                        ? s.sandboxStatuses[event.sandboxId]?.lastProgressAt
-                        : Date.now(),
+        set((s) => {
+          const previous = s.sandboxStatuses[event.sandboxId];
+          const merged = receiveStartupObservation(
+            previous?.startupObservation,
+            event.startupObservation,
+          );
+          if (merged.ignored)
+            return merged.uncertain && previous !== undefined
+              ? {
+                  sandboxStatuses: {
+                    ...s.sandboxStatuses,
+                    [event.sandboxId]: { ...previous, startupObservationUncertain: true },
                   },
-                },
-          instanceStartups: {
-            ...s.instanceStartups,
-            [event.sandboxId]: { phase: event.phase, imageStaged: event.imageStaged },
-          },
-        }));
+                }
+              : s;
+          return {
+            sandboxStatuses: {
+              ...s.sandboxStatuses,
+              [event.sandboxId]: {
+                ...previous,
+                status: previous?.status ?? 'pending',
+                startupObservation: merged.observation,
+                startupObservationUncertain: merged.uncertain,
+                // A heartbeat/read is not real progress. Keep the server's separate clock.
+                lastProgressAt:
+                  merged.observation?.lastProgressAt === null ||
+                  merged.observation?.lastProgressAt === undefined
+                    ? previous?.lastProgressAt
+                    : Date.parse(merged.observation.lastProgressAt),
+              },
+            },
+            instanceStartups: {
+              ...s.instanceStartups,
+              [event.sandboxId]: { phase: event.phase, imageStaged: event.imageStaged },
+            },
+          };
+        });
         break;
       case 'runtime.install_progress':
         // 只投影到本表，**绝不碰 sandboxStatuses**（装 CLI 期间 status 恒为 starting，

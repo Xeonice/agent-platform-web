@@ -390,6 +390,7 @@ export function SandboxTerminalContainer({
             setSandboxStatus(sandbox.id, sandbox.status, {
               failureCode: sandbox.failureCode,
               failureMessage: sandbox.failureMessage,
+              startupObservation: sandbox.startupObservation,
             });
           }
           // 任务名直接用后端返回的 name（从 prompt 派生，规则 P21-1 §9）——前端不派生第二份。

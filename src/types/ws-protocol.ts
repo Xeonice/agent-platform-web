@@ -150,6 +150,28 @@ export const RuntimeInstallStatusSchema = z.enum([
 ]);
 export type RuntimeInstallStatus = z.infer<typeof RuntimeInstallStatusSchema>;
 
+/** Provision-cycle facts; not the RuntimeOwner RPC operation identifier. */
+export const StartupObservationSchema = z.object({
+  operationId: z.string().min(1),
+  sequence: z.number().int().nonnegative(),
+  state: z.enum(['inflight', 'unknown', 'succeeded', 'failed']),
+  stage: z.enum([
+    'workspace-preparation',
+    'instance-create',
+    'instance-start',
+    'runtime-tools',
+    'environment-initialization',
+    'agent-bootstrap',
+    'completed',
+  ]),
+  startedAt: z.string().datetime().nullable(),
+  stageEnteredAt: z.string().datetime().nullable(),
+  lastProgressAt: z.string().datetime().nullable(),
+  heartbeatAt: z.string().datetime().nullable(),
+  observedAt: z.string().datetime().nullable(),
+});
+export type StartupObservation = z.infer<typeof StartupObservationSchema>;
+
 // ——— /events 通道：判别键 event（10 §7.4 共 7 条）———
 export const SandboxEventSchema = z.discriminatedUnion('event', [
   z.object({ event: z.literal('sandbox.created'), sandboxId: z.string(), projectId: z.string() }),
@@ -222,6 +244,7 @@ export const SandboxEventSchema = z.discriminatedUnion('event', [
     sandboxId: z.string(),
     phase: z.enum(['starting', 'ready']),
     imageStaged: z.boolean().optional(),
+    startupObservation: StartupObservationSchema.optional(),
   }),
 ]);
 export type SandboxEvent = z.infer<typeof SandboxEventSchema>;
@@ -423,7 +446,7 @@ export const WS_PROTOCOL_CANONICAL =
   'receivedBytes?,bytesPerSecond?,errorCode?},' +
   'runtime-auth.status_changed{runtime},' +
   'runtime.install_progress{sandboxId,runtime,status,versionDetected?,errorCode?},' +
-  'sandbox.instance_progress{sandboxId,phase,imageStaged?}|' +
+  'sandbox.instance_progress{sandboxId,phase,imageStaged?,startupObservation?}|' +
   'tasks.client:subscribe{taskId,fromSeq?},unsubscribe{taskId},ping|' +
   'tasks.server:event{taskId,seq,event},caught_up{taskId,firstSeq,seq},' +
   'exit{taskId,status,exitCode?},error{taskId,code},pong';

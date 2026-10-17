@@ -54,6 +54,7 @@ export function useSandboxes(): UseQueryResult<Sandbox[]> {
           failureMessage: dto.failureMessage,
           failureOperation: dto.failureOperation,
           restarting: dto.hasRun === true && dto.status === 'starting',
+          startupObservation: dto.startupObservation,
         });
       }
       return dtos;

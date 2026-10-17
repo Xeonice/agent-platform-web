@@ -50,6 +50,45 @@ export const Unknown: Story = {
     }),
   },
   play: async ({ canvasElement }) => {
-    await expect(within(canvasElement).getByRole('button', { name: '检查更新' })).toBeVisible();
+    await expect(within(canvasElement).getByRole('button', { name: '检查状态' })).toBeVisible();
+  },
+};
+export const PartialFailure: Story = {
+  args: {
+    model: upgradeViewFixture({
+      phase: 'failed',
+      title: '本次升级未完成',
+      subtitle: '升级未完成，部分组件已更新',
+      showEntry: false,
+      showDot: false,
+      canUpgrade: false,
+      canContinueWorking: true,
+      diagnosticText: '脱敏设计诊断',
+      facts: [
+        { label: '服务可用性', value: '可继续使用' },
+        { label: '上次完整确认版本', value: '0.2.4' },
+        { label: '本次最终目标', value: '0.2.5 · 未完成' },
+      ],
+    }),
+    onContinue: fn(),
+    onCopyDiagnostics: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('button', { name: '继续使用' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: '复制诊断信息' })).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: '立即升级' })).not.toBeInTheDocument();
+  },
+};
+export const BridgeConfirmedContinueFinal: Story = {
+  args: {
+    model: upgradeViewFixture({
+      phase: 'ongoing',
+      title: '正在升级到最终版本',
+      subtitle: '0.2.5 · 兼容准备完成，继续更新最终版本',
+      canUpgrade: false,
+      percent: null,
+      progressText: '本次总体进度待确认；按实际阶段展示',
+    }),
   },
 };

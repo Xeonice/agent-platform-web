@@ -28,7 +28,12 @@ export function useSandboxOperations(id: string, name: string, projectId?: strin
       const previous = store.sandboxStatuses[id];
       const wasSelected = store.selectedSandboxId === id;
       if (input.operation === 'start') store.markSandboxRestart(id);
-      else store.setSandboxStatus(id, input.operation === 'stop' ? 'stopping' : 'destroying');
+      else
+        store.setSandboxStatus(
+          id,
+          input.operation === 'stop' ? 'stopping' : 'destroying',
+          input.operation === 'stop' ? { pendingLifecycleOperation: 'stop' } : undefined,
+        );
       if (input.operation === 'destroy' && wasSelected) {
         store.setSelectedSandboxId(null);
         store.setSelectedProjectId(null);
@@ -60,6 +65,7 @@ export function useSandboxOperations(id: string, name: string, projectId?: strin
         store.setSandboxStatus(id, dto.status, {
           failureCode: dto.failureCode,
           failureMessage: dto.failureMessage,
+          startupObservation: dto.startupObservation,
           failureOperation: dto.failureOperation,
         });
         refresh();
@@ -70,14 +76,45 @@ export function useSandboxOperations(id: string, name: string, projectId?: strin
           store.setSandboxStatus(id, dto.status, {
             failureCode: dto.failureCode,
             failureMessage: dto.failureMessage,
+            startupObservation: dto.startupObservation,
             failureOperation: dto.failureOperation,
           });
           refresh();
           return;
         }
         reportRestError(error);
+        const resultUnknown =
+          !(error instanceof ApiErrorException) ||
+          error.httpStatus >= 500 ||
+          error.envelope.code === 'TIMEOUT';
+        if (input.operation !== 'destroy' && resultUnknown) {
+          store.setSandboxStatus(id, input.operation === 'start' ? 'starting' : 'stopping', {
+            restarting: input.operation === 'start',
+            startupObservationUncertain: input.operation === 'start',
+            pendingLifecycleOperation: input.operation,
+            pendingLifecycleSourceOperationId: previous?.startupObservation?.operationId,
+          });
+          toast('请求结果待确认，正在查询原任务；不会重复提交。');
+          try {
+            const dto = await getSandbox(id);
+            store.setSandboxStatus(id, dto.status, {
+              failureCode: dto.failureCode,
+              failureMessage: dto.failureMessage,
+              failureOperation: dto.failureOperation,
+              startupObservation: dto.startupObservation,
+            });
+          } catch {
+            /* The original lifecycle request remains unresolved; reads can resume later. */
+          }
+          refresh();
+          return;
+        }
         if (!(error instanceof ApiErrorException) || error.httpStatus === 401) {
-          if (previous) store.setSandboxStatus(id, previous.status, previous);
+          if (previous)
+            store.setSandboxStatus(id, previous.status, {
+              ...previous,
+              clearPendingLifecycle: true,
+            });
           if (input.operation === 'destroy' && wasSelected)
             store.setWorkbenchNotice({
               message: `没能确认任务「${name}」是否销毁`,

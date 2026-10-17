@@ -19,6 +19,8 @@ export function VersionUpdateDetailsView({
   onRefresh,
   onLater,
   onDetails,
+  onContinue,
+  onCopyDiagnostics,
   compact = false,
 }: VersionUpdateDetailsProps) {
   return (
@@ -36,6 +38,9 @@ export function VersionUpdateDetailsView({
         ))}
       </dl>
       <VersionUpdateProgressView model={model} />
+      {model.completionSummary === undefined ? null : (
+        <p className="text-xs text-muted-foreground">{model.completionSummary}</p>
+      )}
       {model.lastSeenText !== null && model.phase !== 'ongoing' ? (
         <p className="text-xs text-muted-foreground">{model.lastSeenText}</p>
       ) : null}
@@ -50,7 +55,7 @@ export function VersionUpdateDetailsView({
       <div className="flex flex-wrap items-center gap-2">
         {model.canUpgrade ? (
           <Button size="sm" onClick={onUpgrade} disabled={busy}>
-            {busy ? '正在确认请求…' : '立即升级'}
+            {busy ? '正在确认请求…' : (model.upgradeActionLabel ?? '立即升级')}
           </Button>
         ) : null}
         {model.canRefresh ? (
@@ -59,8 +64,26 @@ export function VersionUpdateDetailsView({
           </Button>
         ) : null}
         <Button size="sm" variant="outline" onClick={onCheck} disabled={isChecking}>
-          {isChecking ? '正在检查…' : '检查更新'}
+          {isChecking
+            ? '正在检查…'
+            : model.phase === 'failed' || model.phase === 'unknown'
+              ? '检查状态'
+              : '检查更新'}
         </Button>
+        {model.phase === 'failed' &&
+        model.canContinueWorking === true &&
+        onContinue !== undefined ? (
+          <Button size="sm" variant="ghost" onClick={onContinue}>
+            继续使用
+          </Button>
+        ) : null}
+        {(model.phase === 'failed' || model.phase === 'unknown') &&
+        model.diagnosticText !== undefined &&
+        onCopyDiagnostics !== undefined ? (
+          <Button size="sm" variant="ghost" onClick={onCopyDiagnostics}>
+            复制诊断信息
+          </Button>
+        ) : null}
         {compact ? (
           <Button size="sm" variant="ghost" onClick={onDetails}>
             查看系统版本详情

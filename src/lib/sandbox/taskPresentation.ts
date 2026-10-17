@@ -33,7 +33,7 @@ export function taskPhaseLabel(
   if (['running', 'idle'].includes(status)) return status === 'idle' ? '空闲' : '运行中';
   const labels = {
     init: '初始化',
-    image: '拉取镜像',
+    image: '创建运行环境',
     workspace: '准备代码副本',
     instance: '启动运行环境',
   };

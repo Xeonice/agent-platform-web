@@ -4,7 +4,31 @@ import type {
   UpgradeObservation,
   UpgradeStatus,
   UpgradeAttempt,
+  UpgradeOperation,
 } from '@/types/upgrade';
+
+function formatDuration(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, '0')}`;
+}
+function formatWork(value: number, bytes: boolean): string {
+  return bytes ? `${(value / 1024 / 1024).toFixed(1)} MB` : String(value);
+}
+function completionSummary(
+  operation: UpgradeOperation | null | undefined,
+  confirmedRelease: string,
+): string | undefined {
+  if (
+    operation?.state !== 'completed' ||
+    operation.finalTargetReleaseId !== confirmedRelease ||
+    operation.defaultImageUpdate?.scope !== 'managed-default' ||
+    !operation.defaultImageUpdate.images.some(
+      (image) => image.previousRef !== image.ref || image.previousDigest !== image.digest,
+    )
+  )
+    return undefined;
+  return '平台已更新；之后选择本次更新的默认镜像的新任务使用新版工具，已有任务继续原环境。自定义默认及显式选择的其他镜像保持原配置。';
+}
 
 const ONGOING = new Set([
   'accepted',
@@ -46,6 +70,54 @@ export function receiveUpgradeStatus(
         return previous;
       const before = old.attempt;
       const after = next.attempt;
+      const oldOperation = old.operation;
+      const operation = next.operation;
+      if (
+        oldOperation !== null &&
+        oldOperation !== undefined &&
+        operation !== null &&
+        operation !== undefined &&
+        operation.operationId !== oldOperation.operationId &&
+        Date.parse(operation.acceptedAt) < Date.parse(oldOperation.acceptedAt)
+      )
+        return previous;
+      if (
+        oldOperation !== null &&
+        oldOperation !== undefined &&
+        operation?.operationId === oldOperation.operationId
+      ) {
+        if (
+          operation.sequence < oldOperation.sequence ||
+          Date.parse(operation.observedAt) < Date.parse(oldOperation.observedAt) ||
+          operation.currentStageIndex < oldOperation.currentStageIndex
+        )
+          return previous;
+        if (
+          operation.sequence === oldOperation.sequence &&
+          JSON.stringify({ ...operation, observedAt: null }) !==
+            JSON.stringify({ ...oldOperation, observedAt: null })
+        )
+          return { ...previous, uncertain: true, reason: '升级计划观测发生冲突，等待确认原请求' };
+        if (
+          operation.finalTargetDigest !== oldOperation.finalTargetDigest ||
+          operation.finalTargetReleaseId !== oldOperation.finalTargetReleaseId ||
+          operation.stages.length !== oldOperation.stages.length ||
+          operation.stages.some((stage, index) => {
+            const beforeStage = oldOperation.stages[index];
+            return (
+              stage.targetDigest !== beforeStage?.targetDigest ||
+              stage.releaseId !== beforeStage.releaseId ||
+              (beforeStage.attemptId !== null && stage.attemptId !== beforeStage.attemptId)
+            );
+          })
+        )
+          return {
+            ...previous,
+            uncertain: true,
+            reason: '固定升级目标或兼容准备计划发生冲突，等待确认原请求',
+          };
+        if (oldOperation.state === 'completed' && operation.state !== 'completed') return previous;
+      }
       const oldContract = old.contract;
       const nextContract = next.contract;
       const previousContractAttempt = oldContract?.attempt;
@@ -155,7 +227,11 @@ export function deriveUpgradeModel(
       label: '可安装版本',
       value: data?.catalog.availableRelease?.releaseId ?? '暂无已确认可用版本',
     },
-    { label: '本次升级目标', value: data?.attempt?.targetReleaseId ?? '尚未发起升级' },
+    {
+      label: '本次升级目标',
+      value:
+        data?.operation?.finalTargetReleaseId ?? data?.attempt?.targetReleaseId ?? '尚未发起升级',
+    },
     {
       label: '可刷新页面版本',
       value:
@@ -164,6 +240,28 @@ export function deriveUpgradeModel(
           : `${data.availableWeb.webReleaseId ?? '未标注版本'} · ${data.availableWeb.webRevision.slice(0, 8)}`,
     },
   ];
+  const availability = data?.serviceAvailability;
+  const availabilityFresh =
+    availability?.observedAt !== null &&
+    availability?.observedAt !== undefined &&
+    data !== null &&
+    observation !== null &&
+    Math.max(0, Date.parse(data.observedAt) - Date.parse(availability.observedAt)) +
+      Math.max(0, now - observation.receivedAt) <=
+      UPGRADE_OBSERVATION_MS;
+  if (availability !== undefined)
+    facts.push({
+      label: '服务可用性',
+      value: availabilityFresh
+        ? availability.state === 'available'
+          ? '可继续使用'
+          : availability.state === 'unavailable'
+            ? '当前不可用'
+            : '待确认'
+        : '待确认（保留上次检查记录）',
+    });
+  if (data?.lastConfirmedServiceRelease !== null && data?.lastConfirmedServiceRelease !== undefined)
+    facts.push({ label: '上次完整确认版本', value: data.lastConfirmedServiceRelease.releaseId });
   const current = data?.confirmedServiceRelease ?? data?.lastConfirmedServiceRelease;
   const details: UpgradeDisplayModel['artifactDetails'] =
     current === null || current === undefined
@@ -197,7 +295,85 @@ export function deriveUpgradeModel(
     canRefresh: false,
     facts,
     artifactDetails: details,
+    canContinueWorking: availabilityFresh && availability.state === 'available',
+    diagnosticText:
+      data === null
+        ? undefined
+        : JSON.stringify(
+            {
+              instanceId: data.instanceId,
+              activationGeneration: data.activationGeneration,
+              operationId: data.operation?.operationId ?? null,
+              requestId: data.operation?.requestId ?? data.attempt?.requestId ?? null,
+              attemptId: data.attempt?.attemptId ?? null,
+              targetReleaseId:
+                data.operation?.finalTargetReleaseId ?? data.attempt?.targetReleaseId ?? null,
+              state: data.operation?.state ?? data.attempt?.state ?? data.serviceState,
+              observedAt: data.observedAt,
+              serviceAvailability: data.serviceAvailability?.state ?? 'unknown',
+            },
+            null,
+            2,
+          ),
   };
+  const confirmedAge =
+    data?.observation?.confirmedAt === null ||
+    data?.observation?.confirmedAt === undefined ||
+    observation === null
+      ? 0
+      : Math.max(0, Date.parse(data.observedAt) - Date.parse(data.observation.confirmedAt)) +
+        Math.max(0, now - observation.receivedAt);
+  const stage = data?.currentStageProgress;
+  const operationStage = data?.operation?.stages[data.operation.currentStageIndex];
+  const stageBound =
+    data?.operation === null ||
+    data?.operation === undefined ||
+    (data.attempt !== null &&
+      operationStage?.attemptId === data.attempt.attemptId &&
+      operationStage.targetDigest === data.attempt.targetDigest &&
+      operationStage.releaseId === data.attempt.targetReleaseId);
+  if (stageBound && stage !== null && stage !== undefined) {
+    const valid =
+      Number.isFinite(stage.completedWork) &&
+      stage.completedWork >= 0 &&
+      (stage.totalWork === null ||
+        (Number.isFinite(stage.totalWork) && stage.totalWork >= stage.completedWork));
+    const stale =
+      confirmedAge > UPGRADE_OBSERVATION_MS ||
+      observation === null ||
+      observation.uncertain ||
+      now - observation.receivedAt > UPGRADE_OBSERVATION_MS ||
+      data?.observation?.state === 'stale' ||
+      data?.observation?.state === 'checking';
+    const downloading = data?.attempt?.state === 'downloading';
+    base.stageProgress = {
+      label: downloading
+        ? '安装包下载阶段'
+        : data?.attempt === null || data?.attempt === undefined
+          ? '当前准备阶段'
+          : (STAGE_LABELS[data.attempt.state] ?? '当前升级阶段'),
+      percent:
+        valid &&
+        stage.percent !== null &&
+        Number.isFinite(stage.percent) &&
+        stage.percent >= 0 &&
+        stage.percent <= 100
+          ? stage.percent
+          : null,
+      workText: valid
+        ? `${formatWork(stage.completedWork, downloading)}${stage.totalWork === null ? ' / 总量待确认' : ` / ${formatWork(stage.totalWork, downloading)}`}`
+        : null,
+      elapsedText:
+        stage.enteredAt === null
+          ? null
+          : `当前阶段已用 ${formatDuration(now - Date.parse(stage.enteredAt))}`,
+      lastProgressText:
+        stage.lastProgressAt === null
+          ? null
+          : `最后实质进展 ${new Date(stage.lastProgressAt).toLocaleString()}`,
+      stale,
+    };
+  }
   if (
     data === null ||
     observation === null ||
@@ -207,9 +383,30 @@ export function deriveUpgradeModel(
     return {
       ...base,
       phase: 'unknown',
-      subtitle: observation?.reason ?? '暂时无法确认版本与升级状态',
+      subtitle: observation?.reason ?? data?.observation?.reason ?? '暂时无法确认版本与升级状态',
     };
   }
+  const physicalUncertain =
+    confirmedAge > UPGRADE_OBSERVATION_MS ||
+    data.observation?.state === 'stale' ||
+    data.observation?.state === 'checking';
+  if (physicalUncertain)
+    facts[0] = {
+      label: '当前服务版本',
+      value: `上次完整确认 ${current?.releaseId ?? '未知'} · 当前状态待确认`,
+    };
+  if (data.operation !== null && data.operation !== undefined)
+    facts.push({
+      label: '本次升级结果',
+      value:
+        data.operation.state === 'completed'
+          ? '最终目标曾确认完成'
+          : data.operation.state === 'failed'
+            ? '最终目标未完成'
+            : data.operation.state === 'deferred'
+              ? '已延后'
+              : '已受理，进行中',
+    });
   if (data.serviceState !== 'confirmed') {
     facts[0] = {
       label: '当前服务版本',
@@ -228,11 +425,68 @@ export function deriveUpgradeModel(
     Math.max(0, Date.parse(data.observedAt) - Date.parse(repair.observedAt)) +
       Math.max(0, now - observation.receivedAt) <=
       UPGRADE_OBSERVATION_MS;
-  const canAcceptNewAttempt = data.serviceState === 'confirmed' || repairFresh;
+  const canAcceptNewAttempt =
+    !physicalUncertain && (data.serviceState === 'confirmed' || repairFresh);
   const recovering =
+    (data.operation === null ||
+      data.operation === undefined ||
+      operationStage?.attemptId === attempt?.attemptId) &&
     recovery !== null &&
     recovery.triggeringAttemptId === attempt?.attemptId &&
     (recovery.state === 'recovering' || (recovery.state !== 'recovery-confirmed' && !repairFresh));
+  const operation = data.operation;
+  if (
+    operation !== null &&
+    operation !== undefined &&
+    ['accepted', 'preparing', 'running'].includes(operation.state) &&
+    !recovering
+  ) {
+    const currentStage = operation.stages[operation.currentStageIndex];
+    const bridgeDone =
+      operation.currentStageIndex > 0 &&
+      operation.stages
+        .slice(0, operation.currentStageIndex)
+        .every((item) => item.state === 'confirmed');
+    return {
+      ...base,
+      phase: 'ongoing',
+      showEntry: true,
+      title: '正在升级到最终版本',
+      subtitle: `${operation.finalTargetReleaseId} · ${bridgeDone ? '兼容准备完成，继续更新最终版本' : operation.state === 'accepted' || operation.state === 'preparing' ? '准备升级，长检查在后台继续' : '正在更新并验证服务'}`,
+      percent: null,
+      progressText:
+        currentStage?.state === 'confirmed'
+          ? '兼容准备已确认，继续同一次升级'
+          : '本次总体进度待确认；按实际阶段展示',
+      lastSeenText: `最后确认 ${operation.observedAt}`,
+    };
+  }
+  if (
+    operation !== null &&
+    operation !== undefined &&
+    (operation.state === 'failed' || operation.state === 'deferred') &&
+    !recovering
+  ) {
+    return {
+      ...base,
+      phase: 'failed',
+      title: '本次升级未完成',
+      subtitle: repairFresh
+        ? '升级未完成，部分组件已更新'
+        : operation.state === 'deferred'
+          ? '升级已延后，最终目标尚未完成'
+          : '最终目标尚未完成，当前服务组合需确认',
+      progressText: operation.reason,
+      canUpgrade:
+        data.catalog.state === 'verified' &&
+        data.catalog.availableRelease !== null &&
+        data.capabilities.canUpgradeInstance &&
+        canAcceptNewAttempt,
+      ...(repairFresh && data.catalog.availableRelease !== null
+        ? { upgradeActionLabel: `修复到 ${data.catalog.availableRelease.releaseId}` }
+        : {}),
+    };
+  }
   if (attempt !== null && ONGOING.has(attempt.state) && !recovering) {
     const age =
       Math.max(0, Date.parse(data.observedAt) - Date.parse(attempt.observedAt)) +
@@ -262,6 +516,12 @@ export function deriveUpgradeModel(
       lastSeenText: `最后确认${attempt.percent === null ? '' : ` ${String(attempt.percent)}%`} · ${attempt.observedAt}`,
     };
   }
+  if (physicalUncertain)
+    return {
+      ...base,
+      phase: 'unknown',
+      subtitle: data.observation?.reason ?? '服务状态待确认，保留最后已知版本；只读检查不重复升级',
+    };
   const web = data.availableWeb;
   const confirmed = data.confirmedServiceRelease;
   const webFresh =
@@ -288,6 +548,11 @@ export function deriveUpgradeModel(
     web.webRevision === confirmed.components.web.webRevision &&
     loaded.webRevision !== null &&
     loaded.webRevision !== web.webRevision &&
+    (operation === null ||
+      operation === undefined ||
+      (operation.state === 'completed' &&
+        operation.percent === 100 &&
+        operation.finalTargetReleaseId === confirmed.releaseId)) &&
     (recovered ||
       attempt === null ||
       (attempt.state === 'activation-confirmed' &&
@@ -303,6 +568,9 @@ export function deriveUpgradeModel(
       subtitle: `页面 ${loaded.releaseId ?? '未标注版本'} · ${loaded.webRevision?.slice(0, 8) ?? '未注入'} → ${web.webReleaseId ?? '未标注版本'} · ${web.webRevision.slice(0, 8)}，刷新后续接原终端`,
       percent: recovered ? null : 100,
       canRefresh: true,
+      ...(completionSummary(operation, confirmed.releaseId) === undefined
+        ? {}
+        : { completionSummary: completionSummary(operation, confirmed.releaseId) }),
     };
   const available = data.catalog.availableRelease;
   // A failed/deferred fixed target does not reopen a floating prompt automatically.
@@ -320,13 +588,18 @@ export function deriveUpgradeModel(
         ? '安全回退已确认'
         : attempt.state === 'deferred'
           ? '升级已延后'
-          : '本次升级未完成',
+          : repairFresh
+            ? '升级未完成，部分组件已更新'
+            : '本次升级未完成',
       progressText: recovery?.reason ?? attempt.reason,
       canUpgrade:
         data.catalog.state === 'verified' &&
         available !== null &&
         data.capabilities.canUpgradeInstance &&
         canAcceptNewAttempt,
+      ...(repairFresh && available !== null
+        ? { upgradeActionLabel: `修复到 ${available.releaseId}` }
+        : {}),
     };
   if (
     data.catalog.state === 'verified' &&
@@ -386,6 +659,9 @@ export function deriveUpgradeModel(
           ? '本实例升级已确认，当前页面无需刷新'
           : '实例升级已确认，当前页面的刷新目标待核查，请检查更新。',
       progressText: '本次实例升级已完成 · 100%',
+      ...(completionSummary(operation, confirmed.releaseId) === undefined
+        ? {}
+        : { completionSummary: completionSummary(operation, confirmed.releaseId) }),
     };
   }
   if (data.serviceState !== 'confirmed')

@@ -45,6 +45,18 @@ function upgradeRequest() {
 }
 
 describe('UPG control request budget and cancellation', () => {
+  it('requests the async contract only for an explicitly capable target and keeps legacy fallback', async () => {
+    const { accepted, input } = upgradeRequest();
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(Response.json(accepted)));
+    await expect(requestInstanceUpgrade(input, 'csrf-fixture', true)).resolves.toEqual(accepted);
+    expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).get('Prefer')).toBe('respond-async');
+    await lookupUpgradeRequest(input.requestId, undefined, true);
+    expect(new Headers(fetch.mock.calls[1]?.[1]?.headers).get('Prefer')).toBe('respond-async');
+    await requestInstanceUpgrade(input, 'csrf-fixture');
+    expect(new Headers(fetch.mock.calls[2]?.[1]?.headers).has('Prefer')).toBe(false);
+  });
   beforeEach(() => {
     vi.useFakeTimers();
   });

@@ -63,6 +63,11 @@ export function SandboxLifecycleContainer({
     outcome,
     stuckElapsed,
     continueWaiting,
+    headline,
+    operationFacts,
+    diagnosticOperationId,
+    waitingConfirmation,
+    checkStartup,
   } = useSandboxLifecycle(sandboxId);
 
   const operation = useSandboxOperations(sandboxId, taskName ?? '未命名任务', projectId);
@@ -172,11 +177,12 @@ export function SandboxLifecycleContainer({
   return (
     <SandboxStartupProgressView
       stuckElapsed={stuckElapsed}
-      stuckNote={
-        status === 'creating'
-          ? '拉取镜像通常会持续推进；这么久没有任何进展，多半是网络或镜像下载源的问题。'
-          : undefined
-      }
+      stuckNote="暂未确认新的实质进展，可检查原启动请求或继续等待。"
+      headline={headline}
+      operationFacts={operationFacts}
+      diagnosticOperationId={diagnosticOperationId}
+      waitingConfirmation={waitingConfirmation}
+      onCheck={checkStartup}
       onContinue={continueWaiting}
       cancelSlot={
         <TaskActionsContainer

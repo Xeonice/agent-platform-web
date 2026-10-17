@@ -6,8 +6,11 @@ export type UpgradeStatus =
   operations['UpgradeController_status']['responses'][200]['content']['application/json'];
 export type UpgradeRequest =
   operations['UpgradeController_request']['requestBody']['content']['application/json'];
-export type UpgradeAttempt =
+type UpgradeAcceptance =
   operations['UpgradeController_request']['responses'][202]['content']['application/json'];
+export type UpgradeAttempt = Extract<UpgradeAcceptance, { attemptId: string }>;
+export type UpgradeOperation = Extract<UpgradeAcceptance, { operationId: string }>;
+export type UpgradeCommandResult = UpgradeAttempt | UpgradeOperation;
 export type UpgradeContractRequest =
   operations['UpgradeController_contractRequest']['requestBody']['content']['application/json'];
 export type UpgradeContractAttempt =
@@ -26,7 +29,7 @@ export interface UpgradeObservation {
   reason: string | null;
 }
 export interface UpgradeDisplayModel {
-  phase: 'none' | 'available' | 'ongoing' | 'ready' | 'unknown' | 'failed' | 'recovery';
+  phase: 'pending' | 'none' | 'available' | 'ongoing' | 'ready' | 'unknown' | 'failed' | 'recovery';
   showEntry: boolean;
   showDot: boolean;
   title: string;
@@ -38,6 +41,18 @@ export interface UpgradeDisplayModel {
   canRefresh: boolean;
   facts: { label: string; value: string }[];
   artifactDetails: { label: string; value: string }[];
+  stageProgress?: {
+    label: string;
+    percent: number | null;
+    workText: string | null;
+    elapsedText: string | null;
+    lastProgressText: string | null;
+    stale: boolean;
+  };
+  completionSummary?: string;
+  upgradeActionLabel?: string;
+  canContinueWorking?: boolean;
+  diagnosticText?: string;
 }
 export interface UpgradeViewActions {
   onCheck: () => void;
@@ -45,6 +60,8 @@ export interface UpgradeViewActions {
   onRefresh: () => void;
   onLater: () => void;
   onDetails: () => void;
+  onContinue?: () => void;
+  onCopyDiagnostics?: () => void;
 }
 export interface ContractFinalizeDisplay {
   visible: boolean;

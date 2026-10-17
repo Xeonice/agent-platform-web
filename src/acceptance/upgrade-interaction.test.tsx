@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from './support/server';
 import { mount } from './support/mount';
-import { API } from './support/fixtures';
+import { API, deferred } from './support/fixtures';
 import { InstanceUpgradeProviderContainer } from '@/containers/system/InstanceUpgradeProviderContainer';
 import { VersionUpdateContainer } from '@/containers/system/VersionUpdateContainer';
 import { VersionUpdateCardContainer } from '@/containers/system/VersionUpdateCardContainer';
@@ -14,7 +14,7 @@ import { useUpgradeLeaveGuard } from '@/hooks/system/useUpgradeLeaveGuard';
 import { upgradePendingKey } from '@/lib/system/upgradeRequestIdentity';
 import { encodeDismissal, upgradeReminderKey } from '@/lib/system/upgradeReminderPreference';
 import { useAppStore } from '@/stores';
-import type { UpgradeRequest } from '@/types/upgrade';
+import type { UpgradeRequest, UpgradeOperation } from '@/types/upgrade';
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: navigation.push }) }));
 vi.mock('@/services/system/loadedWebBuild', () => ({
@@ -37,6 +37,79 @@ function freshStatus() {
   return status;
 }
 describe('UPG F01/F02/F04 · real Web interaction with canonical wire', () => {
+  it('async-capable requests survive a lost response and remount with the original preference and identity', async () => {
+    const status = freshStatus();
+    if (status.catalog.availableRelease === null) throw new Error('missing catalog fixture');
+    status.catalog.availableRelease.supportsAsync = true;
+    const lookupGate = deferred();
+    const posts: UpgradeRequest[] = [];
+    const lookups: string[] = [];
+    let accepted: UpgradeOperation | null = null;
+    server.use(
+      http.get(`${API}/api/system/upgrade/status`, () =>
+        HttpResponse.json({ ...status, operation: accepted, observedAt: new Date().toISOString() }),
+      ),
+      http.post(`${API}/api/system/upgrade/requests`, async ({ request }) => {
+        expect(request.headers.get('Prefer')).toBe('respond-async');
+        const body = UpgradeRequestSchema.parse(await request.json());
+        posts.push(body);
+        return HttpResponse.error();
+      }),
+      http.get(`${API}/api/system/upgrade/requests/:requestId`, async ({ params, request }) => {
+        expect(request.headers.get('Prefer')).toBe('respond-async');
+        lookups.push(String(params['requestId']));
+        await lookupGate.promise;
+        const input = posts[0];
+        if (input === undefined) throw new Error('command not received');
+        accepted = {
+          instanceId: status.instanceId,
+          operationId: '00000000-0000-4000-8000-000000000010',
+          requestId: input.requestId,
+          sequence: 0,
+          finalTargetReleaseId: input.targetReleaseId,
+          finalTargetDigest: input.targetDigest,
+          state: 'preparing',
+          acceptedAt: new Date().toISOString(),
+          observedAt: new Date().toISOString(),
+          currentStageIndex: 0,
+          stages: [
+            {
+              releaseId: input.targetReleaseId,
+              targetDigest: input.targetDigest,
+              attemptId: null,
+              state: 'pending',
+            },
+          ],
+          percent: null,
+          reason: null,
+        };
+        return HttpResponse.json(accepted);
+      }),
+    );
+    const first = ui();
+    const notice = await screen.findByTestId('upgrade-notice');
+    const button = within(notice).getByRole('button', { name: '立即升级' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(lookups.length).toBeGreaterThan(0);
+    });
+    expect(posts).toHaveLength(1);
+    expect(
+      within(screen.getByTestId('upgrade-notice')).getByText('正在确认升级请求'),
+    ).toBeInTheDocument();
+    expect(screen.queryAllByRole('progressbar')).toHaveLength(0);
+    first.unmount();
+    ui();
+    await waitFor(() => {
+      expect(lookups.length).toBeGreaterThan(1);
+    });
+    act(lookupGate.release);
+    await screen.findAllByText('正在升级到最终版本');
+    expect(new Set(lookups)).toEqual(new Set([posts[0]?.requestId]));
+    expect(posts).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: '刷新页面' })).not.toBeInTheDocument();
+  });
   it('available read-only does not deploy or focus; same-day closing spans changed targets and remount', async () => {
     let status = freshStatus();
     status.capabilities.canUpgradeInstance = false;

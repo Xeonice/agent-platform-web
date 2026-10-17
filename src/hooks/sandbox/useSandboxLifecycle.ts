@@ -1,11 +1,10 @@
-// 从 sandbox 状态 store 派生生命周期决策（hook 可 import lib；view 只吃派生结果）。
 import { useEffect, useMemo, useState } from 'react';
-import { isSandboxStuck } from '@/lib/sandbox/taskPresentation';
+import { useQueryClient } from '@tanstack/react-query';
+import { isSandboxStuck, STUCK_HINT_MS } from '@/lib/sandbox/taskPresentation';
 import { useAppStore } from '@/stores';
 import {
   classifyStatus,
   phaseIndexForStatus,
-  startupPercent,
   STARTUP_PHASES,
   INSTANCE_PHASE_KEY,
   type LifecycleDecision,
@@ -13,55 +12,44 @@ import {
 } from '@/lib/sandbox/sandboxLifecycle';
 import { installSubCopy } from '@/lib/sandbox/runtimeInstallProgress';
 import { formatElapsed, instanceSubCopy, startupSubtitle } from '@/lib/sandbox/instanceStartupCopy';
+import { STARTUP_STAGE_COPY } from '@/lib/sandbox/startupObservation';
 import {
   describeSandboxError,
   SANDBOX_ENDED_COPY,
   type SandboxErrorCopy,
 } from '@/lib/sandbox/sandboxErrorCopy';
+import { sandboxKeys } from '@/hooks/sandbox/useSandboxRestore';
+
+const STARTUP_HEARTBEAT_FRESH_MS = 10_000;
 
 export interface SandboxLifecycle {
-  /** 当前后端 status（无记录时为 null）。 */
   status: string | null;
   decision: LifecycleDecision;
-  /** 启动四阶段（**展示序**：初始化 / 拉取镜像 / 准备工作区 / 启动实例）。 */
   phases: readonly { key: string; label: string }[];
-  /** 当前展示格下标。 */
   activePhaseIndex: number;
-  /** 启动进度百分比（running 前 < 100）。 */
-  percent: number;
-  /**
-   * 挂在某一格下的子文案。两个来源都落「启动实例」格，且**前后相继**：
-   * `sandbox.instance_progress`（起实例，冷镜像实测 190s）→ `runtime.install_progress`
-   * （装 CLI，实测可达 753s）。后者一旦到达就接管——它是更晚的那一步，起实例的文案
-   * 此刻已经是过去时。undefined = 本次没有子文案。
-   */
+  /** No measured whole-operation workload is currently available. */
+  percent: number | null;
   phaseNote?: { phaseKey: StartupPhaseKey; text: string };
-  /**
-   * 进度卡标题下那句副标题。**undefined = 那一行不渲染**。
-   *
-   * ⛔ 它此前写死在 view 里（「首次启动需拉取镜像，可能耗时较长，请稍候」），**恒定**。
-   * 镜像自 2026-09-10 起由向导第 3 步预先铺好，那句于是在多数机器上是假的，而且与
-   * 同一张卡下面 `phaseNote` 的「镜像已在本机」直接打架。⇒ 与 `phaseNote` **同源**
-   * （都从这一份 `instance_progress` 派生），判定在 `startupSubtitle`。
-   */
   subtitle?: string;
-  /**
-   * 当前启动阶段的「已等待」显示串（`3:10`）。**完全由前端算**：锚点是本页收到那条
-   * `status_changed` 的时刻（store 的 `observedAt`），后端不推任何耗时字段。
-   *
-   * undefined 有两种情况，都必须**不显示**而不是显示 0：① 不在启动中；② 刷新恢复出来的
-   * 状态没有锚点（DTO 上没有"何时进入该状态"的时间戳，从 0 数会给出一个看起来精确、
-   * 实际上编的数字）。
-   */
   elapsedLabel?: string;
-  /** failed / ended 决策下的人话呈现（P22 §1：人话 + 可操作建议）；其余决策为 null。 */
+  headline?: string;
+  operationFacts?: { label: string; value: string }[];
+  diagnosticOperationId?: string;
+  waitingConfirmation: boolean;
   outcome: SandboxErrorCopy | null;
   stuckElapsed?: string;
   continueWaiting: () => void;
+  checkStartup: () => void;
 }
 
-/** 无记录时按 startup(pending) 兜底：create 刚发出、事件未到时展示"启动中"而非空白。 */
+function elapsed(at: string | null | undefined, now: number): string | undefined {
+  if (at === null || at === undefined || !Number.isFinite(Date.parse(at))) return undefined;
+  return formatElapsed(now - Date.parse(at));
+}
+
+/** Original provision-cycle facts survive refresh; reads and waiting do not advance progress. */
 export function useSandboxLifecycle(sandboxId: string | null): SandboxLifecycle {
+  const client = useQueryClient();
   const runtime = useAppStore((s) =>
     sandboxId === null ? undefined : s.sandboxStatuses[sandboxId],
   );
@@ -71,101 +59,167 @@ export function useSandboxLifecycle(sandboxId: string | null): SandboxLifecycle 
   const instance = useAppStore((s) =>
     sandboxId === null ? undefined : s.instanceStartups[sandboxId],
   );
-  const status = runtime?.status ?? null;
-  // 失败原因的**唯一**来源：WS status_changed.errorCode（即时）/ DTO failureCode（刷新恢复）
-  // 已在 store 里归一到同一个字段。install_progress 不参与（10 §3.1）。
-  const failureCode = runtime?.failureCode;
-  const failureMessage = runtime?.failureMessage;
-  const installStatus = install?.status;
-  const installRuntime = install?.runtime;
-  const installVersion = install?.versionDetected;
-  const instancePhase = instance?.phase;
-  const imageStaged = instance?.imageStaged;
-  const observedAt = runtime?.observedAt;
-
-  const effective = status ?? 'pending';
-  const decision: LifecycleDecision = status === null ? 'startup' : classifyStatus(effective);
-
-  /**
-   * 秒级心跳，**只在启动中且真的有锚点时才跑**。没有这两个条件就一个定时器都不建：
-   * 一个 running 的沙箱每秒重渲染一次，是为了一行不会显示的文案付整页的代价。
-   */
-  const lastProgressAt = runtime?.lastProgressAt ?? Date.now();
   const continueWaiting = useAppStore((s) => s.continueSandboxWaiting);
-  const ticking = decision === 'startup';
+  const status = runtime?.status ?? null;
+  const effective = status ?? 'pending';
+  const observation = runtime?.startupObservation;
+  const uncertain = runtime?.startupObservationUncertain === true;
+  const decision: LifecycleDecision = status === null ? 'startup' : classifyStatus(effective);
+  const ticking = (decision === 'startup' || decision === 'unknown') && observation !== undefined;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!ticking) return;
-    setNow(Date.now()); // 立刻对齐一次，别让首帧停在上一次卸载时的旧值
+    setNow(Date.now());
     const timer = setInterval(() => {
       setNow(Date.now());
     }, 1000);
     return () => {
       clearInterval(timer);
     };
-  }, [ticking, observedAt]);
+  }, [ticking]);
 
   return useMemo(() => {
-    const instanceProgress =
-      instancePhase === undefined ? undefined : { phase: instancePhase, imageStaged };
-    // ⚠️ 副标题与格子子文案**吃同一份进度**，于是两者不会各自演化出矛盾的说法
-    //    —— 那正是副标题被写死在 view 里时发生的事。
-    const subtitle = startupSubtitle(instanceProgress);
-    const note =
-      installStatus === undefined || installRuntime === undefined
-        ? instanceSubCopy(instanceProgress)
-        : installSubCopy({
-            runtime: installRuntime,
-            status: installStatus,
-            versionDetected: installVersion,
-          });
-
+    const progress =
+      instance === undefined
+        ? undefined
+        : { phase: instance.phase, imageStaged: instance.imageStaged };
+    const legacyNote = install === undefined ? instanceSubCopy(progress) : installSubCopy(install);
+    const stageKey: StartupPhaseKey =
+      observation?.stage === 'workspace-preparation'
+        ? 'workspace'
+        : observation?.stage === 'instance-create'
+          ? 'image'
+          : INSTANCE_PHASE_KEY;
+    const activePhaseIndex =
+      observation === undefined
+        ? phaseIndexForStatus(effective)
+        : STARTUP_PHASES.findIndex((phase) => phase.key === stageKey);
+    const stageElapsed = elapsed(observation?.stageEnteredAt, now);
+    const totalElapsed = elapsed(observation?.startedAt, now);
+    const progressElapsed = elapsed(observation?.lastProgressAt, now);
+    const heartbeatFresh =
+      observation?.heartbeatAt !== null &&
+      observation?.heartbeatAt !== undefined &&
+      now - Date.parse(observation.heartbeatAt) <= STARTUP_HEARTBEAT_FRESH_MS;
+    const waitingConfirmation =
+      uncertain ||
+      observation?.state === 'unknown' ||
+      (observation?.state === 'inflight' && !heartbeatFresh) ||
+      (observation?.state === 'inflight' &&
+        observation.stage === 'instance-start' &&
+        observation.stageEnteredAt !== null &&
+        now - Date.parse(observation.stageEnteredAt) >= 120_000);
+    const facts =
+      observation === undefined
+        ? undefined
+        : [
+            {
+              label: '原启动请求',
+              value:
+                uncertain || observation.state === 'unknown'
+                  ? '结果待确认'
+                  : observation.state === 'inflight'
+                    ? heartbeatFresh
+                      ? '仍在执行'
+                      : '已受理，结果待确认'
+                    : observation.state === 'succeeded'
+                      ? '已完成'
+                      : '已确认失败',
+            },
+            {
+              label: '当前准备阶段',
+              value:
+                uncertain || observation.state === 'unknown'
+                  ? '准备阶段待确认'
+                  : STARTUP_STAGE_COPY[observation.stage],
+            },
+            { label: '启动已用时间', value: totalElapsed ?? '待确认' },
+            { label: '阶段已用时间', value: stageElapsed ?? '待确认' },
+            {
+              label: '最后实质进展',
+              value: progressElapsed === undefined ? '待确认' : `${progressElapsed} 前`,
+            },
+            {
+              label: '最近心跳',
+              value:
+                observation.heartbeatAt === null
+                  ? '暂未确认'
+                  : new Date(observation.heartbeatAt).toLocaleString(),
+            },
+            {
+              label: '最近查询',
+              value:
+                observation.observedAt === null
+                  ? '暂未确认'
+                  : new Date(observation.observedAt).toLocaleString(),
+            },
+          ];
+    const lastProgressAt =
+      observation?.lastProgressAt === null || observation?.lastProgressAt === undefined
+        ? null
+        : Date.parse(observation.lastProgressAt);
+    const dismissed = runtime?.waitingDismissedAt;
+    const showStuck =
+      lastProgressAt !== null &&
+      isSandboxStuck(effective, lastProgressAt, now, false) &&
+      (dismissed === undefined || now - dismissed >= STUCK_HINT_MS);
+    const note = waitingConfirmation
+      ? '暂未收到启动结果，正在确认原操作状态，不会重复启动。'
+      : observation === undefined
+        ? (legacyNote ?? '正在确认准备情况…')
+        : `${STARTUP_STAGE_COPY[observation.stage]}；正在核对原启动请求。`;
     return {
       status,
       decision,
       phases: STARTUP_PHASES,
-      activePhaseIndex: phaseIndexForStatus(effective),
-      percent: startupPercent(effective),
-      // 两个来源的子文案都永远挂「启动实例」格——起实例/装 CLI/注凭证/起 agent 会话
-      // 全在 starting 段内（03 §4.3）。
-      ...(note === undefined ? {} : { phaseNote: { phaseKey: INSTANCE_PHASE_KEY, text: note } }),
-      ...(subtitle === undefined ? {} : { subtitle }),
-      // `ticking` 已经蕴含 observedAt 有值（它就是由这个条件构成的）——再判一次会被
-      // `no-unnecessary-condition` 判死，也确实是一句永远为真的话。
-      ...(ticking && observedAt !== undefined
-        ? { elapsedLabel: formatElapsed(now - observedAt) }
+      activePhaseIndex,
+      percent: null,
+      phaseNote: {
+        phaseKey: observation === undefined ? INSTANCE_PHASE_KEY : stageKey,
+        text: note,
+      },
+      ...(observation === undefined && startupSubtitle(progress) !== undefined
+        ? { subtitle: startupSubtitle(progress) }
         : {}),
-      ...(isSandboxStuck(effective, lastProgressAt, now, installStatus === 'installing')
-        ? { stuckElapsed: formatElapsed(now - lastProgressAt) }
+      ...(stageElapsed === undefined ? {} : { elapsedLabel: stageElapsed }),
+      ...(waitingConfirmation
+        ? {
+            headline:
+              uncertain || observation?.state === 'unknown' || !heartbeatFresh
+                ? '正在确认原启动请求的结果'
+                : '启动请求仍在执行，正在确认结果',
+          }
         : {}),
+      ...(facts === undefined ? {} : { operationFacts: facts }),
+      ...(observation === undefined ? {} : { diagnosticOperationId: observation.operationId }),
+      waitingConfirmation,
+      ...(showStuck && progressElapsed !== undefined ? { stuckElapsed: progressElapsed } : {}),
       continueWaiting: () => {
         if (sandboxId !== null) continueWaiting(sandboxId);
       },
+      checkStartup: () => {
+        if (sandboxId !== null)
+          void client.invalidateQueries({ queryKey: sandboxKeys.detail(sandboxId), exact: true });
+      },
       outcome:
         decision === 'failed'
-          ? // 人话按**码**查 P22 §1；failureMessage 是纯自由文本细节，只作为排障小字原样透出，
-            // **绝不 parse 它取码**（后端已把码与文本拆成两列）。拿不到码时给兜底人话，不裸抛码。
-            describeSandboxError({ code: failureCode, detail: failureMessage })
+          ? describeSandboxError({ code: runtime?.failureCode, detail: runtime?.failureMessage })
           : decision === 'ended'
             ? SANDBOX_ENDED_COPY
             : null,
     };
   }, [
     sandboxId,
+    client,
+    runtime,
+    install,
+    instance,
     continueWaiting,
-    lastProgressAt,
     status,
     effective,
     decision,
-    failureCode,
-    failureMessage,
-    installStatus,
-    installRuntime,
-    installVersion,
-    instancePhase,
-    imageStaged,
-    ticking,
-    observedAt,
+    observation,
+    uncertain,
     now,
   ]);
 }

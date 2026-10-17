@@ -41,3 +41,31 @@ export const AvailableHasNoPercent: Story = {
     await expect(within(canvasElement).queryByRole('progressbar')).not.toBeInTheDocument();
   },
 };
+export const KnownDownloadUnknownOverall: Story = {
+  args: {
+    model: upgradeViewFixture({
+      phase: 'ongoing',
+      canUpgrade: false,
+      percent: null,
+      progressText: '本次总体进度待确认',
+      stageProgress: {
+        label: '安装包下载阶段',
+        percent: 64,
+        workText: '60.4 MB / 94.3 MB',
+        elapsedText: '当前阶段已用 2:18',
+        lastProgressText: '最后实质进展 刚刚',
+        stale: false,
+      },
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('progressbar', { name: '本实例升级进度' })).not.toHaveAttribute(
+      'aria-valuenow',
+    );
+    await expect(canvas.getByRole('progressbar', { name: '安装包下载阶段进度' })).toHaveAttribute(
+      'aria-valuenow',
+      '64',
+    );
+  },
+};

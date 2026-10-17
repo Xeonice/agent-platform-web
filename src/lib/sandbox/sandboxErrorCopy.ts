@@ -380,9 +380,9 @@ const COPY_TABLE: Record<string, Omit<SandboxErrorCopy, 'code'>> = {
    * 文案不许把前者说成后者。
    */
   TIMEOUT: {
-    title: '超时未响应：这一步等太久，平台先停下了',
+    title: '启动未完成：等待超时',
     advice:
-      '在限定时间内没有等到应答。超时不等于连不上，可以重新发起；一直超时就运行诊断，确认这台机器的环境。',
+      '原操作已确认终结。可检查任务状态与诊断信息，再决定下一步；请求仍在执行或结果未知时不适用此失败卡。',
     severity: 'timeout',
     actions: [RETRY],
   },

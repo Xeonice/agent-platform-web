@@ -24,6 +24,7 @@ import {
 import {
   newUpgradeRequestId,
   readPendingRequest,
+  readPendingAsyncPreference,
   upgradePendingKey,
 } from '@/lib/system/upgradeRequestIdentity';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
@@ -36,6 +37,7 @@ interface PendingRequest {
   requestId: string;
   storageKey: string;
   phase: 'submitting' | 'lookup' | 'accepted';
+  preferAsync: boolean;
 }
 export interface InstanceUpgradeController {
   model: UpgradeDisplayModel;
@@ -51,6 +53,8 @@ export interface InstanceUpgradeController {
   openDetails: () => void;
   detailsRequested: boolean;
   consumeDetailsRequest: () => void;
+  continueWorking: () => void;
+  copyDiagnostics: () => void;
 }
 export const InstanceIdentityContext = createContext<
   { instanceId: string; userScope: string } | null | undefined
@@ -70,7 +74,11 @@ function savePending(pending: PendingRequest | null, previousKey?: string) {
     } else
       localStorage.setItem(
         pending.storageKey,
-        JSON.stringify({ version: 1, requestId: pending.requestId }),
+        JSON.stringify({
+          version: 1,
+          requestId: pending.requestId,
+          preferAsync: pending.preferAsync,
+        }),
       );
   } catch {
     /* Storage failure never becomes permission or a second upgrade. */
@@ -112,7 +120,7 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
   const observation = query.isError
     ? unknownUpgradeObservation(query.data ?? null)
     : (query.data ?? null);
-  const model = useMemo(
+  const derivedModel = useMemo(
     () => deriveUpgradeModel(observation, loadedWebBuild, now),
     [observation, now],
   );
@@ -121,6 +129,24 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
   const pendingRef = useRef<PendingRequest | null>(null);
   const [commandMessage, setCommandMessage] = useState<string | null>(null);
   const [detailsRequested, setDetailsRequested] = useState(false);
+  const model: UpgradeDisplayModel =
+    pending !== null &&
+    snapshot?.operation?.requestId !== pending.requestId &&
+    snapshot?.attempt?.requestId !== pending.requestId
+      ? {
+          ...derivedModel,
+          phase: 'pending',
+          showEntry: true,
+          showDot: false,
+          title: pending.phase === 'accepted' ? '准备升级，正在读取状态' : '正在确认升级请求',
+          subtitle: commandMessage ?? '只查询原请求，不重复提交',
+          percent: null,
+          stageProgress: undefined,
+          progressText: null,
+          canUpgrade: false,
+          canRefresh: false,
+        }
+      : derivedModel;
   const leaveGuard = useUpgradeLeaveGuard();
   const check = useCallback(async () => {
     try {
@@ -148,20 +174,26 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
     if (storageKey === null) return;
     if (pendingRef.current?.storageKey === storageKey) return;
     let requestId: string | null = null;
+    let preferAsync = false;
     try {
-      requestId = readPendingRequest(localStorage.getItem(storageKey));
+      const stored = localStorage.getItem(storageKey);
+      requestId = readPendingRequest(stored);
+      preferAsync = readPendingAsyncPreference(stored);
     } catch {
       /* optional persistence */
     }
     const restored: PendingRequest | null =
-      requestId === null ? null : { requestId, storageKey, phase: 'lookup' };
+      requestId === null ? null : { requestId, storageKey, phase: 'lookup', preferAsync };
     pendingRef.current = restored;
     setPending(restored);
     setCommandMessage(restored === null ? null : '升级请求结果待确认，正在查询原请求');
   }, [storageKey]);
   useEffect(() => {
     if (pending === null || pending.phase === 'submitting') return;
-    if (snapshot?.attempt?.requestId === pending.requestId) {
+    if (
+      snapshot?.operation?.requestId === pending.requestId ||
+      snapshot?.attempt?.requestId === pending.requestId
+    ) {
       updatePending(null);
       setCommandMessage(null);
       return;
@@ -172,16 +204,24 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
       if (querying) return;
       querying = true;
       try {
-        const result = await lookupUpgradeRequest(pending.requestId);
-        if (!live || result.requestId !== pending.requestId) return;
+        const result = await lookupUpgradeRequest(
+          pending.requestId,
+          undefined,
+          pending.preferAsync,
+        );
+        if (
+          !live ||
+          result.requestId !== pending.requestId ||
+          result.instanceId !== snapshot?.instanceId
+        )
+          return;
         setCommandMessage('升级请求已受理，等待确认实例进度');
         await check();
       } catch (error) {
         if (!live) return;
         reportRestError(error);
         if (error instanceof ApiErrorException && error.httpStatus === 404) {
-          updatePending(null);
-          setCommandMessage('已确认尚未受理该请求。检查版本后，可自行决定是否重新升级。');
+          setCommandMessage('暂未查到原请求，继续确认结果，不重复提交。');
         } else setCommandMessage('升级请求结果暂时无法确认，只查询原请求，不重复提交');
       } finally {
         querying = false;
@@ -195,7 +235,15 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
       live = false;
       clearInterval(timer);
     };
-  }, [pending, snapshot?.attempt?.requestId, check, reportRestError, updatePending]);
+  }, [
+    pending,
+    snapshot?.attempt?.requestId,
+    snapshot?.operation?.requestId,
+    snapshot?.instanceId,
+    check,
+    reportRestError,
+    updatePending,
+  ]);
 
   const upgrade = useCallback(() => {
     if (
@@ -213,18 +261,25 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
       targetDigest: target.targetDigest,
       expectedActivationGeneration: snapshot.activationGeneration,
     };
-    updatePending({ requestId: body.requestId, storageKey, phase: 'submitting' });
+    const preferAsync = target.supportsAsync === true;
+    updatePending({ requestId: body.requestId, storageKey, phase: 'submitting', preferAsync });
     setCommandMessage('正在确认本次升级请求');
-    void requestInstanceUpgrade(body, snapshot.csrfToken)
+    void requestInstanceUpgrade(body, snapshot.csrfToken, preferAsync)
       .then(async (accepted) => {
         if (
           pendingRef.current?.requestId !== body.requestId ||
           accepted.requestId !== body.requestId ||
-          accepted.targetDigest !== body.targetDigest ||
+          ('finalTargetDigest' in accepted ? accepted.finalTargetDigest : accepted.targetDigest) !==
+            body.targetDigest ||
           accepted.instanceId !== snapshot.instanceId
-        )
+        ) {
+          if (pendingRef.current?.requestId === body.requestId) {
+            updatePending({ requestId: body.requestId, storageKey, phase: 'lookup', preferAsync });
+            setCommandMessage('请求结果与原意图不符，只查询原请求，不重复提交。');
+          }
           return;
-        updatePending({ requestId: body.requestId, storageKey, phase: 'accepted' });
+        }
+        updatePending({ requestId: body.requestId, storageKey, phase: 'accepted', preferAsync });
         setCommandMessage('升级请求已受理，正在读取实例进度');
         await check();
       })
@@ -239,7 +294,7 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
           setCommandMessage('本次请求未受理，请检查权限、目标版本和当前实例状态后再决定。');
           void check();
         } else {
-          updatePending({ requestId: body.requestId, storageKey, phase: 'lookup' });
+          updatePending({ requestId: body.requestId, storageKey, phase: 'lookup', preferAsync });
           setCommandMessage('请求结果待确认，只查询原请求，不重复提交');
         }
       });
@@ -267,6 +322,24 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
   const consumeDetailsRequest = useCallback(() => {
     setDetailsRequested(false);
   }, []);
+  const continueWorking = useCallback(() => {
+    router.push('/');
+  }, [router]);
+  const copyDiagnostics = useCallback(() => {
+    if (model.diagnosticText === undefined) return;
+    try {
+      void navigator.clipboard.writeText(model.diagnosticText).then(
+        () => {
+          setCommandMessage('已复制脱敏诊断信息。');
+        },
+        () => {
+          setCommandMessage('复制未完成，可从运行产物详情查看诊断信息。');
+        },
+      );
+    } catch {
+      setCommandMessage('当前浏览器无法复制，请从运行产物详情查看诊断信息。');
+    }
+  }, [model.diagnosticText]);
   return {
     model,
     observation,
@@ -281,5 +354,7 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
     openDetails,
     detailsRequested,
     consumeDetailsRequest,
+    continueWorking,
+    copyDiagnostics,
   };
 }

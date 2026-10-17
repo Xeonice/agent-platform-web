@@ -25,6 +25,8 @@ export function VersionUpdateCardContainer() {
       onRefresh={controller?.refreshPage ?? noop}
       onLater={controller?.later ?? noop}
       onDetails={controller?.openDetails ?? noop}
+      onContinue={controller?.continueWorking}
+      onCopyDiagnostics={controller?.copyDiagnostics}
       contractFinalize={contractFinalize}
     />
   );
