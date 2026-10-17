@@ -1,13 +1,4 @@
-import { useState, type Ref } from 'react';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { type Ref } from 'react';
 import {
   VersionUpdateDetailsView,
   type VersionUpdateDetailsProps,
@@ -19,60 +10,9 @@ import {
 
 interface Props extends VersionUpdateDetailsProps {
   headingRef: Ref<HTMLHeadingElement>;
-  authorizationOpen: boolean;
-  onAuthorizationOpenChange: (open: boolean) => void;
-  authorizationBusy: boolean;
-  authorizationError: string | null;
-  onAuthorize: (key: string) => void;
   contractFinalize?: ContractFinalizeProps;
 }
-function UpgradeAuthorizationInput({
-  onAuthorize,
-  busy,
-}: {
-  onAuthorize: (key: string) => void;
-  busy: boolean;
-}) {
-  // Secret input is local only. This component unmounts immediately on success/close.
-  const [key, setKey] = useState('');
-  return (
-    <form
-      data-upgrade-authorization
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!busy) {
-          onAuthorize(key);
-          setKey('');
-        }
-      }}
-      className="space-y-3"
-    >
-      <Input
-        type="password"
-        name="upgrade-key"
-        aria-label="实例升级授权密钥"
-        autoComplete="off"
-        value={key}
-        onChange={(event) => {
-          setKey(event.target.value);
-        }}
-      />
-      <Button type="submit" disabled={busy || key.length < 16}>
-        {busy ? '正在验证…' : '授权升级'}
-      </Button>
-    </form>
-  );
-}
-export function VersionUpdateCardView({
-  headingRef,
-  authorizationOpen,
-  onAuthorizationOpenChange,
-  authorizationBusy,
-  authorizationError,
-  onAuthorize,
-  contractFinalize,
-  ...details
-}: Props) {
+export function VersionUpdateCardView({ headingRef, contractFinalize, ...details }: Props) {
   return (
     <section
       id="version"
@@ -100,36 +40,6 @@ export function VersionUpdateCardView({
           ))}
         </dl>
       </details>
-      {details.model.canAuthenticate && !details.model.canUpgrade ? (
-        <Button
-          className="mt-3"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            onAuthorizationOpenChange(true);
-          }}
-        >
-          授权升级
-        </Button>
-      ) : null}
-      <Dialog open={authorizationOpen} onOpenChange={onAuthorizationOpenChange}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>授权本实例升级</DialogTitle>
-            <DialogDescription>
-              使用安装时授予的独立升级密钥。普通访问口令不授予升级权限，取消不影响查看版本。
-            </DialogDescription>
-          </DialogHeader>
-          {authorizationOpen ? (
-            <UpgradeAuthorizationInput onAuthorize={onAuthorize} busy={authorizationBusy} />
-          ) : null}
-          {authorizationError === null ? null : (
-            <p role="alert" className="text-sm text-error">
-              {authorizationError}
-            </p>
-          )}
-        </DialogContent>
-      </Dialog>
     </section>
   );
 }

@@ -11,7 +11,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import {
   getUpgradeStatus,
-  grantUpgradeAccess,
   lookupUpgradeRequest,
   requestInstanceUpgrade,
 } from '@/services/api/upgrade.service';
@@ -52,11 +51,6 @@ export interface InstanceUpgradeController {
   openDetails: () => void;
   detailsRequested: boolean;
   consumeDetailsRequest: () => void;
-  authorizationOpen: boolean;
-  setAuthorizationOpen: (open: boolean) => void;
-  authorizationBusy: boolean;
-  authorizationError: string | null;
-  authorize: (key: string) => void;
 }
 export const InstanceIdentityContext = createContext<
   { instanceId: string; userScope: string } | null | undefined
@@ -126,9 +120,6 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
   const [pending, setPending] = useState<PendingRequest | null>(null);
   const pendingRef = useRef<PendingRequest | null>(null);
   const [commandMessage, setCommandMessage] = useState<string | null>(null);
-  const [authorizationOpen, setAuthorizationOpenState] = useState(false);
-  const [authorizationBusy, setAuthorizationBusy] = useState(false);
-  const [authorizationError, setAuthorizationError] = useState<string | null>(null);
   const [detailsRequested, setDetailsRequested] = useState(false);
   const leaveGuard = useUpgradeLeaveGuard();
   const check = useCallback(async () => {
@@ -269,39 +260,6 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
       if (leaveGuard() === 'allowed') window.location.reload();
     });
   }, [model.canRefresh, snapshot, leaveGuard, client, check]);
-  const authorize = useCallback(
-    (key: string) => {
-      if (
-        authorizationBusy ||
-        snapshot === null ||
-        observation?.uncertain ||
-        snapshot.csrfToken === ''
-      )
-        return;
-      setAuthorizationBusy(true);
-      setAuthorizationError(null);
-      void grantUpgradeAccess(key, snapshot.csrfToken)
-        .then(async (status) => {
-          await client.cancelQueries({ queryKey: UPGRADE_STATUS_KEY });
-          client.setQueryData<UpgradeObservation>(
-            UPGRADE_STATUS_KEY,
-            receiveUpgradeStatus(null, status, Date.now()),
-          );
-          setAuthorizationOpenState(false);
-        })
-        .catch(() => {
-          setAuthorizationError('授权未成功，请确认独立升级密钥或稍后再试。');
-        })
-        .finally(() => {
-          setAuthorizationBusy(false);
-        });
-    },
-    [authorizationBusy, snapshot, observation?.uncertain, client],
-  );
-  const setAuthorizationOpen = useCallback((open: boolean) => {
-    setAuthorizationOpenState(open);
-    setAuthorizationError(null);
-  }, []);
   const openDetails = useCallback(() => {
     setDetailsRequested(true);
     router.push('/settings/system#version');
@@ -323,10 +281,5 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
     openDetails,
     detailsRequested,
     consumeDetailsRequest,
-    authorizationOpen,
-    setAuthorizationOpen,
-    authorizationBusy,
-    authorizationError,
-    authorize,
   };
 }

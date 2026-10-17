@@ -47,7 +47,7 @@ export function upgradeFixture(): UpgradeStatus {
         installable: true,
       },
     },
-    capabilities: { canUpgradeInstance: false, canAuthenticate: true },
+    capabilities: { canUpgradeInstance: true, canAuthenticate: false },
     csrfToken: 'test-only-csrf',
     attempt: null,
     recovery: null,

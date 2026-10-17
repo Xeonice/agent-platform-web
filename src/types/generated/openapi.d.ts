@@ -1243,6 +1243,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Compatibility endpoint; instance access already permits upgrades
+         * @deprecated
+         */
         post: operations["UpgradeController_access"];
         delete?: never;
         options?: never;
@@ -2860,7 +2864,7 @@ export interface components {
             } | null;
         };
         UpgradeAccessDto: {
-            upgradeKey: string;
+            upgradeKey?: string;
         };
         UpgradeRequestDto: {
             /** Format: uuid */

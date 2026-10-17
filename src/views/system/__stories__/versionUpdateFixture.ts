@@ -12,7 +12,6 @@ export function upgradeViewFixture(over: Partial<UpgradeDisplayModel> = {}): Upg
     lastSeenText: '上次确认 2026-10-12 12:00',
     canUpgrade: true,
     canRefresh: false,
-    canAuthenticate: false,
     facts: [
       { label: '当前服务版本', value: '0.2.4' },
       { label: '当前页面版本', value: '0.2.4' },

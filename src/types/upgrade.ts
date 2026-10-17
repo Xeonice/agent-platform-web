@@ -36,7 +36,6 @@ export interface UpgradeDisplayModel {
   lastSeenText: string | null;
   canUpgrade: boolean;
   canRefresh: boolean;
-  canAuthenticate: boolean;
   facts: { label: string; value: string }[];
   artifactDetails: { label: string; value: string }[];
 }

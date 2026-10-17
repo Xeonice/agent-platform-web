@@ -195,8 +195,6 @@ export function deriveUpgradeModel(
     lastSeenText: data === null ? null : `上次确认 ${data.observedAt}`,
     canUpgrade: false,
     canRefresh: false,
-    canAuthenticate:
-      data !== null && data.capabilities.canAuthenticate && !data.capabilities.canUpgradeInstance,
     facts,
     artifactDetails: details,
   };
@@ -209,7 +207,6 @@ export function deriveUpgradeModel(
     return {
       ...base,
       phase: 'unknown',
-      canAuthenticate: false,
       subtitle: observation?.reason ?? '暂时无法确认版本与升级状态',
     };
   }

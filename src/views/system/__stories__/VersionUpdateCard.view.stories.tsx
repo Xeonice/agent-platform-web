@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { expect, fn, within } from 'storybook/test';
+import { expect, fn, userEvent, within } from 'storybook/test';
 import { upgradeViewFixture } from './versionUpdateFixture';
 import { VersionUpdateCardView } from '@/views/system/VersionUpdateCard.view';
 const meta: Meta<typeof VersionUpdateCardView> = {
@@ -16,22 +16,28 @@ const meta: Meta<typeof VersionUpdateCardView> = {
     onLater: fn(),
     onDetails: fn(),
     headingRef: null,
-    authorizationOpen: false,
-    onAuthorizationOpenChange: fn(),
-    authorizationBusy: false,
-    authorizationError: null,
-    onAuthorize: fn(),
   },
 };
 export default meta;
 type Story = StoryObj<typeof VersionUpdateCardView>;
 export const Available: Story = {
-  play: async ({ canvasElement }) => {
-    await expect(within(canvasElement).getByRole('heading', { name: '版本与更新' })).toBeVisible();
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('heading', { name: '版本与更新' })).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: '授权升级' })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole('textbox')).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole('button', { name: '立即升级' }));
+    await expect(args.onUpgrade).toHaveBeenCalledOnce();
   },
 };
-export const ReadOnlyAuthorization: Story = {
-  args: { model: upgradeViewFixture({ canUpgrade: false, canAuthenticate: true }) },
+export const UpgradeUnavailable: Story = {
+  args: { model: upgradeViewFixture({ canUpgrade: false }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.queryByRole('button', { name: '立即升级' })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole('button', { name: '授权升级' })).not.toBeInTheDocument();
+    await expect(canvas.getByRole('button', { name: '检查更新' })).toBeVisible();
+  },
 };
 export const Unknown: Story = {
   args: {

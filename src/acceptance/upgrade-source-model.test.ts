@@ -165,8 +165,10 @@ describe('UPG F01/F03/C02 canonical version observations', () => {
     status.recovery.state = 'recovering';
     expect(model(status).canUpgrade).toBe(false);
   });
-  it('shows available to a read-only viewer without treating catalog publication as deployment', () => {
-    expect(model(upgradeFixture())).toMatchObject({
+  it('uses only the current server upgrade capability without treating catalog publication or the legacy authentication field as permission', () => {
+    const status = upgradeFixture();
+    status.capabilities = { canUpgradeInstance: false, canAuthenticate: true };
+    expect(model(status)).toMatchObject({
       phase: 'available',
       showEntry: true,
       showDot: true,
@@ -174,8 +176,7 @@ describe('UPG F01/F03/C02 canonical version observations', () => {
       canRefresh: false,
       percent: null,
     });
-    const status = upgradeFixture();
-    status.capabilities.canUpgradeInstance = true;
+    status.capabilities = { canUpgradeInstance: true, canAuthenticate: false };
     expect(model(status).canUpgrade).toBe(true);
     const available = status.catalog.availableRelease;
     if (available === null) throw new Error('missing catalog');

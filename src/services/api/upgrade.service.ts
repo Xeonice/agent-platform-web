@@ -4,7 +4,6 @@ import {
   UpgradeStatusSchema,
   UpgradeAttemptSchema,
   UpgradeRequestSchema,
-  UpgradeAccessSchema,
   UpgradeContractRequestSchema,
   UpgradeContractAttemptSchema,
 } from '@/types/upgrade-contract';
@@ -68,18 +67,6 @@ export async function lookupUpgradeRequest(
       `/api/system/upgrade/requests/${encodeURIComponent(requestId)}`,
       signal === undefined ? {} : { signal },
     ),
-  );
-}
-export async function grantUpgradeAccess(
-  upgradeKey: string,
-  csrfToken: string,
-): Promise<UpgradeStatus> {
-  return UpgradeStatusSchema.parse(
-    await call('/api/system/upgrade/access', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Upgrade-CSRF': csrfToken },
-      body: JSON.stringify(UpgradeAccessSchema.parse({ upgradeKey })),
-    }),
   );
 }
 export async function requestSemanticContract(
