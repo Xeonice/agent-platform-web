@@ -1,3 +1,5 @@
+import type { UpgradeCommandResult } from '@/types/upgrade';
+
 /** A request id has no authority. It only identifies one explicit user's intent. */
 export function newUpgradeRequestId(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -10,6 +12,19 @@ export function newUpgradeRequestId(): string {
 }
 export function upgradePendingKey(instanceId: string, userScope: string): string {
   return `ap.upgrade-request.v1:${encodeURIComponent(instanceId)}:${encodeURIComponent(userScope)}`;
+}
+
+/** Resolve only the command's wait; this does not confirm the instance's latest release. */
+export function isUpgradeCommandTerminal(result: UpgradeCommandResult): boolean {
+  if ('operationId' in result)
+    return result.state === 'completed' || result.state === 'failed' || result.state === 'deferred';
+  return (
+    result.state === 'activation-confirmed' ||
+    result.state === 'failed' ||
+    result.state === 'deferred' ||
+    result.state === 'candidate-rejected' ||
+    result.state === 'reverted'
+  );
 }
 export function readPendingRequest(raw: string | null): string | null {
   if (raw === null) return null;

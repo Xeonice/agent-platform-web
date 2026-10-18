@@ -5,7 +5,7 @@
 //
 // ⚠️ `staleTime / gcTime` 均为 `Infinity`（15 §2.2）：这是一次性放行判定，完成后由
 // `POST /api/system/init` 的 mutation `setQueryData` 置 true，⛔ 不靠重新拉取。
-// 拉取一次就够了——它在一次会话里不会自己变。
+// 初始化放行事实在一次会话里不会自己变。附带的联网记录仅用于快照展示，不能作为任务准入；Infinity 也不证明它仍新鲜。
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { getInitStatus } from '@/services/api/system.service';
 import { systemKeys } from '@/hooks/system/useAuditStream';

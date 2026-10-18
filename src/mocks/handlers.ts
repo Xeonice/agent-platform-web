@@ -2258,7 +2258,7 @@ const DIAGNOSE_FRAMES: readonly DiagnoseServerFrame[] = [
     status: 'warn',
     headline: '拉不到新镜像，Agent 仍可用',
     detailText:
-      'ghcr.io 未在超时时限内应答。模型 API 正常，Agent 可用；镜像仓库连不上只影响拉新镜像。',
+      'ghcr.io 未在超时时限内应答。本次模型 API 探测目标通过；任务实际连通性以其配置和执行结果为准。',
     // ⚠️ 散文归 nextStep，⛔ 不进等宽框。
     nextStep:
       '重跑一次看它稳不稳定：偶发多半只是慢；每次都这样就在系统设置里填 HTTPS_PROXY 后重试。',

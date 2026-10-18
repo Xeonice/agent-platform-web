@@ -21,7 +21,6 @@ import { useRuntimeAuthSync } from '@/hooks/credential/useRuntimeAuthSync';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
 import { useHealth } from '@/hooks/_shared/useHealth';
 import { WorkbenchHeaderView } from '@/views/workbench/WorkbenchHeader.view';
-import { useOfflineMode } from '@/hooks/system/useGlobalBanner';
 import { useTheme } from '@/hooks/_shared/useTheme';
 import { useAppNavigation } from '@/hooks/workbench/useAppNavigation';
 import { useAppStore } from '@/stores';
@@ -50,7 +49,6 @@ export function AppFrameContainer({ children }: { children: ReactNode }) {
   const tasks = useSandboxes();
   const { theme, setTheme } = useTheme();
   const navigation = useAppNavigation();
-  const offline = useOfflineMode();
   const health = useHealth();
   const { reportRestError, reportUnauthorized } = useReportUnauthorized();
   const selectedProjectId = useAppStore((state) => state.selectedProjectId);
@@ -139,7 +137,6 @@ export function AppFrameContainer({ children }: { children: ReactNode }) {
     if (
       projects.isPending ||
       tasks.isPending ||
-      offline.offline ||
       !projects.data?.some((project) => project.cloneStatus === 'ready')
     )
       return;
@@ -163,8 +160,7 @@ export function AppFrameContainer({ children }: { children: ReactNode }) {
   const selectedProject = projects.data?.find((project) => project.id === selectedProjectId);
   const readyProjects = projects.data?.filter((project) => project.cloneStatus === 'ready') ?? [];
   const taskDisabledReason =
-    offline.disabledReason ??
-    (selectedProject !== undefined && selectedProject.cloneStatus !== 'ready'
+    selectedProject !== undefined && selectedProject.cloneStatus !== 'ready'
       ? selectedProject.cloneStatus === 'cloning'
         ? '项目还在克隆，克隆完成后可发起'
         : '克隆失败的项目不能发起任务：先重试克隆或改为空项目'
@@ -172,7 +168,7 @@ export function AppFrameContainer({ children }: { children: ReactNode }) {
         ? projects.data?.length === 0
           ? '先新建一个项目'
           : '项目尚未就绪（克隆完成后可发起）'
-        : undefined);
+        : undefined;
   const selectedTask = tasks.data?.find((task) => task.id === selectedSandboxId);
   const pageTitle = pathname.startsWith('/settings/credentials')
     ? '凭证管理'
@@ -184,9 +180,6 @@ export function AppFrameContainer({ children }: { children: ReactNode }) {
     <InstanceUpgradeProviderContainer>
       <div className="flex h-dvh bg-background text-foreground">
         <AppSidebarView
-          {...(offline.disabledReason === undefined
-            ? {}
-            : { newTaskDisabledReason: offline.disabledReason })}
           groups={tree.groups}
           waitingInputCount={tree.waitingInputCount}
           activePath={pathname}

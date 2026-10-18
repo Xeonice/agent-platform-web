@@ -3,7 +3,6 @@ import { useQueries } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/stores';
 import { selectWorkbenchTask } from '@/hooks/workbench/useWorkbenchRoute';
-import { useOfflineMode } from '@/hooks/system/useGlobalBanner';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
 import { automationKeys } from '@/hooks/automation/useAutomations';
 import { retainedVolumeKeys } from '@/hooks/project/useRetainedVolumes';
@@ -31,7 +30,6 @@ export function useCommandPalette({ projects, tasks, pathname, onClose, deferFoc
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
   const selectedSandboxId = useAppStore((s) => s.selectedSandboxId);
   const visibleTerminal = useAppStore((s) => s.visibleTerminal);
-  const offline = useOfflineMode();
   const { reportRestError } = useReportUnauthorized();
   const readyProjects = projects.filter((project) => project.cloneStatus === 'ready');
   const selectedProject =
@@ -89,8 +87,7 @@ export function useCommandPalette({ projects, tasks, pathname, onClose, deferFoc
     selectedSandboxId !== null &&
     visibleTerminal?.sandboxId === selectedSandboxId;
   const taskDisabledReason =
-    offline.disabledReason ??
-    (selectedProject !== undefined && selectedProject.cloneStatus !== 'ready'
+    selectedProject !== undefined && selectedProject.cloneStatus !== 'ready'
       ? selectedProject.cloneStatus === 'cloning'
         ? '项目还在克隆，克隆完成后可发起'
         : '克隆失败的项目不能发起任务：先重试克隆或改为空项目'
@@ -98,7 +95,7 @@ export function useCommandPalette({ projects, tasks, pathname, onClose, deferFoc
         ? projects.length === 0
           ? '先新建一个项目'
           : '项目尚未就绪（克隆完成后可发起）'
-        : undefined);
+        : undefined;
   const effectiveTheme =
     theme === 'system'
       ? typeof document !== 'undefined' && document.documentElement.classList.contains('dark')

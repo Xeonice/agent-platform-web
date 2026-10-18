@@ -112,6 +112,63 @@ describe('DEP · initialization owns the gate until explicit successful finish',
     expect(screen.getByRole('button', { name: '下一步' })).toBeEnabled();
     expect(screen.getByTestId('connectivity-check')).toBeInTheDocument();
   });
+  it('REQ-DEP-007/008/015: a new failed target check has unknown check time, and explicit acknowledgement still reaches the real init wire', async () => {
+    base();
+    const init = vi.fn();
+    const failed = online.map((row) => ({ ...row, ok: false, hint: 'DNS 解析失败' }));
+    server.use(
+      http.post(`${API}/api/system/diagnose`, () =>
+        sse(
+          diagnostic().map((frame) =>
+            frame.event === 'check' && 'id' in frame && frame.id === 'outbound-network'
+              ? {
+                  ...frame,
+                  status: 'fail',
+                  headline: '声明目标未连通',
+                  detail: { results: failed },
+                }
+              : frame,
+          ),
+        ),
+      ),
+      http.post(`${API}/api/system/init`, async ({ request }) => {
+        init(await body(request));
+        return HttpResponse.json({ initialized: true, initializedAt: NOW }, { status: 201 });
+      }),
+    );
+    const { client } = mount(<InitWizardContainer />);
+    await screen.findByTestId('connectivity-check');
+    expect(await screen.findByTestId('connectivity-checked-at')).toHaveTextContent('上次检测');
+    fireEvent.click(screen.getByRole('button', { name: '重新检测' }));
+    await screen.findByTestId('offline-notice');
+    const checked = screen.getByTestId('connectivity-checked-at');
+    expect(checked).toHaveTextContent('检测时刻未提供');
+    expect(checked).toHaveTextContent('诊断检查记录');
+    expect(checked).not.toHaveTextContent('上次检测');
+    expect(checked).not.toHaveTextContent('刚');
+    expect(screen.getByRole('button', { name: '下一步' })).toBeDisabled();
+    expect(init).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '我知道，继续' }));
+    expect(screen.getByTestId('offline-acknowledged')).toHaveTextContent('确认不会禁用任务入口');
+    next();
+    fireEvent.click(screen.getByRole('button', { name: '跳过，下一步' }));
+    await screen.findByTestId('preset-step-staged');
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '下一步' })).toBeEnabled();
+    });
+    next();
+    await screen.findByTestId('subscription-setup');
+    next();
+    await screen.findByTestId('resource-confirm');
+    fireEvent.click(screen.getByRole('button', { name: '确认，开始使用' }));
+    await waitFor(() => {
+      expect(init).toHaveBeenCalledExactlyOnceWith({ acknowledgeOffline: true });
+    });
+    expect(client.getQueryData<{ initialized: boolean }>(systemKeys.init())?.initialized).toBe(
+      true,
+    );
+  });
+
   it('REQ-DEP-010/012: before preset conclusion primary is blocked; registry failure leaves later steps unchecked and skip available', async () => {
     base();
     const gate = deferred();

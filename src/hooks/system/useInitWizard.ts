@@ -7,12 +7,11 @@
 //     挂载即跑那一版功能上"更新"，代价是每次冷启动干等 5s×3，而结果通常与上次一模一样。
 //     只有**一条历史结果都没有**（新装）或用户点 [重新检测] 时才跑。
 //
-//  ② **历史结果必须带上它的时刻。** 见 `connectivityVerdict.ts` 文件头 ②。
+//  ② **检查结果保留原时刻；诊断帧缺时刻时明说未知，不用本地收到 done 的时间补作检查时间。
 //
 //  ③ **离线判定只看模型 API。** 判定在 `lib/system/connectivityVerdict.ts`，与后端
 //     `assertOfflineAcknowledged` 同口径；本文件只负责把用户的 [继续] 变成
-//     `acknowledgeOffline: true`。⛔ 前端不许替他填这个值——填了它，一台真的连不上模型 API
-//     的机器会静默通过初始化，然后在第一个 Task 上炸。
+//     `acknowledgeOffline: true`。不替用户默认填值；确认仅表示了解探测结果，不禁用任务。
 //
 //  ④ **`PUT /settings` 只存配置、不放行；只有 `POST /init` 放行**（§8 约束 2）。混用会导致
 //     "填了代理还没确认资源就进了工作台"。⇒ 两个 mutation 在本文件里泾渭分明，
@@ -100,8 +99,6 @@ interface DiagnoseRun {
   outbound?: DiagnoseCheckFrame;
   /** `preset-image` 那一帧（Step3 用）。 */
   preset?: DiagnoseCheckFrame;
-  /** 本轮结果的时刻（ISO），供 ② 那行「上次检测：…」使用。 */
-  at?: string;
 }
 
 export interface UseInitWizardResult {
@@ -226,7 +223,7 @@ export function useInitWizard(): UseInitWizardResult {
               if (frame.id === 'preset-image') write((prev) => ({ ...prev, preset: frame }));
             },
             onDone: () => {
-              write((prev) => ({ ...prev, phase: 'done', at: new Date().toISOString() }));
+              write((prev) => ({ ...prev, phase: 'done' }));
             },
           },
           controller.signal,
@@ -317,7 +314,7 @@ export function useInitWizard(): UseInitWizardResult {
     startRun(true);
   }, [initStatus.isSuccess, isChecking, step, hasHistory, run.outbound, run.preset, startRun]);
 
-  // ——— Step1 的模型：本轮结果优先，否则历史（② 两者都带时刻，界面上分得出来）———
+  // ——— Step1 的模型：本轮结果优先，否则历史；检查时刻只用服务端原始事实———
   const connectivity = useMemo<ConnectivityCheckModel>(() => {
     const fresh = run.outbound;
     if (fresh !== undefined) {
@@ -325,7 +322,6 @@ export function useInitWizard(): UseInitWizardResult {
       if (rows !== undefined) {
         return connectivityCheckModel({
           rows,
-          ...(run.at === undefined ? {} : { checkedAt: run.at }),
           fromHistory: false,
         });
       }
@@ -337,7 +333,7 @@ export function useInitWizard(): UseInitWizardResult {
         : { checkedAt: initStatus.data.lastConnectivityCheckAt }),
       fromHistory: true,
     });
-  }, [run.outbound, run.at, historyRows, initStatus.data?.lastConnectivityCheckAt]);
+  }, [run.outbound, historyRows, initStatus.data?.lastConnectivityCheckAt]);
 
   const presetImage = useMemo(
     () =>
@@ -416,10 +412,10 @@ export function useInitWizard(): UseInitWizardResult {
       }
       if (error.envelope.code === INIT_OFFLINE_NOT_ACKNOWLEDGED) {
         // ⛔ **不放行**。后端标了 `sideEffectFree: true`：`initialized` 仍是 false，
-        //    这台机器还没被初始化。message 里已经写清了两条出路，原样上 `InitErrorPanel`。
+        //    这台机器还没被初始化。按 code 显示确认检查结果的出口，不扩张为任务能力结论。
         setFinishNeedsOfflineReview(true);
         setFinishError(
-          '刚才这一轮联网检查发现模型 API 全部连不上：回第 1 步重新检测，确认以离线模式继续后再完成。',
+          '本次声明的模型 API 探测目标未通过检查：回第 1 步查看并确认检测结果后再完成初始化。这不代表所有 Agent 不可用。',
         );
         return;
       }

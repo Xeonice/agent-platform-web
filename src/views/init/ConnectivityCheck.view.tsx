@@ -73,8 +73,8 @@ export function ConnectivityCheckView({
         <p data-testid="connectivity-checked-at" className="text-xs text-muted-foreground">
           {model.checkedAtText ??
             // ⚠️ 不静默省略：一份不知道什么时候测的结果，用户有权知道它不知道。
-            '这份结果没有带时刻 —— 无法判断它有多旧，建议点 [重新检测] 跑一轮。'}
-          {model.fromHistory ? '（上次检测的结果，进向导不重跑）' : '（本轮刚检测）'}
+            '检测时刻未提供，无法判断结果新旧，需要新的记录时点 [重新检测]。'}
+          {model.fromHistory ? '（上次检测的结果，进向导不重跑）' : '（诊断检查记录）'}
         </p>
       )}
     </section>

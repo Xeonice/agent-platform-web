@@ -19,8 +19,7 @@ import type { RuntimeDto } from '@/types/runtimeCredential';
  *
  * ⚠️ 两档的「关闭」语义不同，⛔ 不要混用：
  *   · `blocking` 是**会话级**——关一次这次会话内不再出现，⛔ 不写 `bannerDismissedToday`。
- *     差别在一台真的离线的机器上：如果按"当天"记，关一次就当天不再提示，等于让
- *     「[+ 新任务] 为什么是灰的」永久失去解释，而它恰恰是最需要解释的时刻。
+ *     用于平台状态读失败等需要当前会话知晓的事实。
  *   · `warning`（治理）是**当天级**——关闭写 `bannerDismissedToday`，同一天内即使判定
  *     再次命中也不重新弹出；跨天则自然失效（`lib/system/globalBanner.ts` 的
  *     `isDismissedToday` 按日期字符串比对，不需要额外的回收步骤）。
@@ -41,7 +40,7 @@ export interface GlobalBannerModel {
   severity: BannerSeverity;
   /** 一行主文案，直接上 UI。 */
   title: string;
-  /** 补充说明（第二行）。**离线那条必须说清"哪一半还好着"**。 */
+  /** 补充说明（第二行）。联网检查须说明探测范围、来源和实际检查时刻是否已知。 */
   description: string;
   /** 动作按钮文案；缺席 = 这条横幅没有动作。 */
   actionLabel?: string;

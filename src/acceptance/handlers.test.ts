@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 function write(path: string, method: 'POST' | 'PATCH', body: object): Promise<Response> {
-  // eslint-disable-next-line no-restricted-syntax -- Raw mock-contract requests intentionally include invalid DTO fields rejected by typed service calls.
+  // eslint-disable-next-line architecture/no-network-capabilities -- Raw mock-contract requests intentionally include invalid DTO fields rejected by typed service calls.
   return fetch(`${API}/api/images${path}`, {
     method,
     headers: { 'content-type': 'application/json' },
@@ -22,7 +22,7 @@ function write(path: string, method: 'POST' | 'PATCH', body: object): Promise<Re
   });
 }
 async function images(query = ''): Promise<ImageManifestDto[]> {
-  // eslint-disable-next-line no-restricted-syntax -- Test the default mock's persisted HTTP response independently of production service decoding.
+  // eslint-disable-next-line architecture/no-network-capabilities -- Test the default mock's persisted HTTP response independently of production service decoding.
   const response = await fetch(`${API}/api/images${query}`);
   expect(response.status).toBe(200);
   const rows: ImageManifestDto[] = await response.json();

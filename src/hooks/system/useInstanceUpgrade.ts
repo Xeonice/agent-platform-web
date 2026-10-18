@@ -25,6 +25,7 @@ import {
   newUpgradeRequestId,
   readPendingRequest,
   readPendingAsyncPreference,
+  isUpgradeCommandTerminal,
   upgradePendingKey,
 } from '@/lib/system/upgradeRequestIdentity';
 import { useReportUnauthorized } from '@/hooks/access/useAccessGate';
@@ -67,10 +68,14 @@ export function useInstanceUpgradeContext() {
   return useContext(InstanceUpgradeContext);
 }
 
-function savePending(pending: PendingRequest | null, previousKey?: string) {
+function savePending(pending: PendingRequest | null, previous: PendingRequest | null) {
   try {
     if (pending === null) {
-      if (previousKey !== undefined) localStorage.removeItem(previousKey);
+      if (
+        previous !== null &&
+        readPendingRequest(localStorage.getItem(previous.storageKey)) === previous.requestId
+      )
+        localStorage.removeItem(previous.storageKey);
     } else
       localStorage.setItem(
         pending.storageKey,
@@ -168,7 +173,7 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
     const previous = pendingRef.current;
     pendingRef.current = next;
     setPending(next);
-    savePending(next, previous?.storageKey);
+    savePending(next, previous);
   }, []);
   useEffect(() => {
     if (storageKey === null) return;
@@ -190,15 +195,34 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
   }, [storageKey]);
   useEffect(() => {
     if (pending === null || pending.phase === 'submitting') return;
+    const instanceId = snapshot?.instanceId;
+    const userScope = snapshot?.userScope;
     if (
-      snapshot?.operation?.requestId === pending.requestId ||
-      snapshot?.attempt?.requestId === pending.requestId
+      instanceId === undefined ||
+      userScope === undefined ||
+      upgradePendingKey(instanceId, userScope) !== pending.storageKey
+    )
+      return;
+    let live = true;
+    const ownsPending = () => {
+      const current = client.getQueryData<UpgradeObservation>(UPGRADE_STATUS_KEY)?.snapshot;
+      return (
+        live &&
+        pendingRef.current?.requestId === pending.requestId &&
+        pendingRef.current.storageKey === pending.storageKey &&
+        current?.instanceId === instanceId &&
+        current.userScope === userScope
+      );
+    };
+    if (
+      ownsPending() &&
+      (snapshot?.operation?.requestId === pending.requestId ||
+        snapshot?.attempt?.requestId === pending.requestId)
     ) {
       updatePending(null);
       setCommandMessage(null);
       return;
     }
-    let live = true;
     let querying = false;
     const lookup = async () => {
       if (querying) return;
@@ -210,15 +234,20 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
           pending.preferAsync,
         );
         if (
-          !live ||
+          !ownsPending() ||
           result.requestId !== pending.requestId ||
-          result.instanceId !== snapshot?.instanceId
+          result.instanceId !== instanceId
         )
           return;
+        if (isUpgradeCommandTerminal(result)) {
+          updatePending(null);
+          setCommandMessage(null);
+          return;
+        }
         setCommandMessage('升级请求已受理，等待确认实例进度');
         await check();
       } catch (error) {
-        if (!live) return;
+        if (!ownsPending()) return;
         reportRestError(error);
         if (error instanceof ApiErrorException && error.httpStatus === 404) {
           setCommandMessage('暂未查到原请求，继续确认结果，不重复提交。');
@@ -240,6 +269,8 @@ export function useInstanceUpgrade(): InstanceUpgradeController {
     snapshot?.attempt?.requestId,
     snapshot?.operation?.requestId,
     snapshot?.instanceId,
+    snapshot?.userScope,
+    client,
     check,
     reportRestError,
     updatePending,

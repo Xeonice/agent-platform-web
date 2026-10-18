@@ -41,7 +41,6 @@ import { SandboxRestoreStateView } from '@/views/sandbox/SandboxRestoreState.vie
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/dialog';
 import { revealLaunchAuthPanel } from '@/hooks/workbench/useWorkbenchObjectFocus';
 import { Button } from '@/components/ui/button';
-import { useOfflineMode } from '@/hooks/system/useGlobalBanner';
 import { AuthGateContainer } from '@/containers/credential/AuthGateContainer';
 import { useRuntimeAuthPanel } from '@/hooks/credential/useRuntimeAuthPanel';
 import { SandboxLifecycleContainer } from '@/containers/sandbox/SandboxLifecycleContainer';
@@ -123,7 +122,6 @@ export function SandboxTerminalContainer({
   const [relaunch, setRelaunch] = useState<{ name: string; image?: TaskImageSnapshot } | null>(
     null,
   );
-  const offlineMode = useOfflineMode();
   const providers = useProviders();
   const runtimes = useRuntimes();
   const isGitProject =
@@ -584,13 +582,11 @@ export function SandboxTerminalContainer({
                 //    `<p>{createDisabledReason}</p>` 里，全仓没有 markdown 渲染器 ⇒ 屏幕上会
                 //    真的出现两颗星号。（同一份面板 199 行用的是 `<strong>`，说明这是笔误。）
                 //    要强调就改句序，把重点放句首。
-                offlineMode.offline
-                  ? offlineMode.disabledReason
-                  : ttyUnsupported
-                    ? '这台机器的沙箱环境开不了终端。跑在哪种沙箱环境上是这台机器的事实，不是一个可以在这里改的选项；在「系统状态」的「沙箱环境状态」里能看到它是哪一种、支持哪些能力。'
-                    : runtime !== '' && selectedRuntimeDto === undefined
-                      ? '原任务的 Agent 现在不可用，请改选一个已注册的 Agent。'
-                      : undefined
+                ttyUnsupported
+                  ? '这台机器的沙箱环境开不了终端。跑在哪种沙箱环境上是这台机器的事实，不是一个可以在这里改的选项；在「系统状态」的「沙箱环境状态」里能看到它是哪一种、支持哪些能力。'
+                  : runtime !== '' && selectedRuntimeDto === undefined
+                    ? '原任务的 Agent 现在不可用，请改选一个已注册的 Agent。'
+                    : undefined
               }
               // 两条**互斥**的错误呈现路径（P22 §1 / 04 §5）：
               //  · rejection = 后端显式标了 `sideEffectFree` 的门口拒绝，请求在落库前被拒（没有
@@ -664,7 +660,6 @@ export function SandboxTerminalContainer({
           <p>填了指令，Agent 启动时就开始执行。</p>
           <Button
             className="mt-3"
-            disabled={offlineMode.offline}
             onClick={() => {
               setCurrentModal('newTask');
             }}

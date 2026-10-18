@@ -6,28 +6,13 @@ import boundaries from 'eslint-plugin-boundaries';
 import storybook from 'eslint-plugin-storybook';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
+import architecture from './scripts/eslint/architecture-boundaries.mjs';
 
 // ——— 复用的 no-restricted-syntax selector（避免同名规则覆盖导致丢条目，07 §4.2 注意事项）———
 const AS_UNKNOWN_AS = {
   selector: 'TSAsExpression > TSAsExpression',
   message:
     '禁止双重类型断言（as unknown as X）；确需绕过请 eslint-disable + 理由注释并收敛到 types/shims（14 §4）',
-};
-const NO_FETCH = {
-  selector: "CallExpression[callee.name='fetch']",
-  message: 'fetch 只允许出现在 services/ 层（07 §3 规则 5）',
-};
-const NO_WEBSOCKET = {
-  selector: "NewExpression[callee.name='WebSocket']",
-  message: 'new WebSocket 只允许出现在 services/ 层（07 §3 规则 5）',
-};
-const NO_USEEFFECT = {
-  selector: "CallExpression[callee.name='useEffect']",
-  message: 'views/ 禁止 useEffect，副作用移至 hooks/ 层（07 §3 规则 2）',
-};
-const NO_USELAYOUTEFFECT = {
-  selector: "CallExpression[callee.name='useLayoutEffect']",
-  message: 'views/ 禁止 useLayoutEffect，副作用移至 hooks/ 层（07 §3 规则 2）',
 };
 
 // ——— 铁律 2 后半截「useState 仅限本地 UI 态」的可机检形态（07 §3 规则 2）———
@@ -261,21 +246,16 @@ export default tseslint.config(
   // ——— view 层副作用与依赖封禁（07 §4.2）。整份数组必须带上全局 AS_UNKNOWN_AS（07 §4.2 注意）———
   {
     files: ['src/views/**/*.{ts,tsx}'],
+    plugins: { architecture },
     rules: {
-      'no-restricted-syntax': [
-        'error',
-        AS_UNKNOWN_AS,
-        NO_USEEFFECT,
-        NO_USELAYOUTEFFECT,
-        NO_FETCH,
-        NO_WEBSOCKET,
-      ],
+      'architecture/no-view-effects': 'error',
+      'no-restricted-syntax': ['error', AS_UNKNOWN_AS],
       'no-restricted-imports': ['error', { patterns: [XTERM_IMPORT, ...VIEW_FORBIDDEN_IMPORTS] }],
     },
   },
 
   // ——— view 源码（不含 story）：铁律 2 后半截「useState 仅限本地 UI 态」的落点（07 §3 规则 2）———
-  // ESLint 同名规则整体覆盖（07 §4.2 注意），故必须把上一块的 5 条一并带上。
+  // ESLint 同名规则整体覆盖（07 §4.2 注意），故必须带上全局 AS_UNKNOWN_AS。
   // 排除 __stories__：story 的 play 函数天然是 async，它测的是 view 而不是 view 本身。
   {
     files: ['src/views/**/*.{ts,tsx}'],
@@ -284,10 +264,6 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         AS_UNKNOWN_AS,
-        NO_USEEFFECT,
-        NO_USELAYOUTEFFECT,
-        NO_FETCH,
-        NO_WEBSOCKET,
         VIEW_NO_ASYNC_FN,
         VIEW_NO_AWAIT,
         VIEW_NO_PROMISE_CHAIN,
@@ -308,16 +284,17 @@ export default tseslint.config(
     },
   },
 
-  // ——— 非 service / 非 view：全局禁 fetch/new WebSocket（services 是唯一网络层，07 §3 规则 5）———
+  // ——— 按词法绑定封禁网络能力；services 是唯一网络层（07 §3 规则 5）———
   {
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/services/**/*.{ts,tsx}', 'src/views/**/*.{ts,tsx}'],
+    ignores: ['src/services/**/*.{ts,tsx}'],
+    plugins: { architecture },
     rules: {
-      'no-restricted-syntax': ['error', AS_UNKNOWN_AS, NO_FETCH, NO_WEBSOCKET],
+      'architecture/no-network-capabilities': 'error',
     },
   },
 
-  // ——— container 层不写 DOM 操作（07 §3 规则 3）。同名规则整体覆盖 ⇒ 带上上一块的 3 条。
+  // ——— container 层不写 DOM 操作（07 §3 规则 3）。同名规则整体覆盖 ⇒ 带上 AS_UNKNOWN_AS。
   //     排除 __tests__：测试要造真实 DOM（createElement / body.appendChild / innerHTML 断言）。———
   {
     files: ['src/containers/**/*.{ts,tsx}'],
@@ -326,8 +303,6 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         AS_UNKNOWN_AS,
-        NO_FETCH,
-        NO_WEBSOCKET,
         CONTAINER_NO_DOCUMENT,
         CONTAINER_NO_DOM_MUTATION,
         CONTAINER_NO_IMPERATIVE_DOM,
