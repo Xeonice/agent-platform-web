@@ -8,6 +8,27 @@ import {
   type ContractFinalizeProps,
 } from '@/views/system/ContractFinalize.view';
 
+function stateAnnouncement(model: VersionUpdateDetailsProps['model']): string {
+  if (model.recoverySummary !== undefined) {
+    return [model.recoverySummary.stateText, model.recoverySummary.phaseText]
+      .filter((text) => text !== null)
+      .join('。');
+  }
+  if (model.phase === 'ongoing') {
+    const stage = model.stageProgress;
+    return [
+      model.title,
+      model.progressText ?? '等待进度确认',
+      stage === undefined
+        ? null
+        : `${stage.stale ? '上次确认：' : ''}${stage.label}${stage.percent === null ? '' : ` · ${String(stage.percent)}%（仅当前阶段）`}`,
+    ]
+      .filter((text) => text !== null)
+      .join('。');
+  }
+  return `${model.title}。${model.subtitle}`;
+}
+
 interface Props extends VersionUpdateDetailsProps {
   headingRef: Ref<HTMLHeadingElement>;
   contractFinalize?: ContractFinalizeProps;
@@ -27,6 +48,15 @@ export function VersionUpdateCardView({ headingRef, contractFinalize, ...details
       >
         版本与更新
       </h2>
+      <p
+        role="status"
+        aria-label="升级与恢复状态"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {stateAnnouncement(details.model)}
+      </p>
       <VersionUpdateDetailsView {...details} />
       {contractFinalize === undefined ? null : <ContractFinalizeView {...contractFinalize} />}
       <details className="mt-3 text-xs">

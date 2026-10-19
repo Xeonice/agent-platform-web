@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { expect, fn, userEvent, within } from 'storybook/test';
 import { upgradeViewFixture } from './versionUpdateFixture';
@@ -132,5 +133,120 @@ export const IndependentRecovery: Story = {
     await expect(canvas.queryByRole('button', { name: '立即升级' })).not.toBeInTheDocument();
     await userEvent.click(canvas.getByRole('button', { name: '复制诊断信息' }));
     await expect(args.onCopyDiagnostics).toHaveBeenCalledOnce();
+  },
+};
+
+export const AccessibleStateTransitions: Story = {
+  render: function StateTransitions(args) {
+    const [model, setModel] = useState(args.model);
+    return (
+      <div className="space-y-3">
+        <VersionUpdateCardView {...args} model={model} />
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setModel(
+                upgradeViewFixture({
+                  phase: 'ongoing',
+                  title: '实例升级中',
+                  canUpgrade: false,
+                  percent: 45,
+                  progressText: '验证服务与任务连续性 · 45%',
+                }),
+              );
+            }}
+          >
+            演示升级进度
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setModel(
+                upgradeViewFixture({
+                  phase: 'recovery',
+                  title: '版本与更新',
+                  subtitle: '正在恢复服务',
+                  canUpgrade: false,
+                  showEntry: false,
+                  percent: null,
+                  facts: [{ label: '本次升级结果', value: '最终目标曾确认完成 · 100%（历史）' }],
+                  recoverySummary: {
+                    stateText: '正在恢复服务',
+                    phaseText: '验证服务与原任务',
+                    confirmedAt: null,
+                    lastObservedAt: '2026-10-20T01:00:00.000Z',
+                    stale: false,
+                  },
+                }),
+              );
+            }}
+          >
+            演示恢复阶段
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setModel((current) => ({
+                ...current,
+                recoverySummary:
+                  current.recoverySummary === undefined
+                    ? undefined
+                    : {
+                        ...current.recoverySummary,
+                        lastObservedAt: '2026-10-20T01:00:01.000Z',
+                      },
+              }));
+            }}
+          >
+            演示观测时间更新
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setModel((current) => ({
+                ...current,
+                recoverySummary:
+                  current.recoverySummary === undefined
+                    ? undefined
+                    : {
+                        ...current.recoverySummary,
+                        stateText: '服务恢复已确认',
+                        phaseText: '恢复已确认',
+                        confirmedAt: '2026-10-20T01:01:10.000Z',
+                      },
+              }));
+            }}
+          >
+            演示恢复确认
+          </button>
+        </div>
+      </div>
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const status = canvas.getByRole('status', { name: '升级与恢复状态' });
+    await expect(status).toHaveAttribute('aria-live', 'polite');
+    await expect(status).toHaveAttribute('aria-atomic', 'true');
+    await expect(status).toHaveClass('sr-only');
+    await expect(window.getComputedStyle(status).position).toBe('absolute');
+    await userEvent.click(canvas.getByRole('button', { name: '演示升级进度' }));
+    await expect(canvas.getByRole('status', { name: '升级与恢复状态' })).toBe(status);
+    await expect(status).toHaveTextContent('实例升级中。验证服务与任务连续性 · 45%');
+    await userEvent.click(canvas.getByRole('button', { name: '演示恢复阶段' }));
+    await expect(canvas.getByRole('status', { name: '升级与恢复状态' })).toBe(status);
+    await expect(status).toHaveTextContent('正在恢复服务。验证服务与原任务');
+    await expect(status).not.toHaveTextContent('100%');
+    const mutations: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => mutations.push(...records));
+    observer.observe(status, { subtree: true, childList: true, characterData: true });
+    await userEvent.click(canvas.getByRole('button', { name: '演示观测时间更新' }));
+    await expect(status).not.toHaveTextContent('2026-10-20');
+    await expect([...mutations, ...observer.takeRecords()]).toEqual([]);
+    observer.disconnect();
+    await userEvent.click(canvas.getByRole('button', { name: '演示恢复确认' }));
+    await expect(canvas.getByRole('status', { name: '升级与恢复状态' })).toBe(status);
+    await expect(status).toHaveTextContent('服务恢复已确认。恢复已确认');
   },
 };
