@@ -52,6 +52,20 @@ const STAGE_LABELS: Partial<Record<UpgradeAttempt['state'], string>> = {
   observing: '验证服务与任务连续性',
   'api-activated': '确认页面与整体服务',
 };
+const CONTROL_STATE_LABELS = {
+  ready: '独立控制已就绪',
+  passive: '只读观察，尚未接管控制',
+  reconciling: '正在核对原操作',
+  unavailable: '控制状态暂不可用',
+};
+const RECOVERY_PHASE_LABELS = {
+  created: '已接纳恢复',
+  reconciling: '核对原动作和当前服务',
+  restoring: '恢复合格的服务组合',
+  verifying: '验证服务与原任务',
+  recovered: '恢复已确认',
+  blocked: '恢复受阻',
+};
 /** Matches the maximum observation validity in the versioned controller contract. */
 export const UPGRADE_OBSERVATION_MS = 5_000;
 
@@ -194,6 +208,25 @@ export function receiveUpgradeStatus(
       ) {
         return previous;
       }
+      if (
+        old.recovery !== null &&
+        next.recovery?.recoveryAttemptId === old.recovery.recoveryAttemptId
+      ) {
+        if (
+          next.recovery.triggeringAttemptId !== old.recovery.triggeringAttemptId ||
+          next.recovery.planDigest !== old.recovery.planDigest ||
+          (old.recovery.triggeringOperationId !== undefined &&
+            next.recovery.triggeringOperationId !== old.recovery.triggeringOperationId) ||
+          (old.recovery.confirmedAt != null &&
+            next.recovery.confirmedAt !== old.recovery.confirmedAt)
+        )
+          return { ...previous, uncertain: true, reason: '恢复记录发生冲突，只查询原恢复过程' };
+        if (
+          old.recovery.state === 'recovery-confirmed' &&
+          next.recovery.state !== 'recovery-confirmed'
+        )
+          return previous;
+      }
       // A late completion cannot resurrect a readiness explicitly withdrawn by recovery.
       if (old.recovery !== null && next.recovery === null && before?.attemptId === after?.attemptId)
         return previous;
@@ -282,6 +315,55 @@ export function deriveUpgradeModel(
                 },
               ]),
         ];
+  if (current !== null && current !== undefined)
+    facts.push({ label: '完整版本确认时间', value: current.activatedAt });
+  const operation = data?.operation;
+  if (operation !== null && operation !== undefined)
+    facts.push({
+      label: '本次升级结果',
+      value:
+        operation.state === 'completed'
+          ? '最终目标曾确认完成 · 100%（历史）'
+          : operation.state === 'failed'
+            ? '最终目标未完成'
+            : operation.state === 'deferred'
+              ? '已延后'
+              : '已受理，进行中',
+    });
+  const control = data?.controlSystem;
+  const controlFresh =
+    control !== undefined &&
+    data !== null &&
+    observation !== null &&
+    !observation.uncertain &&
+    Date.parse(control.observedAt) <= Date.parse(data.observedAt) + 1000 &&
+    Math.max(0, Date.parse(data.observedAt) - Date.parse(control.observedAt)) +
+      Math.max(0, now - observation.receivedAt) <=
+      UPGRADE_OBSERVATION_MS;
+  if (control !== undefined)
+    details.push(
+      { label: '升级控制系统版本', value: control.version },
+      { label: '升级控制协议', value: String(control.protocolVersion) },
+      {
+        label: '升级控制状态',
+        value: `${CONTROL_STATE_LABELS[control.state]}${controlFresh ? '' : ' · 当前待确认'}`,
+      },
+      { label: '升级控制检查时间', value: control.observedAt },
+    );
+  const diagnostics = data?.diagnostics;
+  if (diagnostics !== undefined)
+    details.push(
+      { label: '诊断关联标识', value: diagnostics.correlationId },
+      { label: '诊断阶段', value: diagnostics.phase },
+      { label: '诊断类别', value: diagnostics.code },
+      { label: '诊断记录时间', value: diagnostics.recordedAt },
+    );
+  const recovery = data?.recovery ?? null;
+  if (recovery != null) {
+    details.push({ label: '恢复关联标识', value: recovery.recoveryAttemptId });
+    if (recovery.diagnosticId !== undefined)
+      details.push({ label: '恢复诊断标识', value: recovery.diagnosticId });
+  }
   const base: UpgradeDisplayModel = {
     phase: 'none',
     showEntry: false,
@@ -290,7 +372,14 @@ export function deriveUpgradeModel(
     subtitle: '检查更新只读取版本信息',
     percent: null,
     progressText: null,
-    lastSeenText: data === null ? null : `上次确认 ${data.observedAt}`,
+    lastSeenText:
+      data === null
+        ? null
+        : data.observation === undefined
+          ? `版本记录时间 ${data.observedAt}`
+          : data.observation.confirmedAt === null
+            ? '服务状态尚未确认'
+            : `上次服务确认 ${data.observation.confirmedAt}`,
     canUpgrade: false,
     canRefresh: false,
     facts,
@@ -311,11 +400,51 @@ export function deriveUpgradeModel(
               state: data.operation?.state ?? data.attempt?.state ?? data.serviceState,
               observedAt: data.observedAt,
               serviceAvailability: data.serviceAvailability?.state ?? 'unknown',
+              controlSystem: data.controlSystem,
+              diagnostics: data.diagnostics,
+              recovery:
+                data.recovery === null
+                  ? null
+                  : {
+                      recoveryAttemptId: data.recovery.recoveryAttemptId,
+                      triggeringAttemptId: data.recovery.triggeringAttemptId,
+                      triggeringOperationId: data.recovery.triggeringOperationId,
+                      state: data.recovery.state,
+                      phase: data.recovery.phase,
+                      confirmedAt: data.recovery.confirmedAt,
+                      observedAt: data.recovery.observedAt,
+                      diagnosticId: data.recovery.diagnosticId,
+                    },
             },
             null,
             2,
           ),
   };
+  if (recovery != null) {
+    const stale =
+      data === null ||
+      observation === null ||
+      observation.uncertain ||
+      Date.parse(recovery.observedAt) > Date.parse(data.observedAt) + 1000 ||
+      Math.max(0, Date.parse(data.observedAt) - Date.parse(recovery.observedAt)) +
+        Math.max(0, now - observation.receivedAt) >
+        UPGRADE_OBSERVATION_MS;
+    const stateText =
+      recovery.state === 'recovery-confirmed'
+        ? '服务恢复已确认'
+        : recovery.state === 'recovering'
+          ? '正在恢复服务'
+          : recovery.state === 'failed'
+            ? '恢复受阻'
+            : '恢复结果待确认';
+    base.recoverySummary = {
+      stateText: stale ? `上次记录：${stateText} · 当前状态待确认` : stateText,
+      phaseText: recovery.phase === undefined ? null : RECOVERY_PHASE_LABELS[recovery.phase],
+      confirmedAt: recovery.confirmedAt ?? null,
+      lastObservedAt: recovery.observedAt,
+      stale,
+    };
+  }
   const confirmedAge =
     data?.observation?.confirmedAt === null ||
     data?.observation?.confirmedAt === undefined ||
@@ -395,18 +524,6 @@ export function deriveUpgradeModel(
       label: '当前服务版本',
       value: `上次完整确认 ${current?.releaseId ?? '未知'} · 当前状态待确认`,
     };
-  if (data.operation !== null && data.operation !== undefined)
-    facts.push({
-      label: '本次升级结果',
-      value:
-        data.operation.state === 'completed'
-          ? '最终目标曾确认完成'
-          : data.operation.state === 'failed'
-            ? '最终目标未完成'
-            : data.operation.state === 'deferred'
-              ? '已延后'
-              : '已受理，进行中',
-    });
   if (data.serviceState !== 'confirmed') {
     facts[0] = {
       label: '当前服务版本',
@@ -414,7 +531,6 @@ export function deriveUpgradeModel(
     };
   }
   const attempt = data.attempt;
-  const recovery = data.recovery;
   // The server grants this only after measuring the actual partial installation.
   // An old successful release, a failed attempt or a browser hash cannot grant repair.
   const repair = data.repairableCurrent;
@@ -426,7 +542,9 @@ export function deriveUpgradeModel(
       Math.max(0, now - observation.receivedAt) <=
       UPGRADE_OBSERVATION_MS;
   const canAcceptNewAttempt =
-    !physicalUncertain && (data.serviceState === 'confirmed' || repairFresh);
+    !physicalUncertain &&
+    (control === undefined || (control.state === 'ready' && controlFresh)) &&
+    (data.serviceState === 'confirmed' || repairFresh);
   const recovering =
     (data.operation === null ||
       data.operation === undefined ||
@@ -434,7 +552,6 @@ export function deriveUpgradeModel(
     recovery !== null &&
     recovery.triggeringAttemptId === attempt?.attemptId &&
     (recovery.state === 'recovering' || (recovery.state !== 'recovery-confirmed' && !repairFresh));
-  const operation = data.operation;
   if (
     operation !== null &&
     operation !== undefined &&
@@ -564,7 +681,7 @@ export function deriveUpgradeModel(
       phase: recovered ? 'recovery' : 'ready',
       showEntry: !recovered,
       showDot: !recovered,
-      title: recovered ? '安全回退已确认' : '实例已安装新版',
+      title: recovered ? '服务恢复已确认' : '实例已安装新版',
       subtitle: `页面 ${loaded.releaseId ?? '未标注版本'} · ${loaded.webRevision?.slice(0, 8) ?? '未注入'} → ${web.webReleaseId ?? '未标注版本'} · ${web.webRevision.slice(0, 8)}，刷新后续接原终端`,
       percent: recovered ? null : 100,
       canRefresh: true,
@@ -585,7 +702,7 @@ export function deriveUpgradeModel(
       ...base,
       phase: recovered ? 'recovery' : 'failed',
       subtitle: recovered
-        ? '安全回退已确认'
+        ? '服务恢复已确认'
         : attempt.state === 'deferred'
           ? '升级已延后'
           : repairFresh
@@ -623,10 +740,10 @@ export function deriveUpgradeModel(
       phase: 'recovery',
       subtitle:
         recovery.state === 'recovery-confirmed'
-          ? '安全回退已确认'
+          ? '服务恢复已确认'
           : recovery.state === 'recovering'
-            ? '安全回退中'
-            : '回退待确认',
+            ? '正在恢复服务'
+            : '恢复待确认',
       progressText: recovery.reason,
       lastSeenText: `上次确认 ${recovery.observedAt}`,
     };

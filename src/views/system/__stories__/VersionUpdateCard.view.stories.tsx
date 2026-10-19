@@ -92,3 +92,45 @@ export const BridgeConfirmedContinueFinal: Story = {
     }),
   },
 };
+export const IndependentRecovery: Story = {
+  args: {
+    model: upgradeViewFixture({
+      phase: 'recovery',
+      title: '版本与更新',
+      subtitle: '正在恢复服务',
+      showEntry: false,
+      showDot: false,
+      canUpgrade: false,
+      diagnosticText: 'trace-recovery-1',
+      facts: [
+        { label: '上次完整确认版本', value: '0.2.4' },
+        { label: '本次升级结果', value: '最终目标曾确认完成 · 100%（历史）' },
+      ],
+      recoverySummary: {
+        stateText: '正在恢复服务',
+        phaseText: '验证服务与原任务',
+        confirmedAt: null,
+        lastObservedAt: '2026-10-20T01:00:00.000Z',
+        stale: false,
+      },
+      artifactDetails: [
+        { label: '升级控制系统版本', value: 'control-1.0.0' },
+        { label: '升级控制协议', value: '1' },
+        { label: '诊断关联标识', value: 'trace-recovery-1' },
+      ],
+    }),
+    onCopyDiagnostics: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('region', { name: '失败恢复' })).toBeVisible();
+    await expect(canvas.getByText('最终目标曾确认完成 · 100%（历史）')).toBeVisible();
+    await expect(canvas.queryByRole('progressbar')).not.toBeInTheDocument();
+    await expect(canvas.getByText('control-1.0.0')).not.toBeVisible();
+    await userEvent.click(canvas.getByText('运行产物详情'));
+    await expect(canvas.getByText('control-1.0.0')).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: '立即升级' })).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole('button', { name: '复制诊断信息' }));
+    await expect(args.onCopyDiagnostics).toHaveBeenCalledOnce();
+  },
+};

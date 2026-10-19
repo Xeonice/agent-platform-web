@@ -16,12 +16,18 @@ import type {
   UpgradeContractAttempt,
 } from '@/types/upgrade';
 
-// Verifying the installed source can take a minute and a command can verify it
-// twice. Keep this control-plane wait bounded without changing request health
-// deadlines or the freshness required to display upgrade progress.
-const UPGRADE_CONTROL_TIMEOUT_MS = 240_000;
+// Status and reconciliation are small reads from the stable control system.
+// A slow business service must not keep its last-known state looking current.
+const UPGRADE_STATUS_TIMEOUT_MS = 2_000;
+// Preserve the rolling-compatibility budget only for old synchronous commands.
+// New controllers persist async acceptance before doing expensive verification.
+const UPGRADE_LEGACY_COMMAND_TIMEOUT_MS = 240_000;
 
-async function call(path: string, init: RequestInit = {}): Promise<unknown> {
+async function call(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = UPGRADE_STATUS_TIMEOUT_MS,
+): Promise<unknown> {
   const controller = new AbortController();
   const onAbort = () => {
     controller.abort();
@@ -30,7 +36,7 @@ async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   init.signal?.addEventListener('abort', onAbort, { once: true });
   const timeout = setTimeout(() => {
     controller.abort();
-  }, UPGRADE_CONTROL_TIMEOUT_MS);
+  }, timeoutMs);
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
@@ -58,15 +64,19 @@ export async function requestInstanceUpgrade(
   preferAsync = false,
 ): Promise<UpgradeCommandResult> {
   return UpgradeOperationSchema.or(UpgradeAttemptSchema).parse(
-    await call('/api/system/upgrade/requests', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Upgrade-CSRF': csrfToken,
-        ...(preferAsync ? { Prefer: 'respond-async' } : {}),
+    await call(
+      '/api/system/upgrade/requests',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Upgrade-CSRF': csrfToken,
+          ...(preferAsync ? { Prefer: 'respond-async' } : {}),
+        },
+        body: JSON.stringify(UpgradeRequestSchema.parse(body)),
       },
-      body: JSON.stringify(UpgradeRequestSchema.parse(body)),
-    }),
+      preferAsync ? UPGRADE_STATUS_TIMEOUT_MS : UPGRADE_LEGACY_COMMAND_TIMEOUT_MS,
+    ),
   );
 }
 export async function lookupUpgradeRequest(
@@ -86,11 +96,15 @@ export async function requestSemanticContract(
   csrfToken: string,
 ): Promise<UpgradeContractAttempt> {
   return UpgradeContractAttemptSchema.parse(
-    await call('/api/system/upgrade/contracts/requests', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Upgrade-CSRF': csrfToken },
-      body: JSON.stringify(UpgradeContractRequestSchema.parse(body)),
-    }),
+    await call(
+      '/api/system/upgrade/contracts/requests',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Upgrade-CSRF': csrfToken },
+        body: JSON.stringify(UpgradeContractRequestSchema.parse(body)),
+      },
+      UPGRADE_LEGACY_COMMAND_TIMEOUT_MS,
+    ),
   );
 }
 export async function lookupContractRequest(requestId: string): Promise<UpgradeContractAttempt> {

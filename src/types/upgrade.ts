@@ -53,6 +53,13 @@ export interface UpgradeDisplayModel {
   upgradeActionLabel?: string;
   canContinueWorking?: boolean;
   diagnosticText?: string;
+  recoverySummary?: {
+    stateText: string;
+    phaseText: string | null;
+    confirmedAt: string | null;
+    lastObservedAt: string;
+    stale: boolean;
+  };
 }
 export interface UpgradeViewActions {
   onCheck: () => void;

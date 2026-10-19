@@ -1334,6 +1334,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/internal/upgrades/controller-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_controlCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/internal/upgrades/pending": {
         parameters: {
             query?: never;
@@ -1440,6 +1456,70 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["UpgradeInternalController_claim"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/authority-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_authorityCheck"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/lease-renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_leaseRenew"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/progress-checkpoint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_checkpoint"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/commit-receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_commitReceipt"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1606,6 +1686,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/internal/upgrades/{attemptId}/recovery-admission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_recoveryAdmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/recovery-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_recoveryActions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/stabilize-current-writer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_stabilizeCurrentWriter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/internal/upgrades/{attemptId}/coordinator-recovery": {
         parameters: {
             query?: never;
@@ -1664,6 +1792,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["UpgradeContractInternalController_check"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/inspection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInspectionController_inspect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/contract-business": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeContractBusinessController_execute"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2861,6 +3021,21 @@ export interface components {
             } | null;
             /** @enum {string} */
             serviceState: "confirmed" | "transitioning" | "unknown";
+            controlSystem?: {
+                version: string;
+                protocolVersion: number;
+                /** @enum {string} */
+                state: "ready" | "passive" | "reconciling" | "unavailable";
+                /** Format: date-time */
+                observedAt: string;
+            };
+            diagnostics?: {
+                correlationId: string;
+                phase: string;
+                code: string;
+                /** Format: date-time */
+                recordedAt: string;
+            };
             catalog: {
                 /** @enum {string} */
                 state: "verified" | "unknown" | "unavailable" | "no-update";
@@ -2918,6 +3093,12 @@ export interface components {
                 reason: string;
                 /** Format: date-time */
                 observedAt: string;
+                /** @enum {string} */
+                phase?: "created" | "reconciling" | "restoring" | "verifying" | "recovered" | "blocked";
+                /** Format: date-time */
+                confirmedAt?: string | null;
+                triggeringOperationId?: string;
+                diagnosticId?: string;
             } | null;
             availableWeb: {
                 releaseId: string;
@@ -5177,6 +5358,23 @@ export interface operations {
             };
         };
     };
+    UpgradeInternalController_controlCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     UpgradeInternalController_pending: {
         parameters: {
             query?: never;
@@ -5289,6 +5487,82 @@ export interface operations {
         };
     };
     UpgradeInternalController_claim: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_authorityCheck: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_leaseRenew: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_checkpoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_commitReceipt: {
         parameters: {
             query?: never;
             header?: never;
@@ -5498,6 +5772,63 @@ export interface operations {
             };
         };
     };
+    UpgradeInternalController_recoveryAdmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_recoveryActions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_stabilizeCurrentWriter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     UpgradeInternalController_recoverCoordinator: {
         parameters: {
             query?: never;
@@ -5562,6 +5893,40 @@ export interface operations {
             path: {
                 id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInspectionController_inspect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeContractBusinessController_execute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

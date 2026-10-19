@@ -61,14 +61,48 @@ describe('UPG control request budget and cancellation', () => {
     vi.useFakeTimers();
   });
 
-  it('waits for a minute-long source verification without aborting or repeating status', async () => {
+  it('bounds status reads to two seconds without waiting for business source verification', async () => {
     const status = upgradeFixture();
     const { fetch, signals } = delayedResponse(status, 59_645);
     const pending = getUpgradeStatus();
-    await vi.advanceTimersByTimeAsync(59_645);
-    await expect(pending).resolves.toEqual(status);
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(1999);
     expect(signals[0]?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await rejected;
+    expect(signals[0]?.aborted).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('bounds async acceptance and reconciles the same request with a read instead of resubmission', async () => {
+    const { accepted, input } = upgradeRequest();
+    const { fetch, signals } = delayedResponse(accepted, 59_645);
+    const pending = requestInstanceUpgrade(input, 'csrf-fixture', true);
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(2000);
+    await rejected;
+    expect(signals[0]?.aborted).toBe(true);
+    fetch.mockResolvedValueOnce(Response.json(accepted));
+    await expect(lookupUpgradeRequest(input.requestId, undefined, true)).resolves.toEqual(accepted);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1]?.[1]?.method).toBeUndefined();
+    expect(fetch.mock.calls[1]?.[0]).toBe(
+      `http://localhost:3001/api/system/upgrade/requests/${input.requestId}`,
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('also bounds original-request lookups without creating another command', async () => {
+    const { accepted, input } = upgradeRequest();
+    const { fetch, signals } = delayedResponse(accepted, 59_645);
+    const pending = lookupUpgradeRequest(input.requestId);
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(2000);
+    await rejected;
+    expect(signals[0]?.aborted).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0]?.[1]?.method).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
   });
 

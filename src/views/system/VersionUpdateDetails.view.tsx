@@ -37,6 +37,25 @@ export function VersionUpdateDetailsView({
           </div>
         ))}
       </dl>
+      {!compact && model.recoverySummary !== undefined ? (
+        <section aria-label="失败恢复" className="space-y-1 border-t border-border pt-2 text-xs">
+          <p className="font-medium">{model.recoverySummary.stateText}</p>
+          {model.recoverySummary.phaseText === null ? null : (
+            <p className="text-muted-foreground">
+              {model.recoverySummary.stale ? '上次恢复阶段：' : '恢复阶段：'}
+              {model.recoverySummary.phaseText}
+            </p>
+          )}
+          {model.recoverySummary.confirmedAt === null ? null : (
+            <p className="text-muted-foreground">
+              恢复确认时间 {model.recoverySummary.confirmedAt}
+            </p>
+          )}
+          <p className="text-muted-foreground">
+            恢复记录时间 {model.recoverySummary.lastObservedAt}
+          </p>
+        </section>
+      ) : null}
       <VersionUpdateProgressView model={model} />
       {model.completionSummary === undefined ? null : (
         <p className="text-xs text-muted-foreground">{model.completionSummary}</p>
@@ -77,7 +96,7 @@ export function VersionUpdateDetailsView({
             继续使用
           </Button>
         ) : null}
-        {(model.phase === 'failed' || model.phase === 'unknown') &&
+        {(model.phase === 'failed' || model.phase === 'unknown' || model.phase === 'recovery') &&
         model.diagnosticText !== undefined &&
         onCopyDiagnostics !== undefined ? (
           <Button size="sm" variant="ghost" onClick={onCopyDiagnostics}>
