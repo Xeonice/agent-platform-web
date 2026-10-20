@@ -109,6 +109,36 @@ export function ResourcePoolCardView({
         </Button>
       </header>
 
+      <div
+        role="status"
+        aria-label="任务容量"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-busy={isRefreshing}
+        data-testid="resource-capacity"
+        className={!isError && model?.capacityText !== undefined ? 'space-y-1' : 'sr-only'}
+      >
+        {isError || model?.capacityText === undefined ? null : (
+          <>
+            <p className="flex items-center gap-2 text-xl font-semibold">
+              {model.capacityLevel === 'critical' ? (
+                <CircleX aria-hidden="true" className="h-5 w-5 text-destructive" />
+              ) : model.capacityLevel === 'warn' ? (
+                <AlertTriangle aria-hidden="true" className="h-5 w-5 text-warning" />
+              ) : null}
+              <span
+                className={
+                  model.capacityLevel === 'critical' ? 'text-destructive' : 'text-foreground'
+                }
+              >
+                {model.capacityText}
+              </span>
+            </p>
+            <p className="min-h-8 text-xs text-muted-foreground sm:min-h-4">{model.capacityHint}</p>
+          </>
+        )}
+      </div>
+
       {isError ? (
         // ⛔ 失败**不许**退化成"0%"或空水位条：一条空水位条读起来是"很空闲"，
         //    而真相是这个数字根本没取到。
@@ -145,27 +175,6 @@ export function ResourcePoolCardView({
         </div>
       ) : (
         <>
-          {model.capacityText === undefined ? null : (
-            <div className="space-y-1" data-testid="resource-capacity">
-              <p className="flex items-center gap-2 text-xl font-semibold">
-                {model.capacityLevel === 'critical' ? (
-                  <CircleX aria-hidden="true" className="h-5 w-5 text-destructive" />
-                ) : model.capacityLevel === 'warn' ? (
-                  <AlertTriangle aria-hidden="true" className="h-5 w-5 text-warning" />
-                ) : null}
-                <span
-                  className={
-                    model.capacityLevel === 'critical' ? 'text-destructive' : 'text-foreground'
-                  }
-                >
-                  {model.capacityText}
-                </span>
-              </p>
-              <p className="min-h-8 text-xs text-muted-foreground sm:min-h-4">
-                {model.capacityHint}
-              </p>
-            </div>
-          )}
           <ul className="flex flex-col gap-3">
             {model.gauges.map((gauge) => (
               <Gauge key={gauge.id} gauge={gauge} />
