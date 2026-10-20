@@ -75,11 +75,13 @@ export function useOverviewModel(projects: ProjectDto[], tasks: Sandbox[]) {
     r === undefined
       ? undefined
       : [
-          ...(r.capacity === undefined
-            ? [`当前 ${String(r.activeTasks)} 个任务`]
-            : [
-                `已登记 ${String(r.capacity.registeredTasks)} / ${String(r.capacity.maxTasks)} 个任务 · 还能再发 ${String(r.capacity.remainingTasks)} 个`,
-              ]),
+          ...(r.capacityAvailability?.state === 'unavailable'
+            ? ['任务容量待确认']
+            : r.capacity === undefined
+              ? [`当前 ${String(r.activeTasks)} 个任务`]
+              : [
+                  `已登记 ${String(r.capacity.registeredTasks)} / ${String(r.capacity.maxTasks)} 个任务 · 还能再发 ${String(r.capacity.remainingTasks)} 个`,
+                ]),
           `磁盘已用 ${String(r.disk.usedPercent)}%，还剩 ${formatBytes(r.disk.availableBytes)}`,
           `保留下来的成果 ${String(r.retainedVolumes.count)} 份 · ${formatBytes(r.retainedVolumes.totalBytes)}`,
         ];

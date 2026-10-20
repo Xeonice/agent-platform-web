@@ -226,6 +226,23 @@ describe('WB · shared navigation, object routing and overview', () => {
     workbench();
     await screen.findByText('已登记 8 / 8 个任务 · 还能再发 0 个');
   });
+  it('AC-WB-007: overview keeps unknown task capacity distinct from a confirmed zero', async () => {
+    const hostResources = { ...resources };
+    delete hostResources.capacity;
+    server.use(
+      http.get(`${API}/api/projects`, () => HttpResponse.json([project()])),
+      http.get(`${API}/api/system/resources`, () =>
+        HttpResponse.json({
+          ...hostResources,
+          capacityAvailability: { state: 'unavailable', reason: 'OWNER_CAPACITY_UNAVAILABLE' },
+        }),
+      ),
+    );
+    workbench();
+    await screen.findByText('任务容量待确认');
+    expect(screen.queryByText(/还能再发 0 个/)).not.toBeInTheDocument();
+    expect(screen.getByText(/磁盘已用/)).toBeVisible();
+  });
   it('AC-CRD-033.6: credentials page suppresses only account-expiry governance and preserves disk pressure', async () => {
     navigation.pathname = '/settings/credentials';
     server.use(

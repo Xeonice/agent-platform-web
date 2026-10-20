@@ -2698,6 +2698,12 @@ export interface components {
             passcode?: string;
         };
         SystemResourcesResponseDto: {
+            capacityAvailability?: {
+                /** @enum {string} */
+                state: "unavailable";
+                /** @enum {string} */
+                reason: "OWNER_CAPACITY_UNAVAILABLE";
+            };
             capacity?: {
                 remainingTasks: number;
                 registeredTasks: number;

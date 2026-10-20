@@ -90,6 +90,28 @@ beforeEach(() => {
 });
 
 describe('SYS/DIA/AUD current production acceptance', () => {
+  it('AC-SYS-030.5: keeps host diagnostics readable when task capacity cannot be confirmed', async () => {
+    const hostResources = { ...resources };
+    delete hostResources.capacity;
+    server.use(
+      http.get(`${base}/api/system/resources`, () =>
+        HttpResponse.json({
+          ...hostResources,
+          capacityAvailability: { state: 'unavailable', reason: 'OWNER_CAPACITY_UNAVAILABLE' },
+        }),
+      ),
+    );
+    mount(<SystemStatusContainer />);
+    await screen.findByText('任务容量待确认');
+    expect(screen.getByText('暂时无法确认可新建任务数，请稍后重试。')).toBeVisible();
+    expect(screen.queryByText(/还能再发/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/本机资源读取失败/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('resource-gauge-cpu')).toBeVisible();
+    expect(screen.getByTestId('resource-gauge-ram')).toBeVisible();
+    expect(screen.getByTestId('resource-gauge-disk')).toBeVisible();
+    expect(screen.getByRole('button', { name: '重新诊断' })).toBeEnabled();
+  });
+
   it('AC-SYS-030.7: a failed provider read ends all loading blocks and retains the diagnosis action', async () => {
     server.use(
       http.get(`${base}/api/system/providers`, () =>

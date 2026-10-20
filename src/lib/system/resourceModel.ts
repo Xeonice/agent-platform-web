@@ -143,23 +143,30 @@ export function resourcePoolModel(dto: SystemResourcesDto, now: Date): ResourceP
 
   const overallLevel = overallResourceLevel(gauges.map((g) => g.level));
   const capacity = dto.capacity;
+  const capacityUnavailable = dto.capacityAvailability?.state === 'unavailable';
 
   return {
     gauges,
     overallLevel,
     overallText: OVERALL_TEXT[overallLevel],
-    ...(capacity === undefined
-      ? {}
-      : {
-          capacityText: `还能再发 ${String(capacity.remainingTasks)} 个任务`,
-          capacityLevel:
-            capacity.remainingTasks === 0
-              ? 'critical'
-              : capacity.remainingTasks === 1
-                ? 'warn'
-                : 'ok',
-          capacityHint: `${capacity.remainingTasks === 0 ? `新任务会被拒绝：${capacity.basis}。` : ''}已登记 ${String(capacity.registeredTasks)} 个任务（含已停止的），本机最多 ${String(capacity.maxTasks)} 个。`,
-        }),
+    ...(capacityUnavailable
+      ? {
+          capacityText: '任务容量待确认',
+          capacityLevel: 'warn' as const,
+          capacityHint: '暂时无法确认可新建任务数，请稍后重试。',
+        }
+      : capacity === undefined
+        ? {}
+        : {
+            capacityText: `还能再发 ${String(capacity.remainingTasks)} 个任务`,
+            capacityLevel:
+              capacity.remainingTasks === 0
+                ? 'critical'
+                : capacity.remainingTasks === 1
+                  ? 'warn'
+                  : 'ok',
+            capacityHint: `${capacity.remainingTasks === 0 ? `新任务会被拒绝：${capacity.basis}。` : ''}已登记 ${String(capacity.registeredTasks)} 个任务（含已停止的），本机最多 ${String(capacity.maxTasks)} 个。`,
+          }),
     nextSteps: [
       ...(dto.ram.level !== 'ok'
         ? ['内存吃紧：停掉一些任务，释放内存。']
