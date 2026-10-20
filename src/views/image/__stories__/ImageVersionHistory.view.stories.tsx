@@ -13,6 +13,7 @@ const ROWS: ImageVersionRowModel[] = [
     isActive: true,
     registeredAt: '2026-08-20T10:00:00.000Z',
     validationStatus: 'valid',
+    runtimeVersionsLabel: 'Codex 0.150.1 · Claude Code 2.1.251',
   },
   {
     id: 'm-old',
@@ -21,6 +22,7 @@ const ROWS: ImageVersionRowModel[] = [
     isActive: false,
     registeredAt: '2026-05-01T10:00:00.000Z',
     validationStatus: 'warning',
+    runtimeVersionsLabel: 'Codex 0.140.0 · Claude Code 未报告',
   },
 ];
 
@@ -43,6 +45,8 @@ export const TwoVersions: Story = {
     const canvas = within(canvasElement);
     const rows = canvas.getAllByTestId('image-version-row');
     await expect(rows).toHaveLength(2);
+    await expect(rows[0]).toHaveTextContent('Codex 0.150.1 · Claude Code 2.1.251');
+    await expect(rows[1]).toHaveTextContent('Codex 0.140.0 · Claude Code 未报告');
     await expect(canvas.getAllByRole('button', { name: '切换到此版本' })).toHaveLength(1);
     await expect(canvas.getByText('（当前版本）')).toBeInTheDocument();
     const statusCells = canvas.getAllByTestId('image-version-status');
@@ -50,6 +54,34 @@ export const TwoVersions: Story = {
     await expect(statusCells[0]?.querySelector('svg.lucide-check')).not.toBeNull();
     await expect(statusCells[1]).toHaveAttribute('data-validation-status', 'warning');
     await expect(statusCells[1]?.querySelector('svg.lucide-triangle-alert')).not.toBeNull();
+  },
+};
+
+export const LongBuildVersionOnNarrowScreen: Story = {
+  args: {
+    rows: [
+      {
+        id: 'long-version',
+        version: 'latest',
+        digestShort: 'sha256:4b17e…a02',
+        isActive: false,
+        registeredAt: '2026-10-17T00:00:00.000Z',
+        validationStatus: 'valid',
+        runtimeVersionsLabel: `Codex 1.2.3+${'a'.repeat(115)} · Claude Code 2.1.251`,
+      },
+    ],
+  },
+  render: (args) => (
+    <div style={{ width: 320 }}>
+      <ImageVersionHistoryView {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const row = within(canvasElement).getByTestId('image-version-row');
+    await expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
+    await expect(within(row).getByTestId('image-version-runtime-versions')).toHaveTextContent(
+      `Codex 1.2.3+${'a'.repeat(115)}`,
+    );
   },
 };
 
@@ -68,6 +100,7 @@ export const UnresolvedDigest: Story = {
         isActive: false,
         registeredAt: '2026-01-01T00:00:00.000Z',
         validationStatus: 'pending',
+        runtimeVersionsLabel: 'Codex 未报告 · Claude Code 未报告',
       },
     ],
   },

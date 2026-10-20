@@ -11,6 +11,7 @@
 //     现在的形状让"凭空造值"在结构上就做不到：两个开放集各有**唯一一份**注册表常量（见下），
 //     所有 handler 的取值都从它派生，`handlers.test.ts` 再从外部把这条不变量钉住。
 import { http, HttpResponse } from 'msw';
+import { unknownUpgradeFixture } from '@/mocks/upgrade';
 import type { ProjectDto } from '@/types/project';
 import type { RetainedVolumeDto } from '@/types/retainedVolume';
 import type { AutomationAttentionItem, AutomationDto, AutomationRunDto } from '@/types/automation';
@@ -1295,6 +1296,9 @@ function auditEvent(seq: number): AuditEventDto {
 const AUDIT_EVENTS: AuditEventDto[] = Array.from({ length: 300 }, (_, i) => auditEvent(300 - i));
 
 export const handlers = [
+  http.get(`${API_BASE}/api/system/upgrade/status`, () =>
+    HttpResponse.json(unknownUpgradeFixture()),
+  ),
   // liveness probe：真实契约 GET /api/health 无响应体 schema，getHealth 只读 response.ok/status。
   // 返回空 JSON（openapi-fetch 默认按 json 解析，须是合法 JSON），body 内容不被读取。
   http.get(`${API_BASE}/api/health`, () => HttpResponse.json(HEALTH_BODY, { status: 200 })),
@@ -2254,7 +2258,7 @@ const DIAGNOSE_FRAMES: readonly DiagnoseServerFrame[] = [
     status: 'warn',
     headline: '拉不到新镜像，Agent 仍可用',
     detailText:
-      'ghcr.io 未在超时时限内应答。模型 API 正常，Agent 可用；镜像仓库连不上只影响拉新镜像。',
+      'ghcr.io 未在超时时限内应答。本次模型 API 探测目标通过；任务实际连通性以其配置和执行结果为准。',
     // ⚠️ 散文归 nextStep，⛔ 不进等宽框。
     nextStep:
       '重跑一次看它稳不稳定：偶发多半只是慢；每次都这样就在系统设置里填 HTTPS_PROXY 后重试。',

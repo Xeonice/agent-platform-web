@@ -21,6 +21,7 @@ export interface TerminalContainerProps {
   active?: boolean;
   /** `session` 首帧带回的后端 tmux 会话 id（用户终端标签才有）。 */
   onShellId?: (shellId: string) => void;
+  onTerminalIdentity?: (terminalIdentity: string) => void;
   /** 后端推来的用户终端清单（06 §5.5/§5.6）；只有 Agent 那条连接会收到。 */
   onShells?: (shells: TerminalShellSummary[] | null) => void;
   /** 把 send 交给装配层，供它代发 `close_shell`（见 TerminalMount 的注释）。 */
@@ -35,6 +36,7 @@ export function TerminalContainer({
   socketConfig,
   active,
   onShellId,
+  onTerminalIdentity,
   onShells,
   registerSend,
   toolbarTarget,
@@ -45,6 +47,7 @@ export function TerminalContainer({
       sandboxId={sandboxId}
       socketConfig={socketConfig}
       {...(active === undefined ? {} : { active })}
+      {...(onTerminalIdentity === undefined ? {} : { onTerminalIdentity })}
       {...(onShellId === undefined ? {} : { onShellId })}
       {...(onShells === undefined ? {} : { onShells })}
       {...(registerSend === undefined ? {} : { registerSend })}

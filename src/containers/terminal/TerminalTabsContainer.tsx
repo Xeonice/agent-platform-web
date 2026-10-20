@@ -52,6 +52,8 @@ export function TerminalTabsContainer({
   );
   const {
     tabs,
+    restorationReady,
+    adoptTerminalIdentity,
     activeSessionId,
     mountedSessionIds,
     selectTab,
@@ -87,11 +89,14 @@ export function TerminalTabsContainer({
       {
         registerSend: (send: ((frame: TerminalClientFrame) => boolean) | null) => void;
         onShellId: (shellId: string) => void;
+        onTerminalIdentity: (terminalIdentity: string) => void;
         onShells: (shells: TerminalShellSummary[] | null) => void;
       }
     >(),
   );
 
+  const adoptIdentityRef = useRef(adoptTerminalIdentity);
+  adoptIdentityRef.current = adoptTerminalIdentity;
   const adoptShellIdRef = useRef(adoptShellId);
   adoptShellIdRef.current = adoptShellId;
   const receiveShellInventoryRef = useRef(receiveShellInventory);
@@ -104,6 +109,9 @@ export function TerminalTabsContainer({
       registerSend: (send: ((frame: TerminalClientFrame) => boolean) | null): void => {
         if (send === null) senders.current.delete(sessionId);
         else senders.current.set(sessionId, send);
+      },
+      onTerminalIdentity: (terminalIdentity: string): void => {
+        adoptIdentityRef.current(sessionId, terminalIdentity);
       },
       onShellId: (shellId: string): void => {
         adoptShellIdRef.current(sessionId, shellId);
@@ -164,8 +172,13 @@ export function TerminalTabsContainer({
         </p>
       )}
       <div className="relative min-h-0 flex-1" inert={disabledReason !== undefined}>
+        {!restorationReady ? (
+          <p role="status" className="p-3 text-xs text-muted-foreground">
+            正在确认原终端的恢复范围…
+          </p>
+        ) : null}
         {tabs
-          .filter((t) => mountedSessionIds.includes(t.sessionId))
+          .filter((t) => restorationReady && mountedSessionIds.includes(t.sessionId))
           .map((t) => {
             const cb = callbacksFor(t.sessionId);
             return (
@@ -187,6 +200,7 @@ export function TerminalTabsContainer({
                   socketConfig={t.socketConfig}
                   active={t.sessionId === activeSessionId}
                   onShellId={cb.onShellId}
+                  onTerminalIdentity={cb.onTerminalIdentity}
                   onShells={cb.onShells}
                   registerSend={cb.registerSend}
                   toolbarTarget={toolbarTarget}

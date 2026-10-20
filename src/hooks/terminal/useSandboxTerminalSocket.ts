@@ -11,6 +11,7 @@ import {
   describeHandshakeErrorCode,
   isRetryableHandshakeError,
 } from '@/lib/terminal/handshakeErrorCopy';
+import type { TerminalAttachmentState } from '@/types/terminal';
 import type { TerminalClientFrame, TerminalServerFrame } from '@/types/ws-protocol';
 
 /** 浅比较两个 string map（P2：把连接稳定性从"调用方君子协定"收回 hook 自身）。 */
@@ -55,6 +56,8 @@ export interface UseSandboxTerminalSocketArgs {
 
 export interface UseSandboxTerminalSocketApi {
   connState: ConnState;
+  attachmentState: TerminalAttachmentState;
+  restoringSlow: boolean;
   attempt: number;
   /**
    * 握手被拒的人话（非未授权那一类，如 `SCHEMA_MISMATCH`）；`undefined` = 没有这类问题。
@@ -63,6 +66,7 @@ export interface UseSandboxTerminalSocketApi {
    * 把它摆在那里等于让用户反复确认一件已经确定的事。
    */
   handshakeErrorMessage?: string;
+  canRetry: boolean;
   send: (frame: TerminalClientFrame) => boolean;
   /**
    * 用户显式要求再连一次（退避耗尽、`connState==='closed'` 后的唯一出路，08 §11.6 的 `[手动重连]`）。
@@ -79,6 +83,9 @@ export function useSandboxTerminalSocket(
 ): UseSandboxTerminalSocketApi {
   const [connState, setConnState] = useState<ConnState>('idle');
   const [attempt, setAttempt] = useState(0);
+  const [attachmentState, setAttachmentState] = useState<TerminalAttachmentState>('restoring');
+  const [restoringSlow, setRestoringSlow] = useState(false);
+  const waitingSince = useRef<number | null>(null);
   /** 最近一次非未授权的握手拒绝码；null = 没遇到过（连上即清）。 */
   const [handshakeErrorCode, setHandshakeErrorCode] = useState<string | null>(null);
   const socketRef = useRef<PtySocket | null>(null);
@@ -133,21 +140,45 @@ export function useSandboxTerminalSocket(
       query: stableQuery,
       socketFactory,
       maxReconnect,
+      onAttachment: (attachment) => {
+        if (attachment === null) setAttachmentState('restoring');
+        else {
+          setAttachmentState('attached');
+          setHandshakeErrorCode(null);
+          fatalHandshakeRef.current = false;
+        }
+      },
       onFrame: (frame) => {
+        if (frame.type === 'connection_state') setAttachmentState(frame.state);
+        if (frame.type === 'exit' && frame.code === -2) {
+          setAttachmentState('unconfirmed');
+          setHandshakeErrorCode('RUNTIME_UNKNOWN');
+        }
         onFrameRef.current(frame);
       },
       onInvalidFrame: (raw) => {
         // 非法帧不阻断渲染：统一经 reportError 落到单一上报点（dev console / prod 钩子），
         // 再转发给可选的额外处理回调（08 §3.1 / P1-#4）。
-        reportError('丢弃非法终端帧（TerminalServerFrame zod 校验失败）', { raw });
+        reportError('丢弃非法终端帧（TerminalServerFrame zod 校验失败）');
         onInvalidFrameRef.current?.(raw);
       },
       onUnauthorized: () => {
         // 未授权是**可自愈**的：解锁拿到 cookie 后下一次重连就过 ⇒ 退避循环照常继续。
+        setAttachmentState('auth-expired');
+        setHandshakeErrorCode('AUTH_EXPIRED');
         onUnauthorizedRef.current?.();
       },
       onHandshakeError: (code) => {
         setHandshakeErrorCode(code);
+        setAttachmentState(
+          code === 'AUTH_EXPIRED'
+            ? 'auth-expired'
+            : code === 'TERMINAL_GONE'
+              ? 'gone'
+              : code === 'PROTOCOL_INCOMPATIBLE' || code === 'SCHEMA_MISMATCH'
+                ? 'incompatible'
+                : 'unconfirmed',
+        );
         // 确定性失败（今天只有 SCHEMA_MISMATCH）：重连多少次都是同一个结果 ⇒ 当场停手，
         // 由连接条给出真正的出路（刷新页面）。未知码按可重连处理，见 lib/handshakeErrorCopy。
         if (!isRetryableHandshakeError(code)) fatalHandshakeRef.current = true;
@@ -157,7 +188,7 @@ export function useSandboxTerminalSocket(
         setConnState(state);
         setAttempt(nextAttempt);
         // 连上了就说明上一次的握手问题已经不成立（后端回滚/重新部署都可能修好它）。
-        if (state === 'open') {
+        if (state === 'open' && stableQuery['protocolMax'] !== '2') {
           fatalHandshakeRef.current = false;
           setHandshakeErrorCode(null);
         }
@@ -185,6 +216,22 @@ export function useSandboxTerminalSocket(
     // 回调全部走 latest-ref，不入 deps；query 走 stableQuery 浅比较归一化（P0/P2）。
   }, [enabled, uri, stableQuery, socketFactory, maxReconnect, clearTimer]);
 
+  useEffect(() => {
+    if (!enabled || attachmentState === 'attached' || endedRef.current) {
+      waitingSince.current = null;
+      setRestoringSlow(false);
+      return;
+    }
+    waitingSince.current ??= Date.now();
+    const delay = Math.max(0, 15_000 - (Date.now() - waitingSince.current));
+    const timer = setTimeout(() => {
+      setRestoringSlow(true);
+    }, delay);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [enabled, attachmentState]);
+
   const send = useCallback(
     (frame: TerminalClientFrame): boolean => socketRef.current?.send(frame) ?? false,
     [],
@@ -211,6 +258,9 @@ export function useSandboxTerminalSocket(
 
   return {
     connState,
+    attachmentState,
+    restoringSlow,
+    canRetry: handshakeErrorCode === null || isRetryableHandshakeError(handshakeErrorCode),
     attempt,
     ...(handshakeErrorMessage === undefined ? {} : { handshakeErrorMessage }),
     send,

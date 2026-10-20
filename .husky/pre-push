@@ -36,9 +36,9 @@ fi
 
 if ! pnpm check:openapi; then
   echo ""
-  echo "⛔ src/types/generated/ 与 openapi.json 不同步，推送已拦下。"
-  echo "   check:openapi 已经重新生成好了 —— 工作区里现在就是正确的那份。"
-  echo "   下一步：git add src/types/generated && git commit（或 --amend），然后重推。"
+  echo "⛔ OpenAPI 契约门禁未通过，推送已拦下。"
+  echo "   先检查 openapi.json 和 openapi.d.ts 是否存在且已提交到 HEAD，再检查生成输出及工作区/暂存区差异。"
+  echo "   确认输入与生成物后，一并提交 openapi.json 和 src/types/generated/，再重推。"
   exit 1
 fi
 

@@ -33,7 +33,7 @@ export function InitWizardContainer() {
 
   const offline = w.connectivity.verdict === 'offline';
   // ⚠️ 离线时 [下一步] 需要用户先点过 [继续]（`OfflineNotice`）：那一下是 `acknowledgeOffline`
-  //    的唯一来源，⛔ 前端不许替他填（否则一台真的连不上模型 API 的机器会静默通过初始化）。
+  //    的唯一来源，⛔ 前端不许替他填（否则用户会在未了解探测失败的情况下完成初始化）。
   const nextBlockedByOffline = offline && !w.offlineAcknowledged;
 
   const shell = {
@@ -46,10 +46,10 @@ export function InitWizardContainer() {
       <InitWizardShellView
         {...shell}
         title="联网检查"
-        description="平台需要连得上模型 API（Agent 用）与镜像下载源（下载沙箱镜像用）。这里直接显示上次检查的结果，不重跑一轮——需要最新结果时点 [重新检测]。"
+        description="这里显示声明目标的联网检查快照，不代表所有任务的实际连通性。进入向导不会重跑检查；需要新的记录时点 [重新检测]。"
         onNext={w.goNext}
         nextDisabled={nextBlockedByOffline}
-        footerNote={nextBlockedByOffline ? '请先在上方确认「以离线模式继续」。' : undefined}
+        footerNote={nextBlockedByOffline ? '请先在上方确认「确认联网检查结果」。' : undefined}
       >
         <ConnectivityCheckView
           model={w.connectivity}

@@ -68,6 +68,12 @@ export function ImageVersionHistoryView({
               className="flex flex-wrap items-center gap-2"
             >
               <span className="font-mono">{row.version}</span>
+              <span
+                className="min-w-0 max-w-full break-words text-muted-foreground"
+                data-testid="image-version-runtime-versions"
+              >
+                {row.runtimeVersionsLabel}
+              </span>
               {/* 未解析的 digest 不留白、不显示假哈希——与卡面同一口径。 */}
               <span className="flex items-center gap-1 font-mono text-muted-foreground">
                 {row.digestShort === undefined && (

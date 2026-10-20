@@ -116,18 +116,38 @@ export function useSandboxRestore(
       const before = useAppStore.getState().sandboxStatuses[id];
       const dto = await getSandbox(id);
       const current = useAppStore.getState();
+      // The store applies the same unresolved-operation guard for all REST seeds,
+      // including this query, remount's effect and the task list projection.
       if (current.sandboxStatuses[id] === before) {
         current.setSandboxStatus(dto.id, dto.status, {
           failureCode: dto.failureCode,
           failureMessage: dto.failureMessage,
           failureOperation: dto.failureOperation,
           restarting: dto.hasRun === true && dto.status === 'starting',
+          startupObservation: dto.startupObservation,
         });
+      } else if (dto.startupObservation !== undefined) {
+        const latest = current.sandboxStatuses[id];
+        if (latest !== undefined)
+          current.setSandboxStatus(dto.id, latest.status, {
+            ...latest,
+            startupObservation: dto.startupObservation,
+          });
       }
       return dto;
     },
     enabled: sandboxId !== null && !staleTerminal,
     retry: false,
+    refetchInterval: [
+      'pending',
+      'scheduling',
+      'preparing-workspace',
+      'creating',
+      'starting',
+      'stopping',
+    ].includes(status ?? '')
+      ? 2_000
+      : false,
   });
 
   // 第一次观察到选中的这条进入终态 ⇒ 打时间戳。**只在戳还是 null 时写**:每次冷启动
@@ -153,6 +173,7 @@ export function useSandboxRestore(
       failureMessage: data.failureMessage,
       failureOperation: data.failureOperation,
       restarting: data.hasRun === true && data.status === 'starting',
+      startupObservation: data.startupObservation,
     });
   }, [data, setSandboxStatus]);
 

@@ -2,7 +2,7 @@
 //
 // ⚠️ **四条纪律：**
 //
-//  ① **⛔ 不新拉一次数据。** 离线判定要的那份出网快照，`AppBootGate` 在放行之前就已经
+//  ① **⛔ 不新拉一次数据。** 展示所需的出网检查快照，`AppBootGate` 在放行之前就已经
 //     拉过了（`systemKeys.init()`，`staleTime/gcTime` 均为 `Infinity`）。这里订阅**同一个
 //     key、同一份选项** ⇒ 零额外请求。写成 `useQuery({queryKey: systemKeys.init(), queryFn})`
 //     再给一个不同的 staleTime，界面上完全一样，代价是每次挂载都多打一次 init-status，
@@ -14,7 +14,7 @@
 //
 //  ③ **诊断结果优先于 init-status 的历史。** 用户点 [重新检测] → 在系统状态页跑完一轮 →
 //     回工作台，横幅必须跟着变。只读 `init-status` 的话它永远停在冷启动那一刻的结论：
-//     网络已经修好了，红条还挂着说 Agent 不可用 —— 而那正是他刚刚花了 15 秒去验证的事。
+//     已有新的探测记录，横幅却还停留在旧记录 —— 而那正是他刚刚花了 15 秒去验证的事。
 //     ⚠️ 只**读** `systemKeys.diagnose()` 缓存，⛔ 不写、也不自己起流（所有者在
 //     `useSystemStatus`，见那边的 `DIAGNOSE_CACHE_OPTIONS`）。
 //
@@ -36,10 +36,8 @@ import {
   connectivityFromDiagnoseDetail,
 } from '@/lib/system/connectivityVerdict';
 import {
-  OFFLINE_ACTION_DISABLED_REASON,
   bannerStackModel,
   globalBanners,
-  isDismissedToday,
   pruneDismissed,
   todayKey,
 } from '@/lib/system/globalBanner';
@@ -61,31 +59,27 @@ function useConnectivitySnapshot(): ConnectivitySnapshot {
   // ④ 401 由 `AccessGateContainer` 负责；这里闭嘴。
   const accessLocked = useAppStore((s) => s.accessLocked);
 
-  const fresh = diagnose.data?.results['outbound-network'];
+  const diagnosticResult = diagnose.data?.results['outbound-network'];
   const initData = init.data;
   const initError = init.error;
 
   return useMemo(() => {
-    const freshRows =
-      fresh === undefined ? undefined : connectivityFromDiagnoseDetail(fresh.detail);
-
-    if (freshRows !== undefined) {
-      return {
-        connectivity: connectivityCheckModel({
-          rows: freshRows,
-          // 诊断帧不带时刻；这一轮是"刚刚"跑的，不编一个假时间戳出来。
-          fromHistory: false,
-        }),
-      };
-    }
-
-    const connectivity = connectivityCheckModel({
-      rows: initData?.lastConnectivityCheck,
-      ...(initData?.lastConnectivityCheckAt === undefined
-        ? {}
-        : { checkedAt: initData.lastConnectivityCheckAt }),
-      fromHistory: true,
-    });
+    const diagnosticRows =
+      diagnosticResult === undefined
+        ? undefined
+        : connectivityFromDiagnoseDetail(diagnosticResult.detail);
+    // 来源不证明新鲜度。诊断帧没有检查时刻，不以缓存写入/读取时间代替。
+    const connectivity = connectivityCheckModel(
+      diagnosticRows === undefined
+        ? {
+            rows: initData?.lastConnectivityCheck,
+            ...(initData?.lastConnectivityCheckAt === undefined
+              ? {}
+              : { checkedAt: initData.lastConnectivityCheckAt }),
+            fromHistory: true,
+          }
+        : { rows: diagnosticRows, fromHistory: false },
+    );
 
     // ④ 401 ⇒ 一个字都不说（解锁框正在浮出）。
     const unauthorized =
@@ -93,7 +87,7 @@ function useConnectivitySnapshot(): ConnectivitySnapshot {
     if (initError === null || unauthorized) return { connectivity };
 
     return { connectivity, statusUnavailableReason: messageOf(initError) };
-  }, [fresh, initData, initError, accessLocked]);
+  }, [diagnosticResult, initData, initError, accessLocked]);
 }
 
 export interface GlobalBannerApi {
@@ -167,10 +161,12 @@ export function useGlobalBanner(pathname: string): GlobalBannerApi {
   // 断言成 `BannerId[]`——那是把一个更宽的 `string` 断言成更窄的类型，lint 禁止（也确实
   // 没有依据：store 里的 key 理论上可以是任何字符串）；反正只有当前会渲染的这几条
   // banner 的关闭状态值得查。
-  const dismissedTodayIds = useMemo(() => {
-    const now = new Date();
-    return banners.map((b) => b.id).filter((id) => isDismissedToday(id, dismissedToday, now));
-  }, [banners, dismissedToday]);
+  // 页面可以留到第二天；日期是这份派生状态的输入，不以定时器/网络刷新驱动。
+  const currentDay = todayKey(new Date());
+  const dismissedTodayIds = useMemo(
+    () => banners.map((b) => b.id).filter((id) => dismissedToday[id] === currentDay),
+    [banners, dismissedToday, currentDay],
+  );
 
   const allDismissed = useMemo(
     () => (dismissedTodayIds.length === 0 ? live : [...live, ...dismissedTodayIds]),
@@ -204,31 +200,7 @@ export function useGlobalBanner(pathname: string): GlobalBannerApi {
     ...(automation.projectId === undefined ? {} : { automationProjectId: automation.projectId }),
   };
 }
-
-export interface OfflineModeApi {
-  /** 模型 API 全不可达（且**确实测过**）。 */
-  offline: boolean;
-  /**
-   * 发起类入口的置灰理由（P21-8 §7 清单里的 tooltip 文案）；`undefined` = 不因离线而置灰。
-   *
-   * ⚠️ **只置灰不隐藏**（P21-8 §7）：用户配好网络后不该需要重装才能重新看到入口。
-   */
-  disabledReason?: string;
-}
-
-/**
- * 「离线模式」这一个事实的对外出口 —— 横幅与 [+ 新任务] 置灰**读同一份判定**。
- *
- * ⚠️ 分成两个布尔各算各的时，界面上会出现红条说 Agent 不可用、而 [+ 新任务] 照样能点，
- * 或者反过来。两者是同一句话的两半。
- */
-export function useOfflineMode(): OfflineModeApi {
-  const { connectivity } = useConnectivitySnapshot();
-  const offline = connectivity.hasResult && connectivity.verdict === 'offline';
-  return offline ? { offline, disabledReason: OFFLINE_ACTION_DISABLED_REASON } : { offline };
-}
-
-/** 后端信封的 `message` 已是人话（10 §6.8）；非信封错误退到 `Error.message`。 */
+/** 平台读取失败保留原诊断原因，不把它解释成目标探测失败。 */
 function messageOf(error: unknown): string {
   if (error instanceof ApiErrorException) return error.envelope.message;
   if (error instanceof Error) return error.message;

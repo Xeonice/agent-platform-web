@@ -3,7 +3,7 @@
 //
 // ⚠️ **它挂在 `AppBootGate` 的 `children` 里，而不是与 `AppBootGate` 并排**（`app/layout.tsx`）。
 //    差别在未初始化那一屏：并排时，向导与横幅会同时出现 —— 而向导是**阻塞式**的
-//    （F21-8 §2「没有 [取消]、没有 Esc 逃逸」），在它上面挂一条「离线模式：Agent 不可用
+//    （F21-8 §2「没有 [取消]、没有 Esc 逃逸」），在它上面挂一条「联网检查未通过
 //    [重新检测]」，那个 [重新检测] 会把用户从一个不许离开的流程里带走。
 //    ⇒ 复用 `AppBootGate` 已有的结构性拦截：`initialized === false` 时 `children` 根本不进树，
 //    于是"向导与横幅不同时出现"是**结构上成立的**，不靠任何一个 `if`。
@@ -16,7 +16,7 @@ import { useGlobalBanner } from '@/hooks/system/useGlobalBanner';
 import { useAppStore } from '@/stores';
 import { BannerStackView } from '@/views/banner/BannerStack.view';
 
-/** 两条阻断类横幅的动作去处：系统状态页（诊断卡在那里，且只有那里有所有者）。 */
+/** 状态未知与联网检查提示的动作去处：系统状态页（诊断卡在那里，且只有那里有所有者）。 */
 const SYSTEM_STATUS_ROUTE = '/settings/system';
 /** 工作台路由——治理类横幅的 [查看这些规则] 要去的地方（自动化面板只在工作台里）。 */
 const WORKBENCH_ROUTE = '/';

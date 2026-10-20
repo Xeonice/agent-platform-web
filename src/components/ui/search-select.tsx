@@ -11,6 +11,7 @@ export interface SearchSelectOption {
   value: string;
   label: string;
   secondary?: string;
+  detail?: string;
   searchText?: string;
   disabled?: boolean;
   reason?: string;
@@ -141,7 +142,9 @@ export function SearchSelect({
             'h-10 w-full justify-between border-input bg-background px-3 text-left font-normal',
             className,
           )}
-          title={selected?.secondary ?? selected?.label ?? placeholder}
+          title={[selected?.secondary ?? selected?.label ?? placeholder, selected?.detail]
+            .filter(Boolean)
+            .join(' · ')}
         >
           <span className="min-w-0 truncate">{selected?.label ?? placeholder}</span>
           <ChevronsUpDown aria-hidden="true" className="shrink-0 text-muted-foreground" />
@@ -150,7 +153,7 @@ export function SearchSelect({
       <span id={`${id}-selection`} className="sr-only">
         {selected === undefined
           ? placeholder
-          : `已选择：${selected.label}${selected.secondary === undefined ? '' : `，${selected.secondary}`}`}
+          : `已选择：${selected.label}${selected.secondary === undefined ? '' : `，${selected.secondary}`}${selected.detail === undefined ? '' : `，${selected.detail}`}`}
       </span>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
@@ -257,7 +260,9 @@ export function SearchSelect({
                     changeOpen(false);
                   }}
                   className="relative flex cursor-default select-none items-start gap-2 rounded-sm px-2 py-2 text-sm outline-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:text-muted-foreground"
-                  title={option.secondary ?? option.label}
+                  title={[option.secondary ?? option.label, option.detail]
+                    .filter(Boolean)
+                    .join(' · ')}
                 >
                   <Check
                     aria-hidden="true"
@@ -272,6 +277,11 @@ export function SearchSelect({
                     {option.secondary !== undefined && (
                       <span className="block truncate font-mono text-xs text-muted-foreground">
                         {option.secondary}
+                      </span>
+                    )}
+                    {option.detail !== undefined && (
+                      <span className="block break-words text-xs text-muted-foreground">
+                        {option.detail}
                       </span>
                     )}
                     {(option.reason ?? option.warning) !== undefined && (

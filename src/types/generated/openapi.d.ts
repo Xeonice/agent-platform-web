@@ -1218,6 +1218,698 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/upgrade/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeController_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/upgrade/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compatibility endpoint; instance access already permits upgrades
+         * @deprecated
+         */
+        post: operations["UpgradeController_access"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/upgrade/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeController_request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/upgrade/requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeController_lookup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/upgrade/contracts/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeController_contractRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/upgrade/contracts/requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeController_contractLookup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/upgrade/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeController_readProbe"];
+        put?: never;
+        post: operations["UpgradeController_probe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/controller-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_controlCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_pending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/process-observe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_processObserve"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/continuity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_continuity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/observation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_observation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_bootstrap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_snapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_claim"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/authority-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_authorityCheck"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/lease-renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_leaseRenew"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/progress-checkpoint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_checkpoint"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/commit-receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_commitReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_renew"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_commit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/steps/{stepId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_step"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/validate-switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_validate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/fallback-eligibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_fallback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/coordinator-handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_coordinatorHandoff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/owner-candidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_ownerCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/controller-handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_controllerHandoff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/migration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_migration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/coordinator-compatibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_compatibility"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/recovery-admission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_recoveryAdmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/recovery-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeInternalController_recoveryActions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/stabilize-current-writer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_stabilizeCurrentWriter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/coordinator-recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_recoverCoordinator"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/{attemptId}/coordinator-resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInternalController_resumeCoordinator"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/contracts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpgradeContractInternalController_snapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/contracts/{id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeContractInternalController_check"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/inspection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeInspectionController_inspect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/upgrades/contract-business": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpgradeContractBusinessController_execute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/application/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ControlRpcController_catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/application/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ControlRpcController_identity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/application/authenticate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ControlRpcController_authenticate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/internal/application/invoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ControlRpcController_invoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/operations/{operationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ApplicationOperationController_lookup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1333,6 +2025,24 @@ export interface components {
             name: string;
             /** @enum {string} */
             status: "pending" | "scheduling" | "preparing-workspace" | "creating" | "starting" | "running" | "idle" | "stopping" | "stopped" | "failed" | "destroying" | "destroyed";
+            startupObservation?: {
+                operationId: string;
+                sequence: number;
+                /** @enum {string} */
+                state: "inflight" | "unknown" | "succeeded" | "failed";
+                /** @enum {string} */
+                stage: "workspace-preparation" | "instance-create" | "instance-start" | "runtime-tools" | "environment-initialization" | "agent-bootstrap" | "completed";
+                /** Format: date-time */
+                startedAt: string | null;
+                /** Format: date-time */
+                stageEnteredAt: string | null;
+                /** Format: date-time */
+                lastProgressAt: string | null;
+                /** Format: date-time */
+                heartbeatAt: string | null;
+                /** Format: date-time */
+                observedAt: string | null;
+            };
             headless: boolean;
             timeoutMinutes: (number) | null;
             idleTimeoutSec: number;
@@ -1578,6 +2288,9 @@ export interface components {
                 healthcheckCmd?: string[];
             };
             supportedRuntimes: string[];
+            runtimeVersions?: {
+                [key: string]: string;
+            };
             providerCompatibility?: {
                 [key: string]: boolean;
             };
@@ -1632,6 +2345,9 @@ export interface components {
                     healthcheckCmd?: string[];
                 };
                 supportedRuntimes: string[];
+                runtimeVersions?: {
+                    [key: string]: string;
+                };
                 providerCompatibility?: {
                     [key: string]: boolean;
                 };
@@ -1666,6 +2382,9 @@ export interface components {
             };
             validation: {
                 digest?: string;
+                runtimeVersions?: {
+                    [key: string]: string;
+                };
                 /** @enum {string} */
                 status: "pending" | "valid" | "warning" | "invalid";
                 errors: {
@@ -1682,6 +2401,9 @@ export interface components {
         };
         ValidationOutcomeResponseDto: {
             digest?: string;
+            runtimeVersions?: {
+                [key: string]: string;
+            };
             /** @enum {string} */
             status: "pending" | "valid" | "warning" | "invalid";
             errors: {
@@ -1713,6 +2435,9 @@ export interface components {
         };
         RevalidateOutcomeResponseDto: {
             digest?: string;
+            runtimeVersions?: {
+                [key: string]: string;
+            };
             /** @enum {string} */
             status: "pending" | "valid" | "warning" | "invalid";
             errors: {
@@ -1751,6 +2476,9 @@ export interface components {
                 digest: string;
                 validation: {
                     digest?: string;
+                    runtimeVersions?: {
+                        [key: string]: string;
+                    };
                     /** @enum {string} */
                     status: "pending" | "valid" | "warning" | "invalid";
                     errors: {
@@ -1970,6 +2698,12 @@ export interface components {
             passcode?: string;
         };
         SystemResourcesResponseDto: {
+            capacityAvailability?: {
+                /** @enum {string} */
+                state: "unavailable";
+                /** @enum {string} */
+                reason: "OWNER_CAPACITY_UNAVAILABLE";
+            };
             capacity?: {
                 remainingTasks: number;
                 registeredTasks: number;
@@ -2076,6 +2810,481 @@ export interface components {
                 cloningProjects: number;
                 projectCleanupJobs: number;
             };
+        };
+        UpgradeAttemptDto: {
+            instanceId: string;
+            /** Format: uuid */
+            attemptId: string;
+            /** Format: uuid */
+            requestId: string;
+            targetReleaseId: string;
+            targetDigest: string;
+            generation: number;
+            sequence: number;
+            /** @enum {string} */
+            state: "accepted" | "downloading" | "package-verified" | "migrating" | "prepared" | "candidate-ready" | "routing-switched" | "observing" | "api-activated" | "activation-confirmed" | "deferred" | "candidate-rejected" | "failed" | "reverted";
+            stage: string;
+            percent: number | null;
+            completedWork: number;
+            totalWork: number | null;
+            planDigest: string;
+            /** Format: date-time */
+            acceptedAt: string;
+            /** Format: date-time */
+            observedAt: string;
+            reason: string | null;
+        };
+        UpgradeOperationDto: {
+            instanceId: string;
+            /** Format: uuid */
+            operationId: string;
+            /** Format: uuid */
+            requestId: string;
+            finalTargetReleaseId: string;
+            finalTargetDigest: string;
+            sequence: number;
+            /** @enum {string} */
+            state: "accepted" | "preparing" | "running" | "completed" | "failed" | "deferred";
+            /** Format: date-time */
+            acceptedAt: string;
+            /** Format: date-time */
+            observedAt: string;
+            currentStageIndex: number;
+            stages: {
+                releaseId: string;
+                targetDigest: string;
+                /** Format: uuid */
+                attemptId: string | null;
+                /** @enum {string} */
+                state: "pending" | "running" | "confirmed" | "failed" | "deferred";
+            }[];
+            percent: number | null;
+            reason: string | null;
+            defaultImageUpdate?: {
+                /** @enum {string} */
+                scope: "managed-default";
+                images: {
+                    provider: string;
+                    previousRef: string;
+                    previousDigest: string;
+                    ref: string;
+                    digest: string;
+                    runtimeVersions: {
+                        [key: string]: string;
+                    };
+                }[];
+                /** Format: date-time */
+                observedAt: string;
+            } | null;
+        };
+        UpgradeStatusDto: {
+            instanceId: string;
+            userScope: string;
+            activationGeneration: number;
+            confirmedServiceRelease: {
+                releaseId: string;
+                activationGeneration: number;
+                /** Format: date-time */
+                activatedAt: string;
+                schema: number;
+                channel: string;
+                components: {
+                    api: {
+                        artifactDigest: string;
+                        inputFingerprint: string;
+                        sourceRevision: string;
+                        protocol: {
+                            min: number;
+                            max: number;
+                        };
+                        dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
+                    };
+                    web: {
+                        artifactDigest: string;
+                        inputFingerprint: string;
+                        sourceRevision: string;
+                        protocol: {
+                            min: number;
+                            max: number;
+                        };
+                        dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
+                        webRevision: string;
+                    };
+                    installer: {
+                        artifactDigest: string;
+                        inputFingerprint: string;
+                        sourceRevision: string;
+                        protocol: {
+                            min: number;
+                            max: number;
+                        };
+                        dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
+                    };
+                    coordinator?: {
+                        artifactDigest: string;
+                        inputFingerprint: string;
+                        sourceRevision: string;
+                        protocol: {
+                            min: number;
+                            max: number;
+                        };
+                        dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
+                    };
+                    owner?: {
+                        artifactDigest: string;
+                        inputFingerprint: string;
+                        sourceRevision: string;
+                        protocol: {
+                            min: number;
+                            max: number;
+                        };
+                        dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
+                    };
+                };
+                commits: {
+                    project: string;
+                    api: string;
+                    web: string;
+                };
+                productionWebBinding: string;
+            } | null;
+            lastConfirmedServiceRelease: {
+                releaseId: string;
+                activationGeneration: number;
+                /** Format: date-time */
+                activatedAt: string;
+                schema: number;
+                channel: string;
+                components: {
+                    api: {
+                        artifactDigest: string;
+                        inputFingerprint: string;
+                        sourceRevision: string;
+                        protocol: {
+                            min: number;
+                            max: number;
+                        };
+                        dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
+                    };
+                    web: {
+                        artifactDigest: string;
+                        inputFingerprint: string;
+                        sourceRevision: string;
+                        protocol: {
+                            min: number;
+                            max: number;
+                        };
+                        dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
+                        webRevision: string;
+                    };
+                    installer: {
+                        artifactDigest: string;
+                        inputFingerprint: string;
+                        sourceRevision: string;
+                        protocol: {
+                            min: number;
+                            max: number;
+                        };
+                        dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
+                    };
+                    coordinator?: {
+                        artifactDigest: string;
+                        inputFingerprint: string;
+                        sourceRevision: string;
+                        protocol: {
+                            min: number;
+                            max: number;
+                        };
+                        dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
+                    };
+                    owner?: {
+                        artifactDigest: string;
+                        inputFingerprint: string;
+                        sourceRevision: string;
+                        protocol: {
+                            min: number;
+                            max: number;
+                        };
+                        dataFormats?: "project-name-v2-authority"[];
+                        upgradeOperationFormats?: "upgrade-plan-v1"[];
+                    };
+                };
+                commits: {
+                    project: string;
+                    api: string;
+                    web: string;
+                };
+                productionWebBinding: string;
+            } | null;
+            /** @enum {string} */
+            serviceState: "confirmed" | "transitioning" | "unknown";
+            controlSystem?: {
+                version: string;
+                protocolVersion: number;
+                /** @enum {string} */
+                state: "ready" | "passive" | "reconciling" | "unavailable";
+                /** Format: date-time */
+                observedAt: string;
+            };
+            diagnostics?: {
+                correlationId: string;
+                phase: string;
+                code: string;
+                /** Format: date-time */
+                recordedAt: string;
+            };
+            catalog: {
+                /** @enum {string} */
+                state: "verified" | "unknown" | "unavailable" | "no-update";
+                /** Format: date-time */
+                observedAt: string | null;
+                reason: string | null;
+                availableRelease: {
+                    releaseId: string;
+                    targetDigest: string;
+                    webRevision: string;
+                    webArtifactDigest: string;
+                    installable: boolean;
+                    supportsAsync?: boolean;
+                } | null;
+            };
+            capabilities: {
+                canUpgradeInstance: boolean;
+                canAuthenticate: boolean;
+                canContract?: boolean;
+            };
+            csrfToken: string;
+            attempt: {
+                instanceId: string;
+                /** Format: uuid */
+                attemptId: string;
+                /** Format: uuid */
+                requestId: string;
+                targetReleaseId: string;
+                targetDigest: string;
+                generation: number;
+                sequence: number;
+                /** @enum {string} */
+                state: "accepted" | "downloading" | "package-verified" | "migrating" | "prepared" | "candidate-ready" | "routing-switched" | "observing" | "api-activated" | "activation-confirmed" | "deferred" | "candidate-rejected" | "failed" | "reverted";
+                stage: string;
+                percent: number | null;
+                completedWork: number;
+                totalWork: number | null;
+                planDigest: string;
+                /** Format: date-time */
+                acceptedAt: string;
+                /** Format: date-time */
+                observedAt: string;
+                reason: string | null;
+            } | null;
+            recovery: {
+                /** Format: uuid */
+                recoveryAttemptId: string;
+                /** Format: uuid */
+                triggeringAttemptId: string;
+                generation: number;
+                sequence: number;
+                /** @enum {string} */
+                state: "recovering" | "recovery-confirmed" | "unknown" | "failed";
+                planDigest: string;
+                reason: string;
+                /** Format: date-time */
+                observedAt: string;
+                /** @enum {string} */
+                phase?: "created" | "reconciling" | "restoring" | "verifying" | "recovered" | "blocked";
+                /** Format: date-time */
+                confirmedAt?: string | null;
+                triggeringOperationId?: string;
+                diagnosticId?: string;
+            } | null;
+            availableWeb: {
+                releaseId: string;
+                webReleaseId: string | null;
+                webRevision: string;
+                artifactDigest: string;
+                instanceId: string;
+                activationGeneration: number;
+                productionBinding: string;
+                ready: boolean;
+                compatible: boolean;
+                /** Format: date-time */
+                observedAt: string;
+            } | null;
+            /** Format: date-time */
+            observedAt: string;
+            repairableCurrent?: {
+                baseConfirmedReleaseId: string;
+                activationGeneration: number;
+                /** Format: date-time */
+                observedAt: string;
+            } | null;
+            contract?: {
+                /** @enum {string} */
+                authority: "legacy" | "new" | "unknown";
+                availablePlan: {
+                    planDigest: string;
+                    releaseId: string;
+                    expandPlanDigest: string;
+                    /** Format: date-time */
+                    rollbackWindowClosesAt: string;
+                    eligible: boolean;
+                    reason: string | null;
+                    legacyReaderCount: number;
+                    irreversible: boolean;
+                } | null;
+                attempt: {
+                    instanceId: string;
+                    /** Format: uuid */
+                    contractAttemptId: string;
+                    /** Format: uuid */
+                    requestId: string;
+                    targetPlanDigest: string;
+                    activationGeneration: number;
+                    sequence: number;
+                    /** @enum {string} */
+                    state: "accepted" | "retiring-readers" | "authority-active" | "clearing" | "completed" | "deferred" | "failed" | "unknown";
+                    stage: string;
+                    completedRows: number;
+                    totalRows: number | null;
+                    /** Format: date-time */
+                    acceptedAt: string;
+                    /** Format: date-time */
+                    observedAt: string;
+                    reason: string | null;
+                } | null;
+            } | null;
+            operation?: {
+                instanceId: string;
+                /** Format: uuid */
+                operationId: string;
+                /** Format: uuid */
+                requestId: string;
+                finalTargetReleaseId: string;
+                finalTargetDigest: string;
+                sequence: number;
+                /** @enum {string} */
+                state: "accepted" | "preparing" | "running" | "completed" | "failed" | "deferred";
+                /** Format: date-time */
+                acceptedAt: string;
+                /** Format: date-time */
+                observedAt: string;
+                currentStageIndex: number;
+                stages: {
+                    releaseId: string;
+                    targetDigest: string;
+                    /** Format: uuid */
+                    attemptId: string | null;
+                    /** @enum {string} */
+                    state: "pending" | "running" | "confirmed" | "failed" | "deferred";
+                }[];
+                percent: number | null;
+                reason: string | null;
+                defaultImageUpdate?: {
+                    /** @enum {string} */
+                    scope: "managed-default";
+                    images: {
+                        provider: string;
+                        previousRef: string;
+                        previousDigest: string;
+                        ref: string;
+                        digest: string;
+                        runtimeVersions: {
+                            [key: string]: string;
+                        };
+                    }[];
+                    /** Format: date-time */
+                    observedAt: string;
+                } | null;
+            } | null;
+            currentStageProgress?: {
+                stage: string;
+                completedWork: number;
+                totalWork: number | null;
+                percent: number | null;
+                /** Format: date-time */
+                enteredAt: string | null;
+                /** Format: date-time */
+                lastProgressAt: string | null;
+            } | null;
+            serviceAvailability?: {
+                /** @enum {string} */
+                state: "available" | "unavailable" | "unknown";
+                /** Format: date-time */
+                observedAt: string | null;
+                reason: string | null;
+            };
+            observation?: {
+                /** @enum {string} */
+                state: "fresh" | "stale" | "checking";
+                /** Format: date-time */
+                confirmedAt: string | null;
+                /** Format: date-time */
+                checkedAt: string | null;
+                reason: string | null;
+            };
+        };
+        UpgradeAccessDto: {
+            upgradeKey?: string;
+        };
+        UpgradeRequestDto: {
+            /** Format: uuid */
+            requestId: string;
+            targetReleaseId: string;
+            targetDigest: string;
+            expectedActivationGeneration: number;
+        };
+        UpgradeContractRequestDto: {
+            /** Format: uuid */
+            requestId: string;
+            targetPlanDigest: string;
+            expectedActivationGeneration: number;
+            acknowledgeRollbackClosure: boolean;
+        };
+        UpgradeContractAttemptDto: {
+            instanceId: string;
+            /** Format: uuid */
+            contractAttemptId: string;
+            /** Format: uuid */
+            requestId: string;
+            targetPlanDigest: string;
+            activationGeneration: number;
+            sequence: number;
+            /** @enum {string} */
+            state: "accepted" | "retiring-readers" | "authority-active" | "clearing" | "completed" | "deferred" | "failed" | "unknown";
+            stage: string;
+            completedRows: number;
+            totalRows: number | null;
+            /** Format: date-time */
+            acceptedAt: string;
+            /** Format: date-time */
+            observedAt: string;
+            reason: string | null;
+        };
+        UpgradeProbeDto: {
+            /** Format: uuid */
+            attemptId: string;
+            fence: number;
+            /** Format: uuid */
+            requestId: string;
+            value: string;
+        };
+        ApplicationOperationResponseDto: {
+            operationId: string;
+            /** @enum {string} */
+            state: "absent" | "pending" | "complete" | "unknown";
+            resultAvailable: boolean;
+            result?: unknown;
+            /** Format: date-time */
+            observedAt: string;
         };
         ErrorEnvelope: {
             retryAfterSec?: number;
@@ -3975,6 +5184,852 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeploymentStatusDto"];
+                };
+            };
+        };
+    };
+    UpgradeController_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeStatusDto"];
+                };
+            };
+        };
+    };
+    UpgradeController_access: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpgradeAccessDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeStatusDto"];
+                };
+            };
+        };
+    };
+    UpgradeController_request: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description respond-async admits one durable final-target operation; omitted preserves the legacy technical-attempt response. */
+                Prefer?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpgradeRequestDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeAttemptDto"] | components["schemas"]["UpgradeOperationDto"];
+                };
+            };
+        };
+    };
+    UpgradeController_lookup: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description respond-async looks up the original user operation. Existing legacy attempts remain readable. */
+                Prefer?: string;
+            };
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeAttemptDto"] | components["schemas"]["UpgradeOperationDto"];
+                };
+            };
+        };
+    };
+    UpgradeController_contractRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpgradeContractRequestDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeContractAttemptDto"];
+                };
+            };
+        };
+    };
+    UpgradeController_contractLookup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeContractAttemptDto"];
+                };
+            };
+        };
+    };
+    UpgradeController_readProbe: {
+        parameters: {
+            query: {
+                requestId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeController_probe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpgradeProbeDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_controlCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_pending: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_processObserve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_continuity: {
+        parameters: {
+            query: {
+                attemptId: string;
+                fence: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_observation: {
+        parameters: {
+            query: {
+                attemptId: string;
+                fence: string;
+                weight: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_bootstrap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_claim: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_authorityCheck: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_leaseRenew: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_checkpoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_commitReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_renew: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_commit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_step: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+                stepId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_validate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_fallback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_coordinatorHandoff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_ownerCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_controllerHandoff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_migration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_compatibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_recoveryAdmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_recoveryActions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_stabilizeCurrentWriter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_recoverCoordinator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInternalController_resumeCoordinator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeContractInternalController_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeContractInternalController_check: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeInspectionController_inspect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpgradeContractBusinessController_execute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ControlRpcController_catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ControlRpcController_identity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ControlRpcController_authenticate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ControlRpcController_invoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ApplicationOperationController_lookup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationOperationResponseDto"];
                 };
             };
         };

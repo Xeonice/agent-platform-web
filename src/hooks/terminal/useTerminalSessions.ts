@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useAppStore } from '@/stores';
 import { agentSessionIdOf } from '@/stores/createTerminalTabsSlice';
+import { useTerminalBookmark } from '@/hooks/terminal/useTerminalBookmark';
 import { withTerminalTarget } from '@/lib/terminal/terminalSocket';
 import {
   AGENT_TAB_LABEL,
@@ -33,6 +34,7 @@ export interface TerminalTabModel {
   socketConfig: TerminalSocketConfig;
   /** 后端分配的 tmux 会话 id；`undefined` = 还没连上过 / 是 Agent 标签。 */
   shellId?: string;
+  terminalIdentity?: string;
   /** 这个标签里跑的 agent CLI（06 §5.6）；`undefined` = 纯终端 / Agent 标签。 */
   runtimeId?: string;
 }
@@ -46,6 +48,8 @@ export interface TerminalLaunchOption {
 
 export interface UseTerminalSessionsApi {
   tabs: TerminalTabModel[];
+  restorationReady: boolean;
+  adoptTerminalIdentity: (sessionId: string, terminalIdentity: string) => void;
   activeSessionId: string;
   /** 这一刻该挂载哪几个（⊆ tabs，LRU 上限内）。其余标签在栏上但没有实例。 */
   mountedSessionIds: string[];
@@ -94,6 +98,8 @@ export function useTerminalSessions(
   /** runtimeId → 展示名（`GET /api/runtimes`）。查不到就回落「终端 N」，见 `shellTabLabel`。 */
   runtimeNames: ReadonlyMap<string, string> = new Map(),
 ): UseTerminalSessionsApi {
+  const agentTerminalIdentity = useAppStore((s) => s.agentTerminalIdentityOf.get(sandboxId));
+  const adoptTerminalIdentityAction = useAppStore((s) => s.adoptTerminalIdentity);
   const shellTabs = useAppStore((s) => s.shellTabsOf.get(sandboxId));
   const activatedAt = useAppStore((s) => s.tabActivatedAt);
   const activeOf = useAppStore((s) => s.activeSessionOf.get(sandboxId));
@@ -116,7 +122,13 @@ export function useTerminalSessions(
         // ⛔ Agent 标签没有 [×]。关掉它并不会停下任务（后端只会 detach），
         //    所以那个按钮唯一能做到的就是**误导** —— 让人以为按了就停了。
         closable: false,
-        socketConfig: withTerminalTarget(baseConfig, { kind: 'agent' }),
+        socketConfig: withTerminalTarget(baseConfig, {
+          kind: 'agent',
+          ...(agentTerminalIdentity === undefined
+            ? {}
+            : { terminalIdentity: agentTerminalIdentity }),
+        }),
+        ...(agentTerminalIdentity === undefined ? {} : { terminalIdentity: agentTerminalIdentity }),
       },
       ...(shellTabs ?? []).map<TerminalTabModel>((t) => ({
         sessionId: t.sessionId,
@@ -129,13 +141,15 @@ export function useTerminalSessions(
         socketConfig: withTerminalTarget(baseConfig, {
           kind: t.runtimeId === undefined ? 'shell' : 'runtime',
           ...(t.shellId === undefined ? {} : { shellId: t.shellId }),
+          ...(t.terminalIdentity === undefined ? {} : { terminalIdentity: t.terminalIdentity }),
           ...(t.runtimeId === undefined ? {} : { runtimeId: t.runtimeId }),
         }),
+        ...(t.terminalIdentity === undefined ? {} : { terminalIdentity: t.terminalIdentity }),
         ...(t.shellId === undefined ? {} : { shellId: t.shellId }),
         ...(t.runtimeId === undefined ? {} : { runtimeId: t.runtimeId }),
       })),
     ],
-    [agentSessionId, shellTabs, baseConfig, runtimeNames],
+    [agentSessionId, agentTerminalIdentity, shellTabs, baseConfig, runtimeNames],
   );
 
   /**
@@ -189,6 +203,14 @@ export function useTerminalSessions(
   useEffect(() => {
     if (!activatedAt.has(activeSessionId)) markTabActivated(activeSessionId);
   }, [activatedAt, activeSessionId, markTabActivated]);
+
+  const { restorationReady } = useTerminalBookmark(sandboxId, activeSessionId, tabs);
+  const adoptTerminalIdentity = useCallback(
+    (sessionId: string, terminalIdentity: string) => {
+      adoptTerminalIdentityAction(sandboxId, sessionId, terminalIdentity);
+    },
+    [sandboxId, adoptTerminalIdentityAction],
+  );
 
   const mountedSessionIds = useMemo(
     () =>
@@ -256,6 +278,8 @@ export function useTerminalSessions(
 
   return {
     tabs,
+    restorationReady,
+    adoptTerminalIdentity,
     activeSessionId,
     mountedSessionIds,
     selectTab,

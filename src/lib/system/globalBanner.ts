@@ -1,23 +1,6 @@
 import { formatVolumeBytes } from '@/lib/project/retainedVolumeModel';
-// 全局横幅的判定与文案（F21-8 §4「离线模式的跨页影响」/ 07 §8.4 / P21-8 §5 状态矩阵）。
-//
-// ⚠️ **三条纪律，每一条都对应一个"页面看起来完全正常"的写法：**
-//
-//  ① **「读不到平台状态」⛔ 不许渲染成「离线模式」。** 两者在界面上都是一条红条，代价却
-//     完全相反：`init-status` 读失败的真正原因是**后端没起来**，而「离线模式：Agent 不可用
-//     [重新检测]」把用户送去查网络、配代理 —— 他会在一个没有问题的地方找一个不存在的问题，
-//     而真正的那句话（后端没起来）一个字都没出现。这与 `AppBootGate` 的 fail-open 注释
-//     ④ 是同一条：**失败路径不许表现成一句更好看的谎**。⇒ 两条横幅、两句话、两个 id。
-//
-//  ② **「没测过」⛔ 不是「通」。** 一条快照都没有时不出离线横幅是对的（不能凭空报红），
-//     但它成立的理由是"我们不知道"而不是"我们知道它是通的"。所以判据写成
-//     `hasResult && verdict === 'offline'`，⛔ 不是 `verdict === 'offline'` —— 后者依赖
-//     `connectivityVerdict` 对空数组兜底成 `'ok'` 这个**实现细节**，那份兜底一旦改口径
-//     （比如改成 `'partial'`），这里会静默地开始对每一台新装机器报红。
-//
-//  ③ **离线的判据只有「模型 API 全不可达」，⛔ 不含镜像仓库。** 这条不在本文件里重写，
-//     整个判定都借 `connectivityCheckModel` —— 连同它那句 `verdictText`。前端在这里抄
-//     第二份文案的代价是：向导里说的和横幅里说的迟早会分叉，而它们说的是同一件事。
+// 出网检查只描述声明目标的快照；不作为任何任务或 runtime 的准入条件。
+// 平台状态读取失败和目标探测失败分别展示，不能相互替代。
 import type {
   BannerId,
   BannerStackModel,
@@ -25,19 +8,10 @@ import type {
   GlobalBannerModel,
 } from '@/types/banner';
 
-/**
- * 离线时 [+ 新任务] 等发起入口的置灰理由（P21-8 §7「离线模式入口置灰清单」的 tooltip 文案）。
- *
- * ⚠️ 它住在 `lib` 而不是 container：container 被 boundaries 禁止 import `lib`，所以这句话
- * 经 `useOfflineMode()` 交出去。**⛔ 不许在 container 里手打一遍** —— 那样横幅说的和
- * tooltip 说的会各自演化，而用户是把这两句连起来读的。
- */
-export const OFFLINE_ACTION_DISABLED_REASON = '离线模式：需连接网络才能发起任务';
-
 /** 阻断提示先显示；治理提示由宿主记录的首次出现顺序稳定排序（REQ-WB-011）。 */
 const BANNER_RANK: Readonly<Record<string, number>> = {
   'platform-state-unknown': 0,
-  offline: 1,
+  offline: 2,
   'disk-pressure': 2,
   'retained-pressure': 2,
   'automation-needs-attention': 2,
@@ -63,8 +37,7 @@ export function globalBanners(input: GlobalBannerInput): GlobalBannerModel[] {
       title: '无法确认平台状态',
       description:
         `读取平台初始化状态失败（${input.statusUnavailableReason}）。` +
-        '这多半是后端没起来或不可达 —— 在它恢复之前，「Agent 是否可用」无法判定：' +
-        '既不表示网络正常，也不表示离线。',
+        '当前平台状态待确认；已有联网检查记录只反映其探测目标，不代表当前任务的连通性。',
       actionLabel: '查看系统状态',
     });
   }
@@ -74,12 +47,13 @@ export function globalBanners(input: GlobalBannerInput): GlobalBannerModel[] {
   if (connectivity.hasResult && connectivity.verdict === 'offline') {
     out.push({
       id: 'offline',
-      severity: 'blocking',
-      title: '离线模式：Agent 不可用',
+      severity: 'warning',
+      title: '联网检查未通过',
       // ③ 判定与这句话都来自 `connectivityCheckModel`，本文件不复制一份。
       description:
         connectivity.verdictText +
-        (connectivity.checkedAtText === undefined ? '' : `（${connectivity.checkedAtText}）`),
+        (connectivity.checkedAtText ?? '检测时刻未提供，无法判断结果新旧。') +
+        (connectivity.fromHistory ? '（上次检查记录）' : '（诊断检查记录）'),
       actionLabel: '重新检测',
     });
   }

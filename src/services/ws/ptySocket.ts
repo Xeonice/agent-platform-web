@@ -8,7 +8,7 @@ import {
   type TerminalServerFrame,
 } from '@/types/ws-protocol';
 import { readSocketErrorCode } from '@/services/ws/socketAuth';
-import type { ConnState } from '@/types/terminal';
+import type { TerminalAttachment, ConnState } from '@/types/terminal';
 
 export type { ConnState };
 
@@ -38,6 +38,7 @@ export interface PtySocketOptions {
   socketFactory?: SocketFactory;
   onFrame: (frame: TerminalServerFrame) => void;
   onState: (state: ConnState, attempt: number) => void;
+  onAttachment?: (attachment: TerminalAttachment | null) => void;
   /** 契约校验失败回调（dev fail-fast / prod 上报，08 §3.1）。 */
   onInvalidFrame?: (raw: unknown) => void;
   /** WS 握手被口令门拒绝（未授权）时回调，供上层弹解锁门（11 §3.1）。 */
@@ -123,6 +124,9 @@ export class PtySocket {
    *（与 `fittedSize` 那条"只认第一次"是同一个坑）。
    */
   private shellId: string | null = null;
+  private terminalIdentity: string | null = null;
+  private runtimeIdentity: string | null = null;
+  private attached = false;
   private readonly opts: Required<Pick<PtySocketOptions, 'maxReconnect' | 'socketFactory'>> &
     PtySocketOptions;
 
@@ -142,6 +146,7 @@ export class PtySocket {
       ...this.opts.query,
       ...(this.socketSessionKey === null ? {} : { socketSessionKey: this.socketSessionKey }),
       ...(this.shellId === null ? {} : { shellId: this.shellId }),
+      ...(this.terminalIdentity === null ? {} : { terminalIdentity: this.terminalIdentity }),
     };
   }
 
@@ -151,27 +156,36 @@ export class PtySocket {
   }
 
   connect(): void {
+    const previous = this.socket;
+    this.socket = null;
+    previous?.disconnect();
     this.closedByUser = false;
+    this.attached = false;
+    this.opts.onAttachment?.(null);
     this.setState('connecting');
     const socket = this.opts.socketFactory({ uri: this.opts.uri, query: this.buildQuery() });
     this.socket = socket;
     socket.onConnect(() => {
+      if (this.socket !== socket) return;
       // **不在这里清零 attempt**：连上不等于连成了。清零挪到 handleClose，
       // 只有活过 STABLE_CONNECTION_MS 的连接才作数（见该常量注释）。
       this.connectedAt = Date.now();
       this.setState('open');
     });
     socket.onFrame((frame) => {
+      if (this.socket !== socket) return;
       this.handleFrame(frame);
     });
     socket.onConnectError((err) => {
+      if (this.socket !== socket) return;
       const code = readSocketErrorCode(err);
       // 未授权 → 弹解锁门；别的码（版本漂移等）→ 通道级错误。**绝不混为一谈**（socketAuth.ts 头注释）。
-      if (code === 'UNAUTHORIZED') this.opts.onUnauthorized?.();
+      if (code === 'UNAUTHORIZED' || code === 'AUTH_EXPIRED') this.opts.onUnauthorized?.();
       else if (code !== undefined) this.opts.onHandshakeError?.(code);
       this.handleClose();
     });
     socket.onDisconnect(() => {
+      if (this.socket !== socket) return;
       this.handleClose();
     });
   }
@@ -179,12 +193,16 @@ export class PtySocket {
   /** fire-and-forget：未 open 时丢弃并返回 false（断线不排队，08 §11.2）。 */
   send(frame: TerminalClientFrame): boolean {
     if (this.state !== 'open' || this.socket === null) return false;
+    if (frame.type === 'input' && this.opts.query['protocolMax'] === '2' && !this.attached)
+      return false;
     this.socket.emitFrame(frame);
     return true;
   }
 
   close(): void {
     this.closedByUser = true;
+    this.attached = false;
+    this.opts.onAttachment?.(null);
     this.connectedAt = null;
     this.setState('closed');
     this.socket?.disconnect();
@@ -221,6 +239,8 @@ export class PtySocket {
 
   private handleClose(): void {
     if (this.closedByUser) return;
+    this.attached = false;
+    this.opts.onAttachment?.(null);
     const connectedAt = this.connectedAt;
     this.connectedAt = null;
     // 只有**站得住**的连接才把退避清零；连上即掉时 attempt 继续累加 ⇒ 退避真的会增长，
@@ -239,6 +259,56 @@ export class PtySocket {
       this.opts.onInvalidFrame?.(raw); // 校验失败不进下游、不阻断渲染
       return;
     }
+    const frame = result.data;
+    if (
+      (frame.type === 'connection_state' && frame.sandboxId !== this.opts.query['sandboxId']) ||
+      (frame.type === 'error' &&
+        frame.sandboxId !== undefined &&
+        frame.sandboxId !== this.opts.query['sandboxId'])
+    ) {
+      this.opts.onInvalidFrame?.({ type: frame.type, reason: 'sandbox-identity-mismatch' });
+      return;
+    }
+    if (frame.type === 'ready' && this.opts.query['protocolMax'] === '2') {
+      const expectedIdentity = this.terminalIdentity ?? this.opts.query['terminalIdentity'];
+      if (
+        frame.sandboxId !== this.opts.query['sandboxId'] ||
+        (expectedIdentity !== undefined &&
+          (expectedIdentity !== frame.terminalIdentity || !frame.existingSession)) ||
+        frame.runtimeIdentity === null ||
+        frame.runtimeIdentity === '' ||
+        (this.runtimeIdentity !== null && this.runtimeIdentity !== frame.runtimeIdentity) ||
+        frame.attachmentId === '' ||
+        frame.protocolRevision !== 2
+      ) {
+        this.attached = false;
+        this.opts.onAttachment?.(null);
+        this.opts.onHandshakeError?.('RUNTIME_UNKNOWN');
+        return;
+      }
+      this.terminalIdentity = frame.terminalIdentity;
+      this.runtimeIdentity = frame.runtimeIdentity;
+      this.attached = true;
+      this.opts.onAttachment?.({
+        sandboxId: frame.sandboxId,
+        terminalIdentity: frame.terminalIdentity,
+        runtimeIdentity: frame.runtimeIdentity,
+        attachmentId: frame.attachmentId,
+        protocolRevision: frame.protocolRevision,
+      });
+    }
+    if (frame.type === 'error') {
+      this.attached = false;
+      this.opts.onAttachment?.(null);
+      if (frame.code === 'AUTH_EXPIRED') this.opts.onUnauthorized?.();
+      this.opts.onHandshakeError?.(frame.code);
+    }
+    if (frame.type === 'connection_state' || (frame.type === 'exit' && frame.code === -2)) {
+      this.attached = false;
+      this.opts.onAttachment?.(null);
+    }
+    // Do not write bytes from an unconfirmed/mismatched revision-2 attachment into the old canvas.
+    if (frame.type === 'data' && this.opts.query['protocolMax'] === '2' && !this.attached) return;
     // session 首帧：存下重连凭据（08 §3）；同时仍向下游转发（registry 可持有）。
     if (result.data.type === 'session') {
       this.socketSessionKey = result.data.socketSessionKey;

@@ -54,6 +54,30 @@ export const TerminalServerFrameSchema = z.discriminatedUnion('type', [
     type: z.literal('session'),
     socketSessionKey: z.string(),
     shellId: z.string().optional(),
+    sandboxId: z.string().optional(),
+    terminalIdentity: z.string().uuid().optional(),
+    attachmentId: z.string().optional(),
+    protocolRevision: z.number().int().optional(),
+  }),
+  // Revision 2 explicitly confirms the authenticated original terminal attachment.
+  z.object({
+    type: z.literal('ready'),
+    sandboxId: z.string(),
+    terminalIdentity: z.string().uuid(),
+    runtimeIdentity: z.string().nullable(),
+    attachmentId: z.string(),
+    protocolRevision: z.number().int(),
+    existingSession: z.boolean(),
+  }),
+  z.object({
+    type: z.literal('connection_state'),
+    state: z.enum(['restoring', 'unconfirmed']),
+    sandboxId: z.string(),
+  }),
+  z.object({
+    type: z.literal('error'),
+    code: z.enum(['AUTH_EXPIRED', 'PROTOCOL_INCOMPATIBLE', 'RUNTIME_UNKNOWN', 'TERMINAL_GONE']),
+    sandboxId: z.string().optional(),
   }),
   /**
    * 这个 Task 下**已经存在**的用户终端会话清单（06 §5.5）。刷新页面之后，标签栏靠它
@@ -73,6 +97,7 @@ export const TerminalServerFrameSchema = z.discriminatedUnion('type', [
       .array(
         z.object({
           shellId: z.string(),
+          terminalIdentity: z.string().uuid().optional(),
           /**
            * 这个标签里跑的是哪个 agent CLI（06 §5.6）。
            * ⚠️ **缺席 = 纯终端**（或沙箱里的 tmux 老到读不出那个标记）。
@@ -124,6 +149,28 @@ export const RuntimeInstallStatusSchema = z.enum([
   'failed',
 ]);
 export type RuntimeInstallStatus = z.infer<typeof RuntimeInstallStatusSchema>;
+
+/** Provision-cycle facts; not the RuntimeOwner RPC operation identifier. */
+export const StartupObservationSchema = z.object({
+  operationId: z.string().min(1),
+  sequence: z.number().int().nonnegative(),
+  state: z.enum(['inflight', 'unknown', 'succeeded', 'failed']),
+  stage: z.enum([
+    'workspace-preparation',
+    'instance-create',
+    'instance-start',
+    'runtime-tools',
+    'environment-initialization',
+    'agent-bootstrap',
+    'completed',
+  ]),
+  startedAt: z.string().datetime().nullable(),
+  stageEnteredAt: z.string().datetime().nullable(),
+  lastProgressAt: z.string().datetime().nullable(),
+  heartbeatAt: z.string().datetime().nullable(),
+  observedAt: z.string().datetime().nullable(),
+});
+export type StartupObservation = z.infer<typeof StartupObservationSchema>;
 
 // ——— /events 通道：判别键 event（10 §7.4 共 7 条）———
 export const SandboxEventSchema = z.discriminatedUnion('event', [
@@ -197,6 +244,7 @@ export const SandboxEventSchema = z.discriminatedUnion('event', [
     sandboxId: z.string(),
     phase: z.enum(['starting', 'ready']),
     imageStaged: z.boolean().optional(),
+    startupObservation: StartupObservationSchema.optional(),
   }),
 ]);
 export type SandboxEvent = z.infer<typeof SandboxEventSchema>;
@@ -389,15 +437,16 @@ export type TaskServerFrame = z.infer<typeof TaskServerFrameSchema>;
  */
 export const WS_PROTOCOL_CANONICAL =
   'terminal.client:input{data},resize{cols,rows},ping,close_shell{shellId}|' +
-  'terminal.server:data{data},exit{code},pong,session{socketSessionKey,shellId?},' +
-  'shells{shells[shellId,runtimeId?]}|' +
+  'terminal.server:data{data},exit{code},pong,session{socketSessionKey,shellId?,sandboxId?,terminalIdentity?,attachmentId?,protocolRevision?},' +
+  'ready{sandboxId,terminalIdentity,runtimeIdentity,attachmentId,protocolRevision,existingSession},' +
+  'connection_state{state,sandboxId},error{code,sandboxId?},shells{shells[shellId,terminalIdentity?,runtimeId?]}|' +
   'events:sandbox.created{sandboxId,projectId},sandbox.status_changed{sandboxId,status,phase?,errorCode?},' +
   'sandbox.removed{sandboxId},sandbox.waiting_input{sandboxId,waiting,sessionId?},' +
   'project.clone_progress{projectId,phase,startedAt?,stage?,percent?,objectsDone?,objectsTotal?,' +
   'receivedBytes?,bytesPerSecond?,errorCode?},' +
   'runtime-auth.status_changed{runtime},' +
   'runtime.install_progress{sandboxId,runtime,status,versionDetected?,errorCode?},' +
-  'sandbox.instance_progress{sandboxId,phase,imageStaged?}|' +
+  'sandbox.instance_progress{sandboxId,phase,imageStaged?,startupObservation?}|' +
   'tasks.client:subscribe{taskId,fromSeq?},unsubscribe{taskId},ping|' +
   'tasks.server:event{taskId,seq,event},caught_up{taskId,firstSeq,seq},' +
   'exit{taskId,status,exitCode?},error{taskId,code},pong';

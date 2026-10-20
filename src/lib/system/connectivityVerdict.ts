@@ -1,17 +1,3 @@
-// Step1「出网可达性」的判定与视图模型（F21-8 §7.1 `lib/connectivityVerdict.ts`）。
-//
-// ⚠️ **两条纪律，每一条都对应一个"页面看起来完全正常"的错误写法：**
-//
-//  ① **离线判定只看 `modelApi === true` 的那几行。** 把镜像仓库一起算进去，一台只是内网
-//     镜像站没配好、模型 API 一路通畅的机器会被告知「当前为离线环境，Agent 将不可用」
-//     —— 而它的 Agent 从来就是可用的。反过来（把镜像仓库的失败当成"部分失败"）才是对的：
-//     那只影响拉新镜像。后端 `initialization.service.ts::assertOfflineAcknowledged` 用的是
-//     同一条判定，两边必须同口径，否则用户会在 [确认，开始使用] 上收到一个界面里从没提过的 409。
-//
-//  ② **这份结果必须带着它的时刻。** §4 要求「进向导直接渲染历史结果、不重跑检测」——
-//     对的，但没有 `lastConnectivityCheckAt` 就没人知道那份结果是三秒前还是三周前的。
-//     「代理昨天刚配好」和「三周前测的、之后网络换过」是完全不同的两件事，而它们在界面上
-//     长得一模一样。
 import { z } from 'zod';
 import { formatRelativePast } from '@/lib/_shared/formatTime';
 import type {
@@ -22,14 +8,9 @@ import type {
 } from '@/types/init';
 
 /**
- * 整轮结论。
- *
- * - `offline`：**存在模型 API 目标，且它们全不可达**（无论镜像仓库如何）。
- * - `ok`：一条都没失败。
- * - `partial`：其余（典型：只有镜像仓库挂了）。
- *
- * ⚠️ 一条结果都没有时返回 `'ok'`：这是**故意的兜底**——「没测过」不是「测出来是坏的」。
- * 调用方用 `hasResult` 区分"没测过"，不要靠 verdict 反推（`connectivityCheckModel` 会给）。
+ * 对声明探测目标的分类，不是 runtime 或任务能力结论。
+ * `offline` 仅为初始化显式确认的既有分类：存在模型 API 目标且均明确失败。
+ * 空结果由 hasResult 表达未知；超时不当作明确不可达。与后端 ACK 判据保持一致。
  */
 export function connectivityVerdict(rows: readonly ConnectivityResultDto[]): ConnectivityVerdict {
   const modelApis = rows.filter((r) => r.modelApi);
@@ -41,33 +22,11 @@ export function connectivityVerdict(rows: readonly ConnectivityResultDto[]): Con
   return 'partial';
 }
 
-/**
- * 三句结论文案的**唯一**出处。
- *
- * ⚠️ **⛔ 这里不许出现具体 runtime 的名字。** 上一版写的是「codex / claude code 必须能访问
- * 各自的模型 API」—— 而 runtime 是**开放注册表**（04 §3），第三方可以注册自己的 runtime。
- * 在一台只装了第三方 runtime 的机器上，那句话点名的两个 runtime 一个都不在场，用户读到的
- * 是一句与自己无关的话；更糟的是它会被当成"平台只支持这两个"。
- *
- * ⚠️ **为什么不改成"从接口取名字来渲染"**：诊断接口（`init-status.lastConnectivityCheck[]`
- * 与 `/diagnose` 的 `outbound-network` 帧）逐条给的是 `{ target, ok, latencyMs, hint,
- * modelApi }` —— `target` 是**网络目标**（`api.openai.com` / `ghcr.io`），响应里**没有任何
- * runtime 身份**，也没有 target → runtime 的映射。硬把 target 当 runtime 名念出来，是拿
- * 一个错误的枚举换掉另一个错误的枚举。⇒ 结论句只说不变的那条约束（"每个 runtime 都要够得着
- * 自己的模型 API"），**具体探测到了哪些目标由逐行结果自己说**（`rowModel` 已经逐条渲染）。
- *
- * ⚠️ 这三句会被**两处**消费：向导第 1/2 步的 `ConnectivityCheck`，以及全局离线横幅
- * （`globalBanner.ts` 直接取 `verdictText`）。离线告知面板（`OfflineNotice`）同样吃这一份
- * —— 由 container 以 prop 传入，⛔ 不许在 view 里再抄一句（抄出来的那句迟早跟这句分叉）。
- */
+// 诊断没有 target → runtime / credential / provider 的映射，不能推断 Agent 能力。
 const VERDICT_TEXT: Readonly<Record<ConnectivityVerdict, string>> = {
-  ok: '联网正常：模型 API 与镜像下载源都连得上。',
-  // ⚠️ **partial 不是一种情形，是两种** —— 这一档的判据只是「模型 API 没有全挂」，
-  //    它同时覆盖「只有镜像仓库挂了」与「挂了一部分模型 API」。所以这里不能有定值，
-  //    见 `partialText()`。留这个键是为了让 Record 保持全覆盖（少一档编译不过）。
+  ok: '本次探测目标均通过检查。任务实际连通性以其配置和执行结果为准。',
   partial: '',
-  offline:
-    '当前连不上外网，Agent 将不可用 —— 每个 Agent 都必须能访问自己的模型 API，这是物理约束，不是配置问题。平台其余功能（项目管理、凭证与镜像配置、系统诊断）照常可用。',
+  offline: '本次探测的模型 API 目标均未连通。任务实际连通性以其配置和执行结果为准。',
 };
 
 function rowModel(row: ConnectivityResultDto): ConnectivityRowModel {
@@ -94,18 +53,9 @@ function rowModel(row: ConnectivityResultDto): ConnectivityRowModel {
   };
 }
 
-/**
- * `partial` 那一档的结论句 —— **必须看失败的是哪一类**。
- *
- * ⚠️ 上一版是一句定值：「部分目标不可达 —— 模型 API 仍可达，Agent 可用」。而 `partial`
- * 的判据只是「模型 API 没有**全部**失败」，一个模型 API 挂掉、另一个还活着时**也是**
- * 这一档 —— 那句话于是在屏幕上变成一句**假话**：codex 的模型 API 明明没通过检查，
- * 界面却告诉用户「模型 API 仍可达，Agent 可用」。后端同一分支写的是「部分目标未通过
- * 检查」，前端这句是另写的，写窄了。⇒ 分两句，且不说没被证明的事。
- */
-/** 结论句的唯一出口：`partial` 走 `partialText`，另两档取定值。 */
+/** 文案只总结本次目标，不把目标检查推广为整个平台的联网能力。 */
 function verdictTextOf(rows: readonly ConnectivityResultDto[]): string {
-  if (rows.length === 0) return '还没有检查过这台机器能不能联网。';
+  if (rows.length === 0) return '暂无探测结果，任务实际连通性待确认。';
   const verdict = connectivityVerdict(rows);
   return verdict === 'partial' ? partialText(rows) : VERDICT_TEXT[verdict];
 }
@@ -114,27 +64,17 @@ function partialText(rows: readonly ConnectivityResultDto[]): string {
   const failed = rows.filter((r) => !r.ok);
   const modelApis = rows.filter((row) => row.modelApi);
   const hitModelApi = failed.some((r) => r.modelApi);
-  // ⚠️ 全是超时时连"没通过"都要说得更轻：那只是没在预算内应答。
-  const verb = failed.every((r) => r.timedOut === true) ? '超时未响应' : '没通过检查';
-  // ⛔ **不在这句里点名具体目标**（同本文件上方那条纪律，用例「三句结论都不点名具体
-  //    runtime」钉着）：`api.openai.com` 这种名字念出来既像 runtime 名，又与逐行结果重复。
-  //    哪几条没过由下方那张表自己说 —— 它本来就逐条渲染着。
-  const tail = failed.every((r) => r.timedOut === true)
-    ? '超时不等于连不上：一条时快时慢的链路会周期性超过这次检查的超时时限，重跑一次看它是否稳定。'
-    : '';
-  if (modelApis.every((row) => row.timedOut === true) && hitModelApi)
-    return '模型 API 都超时未响应，暂时无法判定联网情况；这不等于连不上，请重跑一次检查。';
+  const scope = '任务实际连通性以其配置和执行结果为准。';
+  const verb = failed.every((r) => r.timedOut === true) ? '超时未响应' : '未通过检查';
+  const tail = failed.every((r) => r.timedOut === true) ? '超时不等于连不上。' : '';
+  if (modelApis.length > 0 && modelApis.every((row) => row.timedOut === true))
+    return `本次探测的模型 API 目标均超时未响应，连通情况待确认。${tail}${scope}`;
   if (modelApis.length === 0)
-    return `有目标${verb}，本轮没有模型 API 检查结果，暂时无法判定 Agent 能否联网。${tail}`;
+    return `本次有目标${verb}，没有模型 API 目标的探测结果。${tail}${scope}`;
   if (hitModelApi && !modelApis.some((row) => row.ok))
-    return '有模型 API 没通过检查，其余模型 API 超时未响应，暂时无法判定联网情况，请重跑一次检查。';
-  if (!hitModelApi) {
-    return `有镜像下载源${verb} —— 模型 API 都连得上，Agent 可用；受影响的只是下载新镜像。${tail}`;
-  }
-  return (
-    `有模型 API ${verb} —— 其余模型 API 连得上，所以平台不算断网；` +
-    `但依赖它的那个 Agent 可能用不了，其他 Agent 不受影响。${tail}`
-  );
+    return `本次部分模型 API 目标未通过检查，其余超时未响应，连通情况待确认。${scope}`;
+  if (!hitModelApi) return `本次探测的模型 API 目标通过检查，有镜像下载源${verb}。${tail}${scope}`;
+  return `本次部分模型 API 目标${verb}，其余目标通过检查。${tail}${scope}`;
 }
 
 /** `'上次检测：2026-08-29 16:11:34（22 小时前）'`；时刻缺席/不可解析 ⇒ 整行不渲染。 */
@@ -187,7 +127,7 @@ export interface ConnectivityInput {
   rows: readonly ConnectivityResultDto[] | undefined;
   /** 结果的时刻（ISO）。 */
   checkedAt?: string;
-  /** true = 这份来自 `init-status` 的历史；false = 本轮 `/diagnose` 刚跑出来的。 */
+  /** true = 这份来自 `init-status` 的历史；false = `/diagnose` 记录；不表示当前仍新鲜。 */
   fromHistory: boolean;
 }
 

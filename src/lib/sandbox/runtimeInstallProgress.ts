@@ -31,8 +31,7 @@ export function installSubCopy(progress: RuntimeInstallProgress | undefined): st
     case 'not_installed':
       return `镜像里没有预装 ${progress.runtime} 的命令行工具，正在准备安装…`;
     case 'installing':
-      // 明确写出"可能十几分钟、不是卡死"——P22 §1 INSTALL_FAILED 行的说明要求。
-      return `正在安装 ${progress.runtime} 的命令行工具…（这张镜像里没有预装它，现装可能要十几分钟，不是卡死）`;
+      return `正在安装 ${progress.runtime} 的命令行工具；正在确认安装进展…`;
     case 'installed':
       return progress.versionDetected !== undefined && progress.versionDetected !== ''
         ? `${progress.runtime} 的命令行工具已就绪（${progress.versionDetected}）`

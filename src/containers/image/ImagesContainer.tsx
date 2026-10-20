@@ -106,7 +106,7 @@ export function ImagesContainer() {
           <input
             type="search"
             aria-label="搜索镜像"
-            placeholder="按别名、名称、坐标或 tag 搜索"
+            placeholder="按别名、名称、坐标或 CLI 版本搜索"
             ref={m.aliasEditor.searchRef}
             className="w-56 rounded-md border border-border bg-transparent px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             value={m.search}
@@ -142,6 +142,11 @@ export function ImagesContainer() {
           </Button>
         </div>
       </header>
+
+      <p className="text-xs text-muted-foreground">
+        CLI
+        版本来自各镜像构建时的声明；未报告表示镜像未提供有效版本信息。任务实际版本以任务环境为准。
+      </p>
 
       {m.loading && (
         <div aria-busy="true" className="flex flex-col gap-3">
@@ -391,10 +396,12 @@ export function ImagesContainer() {
             imageName={m.compare.imageName}
             refDisplay={m.compare.refDisplay}
             currentDigestShort={m.compare.currentDigestShort}
+            currentRuntimeVersionsLabel={m.compare.currentRuntimeVersionsLabel}
             {...(m.compare.currentResolvedAtLabel === undefined
               ? {}
               : { currentResolvedAtLabel: m.compare.currentResolvedAtLabel })}
             upstreamDigestShort={m.compare.upstreamDigestShort}
+            upstreamRuntimeVersionsLabel={m.compare.upstreamRuntimeVersionsLabel}
             upstreamValidation={m.compare.upstreamValidation}
             updating={m.adopting}
             onAdopt={m.adoptNewVersion}

@@ -9,6 +9,7 @@ export type { ConnState, RendererKind };
 export interface TerminalHandle {
   dispose(): void;
   write(data: string): void;
+  hasSelection?: () => boolean;
 }
 export interface SocketHandle {
   close(): void;

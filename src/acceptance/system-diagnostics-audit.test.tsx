@@ -90,6 +90,68 @@ beforeEach(() => {
 });
 
 describe('SYS/DIA/AUD current production acceptance', () => {
+  it('AC-SYS-030.5: keeps host diagnostics readable when task capacity cannot be confirmed', async () => {
+    const hostResources = { ...resources };
+    delete hostResources.capacity;
+    server.use(
+      http.get(`${base}/api/system/resources`, () =>
+        HttpResponse.json({
+          ...hostResources,
+          capacityAvailability: { state: 'unavailable', reason: 'OWNER_CAPACITY_UNAVAILABLE' },
+        }),
+      ),
+    );
+    mount(<SystemStatusContainer />);
+    await screen.findByText('任务容量待确认');
+    expect(screen.getByText('暂时无法确认可新建任务数，请稍后重试。')).toBeVisible();
+    expect(screen.queryByText(/还能再发/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/本机资源读取失败/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('resource-gauge-cpu')).toBeVisible();
+    expect(screen.getByTestId('resource-gauge-ram')).toBeVisible();
+    expect(screen.getByTestId('resource-gauge-disk')).toBeVisible();
+    expect(screen.getByRole('button', { name: '重新诊断' })).toBeEnabled();
+  });
+
+  it('AC-SYS-030.5: announces refreshed task capacity without retaining an unavailable estimate', async () => {
+    let available = false;
+    const hostResources = { ...resources };
+    delete hostResources.capacity;
+    server.use(
+      http.get(`${base}/api/system/resources`, () =>
+        HttpResponse.json(
+          available
+            ? resources
+            : {
+                ...hostResources,
+                capacityAvailability: {
+                  state: 'unavailable',
+                  reason: 'OWNER_CAPACITY_UNAVAILABLE',
+                },
+              },
+        ),
+      ),
+    );
+    mount(<SystemStatusContainer />);
+    await screen.findByText('任务容量待确认');
+    const card = screen.getByRole('region', { name: '本机资源水位' });
+    const status = within(card).getByRole('status', { name: '任务容量' });
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(status).toHaveAttribute('aria-atomic', 'true');
+    available = true;
+    fireEvent.click(within(card).getByRole('button', { name: '刷新' }));
+    await within(status).findByText('还能再发 0 个任务');
+    expect(within(card).queryByText('任务容量待确认')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(status).toHaveAttribute('aria-busy', 'false');
+    });
+    available = false;
+    fireEvent.click(within(card).getByRole('button', { name: '刷新' }));
+    await within(status).findByText('任务容量待确认');
+    expect(within(status).queryByText('还能再发 0 个任务')).not.toBeInTheDocument();
+    expect(within(card).getByTestId('resource-gauge-disk')).toBeVisible();
+    expect(within(card).getByRole('status', { name: '任务容量' })).toBe(status);
+  });
+
   it('AC-SYS-030.7: a failed provider read ends all loading blocks and retains the diagnosis action', async () => {
     server.use(
       http.get(`${base}/api/system/providers`, () =>

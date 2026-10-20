@@ -16,10 +16,12 @@ export interface UpdateCompareDialogProps {
   refDisplay: string;
   /** 当前钉定的 digest 短串。 */
   currentDigestShort: string;
+  currentRuntimeVersionsLabel: string;
   /** 「解析于 3 天前」；缺席则整行不渲染。 */
   currentResolvedAtLabel?: string;
   /** 上游该 tag 现在指向的 digest 短串。 */
   upstreamDigestShort: string;
+  upstreamRuntimeVersionsLabel: string;
   /** 上游新版本的三级结论（服务端判定，前端猜不出来 ⇒ 这里也不做乐观更新）。 */
   upstreamValidation: ImageValidationResultData;
   updating?: boolean;
@@ -33,8 +35,10 @@ export function UpdateCompareDialogView({
   imageName,
   refDisplay,
   currentDigestShort,
+  currentRuntimeVersionsLabel,
   currentResolvedAtLabel,
   upstreamDigestShort,
+  upstreamRuntimeVersionsLabel,
   upstreamValidation,
   updating = false,
   onAdopt,
@@ -68,10 +72,16 @@ export function UpdateCompareDialogView({
               <span className="text-muted-foreground">（{currentResolvedAtLabel}）</span>
             )}
           </div>
+          <p className="break-words text-muted-foreground" data-testid="current-runtime-versions">
+            镜像声明：{currentRuntimeVersionsLabel}
+          </p>
           <div className="flex flex-wrap items-center gap-2" data-testid="upstream-digest">
             <span className="text-muted-foreground">上游</span>
             <span className="font-mono text-sky-400">{upstreamDigestShort}</span>
           </div>
+          <p className="break-words text-muted-foreground" data-testid="upstream-runtime-versions">
+            镜像声明：{upstreamRuntimeVersionsLabel}
+          </p>
         </div>
 
         <ValidationResultView

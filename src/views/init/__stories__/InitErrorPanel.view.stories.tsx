@@ -31,11 +31,13 @@ export const WriteFailed: Story = {
 export const OfflineNotAcknowledged: Story = {
   args: {
     message:
-      '模型 API 全部不可达（api.openai.com、api.anthropic.com）—— 当前为离线环境，Agent 将不可用。配置代理后重新检测，或明确以离线模式继续（平台其余功能可用）。',
+      '本次探测的模型 API 目标均未连通。请确认联网检查结果后继续，也可重新检测。确认不会禁用任务入口。',
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('init-error-panel')).toHaveTextContent('模型 API 全部不可达');
+    await expect(canvas.getByTestId('init-error-panel')).toHaveTextContent(
+      '本次探测的模型 API 目标均未连通',
+    );
   },
 };
 

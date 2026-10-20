@@ -63,6 +63,26 @@ export const Healthy: Story = {
   },
 };
 
+/** Owner capacity is unknown while ordinary host diagnostics remain available. */
+export const CapacityUnavailable: Story = {
+  args: {
+    model: model({
+      capacityText: '任务容量待确认',
+      capacityLevel: 'warn',
+      capacityHint: '暂时无法确认可新建任务数，请稍后重试。',
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText('任务容量待确认')).toBeVisible();
+    await expect(canvas.queryByText(/还能再发 0 个/)).not.toBeInTheDocument();
+    await expect(canvas.getByTestId('resource-gauge-cpu')).toBeVisible();
+    await expect(canvas.getByTestId('resource-gauge-ram')).toBeVisible();
+    await expect(canvas.getByTestId('resource-gauge-disk')).toBeVisible();
+    await expect(canvas.getByRole('button', { name: '刷新' })).toBeEnabled();
+  },
+};
+
 export const Warning: Story = {
   args: {
     model: model({

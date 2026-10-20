@@ -9,8 +9,10 @@
 //   "标签消失"，那正是 08 §5.2 明说不许发生的事。
 //
 // ⛔ **绝不 persist**：`shellId` 是后端会话凭据（与 socketSessionKey 同类，15 §3.5）。
-//    刷新之后标签回到只剩 Agent 一个，是**有意的**——见下面 `openShellTab` 的注释。
+//    刷新后只恢复公开选择书签，再与认证后的终端清单合并，不落盘会话凭据。
 import type { StateCreator } from 'zustand';
+import type { TerminalBookmark } from '@/types/terminal';
+import { shellTabSeqOf as terminalOrdinalOf } from '@/lib/terminal/terminalTabs';
 
 /**
  * 一个用户自己开的终端标签。
@@ -25,6 +27,7 @@ export interface TerminalShellTab {
   sessionId: string;
   /** `undefined` = 首帧还没回来（这个标签的会话后端还没告诉我们叫什么）。 */
   shellId?: string;
+  terminalIdentity?: string;
   /**
    * 这个标签里跑的是哪个 agent CLI（06 §5.6）。**缺席 = 纯终端**（`$SHELL`）。
    *
@@ -37,6 +40,12 @@ export interface TerminalShellTab {
 export interface TerminalTabsSlice {
   /** sandboxId → 用户自己开的标签（**不含** Agent 那个，见下）。顺序即标签顺序。 */
   shellTabsOf: Map<string, TerminalShellTab[]>;
+  agentTerminalIdentityOf: Map<string, string>;
+  terminalScopeOf: Map<string, string>;
+  prepareTerminalScope: (sandboxId: string, scopeKey: string) => boolean;
+  adoptTerminalIdentity: (sandboxId: string, sessionId: string, terminalIdentity: string) => void;
+  restoreTerminalBookmark: (sandboxId: string, bookmark: TerminalBookmark) => string;
+
   /**
    * sessionId → 最近一次被激活的**序号**，LRU 用（08 §5.3：只在真正激活时更新，
    * ⛔ 不在每次 `write()` 时更新——否则一个刷屏的后台标签会把自己顶成"最近使用"，
@@ -64,7 +73,7 @@ export interface TerminalTabsSlice {
    */
   recordShellInventory: (
     sandboxId: string,
-    shells: { shellId: string; runtimeId?: string }[] | null,
+    shells: { shellId: string; runtimeId?: string; terminalIdentity?: string }[] | null,
   ) => void;
   /**
    * sandboxId → 上一次清单的结果。`'ok'` = 问到了（可能是空）；`'unavailable'` = 问不出来；
@@ -95,6 +104,84 @@ export const createTerminalTabsSlice: StateCreator<TerminalTabsSlice, [], [], Te
   get,
 ) => ({
   shellTabsOf: new Map(),
+  agentTerminalIdentityOf: new Map(),
+  terminalScopeOf: new Map(),
+  prepareTerminalScope: (sandboxId, scopeKey) => {
+    const before = get().terminalScopeOf.get(sandboxId);
+    if (before === scopeKey) return false;
+    set((s) => {
+      const terminalScopeOf = new Map(s.terminalScopeOf);
+      terminalScopeOf.set(sandboxId, scopeKey);
+      if (before === undefined) return { terminalScopeOf };
+      const shellTabsOf = new Map(s.shellTabsOf);
+      shellTabsOf.delete(sandboxId);
+      const agentTerminalIdentityOf = new Map(s.agentTerminalIdentityOf);
+      agentTerminalIdentityOf.delete(sandboxId);
+      const shellInventoryOf = new Map(s.shellInventoryOf);
+      shellInventoryOf.delete(sandboxId);
+      const shellTabSeqOf = new Map(s.shellTabSeqOf);
+      shellTabSeqOf.delete(sandboxId);
+      const tabActivatedAt = new Map(s.tabActivatedAt);
+      for (const key of tabActivatedAt.keys())
+        if (key === agentSessionIdOf(sandboxId) || key.startsWith(`${sandboxId}:shell:`))
+          tabActivatedAt.delete(key);
+      return {
+        terminalScopeOf,
+        shellTabsOf,
+        agentTerminalIdentityOf,
+        shellInventoryOf,
+        shellTabSeqOf,
+        tabActivatedAt,
+      };
+    });
+    return before !== undefined;
+  },
+  adoptTerminalIdentity: (sandboxId, sessionId, terminalIdentity) => {
+    set((s) => {
+      if (sessionId === agentSessionIdOf(sandboxId)) {
+        const agentTerminalIdentityOf = new Map(s.agentTerminalIdentityOf);
+        if (agentTerminalIdentityOf.get(sandboxId) === terminalIdentity) return {};
+        agentTerminalIdentityOf.set(sandboxId, terminalIdentity);
+        return { agentTerminalIdentityOf };
+      }
+      const existing = s.shellTabsOf.get(sandboxId) ?? [];
+      const found = existing.find((tab) => tab.sessionId === sessionId);
+      if (found === undefined || found.terminalIdentity === terminalIdentity) return {};
+      const shellTabsOf = new Map(s.shellTabsOf);
+      shellTabsOf.set(
+        sandboxId,
+        existing.map((tab) => (tab.sessionId === sessionId ? { ...tab, terminalIdentity } : tab)),
+      );
+      return { shellTabsOf };
+    });
+  },
+  restoreTerminalBookmark: (sandboxId, bookmark) => {
+    if (bookmark.kind === 'agent') {
+      const sessionId = agentSessionIdOf(sandboxId);
+      get().adoptTerminalIdentity(sandboxId, sessionId, bookmark.terminalIdentity);
+      return sessionId;
+    }
+    const existing = get().shellTabsOf.get(sandboxId) ?? [];
+    const known = existing.find((tab) => tab.terminalIdentity === bookmark.terminalIdentity);
+    if (known !== undefined) return known.sessionId;
+    const seq = Math.max(bookmark.ordinal, (get().shellTabSeqOf.get(sandboxId) ?? 0) + 1);
+    const sessionId = `${sandboxId}:shell:${String(seq)}`;
+    set((s) => {
+      const shellTabsOf = new Map(s.shellTabsOf);
+      shellTabsOf.set(sandboxId, [
+        ...existing,
+        {
+          sessionId,
+          terminalIdentity: bookmark.terminalIdentity,
+          ...(bookmark.runtimeId === undefined ? {} : { runtimeId: bookmark.runtimeId }),
+        },
+      ]);
+      const shellTabSeqOf = new Map(s.shellTabSeqOf);
+      shellTabSeqOf.set(sandboxId, seq);
+      return { shellTabsOf, shellTabSeqOf };
+    });
+    return sessionId;
+  },
   tabActivatedAt: new Map(),
   tabActivationTick: 0,
   shellTabSeqOf: new Map(),
@@ -164,10 +251,7 @@ export const createTerminalTabsSlice: StateCreator<TerminalTabsSlice, [], [], Te
       if (j === -1 || mine === undefined) return {};
       // ⚠️ **保住 runtimeId**：这个标签是不是一个 CLI 标签，是它建的时候就定了的事。
       //    首帧只带回 shellId，整条替换会把「我是 Codex 标签」这件事抹掉。
-      next[j] =
-        mine.runtimeId === undefined
-          ? { sessionId, shellId }
-          : { sessionId, shellId, runtimeId: mine.runtimeId };
+      next[j] = { ...mine, shellId };
       const shellTabsOf = new Map(s.shellTabsOf);
       shellTabsOf.set(sandboxId, next);
       return { shellTabsOf };
@@ -182,12 +266,11 @@ export const createTerminalTabsSlice: StateCreator<TerminalTabsSlice, [], [], Te
    * 那一刻可能还没建完会话，或者建完了但前端还没拿到 id）。拿清单做全量 reconcile
    * 就会把它当成"服务端没有"抹掉 —— 用户眼睁睁看着自己刚开的终端消失。
    *
-   * ⚠️ **顺序是载荷的一部分**：清单按 tmux `session_created` 升序，这里按同样的顺序
-   * 补进去，于是「终端 1..n」跟着创建顺序走。⇒ 刷新后编号可能**位移**（刷新前
-   * 「终端 1 / 终端 3」→ 刷新后「终端 1 / 终端 2」）。这是**已知代价不是 bug**：
-   * 序号不 persist（它藏在 sessionId 里），而唯一能跨刷新稳定的事实只有创建顺序；
-   * 要不位移就得把 `shellId → 序号` 存进 localStorage，而 `shellId` 是会话凭据，
-   * 15 §3.5 明令不许落盘。
+   * ⚠️ **顺序是载荷的一部分**：清单按 tmux `session_created` 升序。保留已有标签
+   * （包括公开选择书签恢复的标签）的编号，按创建顺序把未知终端补到空编号，再按
+   * 编号排回标签栏。否则先恢复「终端 2」会把原「终端 1」错误续号成「终端 3」。
+   * 未保存的历史编号 gap 仍可在刷新后压缩；不增加凭据或完整标签映射的持久化。
+   * 用户新开标签仍从已分配的最大编号续号，不因填空、重复清单或关闭标签倒退。
    *
    * `shells === null`（问不出来）⇒ 只记状态，**一个标签都不动**：既不补也不删。
    */
@@ -198,20 +281,32 @@ export const createTerminalTabsSlice: StateCreator<TerminalTabsSlice, [], [], Te
       if (shells === null) return { shellInventoryOf };
 
       const existing = s.shellTabsOf.get(sandboxId) ?? [];
-      const known = new Set(existing.map((t) => t.shellId).filter((v) => v !== undefined));
-      const missing = shells.filter((entry) => !known.has(entry.shellId));
-      if (missing.length === 0) return { shellInventoryOf };
-
       let seq = s.shellTabSeqOf.get(sandboxId) ?? 0;
-      const added = missing.map(({ shellId, runtimeId }) => {
-        seq += 1;
-        const sessionId = `${sandboxId}:shell:${String(seq)}`;
-        // ⚠️ runtimeId 跟着清单回来 —— 刷新之后一个正跑着 Claude Code 的标签才不会
-        //    显示成「终端 2」。读不到（老 tmux）⇒ 缺席 ⇒ 回落「终端 N」，不更坏。
-        return runtimeId === undefined ? { sessionId, shellId } : { sessionId, shellId, runtimeId };
-      });
+      const next = [...existing];
+      const occupied = new Set(existing.map((tab) => terminalOrdinalOf(tab.sessionId)));
+      let available = 1;
+      for (const entry of shells) {
+        const index = next.findIndex(
+          (tab) =>
+            tab.shellId === entry.shellId ||
+            (entry.terminalIdentity !== undefined &&
+              tab.terminalIdentity === entry.terminalIdentity),
+        );
+        if (index !== -1) {
+          const known = next[index];
+          if (known !== undefined) next[index] = { ...known, ...entry };
+        } else {
+          while (occupied.has(available)) available += 1;
+          occupied.add(available);
+          seq = Math.max(seq, available);
+          next.push({ sessionId: `${sandboxId}:shell:${String(available)}`, ...entry });
+        }
+      }
+      next.sort(
+        (left, right) => terminalOrdinalOf(left.sessionId) - terminalOrdinalOf(right.sessionId),
+      );
       const shellTabsOf = new Map(s.shellTabsOf);
-      shellTabsOf.set(sandboxId, [...existing, ...added]);
+      shellTabsOf.set(sandboxId, next);
       const shellTabSeqOf = new Map(s.shellTabSeqOf);
       shellTabSeqOf.set(sandboxId, seq);
       // ⛔ **不给恢复出来的标签发激活记录**，也不切过去：它们是"用户之前开过的"，

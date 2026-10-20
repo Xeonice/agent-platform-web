@@ -21,16 +21,7 @@ import type { PresetImageStep } from '@/types/sse-protocol';
  */
 export type ConnectivityResultDto = NonNullable<InitStatusDto['lastConnectivityCheck']>[number];
 
-/**
- * 整轮出网结论。
- *
- * ⚠️ **`offline` 只由「模型 API」这一类决定**（P21-8 §1 的物理约束：codex / claude code
- * 必须够得着各自的模型 API）。镜像仓库不可达只是「拉不到新镜像」——把它算进离线，会让一台
- * 只是内网镜像站没配好的机器被告知「Agent 将不可用」，而它的 Agent 一直好好的。
- * 这条纪律在后端 `initialization.service.ts::assertOfflineAcknowledged` 里有同一份判定，
- * 两边必须同口径：前端说「不离线」而后端判「离线」时，用户会在 [确认，开始使用] 上收到
- * 一个界面里从没提过的 409。
- */
+/** 声明目标的检查分类。offline 仅用于初始化显式确认，不是任务或 runtime 的准入事实。 */
 export type ConnectivityVerdict = 'ok' | 'partial' | 'offline';
 
 export interface ConnectivityRowModel {
@@ -38,7 +29,7 @@ export interface ConnectivityRowModel {
   id: string;
   target: string;
   ok: boolean;
-  /** 原样带上：**离线判定只看它**，UI 也要把两类分开显示。 */
+  /** 原样带上：初始化 ACK 分类只看模型 API 目标，UI 也要把两类分开显示。 */
   modelApi: boolean;
   /** `'模型 API'` / `'镜像仓库'`。 */
   kindText: string;
@@ -68,7 +59,7 @@ export interface ConnectivityCheckModel {
    * 与「三周前测的，之后网络换过」是完全不同的两件事。
    */
   checkedAtText?: string;
-  /** 这份结果来自 `init-status` 的历史（true）还是本轮刚跑的 `/diagnose`（false）。 */
+  /** 这份结果来自 `init-status` 的历史（true）还是`/diagnose` 记录（false）；来源不证明新鲜度。 */
   fromHistory: boolean;
   /** 一条结果都没有（新装且从没跑过检测）⇒ 该自动跑一轮。 */
   hasResult: boolean;

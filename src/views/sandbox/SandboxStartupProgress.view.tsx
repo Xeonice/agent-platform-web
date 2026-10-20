@@ -1,9 +1,4 @@
-// 沙箱启动中进度（P20 §3.3）：四阶段 + 进度条。纯展示、props 驱动、零副作用。
-// 冷启可能到 ~220s（镜像未预装 CLI 时现装实测可达 753s）：进度条随阶段推进但不到 100%，
-// 配合当前阶段脉冲 + 子文案，避免"卡死"观感。
-//
-// ⚠️ 格的**顺序由 props.phases 决定**（容器从 lib/sandboxLifecycle 取，展示序刻意 ≠ 状态机序）；
-// 本视图不排序、不重排、不硬编码任何阶段名。
+// Original task preparation card; timing and phase facts come from the server.
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Check, Circle } from 'lucide-react';
@@ -14,7 +9,12 @@ export interface SandboxStartupProgressProps {
   /** 当前进行中的阶段下标。 */
   activeIndex: number;
   /** 进度百分比（0–100，running 前 < 100）。 */
-  percent: number;
+  percent: number | null;
+  headline?: string;
+  operationFacts?: { label: string; value: string }[];
+  diagnosticOperationId?: string;
+  waitingConfirmation?: boolean;
+  onCheck?: () => void;
   /**
    * 原始 status（`preparing-workspace` / `creating` / …）。**只挂 `data-status`，不上屏。**
    *
@@ -75,6 +75,11 @@ export function SandboxStartupProgressView({
   footnote,
   phaseNote,
   activeElapsedLabel,
+  headline,
+  operationFacts,
+  diagnosticOperationId,
+  waitingConfirmation = false,
+  onCheck,
 }: SandboxStartupProgressProps) {
   // ⚠️ 副标题缺席时整行不渲染 —— ⛔ 不要留一个空的 `<p>`，它会在标题下留一道空隙。
   const hasSubtitle = subtitle !== undefined && subtitle !== '';
@@ -87,7 +92,8 @@ export function SandboxStartupProgressView({
       <div>
         {/* ⚠️ P21-1 §9：界面上不出现「沙箱」这个词，用户这边它就叫「任务」。 */}
         <h2 className="text-lg font-semibold">
-          {taskName !== undefined && taskName !== '' ? `正在启动：${taskName}` : '正在启动任务…'}
+          {headline ??
+            (taskName !== undefined && taskName !== '' ? `正在启动：${taskName}` : '正在启动任务…')}
         </h2>
         {imageLabel !== undefined && (
           <p className="mt-1 break-all text-sm text-muted-foreground">镜像：{imageLabel}</p>
@@ -95,11 +101,30 @@ export function SandboxStartupProgressView({
         {hasSubtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
 
-      <div className="w-full max-w-sm" role="status" aria-live="polite">
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+      <div className="w-full max-w-sm">
+        <div
+          role="progressbar"
+          aria-label="任务启动总体进度"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent ?? undefined}
+          aria-valuetext={
+            percent === null
+              ? '总体进度未知，按已确认的准备步骤展示'
+              : '准备步骤里程碑，不代表工作量'
+          }
+          className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+        >
           <div
-            className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
-            style={{ width: `${String(Math.min(Math.max(percent, 0), 100))}%` }}
+            className={
+              percent === null
+                ? 'h-full w-1/3 animate-pulse rounded-full bg-primary/40 motion-reduce:animate-none'
+                : 'h-full rounded-full bg-primary transition-[width] duration-500 ease-out motion-reduce:transition-none'
+            }
+            style={{
+              width:
+                percent === null ? undefined : `${String(Math.min(Math.max(percent, 0), 100))}%`,
+            }}
           />
         </div>
 
@@ -155,14 +180,46 @@ export function SandboxStartupProgressView({
           })}
         </ol>
       </div>
-      {stuckElapsed !== undefined && (
+      {operationFacts === undefined ? null : (
+        <div className="w-full max-w-sm space-y-3 text-left text-xs">
+          <dl className="space-y-2">
+            {operationFacts.map((fact) => (
+              <div key={fact.label} className="flex flex-wrap justify-between gap-x-3">
+                <dt className="text-muted-foreground">{fact.label}</dt>
+                <dd>{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-muted-foreground">
+            心跳和查询只说明最近取得的状态，不代表已有新进展。检查与继续等待沿用原启动请求。
+          </p>
+          {diagnosticOperationId === undefined ? null : (
+            <details>
+              <summary className="cursor-pointer text-muted-foreground">查看启动诊断</summary>
+              <p className="mt-2 break-all font-mono">原操作：{diagnosticOperationId}</p>
+            </details>
+          )}
+        </div>
+      )}
+      {waitingConfirmation ? (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={onCheck}>
+            检查状态
+          </Button>
+          <Button variant="ghost" onClick={onContinue}>
+            继续等待
+          </Button>
+        </div>
+      ) : null}
+      {stuckElapsed !== undefined && !waitingConfirmation && (
         <div
           role="alert"
           className="max-w-lg rounded-lg border border-warning/30 bg-warning/10 p-4 text-left text-sm text-warning"
         >
-          <p className="font-medium">可能卡住了：已 {stuckElapsed} 没有新进展</p>
+          <p className="font-medium">等待时间较长：已 {stuckElapsed} 没有新进展</p>
           <p className="mt-2">
-            {stuckNote ?? '这个阶段很久没有新进展。可以继续等待，或取消并删除后重新发起。'}
+            {stuckNote ??
+              '暂未确认新的实质进展，可检查原请求或继续等待。取消需要等待资源结束确认。'}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {cancelSlot}

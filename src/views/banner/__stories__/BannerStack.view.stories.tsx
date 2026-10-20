@@ -5,11 +5,11 @@ import type { GlobalBannerModel } from '@/types/banner';
 
 const OFFLINE: GlobalBannerModel = {
   id: 'offline',
-  severity: 'blocking',
-  title: '离线模式：Agent 不可用',
+  severity: 'warning',
+  title: '联网检查未通过',
   description:
-    '当前为离线环境，Agent 将不可用 —— 每个 runtime 都必须能访问自己的模型 API，这是物理约束，不是配置问题。' +
-    '平台其余功能（项目管理、凭证与镜像配置、系统诊断）照常可用。（上次检测：2026-08-29 16:11:34（22 小时前））',
+    '本次探测的模型 API 目标均未连通。任务实际连通性以其配置和执行结果为准。' +
+    '上次检测：2026-08-29 16:11:34（22 小时前）（上次检查记录）',
   actionLabel: '重新检测',
 };
 
@@ -18,8 +18,7 @@ const UNKNOWN: GlobalBannerModel = {
   severity: 'blocking',
   title: '无法确认平台状态',
   description:
-    '读取平台初始化状态失败（请求失败（HTTP 500））。这多半是后端没起来或不可达 —— ' +
-    '在它恢复之前，「Agent 是否可用」无法判定：既不表示网络正常，也不表示离线。',
+    '读取平台初始化状态失败（请求失败（HTTP 500））。当前平台状态待确认；已有联网检查记录只反映其探测目标。',
   actionLabel: '查看系统状态',
 };
 
@@ -49,29 +48,27 @@ export const Offline: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     const banner = canvas.getByTestId('banner-offline');
-    await expect(banner).toHaveAttribute('data-severity', 'blocking');
-    // ⭐ 🔴 换成了 lucide `OctagonAlert`（class `lucide-octagon-alert`），装饰性
+    await expect(banner).toHaveAttribute('data-severity', 'warning');
+    // 治理级使用 lucide AlertTriangle，装饰性
     // （`aria-hidden`）——等级信息仍由 `sr-only` 的文字承担，不靠图标形状区分。
-    await expect(banner.querySelector('.lucide-octagon-alert')).not.toBeNull();
+    await expect(banner.querySelector('.lucide-triangle-alert')).not.toBeNull();
     await expect(banner.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
-    // ⚠️ 必须说清"哪一半还好着"：只说 Agent 不可用会让用户以为整台平台废了。
-    await expect(banner).toHaveTextContent('照常可用');
+    // 目标检查不推断全部任务或 Agent 的实际能力。
+    await expect(banner).toHaveTextContent('任务实际连通性以其配置和执行结果为准');
     await userEvent.click(canvas.getByTestId('banner-action-offline'));
     await expect(args.onAction).toHaveBeenCalledWith('offline');
   },
 };
 
 /**
- * ⭐ 关闭是**显式动作**：🔴 阻断类不自动收起（07 §8.4）。
+ * 关闭是显式动作：联网检查记录沿治理提示的当天关闭语义。
  * 这条 play 顺带守住"关闭按钮有可访问名"——只有一个「关闭」字的按钮在多条并存时无法区分。
  */
 export const DismissIsExplicit: Story = {
   args: { model: { banners: [OFFLINE] } },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(
-      canvas.getByRole('button', { name: '关闭「离线模式：Agent 不可用」提示' }),
-    );
+    await userEvent.click(canvas.getByRole('button', { name: '今天不再提示「联网检查未通过」' }));
     await expect(args.onDismiss).toHaveBeenCalledWith('offline');
   },
 };
@@ -86,7 +83,7 @@ export const PlatformStateUnknown: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const banner = canvas.getByTestId('banner-platform-state-unknown');
-    await expect(banner).toHaveTextContent('后端没起来');
+    await expect(banner).toHaveTextContent('当前平台状态待确认');
     await expect(banner).not.toHaveTextContent('离线模式');
     await expect(canvas.queryByTestId('banner-offline')).toBeNull();
   },
@@ -134,7 +131,7 @@ export const BlockingOutranksGovernance: Story = {
     await userEvent.click(canvas.getByTestId('banner-stack-more'));
     const expandedAlerts = canvas.getAllByRole('alert');
     await expect(expandedAlerts).toHaveLength(3);
-    // 顺序：两条阻断在前，治理殿后——这是排序层面的"阻断压过治理"。
+    // 状态未知在前；联网快照与其余治理提示保持出现顺序。
     await expect(expandedAlerts.map((a) => a.getAttribute('data-testid'))).toEqual([
       'banner-platform-state-unknown',
       'banner-offline',
@@ -142,7 +139,7 @@ export const BlockingOutranksGovernance: Story = {
     ]);
     // 颜色层面同一件事：阻断类用红色三件套，治理类不与它共用。
     await expect(expandedAlerts[0]?.className).toContain('v2-status-fail-subtle-bg');
-    await expect(expandedAlerts[1]?.className).toContain('v2-status-fail-subtle-bg');
+    await expect(expandedAlerts[1]?.className).toContain('v2-status-warn-subtle-bg');
     await expect(expandedAlerts[2]?.className).toContain('v2-status-warn-subtle-bg');
   },
 };

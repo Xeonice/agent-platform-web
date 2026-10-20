@@ -32,7 +32,7 @@ function model(over: Partial<ConnectivityCheckModel> = {}): ConnectivityCheckMod
   return {
     rows: [ANTHROPIC, OPENAI, REGISTRY],
     verdict: 'ok',
-    verdictText: '出网正常：模型 API 与镜像仓库均可达。',
+    verdictText: '本次探测目标均通过检查。任务实际连通性以其配置和执行结果为准。',
     checkedAtText: '上次检测：2026-08-30 00:11:34（22 小时前）',
     fromHistory: true,
     hasResult: true,
@@ -69,7 +69,7 @@ export const RegistryOnlyDown: Story = {
       rows: [ANTHROPIC, OPENAI, { ...REGISTRY, ok: false, stateText: '不可达', hint: '连接超时' }],
       verdict: 'partial',
       verdictText:
-        '部分目标不可达 —— 模型 API 仍可达，Agent 可用；不可达的那几项按下方提示配置代理。',
+        '本次探测的模型 API 目标通过检查，有镜像下载源未通过检查。任务实际连通性以其配置和执行结果为准。',
     }),
   },
   play: async ({ canvasElement }) => {
@@ -94,8 +94,7 @@ export const Offline: Story = {
         REGISTRY,
       ],
       verdict: 'offline',
-      verdictText:
-        '当前为离线环境，Agent 将不可用 —— 每个 runtime 都必须能访问自己的模型 API，这是物理约束，不是配置问题。平台其余功能（项目管理、凭证与镜像配置、系统诊断）照常可用。',
+      verdictText: '本次探测的模型 API 目标均未连通。任务实际连通性以其配置和执行结果为准。',
       fromHistory: false,
     }),
   },
@@ -105,7 +104,9 @@ export const Offline: Story = {
       'data-verdict',
       'offline',
     );
-    await expect(canvas.getByTestId('connectivity-verdict')).toHaveTextContent('物理约束');
+    await expect(canvas.getByTestId('connectivity-verdict')).toHaveTextContent(
+      '本次探测的模型 API 目标均未连通',
+    );
   },
 };
 
@@ -125,12 +126,27 @@ export const NoTimestamp: Story = {
   args: { model: model({ checkedAtText: undefined }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByTestId('connectivity-checked-at')).toHaveTextContent(
-      '这份结果没有带时刻',
-    );
+    await expect(canvas.getByTestId('connectivity-checked-at')).toHaveTextContent('检测时刻未提供');
   },
 };
 
 export const NoResultYet: Story = {
-  args: { model: model({ rows: [], hasResult: false, verdictText: '尚未检测过出网可达性。' }) },
+  args: {
+    model: model({
+      rows: [],
+      hasResult: false,
+      verdictText: '暂无探测结果，任务实际连通性待确认。',
+    }),
+  },
+};
+
+/** 诊断来源也可能已缓存；时刻缺席不能称作刚刚完成。 */
+export const DiagnosticWithoutTimestamp: Story = {
+  args: { model: model({ checkedAtText: undefined, fromHistory: false }) },
+  play: async ({ canvasElement }) => {
+    const line = within(canvasElement).getByTestId('connectivity-checked-at');
+    await expect(line).toHaveTextContent('检测时刻未提供');
+    await expect(line).toHaveTextContent('诊断检查记录');
+    await expect(line).not.toHaveTextContent('刚');
+  },
 };
